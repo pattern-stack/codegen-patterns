@@ -663,13 +663,19 @@ function assertRelationshipEmission(tmpDir: string): void {
 	// ── REL-2 (#587): the per-hop scope predicate + the typed-include helpers ──
 	assertContains(
 		manifest,
-		/import \{ hopScope, type ScopeConfig \} from '@shared\/base-classes\/scope-filters';/,
-		'generated/relations.ts imports the hop predicate from the runtime',
+		/import \{ hopScope, UNSCOPED, type ScopeConfig \} from '@shared\/base-classes\/scope-filters';/,
+		'generated/relations.ts imports the hop predicate (and UNSCOPED, for SCOPES) from the runtime',
 	);
 	assertContains(
 		manifest,
-		/const ACCOUNTS_SCOPE: ScopeConfig = \{ tenantScoped: false, softDelete: true, userTracking: true, enforcement: 'lenient' \};/,
-		"generated/relations.ts carries accounts' declared scope as a constant",
+		/export const ACCOUNTS_SCOPE: ScopeConfig = \{ tenantScoped: false, softDelete: true, userTracking: true, enforcement: 'lenient' \};/,
+		"generated/relations.ts EXPORTS accounts' declared scope as a constant (READ-1 #843)",
+	);
+	// READ-1 (#843): every entity table's root scope, unscoped ones named explicitly.
+	assertContains(
+		manifest,
+		/export const SCOPES = \{\n\taccounts: ACCOUNTS_SCOPE,\n\tcontacts: UNSCOPED,\n\topportunities: UNSCOPED,\n\} as const satisfies/,
+		'generated/relations.ts exports SCOPES over every entity table',
 	);
 	// EVERY relation whose target is scoped carries a `where`. A relation that
 	// lost its predicate is the regression this catches.
@@ -779,8 +785,8 @@ function assertRelationshipEmission(tmpDir: string): void {
 	);
 	assertContains(
 		accountRepository,
-		/override async findById<TWith extends AccountInclude = AccountNoInclude>/,
-		'account.repository.ts findById takes a typed include',
+		/override async findById<C extends AccountColumns \| undefined = undefined, W extends AccountInclude = AccountNoInclude>/,
+		'account.repository.ts findById takes a typed column mask and include (READ-1)',
 	);
 	// The `(t)` is the whole assertion: RQBv2 ALIASES the root, so a predicate built
 	// from the repository's own handle names a table that is not in scope and the
@@ -788,8 +794,8 @@ function assertRelationshipEmission(tmpDir: string): void {
 	// asserted absent — a regression here is invisible to `tsc` (REL-2 §10 Found #9).
 	assertContains(
 		accountRepository,
-		/\{ RAW: \(t\) => this\.rootScopeRawOn\(t, \{ softDelete: true \}\) \}/,
-		'account.repository.ts scopes the RQBv2 root with the same predicate as baseQuery',
+		/where: \{ RAW: this\.rootFilter\(\(t\) => eq\(t\.id, id\)\) \}/,
+		'account.repository.ts scopes the RQBv2 root through rootFilter, on the alias (READ-1)',
 	);
 	assertNotContains(
 		accountRepository,
@@ -1036,6 +1042,16 @@ async function main(): Promise<number> {
 		}
 		if ((mainTsAfterUpgrade.match(/installRequesterContext\(app\)/g) ?? []).length !== 1) {
 			throw new Error('project upgrade-auth is not idempotent — installRequesterContext wired more than once');
+		}
+
+		// 5.6a. READ-1 (§8.1) — the read surface's TYPES under the consumer posture:
+		// exact result types for masks / includes / finders and `@ts-expect-error`
+		// negatives (TS2578 keeps them honest). Compiled by step 6's `tsc`.
+		if (SCENARIO === 'relationship') {
+			fs.copyFileSync(
+				path.join(REPO_ROOT, 'test', 'smoke', 'fixtures', 'crm-usage', 'read-api.type-test.ts'),
+				path.join(tmpDir, 'src', 'read-api.type-test.ts'),
+			);
 		}
 
 		// 5.6b. Copy the auth-probe module into src/ so step 7.5 can boot it
