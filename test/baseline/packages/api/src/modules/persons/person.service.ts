@@ -9,8 +9,7 @@ import type {
   PersonResult,
 } from './person.repository';
 import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
-import type { persons } from './person.entity';
-import type { Person } from './person.entity';
+import type { persons, Person } from './person.entity';
 
 @Injectable()
 export class PersonService extends WithAnalytics(

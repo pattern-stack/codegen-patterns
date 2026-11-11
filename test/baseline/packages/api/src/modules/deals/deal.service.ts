@@ -11,8 +11,7 @@ import type {
   DealResult,
 } from './deal.repository';
 import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
-import type { deals } from './deal.entity';
-import type { Deal } from './deal.entity';
+import type { deals, Deal } from './deal.entity';
 import { UserRepository } from '../users/user.repository';
 import type { User } from '../users/user.entity';
 import { AccountRepository } from '../accounts/account.repository';

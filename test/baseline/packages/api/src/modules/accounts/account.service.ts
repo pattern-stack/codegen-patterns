@@ -9,8 +9,7 @@ import type {
   AccountResult,
 } from './account.repository';
 import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
-import type { accounts } from './account.entity';
-import type { Account } from './account.entity';
+import type { accounts, Account } from './account.entity';
 
 @Injectable()
 export class AccountService extends WithAnalytics(

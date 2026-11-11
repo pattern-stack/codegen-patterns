@@ -1,6 +1,6 @@
 # READ-1 — The generated read API: one options shape, one execution path, scoped everywhere
 
-**Status:** Draft (design — implementation follows in the same PR)
+**Status:** Implemented (2026-11-11) — this document is the post-implementation truth; §10 records what building it changed
 **Date:** 2026-11-11
 **Issues:** #840 (caller `where` on the include path) · #841 (`columns` + `findByIds`) · #842 (`withRequester`) · #843 (exported scope) · follow-up #844 · **Project:** #578 · **Epic:** #580
 **Depends on:** REL-2 (#587, typed `with` + per-hop scope) · TEN-1 (#585) · #791 (configurable tenant column, PR #839 —
@@ -68,7 +68,7 @@ The fix is not five patches. It is one read surface, specified once:
 
 Two execution paths per method, each with its own rendering of the caller's inputs, and the include path is only
 exercised when a `with` is present. REL-2's Found #9 happened because one path was never driven on a scoped entity;
-Found #2 and DOGFOOD #2 happened because a value rendered for one path was carried into the other.
+Found #2 and #840 happened because a value rendered for one path was carried into the other.
 
 ---
 
@@ -159,8 +159,10 @@ findByEmail<C …, W …>(email: string, opts?: { columns?: C; with?: W }): Prom
 | a `columns` mask that omits `id` | still ordered: the statement selects `id` anyway and the key is stripped from each row before return, so the result type (no `id`) is the truth |
 | a large id list | one `in ($1…$n)`; Postgres caps a statement at 65 535 parameters. Not chunked — chunking would silently become several statements (I4). Documented on the method |
 
-`columns: {}` (an empty mask) throws, naming the repository: it selects nothing at runtime and types as an empty
-object, which is never what a caller meant. Masks are inclusion (`{ a: true }`) or exclusion (`{ a: false }`) —
+`columns: {}` (an empty mask) is rejected **twice**: at compile time — `ReadOptions<C, W>` types the slot as
+`C & NonEmptyMask<C>`, which demands an impossible key when `keyof C` is `never` (asserted by a `@ts-expect-error` in
+the smoke's type tests) — and at runtime by `checkColumns`, which throws naming the repository for a mask built
+dynamically. It selects nothing at runtime and types as an empty object, which is never what a caller meant. Masks are inclusion (`{ a: true }`) or exclusion (`{ a: false }`) —
 Drizzle's own rule, unchanged.
 
 ### 2.5 Designed for: return variants (not built)
@@ -210,7 +212,7 @@ Why one path, and not "fix the include path's `where`":
   has no `with` slot). So the single path covers every entity.
 
 Cost, measured in §10 as it lands: the plain read's SQL changes shape (`from "accounts" as "d0"` instead of
-`from "accounts"`). Postgres plans both identically; REL-2 §1 and the host measurement (DOGFOOD #18) found the RQBv2
+`from "accounts"`). Postgres plans both identically; REL-2 §1 and a host's `EXPLAIN ANALYZE` found the RQBv2
 root subquery pruned to the selected columns. Baselines and the golden snapshot regenerate (I7).
 
 ### 3.2 The root filter is ONE base-class function
@@ -221,9 +223,10 @@ protected rootFilter(where?: RowFilter<TTable>): (t: TTable) => SQL;
 ```
 
 It returns the `RAW` callback: `(t) => and(where?.(t), scopeFilter(t, scopeConfigFor({ softDelete }), owner)) ?? true`.
-Every generated read uses it as `where: { RAW: this.rootFilter(…) }`, ANDed with the method's own key predicate
-(`{ id: { eq: id } }`, `{ id: { in: ids } }`, `{ ownerId: { eq: v } }` — RQBv2 object filters, which render against the
-alias by construction). It **replaces** `rootScopeRawOn` (no parallel helper, I7). `orderByOn(t, sort)` stays and is
+Every generated read uses it as its ENTIRE root `where` — `where: { RAW: this.rootFilter((t) => eq(t.id, id)) }`,
+`(t) => inArray(t.id, unique)`, `(t) => and(eq(t.a, a), eq(t.b, b))` for a finder, `query?.where` for `list` — so a
+read has exactly one root predicate and it is rendered on the alias (§10 Found #2 for why the key predicate is a row
+filter rather than an RQBv2 object filter beside it). It **replaces** `rootScopeRawOn` (no parallel helper, I7). `orderByOn(t, sort)` stays and is
 used the same way, inside an `orderBy: (t) => …` callback.
 
 So the three call sites of REL-2 §3 become: `scopeAnd()` (core builder: base reads, count, by-id writes),
@@ -281,11 +284,11 @@ had combined it with `with` yet.)
   not a callback (`{ RAW: someSql }`, `{ RAW: callerWhere }`) — across `templates/`, `src/emitters/`, `runtime/` and
   the golden snapshot. A `RAW` slot on an aliased statement takes a callback or nothing.
 - **Runtime:** §8.2's integration test runs `list({ where, with })` on a scoped entity through a generated repository
-  against Postgres — the test that would have caught DOGFOOD #2, red before the fix.
+  against Postgres — the test that would have caught #840, red before the fix.
 
 ---
 
-## §5 Reading outside a repository: the exported scope (#21, #12)
+## §5 Reading outside a repository: the exported scope (#843)
 
 ### 5.1 The manifest exports every entity table's `ScopeConfig`
 
@@ -299,7 +302,7 @@ export const SCOPES = {
   accounts: ACCOUNTS_SCOPE,
   contacts: CONTACTS_SCOPE,
   opportunities: UNSCOPED,
-} as const satisfies { [K in keyof typeof schema]?: ScopeConfig };
+} as const satisfies Partial<Record<keyof typeof schema, ScopeConfig>>;
 ```
 
 - Constants are `export`ed and emitted for **every entity table that declares any scope**, not only for hop targets (a
@@ -332,7 +335,7 @@ await db.query.accounts.findMany({
 repository applies (§3.2's one function). Repositories do **not** read `SCOPES`: their posture is the emitted
 `behaviors` + `scopeEnforcement`, both from the same YAML declaration (I1 is "derive from the declaration", REL-2 §3).
 
-### 5.3 #12 — the rule, and how far it is enforced
+### 5.3 Raw `db.query` — the rule, and how far it is enforced
 
 **Rule:** *a read that calls `db.query.<table>` directly gets hop scoping from the manifest and root scoping from
 nobody. Route it through a generated repository; if it cannot be (a cross-entity loader), its root `where` must AND
@@ -346,13 +349,13 @@ Enforced:
 
 **Considered and deferred: a root-scoping client.** Wrapping `db.query.<t>.findFirst/findMany` (and `tx.query`) at the
 emitted database module so every root read ANDs `SCOPES.<t>` would make root scoping structural for hand-written reads,
-exactly as REL-2 §1.4 made hop scoping structural. It is the right end state for #12 and it is deferred because it
+exactly as REL-2 §1.4 made hop scoping structural. It is the right end state for raw `db.query` reads (#844) and it is deferred because it
 wraps Drizzle's query builders and transaction handles at runtime — a separate design (interaction with `withAllTenants`,
 transactions, and repositories double-applying the root) that deserves its own spec. Filed as a follow-up (§11).
 
 ---
 
-## §6 `withRequester` awaits inside the context (#4)
+## §6 `withRequester` awaits inside the context (#842)
 
 ```ts
 export function withRequester<T>(ctx: RequesterContext, fn: () => PromiseLike<T> | T): Promise<T> {
@@ -382,7 +385,7 @@ that return a builder.
 
 ## §8 Tests that prove it
 
-Every one is written to fail before its fix. Counts are filled in at §10.
+Every one is written to fail before its fix; §11 records the mutations that prove it.
 
 ### 8.1 Type tests (compile-time, consumer tsconfig posture)
 
@@ -409,7 +412,7 @@ Over a generated-shape repository on a tenant + soft-delete + user-tracking enti
 
 Extending REL-2's leak graph (`region` / `site` / `sensor`, every entity scoped):
 - **R1** `list({ where, with })` on a scoped entity through a GENERATED repository executes and returns the right rows
-  (DOGFOOD #2 — red before);
+  (#840 — red before);
 - **R2** `findByIds` — order = input order, duplicates once, `[]` issues no statement, a foreign / soft-deleted id is
   absent, a mask without `id` still orders;
 - **R3** poison rows at root and at each hop are excluded on **every** method, with and without options;
@@ -444,9 +447,53 @@ The navigator accumulates an include tree and a root mask and calls one of these
 
 ## §10 Found during implementation
 
-*(filled in as the implementation lands)*
+### Found #1 — the mask's compile-time brand broke every cast on Drizzle 1.0.0-rc.5
 
-## §11 Issues
+`ReadOptions<C, W>.columns` is `C & NonEmptyMask<C>` (§2.4). Passing `opts?.columns` straight into `findMany` made
+Drizzle infer its result from `columns: C & NonEmptyMask<C>`, a different deferred type from the `C` that
+`<Entity>Result<C, W>` names. On **rc.4** (this repo's pin) the generated `rows as <Entity>Result<C, W>` still
+type-checked; on **rc.5** — the host's pin — every one was `TS2352: Conversion … may be a mistake`, 70+ errors, in every
+one of the host's 20 entity repositories. No gate here could see it: every harness runs rc.4. Found by §8.4's scratch regeneration.
+
+Fix: `checkColumns<C>(columns: (C & NonEmptyMask<C>) | undefined): C | undefined`, called with an EXPLICIT type argument
+(`this.checkColumns<C>(opts?.columns)`) — inference alone kept the brand. The query config now carries plain `C` on
+both pins. Recorded for the RC-bump checklist (DRZ-2 §A): **a Drizzle RC move must re-run a consumer regeneration, not
+only the in-repo gates** — the in-repo pin is the one version consumers are least likely to be on.
+
+### Found #2 — the key predicate is a row filter, not an RQBv2 object filter
+
+The design ANDed `{ id: { eq: id } }` / `{ <col>: { eq: v } }` object filters beside `{ RAW: this.rootFilter() }`.
+Built as `rootFilter((t) => eq(t.<col>, v))` instead, for two reasons: (1) an object filter's value is typed from the
+column's data type, while a `queries:` finder's parameter is typed from the field's `tsType` — they differ for enum and
+`choices:` columns, where `eq()` already accepted the parameter on the core path; (2) one root predicate per read is
+the property §3.1 argues for, and the grep gates (`repository-template.test.ts` counts reads against `rootFilter`
+calls) can then assert it exactly.
+
+### Found #3 — the generated service dropped `opts` on `queries:` finders
+
+`findByX(x)` forwarded only `x`, so REL-2's typed include on a declarative finder was unreachable from the service
+layer — the layer use cases call. The service now forwards the full read options with the repository's generics on
+every plain finder (`via:` / `select:` finders keep their own shapes).
+
+### Found #4 — `memberPredicate` was correct only because nobody had combined it with `with`
+
+`WithActor.memberPredicate`'s group form is an `EXISTS` correlated on the root's `id`, built against
+`this.col('id')` — the un-aliased table. It worked on `baseQuery()`; on the relational path it would have been the
+same FROM-clause error as #840. It now returns a `RowFilter`, correlated on the handle it is given.
+
+### Found #5 — smaller things fixed in passing
+
+- `SortTerm` was declared twice in `base-repository.ts` (interface merging hid it). One declaration.
+- A scoped project whose scoped entities are never hop targets would have imported `hopScope` unused into the
+  manifest; the import is now conditional on a scoped hop existing, as `UNSCOPED`'s is on an unscoped entity.
+- `withRequester` (and every hatch over it) takes `() => PromiseLike<T> | T` — a Drizzle builder is a thenable, and the
+  narrower `Promise<T>` signature was what invited returning one un-awaited.
+
+## §11 Acceptance
+
+*(gate output from the run after the last edit — see the PR body)*
+
+## §11a Issues
 
 Filed with this spec (public tracker, host described by shape only):
 - #840 — generated `list({ where, with })` renders the caller's SQL against the un-aliased root (§4);

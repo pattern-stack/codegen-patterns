@@ -581,8 +581,14 @@ export abstract class BaseRepository<
    * and types as an empty row — never what a caller meant. `NonEmptyMask`
    * rejects the literal `{}` at compile time; this catches a mask built at
    * runtime.
+   *
+   * Returns the mask typed as plain `C` — WITHOUT the `NonEmptyMask` brand — so
+   * the query config Drizzle infers its result from carries `columns: C`, the
+   * same `C` the generated `<Entity>Result<C, W>` names. With the brand still on
+   * it the two results are distinct deferred types, and on 1.0.0-rc.5 the
+   * generated `rows as <Entity>Result<C, W>` is a TS2352 (measured).
    */
-  protected checkColumns<C>(columns: C): C {
+  protected checkColumns<C>(columns: (C & NonEmptyMask<C>) | undefined): C | undefined {
     if (
       columns !== undefined &&
       columns !== null &&

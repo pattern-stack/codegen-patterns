@@ -11,8 +11,7 @@ import type {
   OpportunityResult,
 } from './opportunity.repository';
 import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
-import type { opportunities } from './opportunity.entity';
-import type { Opportunity } from './opportunity.entity';
+import type { opportunities, Opportunity } from './opportunity.entity';
 import { OrganizationRepository } from '../organizations/organization.repository';
 import type { Organization } from '../organizations/organization.entity';
 import { UserRepository } from '../users/user.repository';

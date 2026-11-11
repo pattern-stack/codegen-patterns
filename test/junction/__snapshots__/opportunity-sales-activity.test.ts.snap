@@ -357,7 +357,12 @@ import { WithAnalytics } from '@shared/base-classes/with-analytics';
 import { EVENT_BUS } from '@shared/constants/tokens';
 import { IntegratedEntityService } from '@shared/base-classes/integrated-entity-service';
 import { OpportunityRepository } from './opportunity.repository';
-import type { Opportunity } from './opportunity.entity';
+import type {
+  OpportunityColumns,
+  OpportunityResult,
+} from './opportunity.repository';
+import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
+import type { opportunities, Opportunity } from './opportunity.entity';
 import { OpportunitySalesActivityService, OpportunitySalesActivityLinkInput } from '../opportunity-sales-activities/opportunity-sales-activity.service';
 import type { OpportunitySalesActivity } from '../opportunity-sales-activities/opportunity-sales-activity.entity';
 import type { SalesActivity } from '../sales-activities/sales-activity.entity';
@@ -376,6 +381,35 @@ export class OpportunityService extends WithAnalytics(
     protected override readonly repository: OpportunityRepository,
   ) {
     super(repository);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // The read surface (READ-1 §7) — pass-through, not composition
+  //
+  // DELEGATION ONLY: the repository's signatures, forwarded so a use case or the
+  // HTTP layer can carry a column mask to the
+  // one place that executes and scopes it. No join logic, no sibling-repository
+  // calls, no navigator — the navigator is REL-3's (#588).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  override findById<C extends OpportunityColumns | undefined = undefined>(
+    id: string,
+    opts?: ReadOptions<C, never>,
+  ): Promise<OpportunityResult<C> | null> {
+    return this.repository.findById<C>(id, opts);
+  }
+
+  override findByIds<C extends OpportunityColumns | undefined = undefined>(
+    ids: readonly string[],
+    opts?: ReadOptions<C, never>,
+  ): Promise<Array<OpportunityResult<C>>> {
+    return this.repository.findByIds<C>(ids, opts);
+  }
+
+  override list<C extends OpportunityColumns | undefined = undefined>(
+    options?: ListOptions<typeof opportunities> & ReadOptions<C, never>,
+  ): Promise<Array<OpportunityResult<C>>> {
+    return this.repository.list<C>(options);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
@@ -436,7 +470,12 @@ import { WithAnalytics } from '@shared/base-classes/with-analytics';
 import { EVENT_BUS } from '@shared/constants/tokens';
 import { ActivityEntityService } from '@shared/base-classes/activity-entity-service';
 import { SalesActivityRepository } from './sales-activity.repository';
-import type { SalesActivity } from './sales-activity.entity';
+import type {
+  SalesActivityColumns,
+  SalesActivityResult,
+} from './sales-activity.repository';
+import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
+import type { sales_activities, SalesActivity } from './sales-activity.entity';
 import { OpportunitySalesActivityService, OpportunitySalesActivityLinkInput } from '../opportunity-sales-activities/opportunity-sales-activity.service';
 import type { OpportunitySalesActivity } from '../opportunity-sales-activities/opportunity-sales-activity.entity';
 import type { Opportunity } from '../opportunities/opportunity.entity';
@@ -455,6 +494,35 @@ export class SalesActivityService extends WithAnalytics(
     protected override readonly repository: SalesActivityRepository,
   ) {
     super(repository);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // The read surface (READ-1 §7) — pass-through, not composition
+  //
+  // DELEGATION ONLY: the repository's signatures, forwarded so a use case or the
+  // HTTP layer can carry a column mask to the
+  // one place that executes and scopes it. No join logic, no sibling-repository
+  // calls, no navigator — the navigator is REL-3's (#588).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  override findById<C extends SalesActivityColumns | undefined = undefined>(
+    id: string,
+    opts?: ReadOptions<C, never>,
+  ): Promise<SalesActivityResult<C> | null> {
+    return this.repository.findById<C>(id, opts);
+  }
+
+  override findByIds<C extends SalesActivityColumns | undefined = undefined>(
+    ids: readonly string[],
+    opts?: ReadOptions<C, never>,
+  ): Promise<Array<SalesActivityResult<C>>> {
+    return this.repository.findByIds<C>(ids, opts);
+  }
+
+  override list<C extends SalesActivityColumns | undefined = undefined>(
+    options?: ListOptions<typeof sales_activities> & ReadOptions<C, never>,
+  ): Promise<Array<SalesActivityResult<C>>> {
+    return this.repository.list<C>(options);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

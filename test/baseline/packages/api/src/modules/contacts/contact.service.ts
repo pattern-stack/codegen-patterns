@@ -11,8 +11,7 @@ import type {
   ContactResult,
 } from './contact.repository';
 import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
-import type { contacts } from './contact.entity';
-import type { Contact } from './contact.entity';
+import type { contacts, Contact } from './contact.entity';
 import { AccountRepository } from '../accounts/account.repository';
 import type { Account } from '../accounts/account.entity';
 import { UserRepository } from '../users/user.repository';

@@ -11,6 +11,20 @@ varchar(n) USING "col"::varchar(n)`, and an explicit cast to `varchar(n)` cuts t
 characters rather than failing. Before migrating, run `select max(length(col)) from <table>` on
 every such column and raise `max_length` (or clean the data) wherever it exceeds `n`.
 
+**Breaking (generated read API, READ-1 — `docs/specs/READ-1.md`).** Regenerate
+(`codegen entity new --all --force`, plus `junction new --all --force`) and update the call
+sites below. Each break is one shape, and the compiler finds every one of them.
+
+| Break | Before | After |
+|---|---|---|
+| `ListOptions.where` / `count(where)` is a row filter (#840) | `repo.list({ where: eq(accounts.name, x) })` · `repo.count(eq(accounts.name, x))` | `repo.list({ where: (t) => eq(t.name, x) })` · `repo.count((t) => eq(t.name, x))` |
+| `ListOptions.orderBy` is removed | `repo.list({ orderBy: desc(accounts.createdAt) })` | `repo.list({ sort: [{ column: 'createdAt', direction: 'desc' }] })` |
+| `ListOptions` is generic over its table | `ListOptions` | `ListOptions<typeof accounts>` |
+| `<Entity>Result` / `ResultOf` take the column mask first | `AccountResult<TWith>` · `ResultOf<'accounts', TWith>` | `AccountResult<undefined, TWith>` (both defaulted; `AccountResult` alone is the row) · `ResultOf<'accounts', TColumns, TWith>` |
+| `WithActor.memberPredicate` returns a row filter | `list({ where: repo.memberPredicate(id) })` with an `SQL` | the same call; the value is now `(table) => SQL` — pass it as `where`, or call it with a table |
+| `BaseRepository.rootScopeRawOn(t, …)` is replaced | `{ RAW: (t) => this.rootScopeRawOn(t, { softDelete }) }` | `{ RAW: this.rootFilter(pred) }` |
+| Plain generated reads run on the relational query builder | `findById(id)` → `select … from "accounts" where …` | `select "d0"."id" … from "accounts" as "d0" where …` — same rows, same plan; any test asserting the old SQL text changes |
+
 ### Breaking
 
 - **A `belongs_to` foreign key is NOT NULL by default (#850, DDL).** Before, an FK that neither the
@@ -29,6 +43,18 @@ every such column and raise `max_length` (or clean the data) wherever it exceeds
 
 ### Added
 
+- **One read surface on every generated read (READ-1, #841).** `findById`, `findByIds`, `list` and
+  every plain `queries:` / `belongs_to` finder take `{ columns?, with? }`; the result type is
+  inferred exactly at the call site, nested masks included. `findByIds(ids, { columns, with })` is
+  one statement: `[]` issues none, duplicates are read once, rows come back in input order, and a
+  missing / soft-deleted / out-of-scope id is absent. An empty `columns: {}` is a compile error and
+  a runtime throw. Every generated read executes on one path (RQBv2) with one root filter
+  (`rootFilter`), so the root and every hop are scoped on every method. The generated service
+  forwards the same options, including on `queries:` finders (it dropped them before).
+- **The relations manifest exports its scope (#843).** `export const <TABLE>_SCOPE` for every
+  scoped entity table and `export const SCOPES` over every entity table (unscoped ones as
+  `UNSCOPED`). `scopedRoot(SCOPES.<table>, owner)` root-scopes a hand-written `db.query.*` read,
+  whose hops the manifest already scoped.
 - **Configurable tenancy column (#791).** `tenant_scoped` no longer hard-codes `tenant_id`.
   `codegen.config.yaml` takes `tenancy: { column: <snake_name> }` (default `tenant_id`), and an
   entity may write `tenant_scoped: { column: <snake_name> }` to override it. If the entity already
@@ -167,6 +193,13 @@ every such column and raise `max_length` (or clean the data) wherever it exceeds
 - **A junction `role` without `choices:` is a column (#740).** It used to be deleted
   silently. Now it's emitted as its declared type, and it's part of the key only when it's an enum
   with `choices:`.
+- **`list({ where, with })` no longer fails with `invalid reference to FROM-clause entry`
+  (#840).** The caller's predicate is rendered against the aliased root. A non-callback `RAW:` is
+  now banned by `no-untethered-raw-callback.test.ts`.
+- **`withRequester(ctx, () => db.query…)` builds the query inside the context (#842).** Drizzle
+  queries are lazy thenables; `withRequester` now awaits the callback's value inside the ALS, so a
+  returned builder no longer escapes it (a throw under `strict`, an unscoped read under `lenient`).
+  The callback may return `PromiseLike<T> | T`.
 - **A field named `tenant_id` on a `tenant_scoped` entity no longer emits a duplicate column
   (#715).** It is adopted as the tenant column (TS1117 before). The upsert `set` also drops the
   tenant column at runtime, whatever a hand-written integration config lists.

@@ -31,6 +31,61 @@ Choosing a family:
 App-defined patterns are also supported (a project can register its own family
 base); use the project's existing convention if one is present.
 
+## Reading: one options shape on every read (READ-1)
+
+Every generated read — `findById`, `findByIds`, `list`, and each plain `queries:` /
+`belongs_to` finder — takes the same options, and the result type is inferred
+exactly at the call site:
+
+```ts
+// a root column mask and a typed include tree, each hop with its own mask
+const page = await observations.findByIds(ids, {
+  columns: { id: true, type: true, occurredAt: true },
+  with: { account: { columns: { name: true } } },
+});
+// page: Array<{ id: string; type: …; occurredAt: Date; account: { name: string } }>
+
+await accounts.list({
+  where: (t) => eq(t.status, 'active'),     // a ROW FILTER — a function of the table
+  sort: [{ column: 'name', direction: 'asc' }],
+  limit: 50,
+  columns: { id: true, name: true },
+});
+```
+
+- **`where` is a function of the table, never a pre-built `SQL`.** Reads run on the
+  relational query builder, which aliases the table (`"accounts" as "d0"`); a
+  predicate built from the imported table names a table that is not in scope and
+  Postgres rejects it. `count(where)` takes the same function, so a page and its
+  total describe one set. There is no `orderBy`: use `sort`.
+- **`findByIds`**: `[]` issues no query; duplicates are read once; rows come back in
+  the **input order**; a missing, soft-deleted or out-of-scope id is simply absent.
+  One `in (…)` — chunk yourself past ~65k ids.
+- **`columns`** is an inclusion (`{ a: true }`) or exclusion (`{ a: false }`) mask;
+  an empty mask is a compile error. Omit it for the whole row.
+- **Root and every hop are scoped** (tenant, soft-delete, user) on every method.
+- Hoist a mask or include into a `const` **without** a type annotation (or with
+  `as const`) — annotating it with `<Entity>Columns` / `<Entity>Include` widens it.
+
+**Reading outside a repository.** A hand-written `db.query.<table>` read gets every
+HOP scoped by the generated relations manifest, but its ROOT is scoped by nobody.
+Go through the generated repository; if you can't (a cross-entity loader), AND the
+exported root scope into the root `where`:
+
+```ts
+import { SCOPES } from '@generated/relations';
+import { scopedRoot } from '@shared/base-classes/scope-filters';
+
+await db.query.accounts.findMany({
+  where: { AND: [{ id: { in: ids } }, scopedRoot(SCOPES.accounts, 'AccountLoader')] },
+});
+```
+
+**`withRequester` and lazy queries.** A Drizzle query builds its statement — and
+reads the requester context — when it is awaited. `withRequester(ctx, () => …)`
+awaits the callback's value inside the context, so returning an un-awaited
+`db.query…` from the callback is safe.
+
 ## Declarative queries (the `queries:` block)
 
 A `queries:` entry generates a typed repository method, the interface

@@ -11,8 +11,7 @@ import type {
   UserResult,
 } from './user.repository';
 import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
-import type { users } from './user.entity';
-import type { User } from './user.entity';
+import type { users, User } from './user.entity';
 import { PersonRepository } from '../persons/person.repository';
 import type { Person } from '../persons/person.entity';
 import { OpportunityRepository } from '../opportunities/opportunity.repository';

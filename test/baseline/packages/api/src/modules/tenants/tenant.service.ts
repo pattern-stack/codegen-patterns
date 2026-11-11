@@ -9,8 +9,7 @@ import type {
   TenantResult,
 } from './tenant.repository';
 import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
-import type { tenants } from './tenant.entity';
-import type { Tenant } from './tenant.entity';
+import type { tenants, Tenant } from './tenant.entity';
 
 @Injectable()
 export class TenantService extends WithAnalytics(

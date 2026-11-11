@@ -11,8 +11,7 @@ import type {
   DealStateResult,
 } from './deal-state.repository';
 import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
-import type { deal_states } from './deal-state.entity';
-import type { DealState } from './deal-state.entity';
+import type { deal_states, DealState } from './deal-state.entity';
 import { OpportunityRepository } from '../opportunities/opportunity.repository';
 import type { Opportunity } from '../opportunities/opportunity.entity';
 

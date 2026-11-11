@@ -365,6 +365,21 @@ before them (#566, #612).
 All families get `findById`, `findByIds`, `list`, `count`, `exists`, `create`,
 `update`, `delete`, `upsertMany`. Writes take an optional `tx`.
 
+**The read surface (READ-1, `docs/specs/READ-1.md`).** Every generated read —
+`findById`, `findByIds`, `list`, each plain `queries:` and `belongs_to` finder — takes
+`{ columns?, with? }` (`with` only when the entity declares a relationship), typed by
+per-call generics `<C, W>` emitted on the generated subclass (REL-2 §2.1's TS2536 keeps
+them off the base). ONE execution path: every generated read runs on RQBv2 with
+`where: { RAW: this.rootFilter(pred) }` — the caller's predicate AND the scope, both
+rendered on the alias. `ListOptions<TTable>.where` / `count(where)` are a
+`RowFilter<TTable>` (`(t) => SQL`); a pre-rendered `SQL` and `orderBy` do not exist
+(`no-untethered-raw-callback.test.ts` bans a non-callback `RAW:`). `findByIds`: no
+statement for `[]`, de-duplicated, input order, absent ids dropped. The manifest
+exports every scoped table's `<TABLE>_SCOPE` and a `SCOPES` map (unscoped tables as
+`UNSCOPED`); `scopedRoot(cfg, owner)` root-scopes a hand-written `db.query`.
+`withRequester` awaits its callback inside the ALS, so a lazy thenable builds in
+context. `<Entity>Result<TColumns, TWith>` (both defaulted); `ResultOf<T, C, W>`.
+
 | Family | Adds |
 |---|---|
 | Integrated | `findByExternalId`, `findManyByExternalIds`, `integrationUpsert` — no user-ownership finders: the pattern declares no `user_id` (#746) |

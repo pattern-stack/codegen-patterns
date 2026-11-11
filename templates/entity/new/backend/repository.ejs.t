@@ -275,7 +275,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
   ): Promise<<%- _readResult %> | null> {
     const row = await this.db.query.<%= entityNamePlural %>.findFirst({
       where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
-      columns: this.checkColumns(opts?.columns),<%- _withLine %>
+      columns: this.checkColumns<C>(opts?.columns),<%- _withLine %>
     });
     return (row as <%- _readResult %> | undefined) ?? null;
   }
@@ -293,7 +293,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
   ): Promise<Array<<%- _readResult %>>> {
     const unique = this.uniqueIds(ids);
     if (unique.length === 0) return [];
-    const mask = this.byIdsColumns(this.checkColumns(opts?.columns));
+    const mask = this.byIdsColumns(this.checkColumns<C>(opts?.columns));
     const rows = await this.db.query.<%= entityNamePlural %>.findMany({
       where: { RAW: this.rootFilter((t) => inArray(t.id, unique)) },
       columns: mask.columns,<%- _withLine %>
@@ -311,7 +311,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
     const sort = query?.sort;
     const rows = await this.db.query.<%= entityNamePlural %>.findMany({
       where: { RAW: this.rootFilter(query?.where) },
-      columns: this.checkColumns(query?.columns),<%- includes ? '\n      with: query?.with,' : '' %>
+      columns: this.checkColumns<C>(query?.columns),<%- includes ? '\n      with: query?.with,' : '' %>
       orderBy: sort === undefined || sort.length === 0 ? undefined : (t) => this.orderByOn(t, sort) ?? [],
       limit: query?.limit,
       offset: query?.offset,
@@ -357,13 +357,13 @@ _%>
 <% if (q.isUnique) { -%>
     const row = await this.db.query.<%= entityNamePlural %>.findFirst({
       where: { RAW: this.rootFilter((t) => <%- _predExpr %>) },
-      columns: this.checkColumns(opts?.columns),<%- _withLine %>
+      columns: this.checkColumns<C>(opts?.columns),<%- _withLine %>
     });
     return (row as <%- _readResult %> | undefined) ?? null;
 <% } else { -%>
     const rows = await this.db.query.<%= entityNamePlural %>.findMany({
       where: { RAW: this.rootFilter((t) => <%- _predExpr %>) },
-      columns: this.checkColumns(opts?.columns),<%- _withLine %>
+      columns: this.checkColumns<C>(opts?.columns),<%- _withLine %>
 <%- q.hasOrder ? `      orderBy: { ${q.orderBy}: '${q.orderDirection}' },\n` : '' %>    });
     return rows as Array<<%- _readResult %>>;
 <% } -%>
@@ -389,7 +389,7 @@ _%>
   ): Promise<Array<<%- _readResult %>>> {
     const rows = await this.db.query.<%= entityNamePlural %>.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.<%= rel.camelField %>, id)) },
-      columns: this.checkColumns(opts?.columns),<%- _withLine %>
+      columns: this.checkColumns<C>(opts?.columns),<%- _withLine %>
       limit: opts?.limit,
     });
     return rows as Array<<%- _readResult %>>;

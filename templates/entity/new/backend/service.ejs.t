@@ -28,8 +28,7 @@ import type {
   <%= E %>Result,
 } from './<%= entityFileStem %>.repository';
 import type { ListOptions, ReadOptions } from '<%= baseRepositoryImport %>';
-import type { <%= entityNamePlural %> } from './<%= entityFileStem %>.entity';
-import type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
+import type { <%= entityNamePlural %>, <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 <% if (eavEnabled) { -%>
 import { FieldValueService } from '<%= eavFieldValueImportDir %>/<%= eavFieldValueStem %>.service';
 <% } -%>

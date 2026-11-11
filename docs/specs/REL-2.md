@@ -443,6 +443,10 @@ the **target** entity's declared scope. Three consequences for the REL-1 artefac
 
 ## §4 REL-3's contract — what the navigator will consume
 
+> **Revised 2026-11-11.** READ-1 widened this contract — every read also takes a root `columns` mask, `findByIds` takes
+> the same options, and `<Entity>Result` is now `<TColumns, TWith>` (both defaulted). The current table is
+> `docs/specs/READ-1.md` §9; the one below is what REL-2 shipped.
+
 Stated here so REL-3 does not have to re-derive it:
 
 | Name | Shape |
