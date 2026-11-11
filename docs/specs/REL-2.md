@@ -27,7 +27,7 @@ This spec's per-hop predicate is ADR-042's predicate, evaluated at a different p
 | From TEN-1 / ADR-042 §3–§4 | REL-2's use |
 |---|---|
 | `behaviors.tenantScoped` (from `tenant_scoped: true`) | one of the three flags a hop's scope config carries |
-| `behaviors.tenantColumn` (#791 — the configured or adopted tenant column, when not `tenant_id`) | carried beside `tenantScoped` in the manifest's per-entity constant, so a hop filters on the column the target table has |
+| `behaviors.tenantColumn` (#791 — the configured or adopted tenant column, always present on a scoped entity) | carried beside `tenantScoped` in the manifest's per-entity constant, always rendered, so a hop filters on the column the target table has |
 | `getTenantId(enforcement)` — three-state: a string, an explicit `null`, or absent (throws under `strict`) | called by the hop predicate, at query-build time |
 | `scopeEnforcement: 'lenient' \| 'strict'`, default `strict` for tenant-scoped entities | decides whether a missing context is silence or a throw |
 | `tenantPredicate()` inside `scopeAnd()` | REL-2 **refactors this into a shared builder** (§3) rather than writing a second copy |
@@ -369,14 +369,15 @@ As shipped (`runtime/base-classes/scope-filters.ts`) — every function takes an
 the RELATION in a throw, so a misdeclaration points at the declaration that is wrong:
 
 ```ts
-export interface ScopeConfig {
-  tenantScoped: boolean;
-  /** #791 — the tenant column's key when it is not `tenantId`; absent ⇒ `'tenantId'`. */
-  tenantColumn?: string;
+export type ScopeConfig = TenantAxis & {
   softDelete: boolean;
   userTracking: boolean;
   enforcement: 'lenient' | 'strict';
-}
+};
+/** #791 — `tenantColumn` (the column's camelCase key) is REQUIRED when scoped; no default key. */
+export type TenantAxis =
+  | { tenantScoped: true; tenantColumn: string }
+  | { tenantScoped: false; tenantColumn?: undefined };
 
 /** soft-delete ∧ user axis ∧ tenant axis, for ONE table, read from the ALS at call time. */
 export function scopeFilter(table: PgTable, cfg: ScopeConfig, owner: string): SQL | undefined;
@@ -387,8 +388,8 @@ export function hopScope(table: PgTable, cfg: ScopeConfig, owner: string): SQL;
 /** The two axes on their own, so the class can expose a handle on each. */
 export function userScopePredicateFor(table, enforcement, owner): SQL | undefined;
 export function tenantAxisPredicate(table, cfg, owner): SQL | undefined;
-/** TEN-1 §3.1's primitive, rehoused here because this is what composes it. `tenantColumn` defaults to `'tenantId'` (#791). */
-export function tenantPredicateFor(table, tenantId, owner, tenantColumn?): SQL | undefined;
+/** TEN-1 §3.1's primitive, rehoused here because this is what composes it. `tenantColumn` is required (#791) — no default key. */
+export function tenantPredicateFor(table, tenantId, owner, tenantColumn: string): SQL | undefined;
 ```
 
 Three call sites, one implementation:

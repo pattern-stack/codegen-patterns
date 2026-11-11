@@ -12,8 +12,9 @@ post-implementation truth: the gate's four decisions are recorded in §Decisions
 > **Later change — 2026-11-11 (#791).** Every `tenant_id` / `tenantId` this spec names is now the *resolved* tenant
 > column: `tenancy.column` in `codegen.config.yaml` (default `tenant_id`) or the entity's `tenant_scoped: { column }`,
 > and a field or `belongs_to` FK already named that column is adopted rather than emitted twice. The runtime reads
-> `BehaviorConfig.tenantColumn` (absent = `'tenantId'`). The default output is unchanged. See ADR-042's 2026-11-11
-> revision note.
+> `BehaviorConfig.tenantColumn`, which is required when `tenantScoped: true` and always emitted (`'tenantId'` for the
+> default column; a repository's `behaviors` literal and the manifest's scope constants now both carry it). See
+> ADR-042's 2026-11-11 revision note.
 
 ## Why
 

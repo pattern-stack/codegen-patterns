@@ -107,12 +107,21 @@
 >    (whose default name becomes `<table>_<column>_<cols>_uniq`), the external-id constraint's columns, the emitted
 >    integration `conflictTarget`, and the relations manifest's per-entity scope constant. The external-id
 >    constraint keeps its name, `uq_<table>_tenant_provider_external_id` — "tenant" names the concept there.
-> 4. **Runtime.** `BehaviorConfig` and `ScopeConfig` gain an optional `tenantColumn` (the camelCase key). Absent
->    means `'tenantId'`, and the generator writes it only when the column is named otherwise, so a default project's
->    output is byte-identical. It is the one optional `BehaviorConfig` field because forgetting it is loud: the table
->    has no `tenantId`, so the first scoped query throws naming the repository or relation. `tenantPredicateFor`,
->    `stampTenant`, `guardTenantOnUpdate`, the integrated conflict target and `upsertMany`'s refusal all read it.
->    The ambient context keeps `tenantId` — it names the value, not a column.
+> 4. **Runtime.** `BehaviorConfig` and `ScopeConfig` gain `tenantColumn` (the camelCase key), **required whenever
+>    `tenantScoped: true`** — a discriminated union, so a literal that says scoped and omits the column does not
+>    compile — and always emitted by the generator (the repository's `behaviors` literal and the manifest's scope
+>    constants), `tenantId` included. There is no default key. (An earlier draft made it optional, "because
+>    forgetting it is loud"; that was true for reads only. On `create()`, Drizzle drops an insert key the table does
+>    not have, so a hand-written repository over an `organization_id` table would have stamped `tenantId`, lost it
+>    silently and written the row into the null-tenant partition.) `stampTenant` and `guardTenantOnUpdate` also
+>    resolve the key on the table (`column()`), so a wrong column throws on writes, naming the repository, as it does
+>    on reads. `tenantPredicateFor`, the integrated conflict target and `upsertMany`'s refusal all read it. Error
+>    messages render the DB column name. The ambient context keeps `tenantId` — it names the value, not a column.
+> 5. **A `required: true` adopted column leaves the null-tenant partition.** §4's null partition assumes the tenant
+>    column is nullable. An adopted field or `belongs_to` keeps its own nullability, so a `required: true` one is
+>    NOT NULL: a requester with no tenant makes `stampTenant` write `null` into it, and Postgres raises 23502 (a 500
+>    on the request). That is the right failure for a table that must always have an owner, but it means such an
+>    entity cannot hold null-tenant rows. Declare the adopted column nullable if it must.
 >
 > The rule lives in one place, `resolveTenancy` (`src/schema/tenancy.ts`), read by the entity prompt, the relations
 > emitter and the integration sink derivation. Still open: a `references:` key for a real FK on an emitted tenant

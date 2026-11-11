@@ -15,9 +15,16 @@ All notable changes to this project will be documented in this file.
   The column, its index, the per-tenant unique prefix, the external-id constraint, the integration
   conflict target and the relations manifest's hop predicates all use the resolved column. An
   adopted column leaves the create/update DTOs and the integration upsert's write surface, as an
-  emitted one does. Runtime: `BehaviorConfig` / `ScopeConfig` gain an optional `tenantColumn`
-  (camelCase key; absent means `tenantId`). A project that sets neither key regenerates
-  byte-identically.
+  emitted one does. Runtime: `BehaviorConfig` / `ScopeConfig` gain `tenantColumn` (the camelCase
+  key), **required whenever `tenantScoped: true`** (a discriminated union the compiler enforces) and
+  **always emitted** — in the generated repository and in the relations manifest's scope constants,
+  default `tenantId` included. There is no default key at runtime: a hand-written repository that
+  omits it does not compile, and `stampTenant` / `guardTenantOnUpdate` resolve the column on the
+  table, so a wrong one throws on writes (naming the repository) as it does on reads. The project
+  column is a required `string` through every layer, including the frontend graph
+  (`tenancy.column` now reaches its `buildRelationGraph` call). Note: an adopted `required: true`
+  column takes the entity out of the null-tenant partition — a requester with no tenant gets a
+  not-null violation (23502) on create.
 
 ### Fixed
 
