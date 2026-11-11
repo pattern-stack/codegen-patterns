@@ -57,26 +57,27 @@ export async function rootMask(): Promise<void> {
 }
 
 export async function maskAndInclude(): Promise<void> {
-	// Root mask + a to-one include with its own mask (`account` is NOT NULL ⇒ not nullable).
+	// Root mask + a to-one include with its own mask. `account` is NOT NULL, but `accounts` is
+	// soft-deleted + user-tracked (`pattern: Integrated`), so the hop can drop it: nullable (#850).
 	const c = await contactRepo.findById('x', {
 		columns: { id: true, email: true },
 		with: { account: { columns: { name: true } } },
 	});
-	assert<Equal<typeof c, { id: string; email: string; account: { name: string } } | null>>();
+	assert<Equal<typeof c, { id: string; email: string; account: { name: string } | null } | null>>();
 
 	// Two levels deep, masked at both.
 	const a = await accountRepo.findById('x', {
 		columns: { name: true },
 		with: { contacts: { columns: { email: true }, with: { account: { columns: { id: true } } } } },
 	});
-	assert<Equal<typeof a, { name: string; contacts: Array<{ email: string; account: { id: string } }> } | null>>();
+	assert<Equal<typeof a, { name: string; contacts: Array<{ email: string; account: { id: string } | null }> } | null>>();
 
 	// findByIds: one statement for the page, mask + includes.
 	const page = await contactRepo.findByIds(['a', 'b'], {
 		columns: { id: true, firstName: true },
 		with: { account: { columns: { name: true } } },
 	});
-	assert<Equal<typeof page, Array<{ id: string; firstName: string; account: { name: string } }>>>();
+	assert<Equal<typeof page, Array<{ id: string; firstName: string; account: { name: string } | null }>>>();
 }
 
 export async function finders(): Promise<void> {
@@ -85,7 +86,7 @@ export async function finders(): Promise<void> {
 	assert<Equal<typeof byEmail, { id: string } | null>>();
 	// A non-unique declarative finder on an enum-ish column, with an include.
 	const byStage = await opportunityRepo.findByStage('won' as never, { columns: { id: true }, with: { account: { columns: { name: true } } } });
-	assert<Equal<(typeof byStage)[number]['account'], { name: string }>>();
+	assert<Equal<(typeof byStage)[number]['account'], { name: string } | null>>();
 	// A `belongs_to` finder takes the same options plus its own `limit`.
 	const byAccount = await contactRepo.findByAccountId('a', { columns: { email: true }, limit: 10 });
 	assert<Equal<typeof byAccount, Array<{ email: string }>>>();
