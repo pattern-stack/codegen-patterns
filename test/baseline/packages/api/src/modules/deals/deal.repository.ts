@@ -165,7 +165,7 @@ export class DealRepository extends IntegratedEntityRepository<
   ): Promise<DealResult<C, W> | null> {
     const row = await this.db.query.deals.findFirst({
       where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
-      columns: this.checkColumns(opts?.columns),
+      columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
     });
     return (row as DealResult<C, W> | undefined) ?? null;
@@ -184,7 +184,7 @@ export class DealRepository extends IntegratedEntityRepository<
   ): Promise<Array<DealResult<C, W>>> {
     const unique = this.uniqueIds(ids);
     if (unique.length === 0) return [];
-    const mask = this.byIdsColumns(this.checkColumns(opts?.columns));
+    const mask = this.byIdsColumns(this.checkColumns<C>(opts?.columns));
     const rows = await this.db.query.deals.findMany({
       where: { RAW: this.rootFilter((t) => inArray(t.id, unique)) },
       columns: mask.columns,
@@ -203,7 +203,7 @@ export class DealRepository extends IntegratedEntityRepository<
     const sort = query?.sort;
     const rows = await this.db.query.deals.findMany({
       where: { RAW: this.rootFilter(query?.where) },
-      columns: this.checkColumns(query?.columns),
+      columns: this.checkColumns<C>(query?.columns),
       with: query?.with,
       orderBy: sort === undefined || sort.length === 0 ? undefined : (t) => this.orderByOn(t, sort) ?? [],
       limit: query?.limit,
@@ -222,7 +222,7 @@ export class DealRepository extends IntegratedEntityRepository<
   ): Promise<Array<DealResult<C, W>>> {
     const rows = await this.db.query.deals.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.stage, stage)) },
-      columns: this.checkColumns(opts?.columns),
+      columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
     });
     return rows as Array<DealResult<C, W>>;
@@ -234,7 +234,7 @@ export class DealRepository extends IntegratedEntityRepository<
   ): Promise<Array<DealResult<C, W>>> {
     const rows = await this.db.query.deals.findMany({
       where: { RAW: this.rootFilter((t) => and(eq(t.ownerId, ownerId), eq(t.stage, stage))) },
-      columns: this.checkColumns(opts?.columns),
+      columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
     });
     return rows as Array<DealResult<C, W>>;
@@ -253,7 +253,7 @@ export class DealRepository extends IntegratedEntityRepository<
   ): Promise<Array<DealResult<C, W>>> {
     const rows = await this.db.query.deals.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.ownerId, id)) },
-      columns: this.checkColumns(opts?.columns),
+      columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
       limit: opts?.limit,
     });
@@ -266,7 +266,7 @@ export class DealRepository extends IntegratedEntityRepository<
   ): Promise<Array<DealResult<C, W>>> {
     const rows = await this.db.query.deals.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.closedById, id)) },
-      columns: this.checkColumns(opts?.columns),
+      columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
       limit: opts?.limit,
     });
@@ -279,7 +279,7 @@ export class DealRepository extends IntegratedEntityRepository<
   ): Promise<Array<DealResult<C, W>>> {
     const rows = await this.db.query.deals.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.accountId, id)) },
-      columns: this.checkColumns(opts?.columns),
+      columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
       limit: opts?.limit,
     });

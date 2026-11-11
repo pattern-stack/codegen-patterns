@@ -91,7 +91,7 @@ export class TenantRepository extends BaseRepository<Tenant, typeof tenants, Rel
   ): Promise<TenantResult<C> | null> {
     const row = await this.db.query.tenants.findFirst({
       where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
-      columns: this.checkColumns(opts?.columns),
+      columns: this.checkColumns<C>(opts?.columns),
     });
     return (row as TenantResult<C> | undefined) ?? null;
   }
@@ -109,7 +109,7 @@ export class TenantRepository extends BaseRepository<Tenant, typeof tenants, Rel
   ): Promise<Array<TenantResult<C>>> {
     const unique = this.uniqueIds(ids);
     if (unique.length === 0) return [];
-    const mask = this.byIdsColumns(this.checkColumns(opts?.columns));
+    const mask = this.byIdsColumns(this.checkColumns<C>(opts?.columns));
     const rows = await this.db.query.tenants.findMany({
       where: { RAW: this.rootFilter((t) => inArray(t.id, unique)) },
       columns: mask.columns,
@@ -127,7 +127,7 @@ export class TenantRepository extends BaseRepository<Tenant, typeof tenants, Rel
     const sort = query?.sort;
     const rows = await this.db.query.tenants.findMany({
       where: { RAW: this.rootFilter(query?.where) },
-      columns: this.checkColumns(query?.columns),
+      columns: this.checkColumns<C>(query?.columns),
       orderBy: sort === undefined || sort.length === 0 ? undefined : (t) => this.orderByOn(t, sort) ?? [],
       limit: query?.limit,
       offset: query?.offset,
