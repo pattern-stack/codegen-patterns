@@ -96,20 +96,38 @@ export function entityScope(
 }
 
 /**
+ * Whether a hop's `where` can drop a row the FK points at — so a to-one
+ * include can be `null` even over a NOT NULL FK.
+ *
+ * `softDelete` (the target row is deleted) and `userTracking` (it belongs to
+ * another user) are ordinary states of valid data. The tenant axis is
+ * deliberately NOT one: a NOT NULL FK onto another tenant's row is a data
+ * error, not a case for the type to carry (#787 designs the constraint that
+ * makes it impossible), and widening every tenant-scoped to-one to nullable
+ * would push a null check onto every reader of valid data.
+ */
+export function hopCanDropTarget(targetScope: ScopeConfigLiteral | null): boolean {
+	return targetScope !== null && (targetScope.softDelete || targetScope.userTracking);
+}
+
+/**
  * `optional` for a `belongs_to` — whether the include's result may be null.
  *
- * Exactly the FK column's nullability, by the one rule the entity template
- * emits the column with (`foreignKeyColumnNullable`, `field-nullability.ts`):
- * an explicit relationship `nullable:` wins, else the FK column's own
- * `fields:` declaration, else optional. A NOT NULL FK — `required: true`, or
- * `nullable: false` with a `default:` — is never optional (#613).
+ * The FK column's nullability, by the one rule the entity template emits the
+ * column with (`foreignKeyColumnNullable`, `field-nullability.ts`): an explicit
+ * relationship `nullable:` wins, else the FK column's own `fields:`
+ * declaration, else optional (#613). A NOT NULL FK is still optional when the
+ * hop's scope can filter its target out (`hopCanDropTarget`) — REL-2's hop
+ * `where` makes the include `null` at runtime, and the type must say so
+ * (dealbrain dogfood #9).
  */
 function belongsToOptional(
 	def: EntityDefinition,
 	fk: string,
 	relNullable: boolean | undefined,
+	targetScope: ScopeConfigLiteral | null,
 ): boolean {
-	return foreignKeyColumnNullable(relNullable, def.fields[fk]);
+	return foreignKeyColumnNullable(relNullable, def.fields[fk]) || hopCanDropTarget(targetScope);
 }
 
 /** Add an edge, failing loudly on a duplicate key for the same table. */
@@ -201,7 +219,12 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 					targetTable: target.plural,
 					from: { table: entity.plural, column: fkColumn },
 					to: { table: target.plural, column: 'id' },
-					optional: belongsToOptional(def, rel.foreign_key, rel.nullable),
+					optional: belongsToOptional(
+						def,
+						rel.foreign_key,
+						rel.nullable,
+						scopeOf(rel.target),
+					),
 					targetScope: scopeOf(rel.target),
 					origin,
 				});
@@ -313,7 +336,8 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 			targetTable: left.plural,
 			from: { table: tableVar, column: leftFk },
 			to: { table: left.plural, column: 'id' },
-			optional: false,
+			// The junction FK is NOT NULL; only the target's scope can empty the hop.
+			optional: hopCanDropTarget(scopeOf(leftName)),
 			targetScope: scopeOf(leftName),
 			origin,
 		});
@@ -324,7 +348,8 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 			targetTable: right.plural,
 			from: { table: tableVar, column: rightFk },
 			to: { table: right.plural, column: 'id' },
-			optional: false,
+			// The junction FK is NOT NULL; only the target's scope can empty the hop.
+			optional: hopCanDropTarget(scopeOf(rightName)),
 			targetScope: scopeOf(rightName),
 			origin,
 		});

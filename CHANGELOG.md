@@ -73,6 +73,17 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **A to-one include onto a soft-deleted or user-tracked target is typed nullable (dealbrain dogfood
+  #9).** REL-1 set `optional: false` for a NOT NULL FK, but REL-2's hop `where` drops a deleted (or
+  another user's) target, so the include was `null` at runtime while the type said `T`. The
+  relations manifest and the frontend graph descriptor now emit `optional: true` for such an edge
+  (`hopCanDropTarget`): a `belongs_to`, or a junction's own edge to an endpoint. **Type change:**
+  code that reads such an include without a null check stops compiling, and that is the point.
+  A tenant-scoped target alone does not widen it.
+- **`entity validate` warns when a `belongs_to` leaves its FK nullability undeclared**
+  (`undeclared_fk_nullability`). Such a column is emitted NULLABLE, unlike a field, whose default
+  follows `required`. The DDL default is unchanged; declare `nullable: false` (or `true`) to
+  silence the warning. Under `--strict`, the warning fails validation.
 - **Junction payload fields are entity fields (#740, #690).** `fields:` in a junction YAML now parses
   against the entity `FieldDefinitionSchema` and renders through the entity column builder, so
   `required`, `nullable`, `default`, `foreign_key`, `index` and `timezone` reach the column. Before,

@@ -228,6 +228,14 @@ function transformToEntity(result: LoadResult, tablePrefix: string): ParsedEntit
 		const field = entity.fields.get(fk);
 		if (field) field.nullable = foreignKeyColumnNullable(relNullable, definition.fields[fk]);
 	}
+	for (const rel of entity.relationships.values()) {
+		if (rel.type !== 'belongs_to') continue;
+		const fieldDef = definition.fields[rel.foreignKey];
+		rel.nullabilityDeclared =
+			fkNullable.get(rel.foreignKey) !== undefined ||
+			fieldDef?.required === true ||
+			fieldDef?.nullable !== undefined;
+	}
 
 	// Parse integration configuration
 	if (definition.integration) {

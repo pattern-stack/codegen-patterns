@@ -192,7 +192,16 @@ relationships:
     foreign_key: account_id
 ```
 
-- `belongs_to` adds the FK column on this entity.
+- `belongs_to` adds the FK column on this entity. **Its nullability:** an explicit
+  `nullable:` on the relationship wins, else the FK's own field (`required: true` →
+  NOT NULL), else the column is **NULLABLE**. A field's default follows `required`;
+  a `belongs_to` with neither declared does not, so `entity validate` warns
+  (`undeclared_fk_nullability`). Write `nullable: false` for a NOT NULL reference.
+- The include's type (`with: { account: true }`) is `optional` (`T | null`) when the
+  FK is nullable, **or** when the target soft-deletes or is user-tracked: the hop
+  filters a deleted or another user's row out, so even a NOT NULL FK can read
+  `null`. A tenant-scoped target alone does not widen it, because a NOT NULL FK
+  onto another tenant's row is a data error.
 - `has_many` / `has_one` are the inverse side (no column here; drives the
   service-layer composition method on the declaring entity's service).
 - Cross-entity targets must resolve at generation time — regenerate the set with

@@ -16,7 +16,7 @@
  */
 export const graph = {
 	users: {
-		person: { kind: 'one', target: 'persons', from: 'personId', to: 'id', optional: false },
+		person: { kind: 'one', target: 'persons', from: 'personId', to: 'id', optional: true },
 	},
 } as const;
 

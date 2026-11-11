@@ -52,7 +52,7 @@ export interface ContactPeopleWith {
  * records for the server side.
  */
 export interface ContactInclude {
-	/** to-one → Account */
+	/** to-one → Account | undefined */
 	account?: true;
 	/** to-many → Opportunity[] (through `opportunityContacts`) — its own live query */
 	opportunities?: true | { with?: ContactOpportunitiesWith };

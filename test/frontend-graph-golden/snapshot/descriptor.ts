@@ -18,7 +18,7 @@ export const graph = {
 		parentAccount: { kind: 'one', target: 'accounts', from: 'parentAccountId', to: 'id', optional: true },
 	},
 	contacts: {
-		account: { kind: 'one', target: 'accounts', from: 'accountId', to: 'id', optional: false },
+		account: { kind: 'one', target: 'accounts', from: 'accountId', to: 'id', optional: true },
 		opportunities: { kind: 'many', target: 'opportunities', from: 'id', to: 'id', through: { collection: 'opportunityContacts', from: 'contactId', to: 'opportunityId' } },
 		opportunityContacts: { kind: 'many', target: 'opportunityContacts', from: 'id', to: 'contactId' },
 		people: { kind: 'many', target: 'persons', from: 'id', to: 'contactId' },
@@ -27,7 +27,7 @@ export const graph = {
 		opportunity: { kind: 'one', target: 'opportunities', from: 'opportunityId', to: 'id', optional: false },
 	},
 	opportunities: {
-		account: { kind: 'one', target: 'accounts', from: 'accountId', to: 'id', optional: false },
+		account: { kind: 'one', target: 'accounts', from: 'accountId', to: 'id', optional: true },
 		contacts: { kind: 'many', target: 'contacts', from: 'id', to: 'id', through: { collection: 'opportunityContacts', from: 'opportunityId', to: 'contactId' } },
 		opportunityContacts: { kind: 'many', target: 'opportunityContacts', from: 'id', to: 'opportunityId' },
 		primaryNote: { kind: 'one', target: 'notes', from: 'id', to: 'opportunityId', optional: true },

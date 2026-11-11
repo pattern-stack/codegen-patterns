@@ -42,7 +42,7 @@ export type OpportunityOpportunityContactsWith = globalThis.Record<never, never>
  * records for the server side.
  */
 export interface OpportunityInclude {
-	/** to-one → Account */
+	/** to-one → Account | undefined */
 	account?: true;
 	/** to-one → Note | undefined */
 	primaryNote?: true;

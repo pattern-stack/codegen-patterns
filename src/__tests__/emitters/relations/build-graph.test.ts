@@ -163,6 +163,39 @@ describe('buildRelationGraph — belongs_to', () => {
 		).toBe(false);
 	});
 
+	describe('a NOT NULL FK onto a target whose hop scope can drop it (dealbrain dogfood #9)', () => {
+		const onto = (targetExtra: Record<string, unknown>) =>
+			context([
+				{
+					entry: registryEntry('account', 'accounts'),
+					def: definition('account', 'accounts', {}, {}, targetExtra),
+				},
+				{
+					entry: registryEntry('contact', 'contacts'),
+					def: definition(
+						'contact',
+						'contacts',
+						{ account_id: { type: 'uuid', required: true } },
+						{ account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' } },
+					),
+				},
+			]);
+
+		it('is optional when the target soft-deletes — the include is null for a deleted row', () => {
+			expect(edge(onto({ behaviors: ['soft_delete'] }), 'contacts', 'account').optional).toBe(true);
+		});
+
+		it('is optional when the target is user-tracked — another user’s row is filtered', () => {
+			expect(edge(onto({ behaviors: ['user_tracking'] }), 'contacts', 'account').optional).toBe(
+				true,
+			);
+		});
+
+		it('stays required when the target is only tenant-scoped (a cross-tenant FK is a data error)', () => {
+			expect(edge(onto({ tenant_scoped: true }), 'contacts', 'account').optional).toBe(false);
+		});
+	});
+
 	it('an undeclared FK column is optional', () => {
 		const ctx = context([
 			account,
