@@ -3,12 +3,12 @@ import { z } from 'zod';
 
 export const CreateDealStateSchema = z.object({
   tenantId: z.string().uuid().nullable().optional(),
-  name: z.string(),
-  displayName: z.string(),
+  name: z.string().max(50),
+  displayName: z.string().max(100),
   stateType: z.enum(['open', 'won', 'lost', 'stalled']),
   sortOrder: z.number().int(),
   probabilityDefault: z.number().int().nullable().optional(),
-  color: z.string().nullable().optional(),
+  color: z.string().max(20).nullable().optional(),
   weight: z.number().int().optional(),
   description: z.string().nullable().optional(),
   metadata: z.unknown().nullable().optional(),

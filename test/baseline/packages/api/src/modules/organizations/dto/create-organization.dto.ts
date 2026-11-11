@@ -4,8 +4,8 @@ import { z } from 'zod';
 export const CreateOrganizationSchema = z.object({
   parentId: z.string().uuid().nullable().optional(),
   tenantId: z.string().uuid(),
-  name: z.string(),
-  domain: z.string().nullable().optional(),
+  name: z.string().max(255),
+  domain: z.string().max(255).nullable().optional(),
 });
 
 export type CreateOrganizationDto = z.infer<typeof CreateOrganizationSchema>;

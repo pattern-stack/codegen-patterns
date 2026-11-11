@@ -7,6 +7,7 @@ import {
   pgTable,
   text,
   uuid,
+  varchar,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { type InferSelectModel } from 'drizzle-orm';
@@ -19,12 +20,12 @@ export const deal_states = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     tenantId: uuid('tenant_id').references((): AnyPgColumn => tenants.id),
-    name: text('name').notNull(),
-    displayName: text('display_name').notNull(),
+    name: varchar('name', { length: 50 }).notNull(),
+    displayName: varchar('display_name', { length: 100 }).notNull(),
     stateType: dealStateStateTypeEnum('state_type').notNull(),
     sortOrder: integer('sort_order').notNull(),
     probabilityDefault: integer('probability_default'),
-    color: text('color'),
+    color: varchar('color', { length: 20 }),
     weight: integer('weight').notNull().default(0),
     description: text('description'),
     metadata: jsonb('metadata'),

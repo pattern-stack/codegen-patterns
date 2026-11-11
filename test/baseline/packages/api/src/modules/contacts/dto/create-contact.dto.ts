@@ -4,12 +4,12 @@ import { z } from 'zod';
 export const CreateContactSchema = z.object({
   accountId: z.string().uuid().nullable().optional(),
   userId: z.string().uuid(),
-  firstName: z.string(),
-  lastName: z.string(),
-  email: z.string(),
-  title: z.string().nullable().optional(),
-  phone: z.string().nullable().optional(),
-  linkedinUrl: z.string().nullable().optional(),
+  firstName: z.string().max(100),
+  lastName: z.string().max(100),
+  email: z.string().max(255),
+  title: z.string().max(200).nullable().optional(),
+  phone: z.string().max(50).nullable().optional(),
+  linkedinUrl: z.string().max(500).nullable().optional(),
 });
 
 export type CreateContactDto = z.infer<typeof CreateContactSchema>;

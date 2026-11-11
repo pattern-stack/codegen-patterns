@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const CreateAccountSchema = z.object({
-  name: z.string(),
+  name: z.string().max(255),
 });
 
 export type CreateAccountDto = z.infer<typeof CreateAccountSchema>;

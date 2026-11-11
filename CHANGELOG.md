@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+**Breaking (DDL), pending Doug's sign-off:** `max_length` on a `string` field now emits
+`varchar(n)` instead of `text` (#772). Before migrating, check `max(length(col))` on every such
+column: `ALTER … TYPE varchar(n)` fails if an existing row is longer than `n`.
+
 ### Breaking
 
 - **A `belongs_to` foreign key is NOT NULL by default (#850, DDL).** Before, an FK that neither the
@@ -89,6 +93,14 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **`max_length` is enforced, as documented (#772).** **Breaking (DDL).** A `string` field with
+  `max_length: n` is now a `varchar(n)` column (was `text`), and the create and update DTOs check
+  `z.string().max(n)` (was unbounded). Every backend template ignored the key before; only the
+  frontend field metadata read it. Migration: `text` → `varchar(n)` fails if any existing value is
+  longer than `n`, so run `select max(length(<col>)) from <table>` for each such column first, and
+  raise `max_length` (or clean the data) where it exceeds `n`. Hosts that adopt existing `varchar(n)`
+  columns now match their DDL. Enum fields (`choices:`) are unaffected; the relationship template
+  still ignores `max_length`.
 - **`pattern: Activity` with `config:` compiles (#852).** The service template emitted
   `protected override readonly patternConfig`, but no service base declares one, so `tsc` failed
   with TS4113. Only the repository emits it now; it owns the config, and the service forwards to

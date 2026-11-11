@@ -2,8 +2,8 @@
 import {
   index,
   pgTable,
-  text,
   uuid,
+  varchar,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { type InferSelectModel } from 'drizzle-orm';
@@ -15,8 +15,8 @@ export const organizations = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     parentId: uuid('parent_id').references((): AnyPgColumn => organizations.id, { onDelete: 'restrict' }),
     tenantId: uuid('tenant_id').notNull().references((): AnyPgColumn => tenants.id),
-    name: text('name').notNull(),
-    domain: text('domain'),
+    name: varchar('name', { length: 255 }).notNull(),
+    domain: varchar('domain', { length: 255 }),
   },
   (t) => [
     index('organizations_parent_id_idx').on(t.parentId),

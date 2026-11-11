@@ -2,8 +2,8 @@
 import {
   index,
   pgTable,
-  text,
   uuid,
+  varchar,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { type InferSelectModel } from 'drizzle-orm';
@@ -16,7 +16,7 @@ export const users = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'restrict' }),
     tenantId: uuid('tenant_id').notNull().references((): AnyPgColumn => tenants.id),
-    email: text('email').notNull(),
+    email: varchar('email', { length: 255 }).notNull(),
   },
   (t) => [
     index('users_tenant_id_idx').on(t.tenantId),

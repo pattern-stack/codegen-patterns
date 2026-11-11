@@ -69,7 +69,7 @@ fields:
   email:
     type: string           # string | integer | decimal | boolean | uuid | date | datetime | json | enum | string_array
     required: true         # NOT NULL + required in Create DTO
-    max_length: 255        # string length constraint (DB + Zod)
+    max_length: 255        # varchar(255) column + z.string().max(255) on create/update
     index: true            # single-column index
     unique: true           # unique index; per tenant under tenant_scoped
   status:
@@ -140,6 +140,10 @@ Type notes:
   `(s) => new Date(s.replace(' ', 'T') + 'Z')`. Upgrading with `drizzle-kit push`: set the database's default
   TimeZone to UTC first, or generate a migration instead. Casts such as `::date` and `date_trunc` on a
   timestamptz follow the session TimeZone; pin it.
+- `string` — `text`, or `varchar(n)` with `max_length: n` (and `.max(n)` on the create /
+  update DTOs). Adding or changing `max_length` on an existing column is a column-type
+  migration: `text` → `varchar(n)` fails if any row is longer than `n`, so check
+  `select max(length(col)) from <table>` first.
 - `string_array` — a Postgres `text[]` column; `string[]` on the entity, `z.array(z.string())` in the DTOs.
   Add `choices:` to constrain the elements: the column becomes an array of a generated enum
   (`('pg' | 'sg')[]`), not a single enum value. `default: [pg]` gives the column an array default.

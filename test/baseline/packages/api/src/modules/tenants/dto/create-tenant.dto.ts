@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const CreateTenantSchema = z.object({
-  name: z.string(),
+  name: z.string().max(255),
 });
 
 export type CreateTenantDto = z.infer<typeof CreateTenantSchema>;
