@@ -22,13 +22,13 @@ function issuesFor(observation: string) {
 	dirs.push(dir);
 	fs.writeFileSync(
 		path.join(dir, 'artifact.yaml'),
-		'entity:\n  name: artifact\n  plural: artifacts\n  table: artifacts\nfields:\n  title: { type: string }\n',
+		'entity:\n  name: artifact\n  plural: artifacts\nfields:\n  title: { type: string }\n',
 	);
 	fs.writeFileSync(
 		path.join(dir, 'observation.yaml'),
-		`entity:\n  name: observation\n  plural: observations\n  table: observations\n${observation}`,
+		`entity:\n  name: observation\n  plural: observations\n${observation}`,
 	);
-	const { entities } = loadEntities(dir);
+	const { entities } = loadEntities(dir, { tablePrefix: '' });
 	return checkConsistency(buildDomainGraph(entities)).filter(
 		(i) => i.type === 'undeclared_fk_nullability',
 	);
