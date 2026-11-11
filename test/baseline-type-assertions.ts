@@ -5,8 +5,7 @@
  * expectation).
  *
  * An output DTO is the row's shape for the keys it exposes: same keys, same
- * optionality, same types — and it exposes no key the row lacks. dealbrain
- * dogfood #20 — Zod 3 inferred a `json` (`z.unknown()`) key as OPTIONAL, so
+ * optionality, same types — and it exposes no key the row lacks. #851 — Zod 3 inferred a `json` (`z.unknown()`) key as OPTIONAL, so
  * `DealStateOutputDto['metadata']` was `metadata?: unknown` while the row has
  * `metadata: unknown`. Every baseline entity is asserted, so the other field
  * kinds (enum, decimal, nullable, FK, timestamps, soft delete, external id)

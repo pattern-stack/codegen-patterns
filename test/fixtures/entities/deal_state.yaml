@@ -58,7 +58,7 @@ fields:
   description:
     type: string
 
-  # dealbrain dogfood #20: a json column's key is REQUIRED on the output DTO
+  # #851: a json column's key is REQUIRED on the output DTO
   # type, as on the row (Zod 3 alone infers it optional) — asserted by
   # test/baseline-type-assertions.ts.
   metadata:

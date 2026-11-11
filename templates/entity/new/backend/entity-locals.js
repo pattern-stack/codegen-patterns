@@ -2345,8 +2345,7 @@ export function buildBackendLocals(definition, baseLocals) {
   // `unknown` infers a required key, so the exported DTO type is `Required<…>`
   // of the inference. Every output key is required by construction (no output
   // chain is `.optional()`), so the wrap changes only those keys. Emitted only
-  // when such a key exists, so other DTOs are byte-identical (dealbrain
-  // dogfood #20).
+  // when such a key exists, so other DTOs are byte-identical (#851).
   const outputDtoHasUnknownKey = outputDtoFields.some((f) => f.zodType === 'z.unknown()');
 
   // Integration write-surface derivation (#374) — null unless pattern: Integrated.
