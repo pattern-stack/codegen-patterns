@@ -39,6 +39,14 @@ export interface IBaseRepository<TEntity> {
   findById(id: string): Promise<TEntity | null>;
   findByIds(ids: string[]): Promise<TEntity[]>;
   list(options?: unknown): Promise<TEntity[]>;
+  /**
+   * `unknown` here is the structural CONSTRAINT only — a concrete repository's
+   * `count(where?: RowFilter<typeof table>)` must satisfy it, and a narrower
+   * function type fails under strict variance. Callers never see it:
+   * `BaseService.count` / `list` take `Parameters<TRepo['count' | 'list']>[0]`,
+   * the concrete repository's own types, so a stale `service.count(eq(…))` is a
+   * compile error (READ-1 review #3).
+   */
   count(where?: unknown): Promise<number>;
   exists(id: string): Promise<boolean>;
   create(input: Partial<TEntity>, tx?: unknown): Promise<TEntity>;
@@ -97,7 +105,7 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
   /**
    * Count entities matching an optional filter.
    */
-  count(where?: unknown): Promise<number> {
+  count(where?: Parameters<TRepo['count']>[0]): Promise<number> {
     return this.repository.count(where);
   }
 

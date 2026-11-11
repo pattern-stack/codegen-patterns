@@ -244,6 +244,22 @@ describe('backend repository template — every shaped read carries its predicat
     expect(output).toContain('return this.inInputOrder(rows, unique, mask.stripId)');
   });
 
+  it('every mask passes through checkColumns<C> with an EXPLICIT type argument (READ-1 §10 Found #1)', () => {
+    // Dropping `<C>` is clean on rc.4 and 70+ TS2352 on rc.5 — the rc.5 typecheck
+    // leg of `just test-baseline` is the real gate; this pins the shape cheaply.
+    const output = renderRepository(buildBackendLocals(queriesEntity, withEntities()));
+    const masked = output.match(/columns: (this\.checkColumns|mask\.columns)/g) ?? [];
+    const typed = output.match(/this\.checkColumns<C>\((opts|query)\?\.columns\)/g) ?? [];
+    expect(output).not.toMatch(/this\.checkColumns\(/);
+    expect(typed.length).toBe(masked.length);
+    expect(typed.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('the constructor fails fast when the client has no relational query for the table (review #8a)', () => {
+    const output = renderRepository(buildBackendLocals(queriesEntity, withEntities()));
+    expect(output).toContain("this.requireRelationalQuery('contacts');");
+  });
+
   it('a relation-less entity takes `columns` but no `with` (REL-2 §2.5)', () => {
     const output = renderRepository(buildBackendLocals(queriesEntity, withEntities()));
     expect(output).toContain('opts?: ReadOptions<C, never>,');

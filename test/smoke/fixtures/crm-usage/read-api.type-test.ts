@@ -15,9 +15,12 @@ import { eq, sql } from 'drizzle-orm';
 import type { AccountRepository } from './modules/accounts/account.repository';
 import type { ContactRepository } from './modules/contacts/contact.repository';
 import type { OpportunityRepository } from './modules/opportunities/opportunity.repository';
+import type { AccountService } from './modules/accounts/account.service';
 import type { Account } from './modules/accounts/account.entity';
 import type { Contact } from './modules/contacts/contact.entity';
 import { accounts } from './modules/accounts/account.entity';
+import { rootScope, type Relations } from './generated/relations';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false;
 function assert<T extends true>(): T | undefined {
@@ -27,6 +30,8 @@ function assert<T extends true>(): T | undefined {
 declare const accountRepo: AccountRepository;
 declare const contactRepo: ContactRepository;
 declare const opportunityRepo: OpportunityRepository;
+declare const accountService: AccountService;
+declare const db: NodePgDatabase<Relations>;
 
 export async function defaults(): Promise<void> {
 	// No options ⇒ exactly the row, on every read.
@@ -91,11 +96,24 @@ export async function where(): Promise<void> {
 	await accountRepo.count((t) => eq(t.name, 'x'));
 }
 
+export async function handWrittenRoot(): Promise<void> {
+	// The typed root scope of a hand-written relational read (READ-1 §5, review #10).
+	await db.query.accounts.findMany({ where: { AND: [{ name: { eq: 'x' } }, rootScope.accounts('loader')] } });
+	// @ts-expect-error — one table's root scope on another table's query is a compile error
+	await db.query.contacts.findMany({ where: rootScope.accounts('loader') });
+}
+
 export async function negatives(): Promise<void> {
 	// @ts-expect-error — a pre-rendered SQL is no longer a `where` (#840)
 	await accountRepo.list({ where: eq(accounts.name, 'x') });
 	// @ts-expect-error — nor is a raw `sql` fragment
 	await accountRepo.list({ where: sql`true` });
+	// The SERVICE layer — what use cases call — rejects the stale shapes too (review #3).
+	// @ts-expect-error — a pre-rendered SQL is not a service `count` filter
+	await accountService.count(eq(accounts.name, 'x'));
+	// @ts-expect-error — nor a service `list` where
+	await accountService.list({ where: eq(accounts.name, 'x') });
+	await accountService.count((t) => eq(t.name, 'x'));
 	// @ts-expect-error — the pre-rendered `orderBy` is gone; `sort` is the ordering
 	await accountRepo.list({ orderBy: accounts.name });
 	// @ts-expect-error — an unknown column in a mask

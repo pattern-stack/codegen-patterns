@@ -121,7 +121,7 @@ describe('relations golden manifest', () => {
 	it('imports hopScope and emits one EXPORTED scope constant per SCOPED table', () => {
 		// UNSCOPED too: `SCOPES` names every unscoped entity table explicitly (READ-1 §5.1).
 		expect(emitted).toContain(
-			"import { hopScope, UNSCOPED, type ScopeConfig } from '@pattern-stack/codegen/runtime/base-classes/scope-filters';",
+			"import { hopScope, UNSCOPED, scopedRoot, type ScopeConfig } from '@pattern-stack/codegen/runtime/base-classes/scope-filters';",
 		);
 		// account: tenant_scoped + soft_delete + user_tracking ⇒ strict.
 		expect(emitted).toContain(
@@ -150,6 +150,16 @@ describe('relations golden manifest', () => {
 		// The junction declares no scope of its own (REL-2 §1.5) — not a root.
 		expect(body).not.toContain('opportunityContacts');
 		expect(emitted).toContain('} as const satisfies Partial<Record<keyof typeof schema, ScopeConfig>>;');
+	});
+
+	it('exports rootScope — one typed root-scope factory per entity table (review #10)', () => {
+		expect(emitted).toContain(
+			'\taccounts: (owner: string) => scopedRoot<typeof schema.accounts>(SCOPES.accounts, owner),',
+		);
+		expect(emitted).toContain(
+			'\tnotes: (owner: string) => scopedRoot<typeof schema.notes>(SCOPES.notes, owner),',
+		);
+		expect(emitted).not.toMatch(/\topportunityContacts: \(owner/);
 	});
 
 	it('every relation whose target is scoped carries a where — and no other does', () => {

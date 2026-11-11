@@ -58,11 +58,13 @@ await accounts.list({
   predicate built from the imported table names a table that is not in scope and
   Postgres rejects it. `count(where)` takes the same function, so a page and its
   total describe one set. There is no `orderBy`: use `sort`.
-- **`findByIds`**: `[]` issues no query; duplicates are read once; rows come back in
-  the **input order**; a missing, soft-deleted or out-of-scope id is simply absent.
+- **`findByIds`**: `[]` issues no query; duplicates are read once (a uuid in any
+  spelling — uppercase, braced — matches its row); rows come back in the **input
+  order**; a missing, soft-deleted or out-of-scope id is simply absent.
   One `in (…)` — chunk yourself past ~65k ids.
 - **`columns`** is an inclusion (`{ a: true }`) or exclusion (`{ a: false }`) mask;
-  an empty mask is a compile error. Omit it for the whole row.
+  an empty mask is a compile error. Omit it for the whole row. (An empty mask on an
+  INCLUDE — `with: { x: { columns: {} } }` — is only caught at runtime.)
 - **Root and every hop are scoped** (tenant, soft-delete, user) on every method.
 - Hoist a mask or include into a `const` **without** a type annotation (or with
   `as const`) — annotating it with `<Entity>Columns` / `<Entity>Include` widens it.
@@ -73,13 +75,21 @@ Go through the generated repository; if you can't (a cross-entity loader), AND t
 exported root scope into the root `where`:
 
 ```ts
-import { SCOPES } from '@generated/relations';
-import { scopedRoot } from '@shared/base-classes/scope-filters';
+import { rootScope } from '@generated/relations';
 
 await db.query.accounts.findMany({
-  where: { AND: [{ id: { in: ids } }, scopedRoot(SCOPES.accounts, 'AccountLoader')] },
+  where: { AND: [{ id: { in: ids } }, rootScope.accounts('AccountLoader')] },
 });
 ```
+
+`rootScope.<table>` is typed to its table: another table's scope is a compile error.
+
+**Upgrading a vendored project (`runtime: vendored`)**: run `codegen project update` before
+regenerating, so `@shared/base-classes` has the helpers the regenerated repositories call. The
+`DRIZZLE` client must be built with the generated `relations` (`drizzle({ client, relations })`);
+a repository constructed over a client without them throws, naming the cause.
+
+`activeParentFilter(parentTable, 'fkKey')` returns a row filter too — pass it as `where`.
 
 **`withRequester` and lazy queries.** A Drizzle query builds its statement — and
 reads the requester context — when it is awaited. `withRequester(ctx, () => …)`

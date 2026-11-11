@@ -126,6 +126,22 @@ function scopesMap(graph: RelationGraph): string {
 }
 
 /**
+ * `rootScope.<table>(owner)` — `scopedRoot` with its table FIXED to that table's
+ * schema type, so `db.query.contacts.findMany({ where: rootScope.accounts(…) })`
+ * is a compile error (READ-1 review #10). The typed form of `SCOPES`.
+ */
+function rootScopeMap(graph: RelationGraph): string {
+	const lines = graph.entityScopes.map(
+		({ table }) =>
+			`\t${table}: (owner: string) => scopedRoot<typeof schema.${table}>(SCOPES.${table}, owner),`,
+	);
+	return (
+		'/** The ROOT scope of one table, typed to it: AND it into a hand-written `db.query.<table>` root `where`. */\n' +
+		`export const rootScope = {\n${lines.join('\n')}\n};\n`
+	);
+}
+
+/**
  * The two type helpers every generated repository hangs its typed `with` include
  * on (REL-2 §2.3, §4). Emitted here, once, because the base repository cannot
  * declare them: with `TRelations` and the relation key as naked type parameters,
@@ -185,6 +201,7 @@ export function buildRelationsManifest(
 	const scopeImports = [
 		...(needsHop ? ['hopScope'] : []),
 		...(needsUnscoped ? ['UNSCOPED'] : []),
+		'scopedRoot',
 		'type ScopeConfig',
 	];
 	const scopeHead = scoped
@@ -194,7 +211,7 @@ export function buildRelationsManifest(
 		`${BANNER}import { defineRelations } from 'drizzle-orm';\n` +
 		`import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';\n\n` +
 		`${scopeHead}import * as schema from '${schemaImport}';\n\n` +
-		(scoped ? `${constants.join('\n')}\n\n${scopesMap(graph)}\n` : '');
+		(scoped ? `${constants.join('\n')}\n\n${scopesMap(graph)}\n${rootScopeMap(graph)}\n` : '');
 
 	if (graph.tables.length === 0) {
 		// A project with no relations still exports a manifest: the emitted

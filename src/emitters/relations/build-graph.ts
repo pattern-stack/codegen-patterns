@@ -7,6 +7,7 @@
  * schema files, or the database (charter I1).
  */
 
+import { resolveImpliedBehaviors } from '../../patterns/implied-behaviors.js';
 import pluralize from 'pluralize';
 
 import type { EntityDefinition } from '../../schema/entity-definition.schema';
@@ -59,11 +60,19 @@ function junctionFkColumn(entityName: string): string {
 	return camelCase(`${entityName}_id`);
 }
 
-/** The behavior names an entity declares, in either YAML form. */
+/**
+ * The behaviors an entity HAS: those it declares, in either YAML form, plus those
+ * its pattern(s) imply (ADR-031) — through `resolveImpliedBehaviors`, the same
+ * helper the repository's `behaviors` come from (`entity-locals.js`). Reading
+ * only the declared ones would let a pattern that implies `soft_delete` filter
+ * deleted rows in the repository while every hop, `SCOPES` and `scopedRoot` did
+ * not: one declaration, two postures (charter I1; READ-1 review #9).
+ */
 function behaviorNames(def: EntityDefinition): Set<string> {
-	return new Set(
-		def.behaviors.map((b) => (typeof b === 'string' ? b : b.name)),
-	);
+	return new Set([
+		...def.behaviors.map((b) => (typeof b === 'string' ? b : b.name)),
+		...resolveImpliedBehaviors(def.entity),
+	]);
 }
 
 /**

@@ -49,8 +49,9 @@ The fix is not five patches. It is one read surface, specified once:
 - **I1 declare once.** The scope constants are exported from the manifest, not re-derived by consumers (§5).
 - **I7 no backwards compatibility.** `ListOptions.where: SQL` and `ListOptions.orderBy` are **replaced**, not
   supplemented — the unsafe shape stops existing (§4). `ResultOf`'s second parameter changes meaning (§2.1).
-- **I9 honest gates.** Each defect gets a gate that fails on its own subject (§8), and the SQL defect class gets a
-  shape gate so it cannot come back a fourth time.
+- **I9 honest gates.** Each defect gets a gate that fails on its own subject (§8). The SQL defect class gets shape
+  gates over every call site this PR introduced (§4.2), each mutation-checked — a grep cannot rule out every spelling
+  of the mistake, so the Docker suite (§8.3) remains the backstop.
 - **I10 public repo.** The host case is described by shape only (§8.4).
 
 ---
@@ -157,6 +158,9 @@ findByEmail<C …, W …>(email: string, opts?: { columns?: C; with?: W }): Prom
 | order | rows returned in **input order of first occurrence** — `in (…)` does not preserve order, so the repository re-sorts; a caller wanting a lookup does `new Map(rows.map((r) => [r.id, r]))` |
 | a missing id, a soft-deleted row, another tenant's row | **absent** from the result — identical, by design (tenant-context "Not-found semantics": no existence oracle). No `null` placeholders |
 | a `columns` mask that omits `id` | still ordered: the statement selects `id` anyway and the key is stripped from each row before return, so the result type (no `id`) is the truth |
+| an id spelled differently from the database (`'A0EE…'`, `'{a0ee…}'`, no hyphens) on a `uuid` key | found, and de-duplicated against the canonical spelling: both sides are compared through `idKey`, which canonicalises a `uuid` key (lowercase, hyphenated) and leaves any other key type alone — a `text` key distinguishes case (review #2) |
+| `columns: { id: false }` — an exclusion mask whose only exclusion is `id` | no mask is sent (an empty `{}` would select no root column: Drizzle throws without `with`, and with one returns rows with no `id`); `id` is stripped after ordering. A row without `id` throws in `inInputOrder` rather than being dropped (review #1) |
+| `[]` under `strict` with no requester context | `[]` — no statement is built, so no scope is read. A missing boundary goes undetected on THIS call only; any read that reaches the database throws |
 | a large id list | one `in ($1…$n)`; Postgres caps a statement at 65 535 parameters. Not chunked — chunking would silently become several statements (I4). Documented on the method |
 
 `columns: {}` (an empty mask) is rejected **twice**: at compile time — `ReadOptions<C, W>` types the slot as
@@ -187,6 +191,8 @@ What this spec guarantees so that is a small change later:
   already takes both;
 - `variant` and `columns`/`with` will be mutually exclusive at the type level (`{ variant: V; columns?: never;
   with?: never }`), so the overloads cannot be combined into an ambiguous call.
+- the generated service forwards with explicit `<C, W>` type arguments, so each variant overload is mirrored in
+  `service.ejs.t` too — mechanical, but two templates, not one;
 - the HTTP surface (`?variant=short`) is a closed, server-defined shape, which is I6-compatible in the way a
   client-supplied `fields=` is not. Not specified here.
 
@@ -280,9 +286,16 @@ had combined it with `with` yet.)
 ### 4.2 The gate that keeps it from recurring
 
 - **Type level:** `ListOptions['where']` has no `SQL` member (§8.1 negative test).
-- **Shape level:** `no-untethered-raw-callback.test.ts` (REL-2) gains a second banned shape — a `RAW:` whose value is
-  not a callback (`{ RAW: someSql }`, `{ RAW: callerWhere }`) — across `templates/`, `src/emitters/`, `runtime/` and
-  the golden snapshot. A `RAW` slot on an aliased statement takes a callback or nothing.
+- **Shape level:** `no-untethered-raw-callback.test.ts` (REL-2), across `templates/`, `src/emitters/`, `runtime/` and
+  the golden snapshot, bans:
+  - a `RAW:` whose value is not a callback (`{ RAW: someSql }`, `{ RAW: callerWhere }`);
+  - a zero-argument `rootFilter(() => …)`;
+  - this repository's own handle — `this.table`, `this.tableRef`, `this.col(`, or the table export
+    `<%= entityNamePlural %>.` — on a `rootFilter(` / `RAW:` line;
+  - a `RAW:` whose value is on the next line (the checks are line-based, so that shape is banned outright).
+
+  Each was mutation-checked against the template (review #6's M1–M3 all go red in `just test-unit`). It is a grep:
+  a spelling no pattern names can still pass, which is why the runtime gate below stays.
 - **Runtime:** §8.2's integration test runs `list({ where, with })` on a scoped entity through a generated repository
   against Postgres — the test that would have caught #840, red before the fix.
 
@@ -319,13 +332,29 @@ export const SCOPES = {
 // runtime/base-classes/scope-filters.ts
 export const UNSCOPED: ScopeConfig;
 /** The root half of a scoped read, for code that calls `db.query.<t>` itself. */
-export function scopedRoot(cfg: ScopeConfig, owner: string): { RAW: (t: PgTable) => SQL };
+export function scopedRoot<T extends PgTable = PgTable>(cfg: ScopeConfig, owner: string): { RAW: (t: T) => SQL };
 ```
+
+The manifest also emits the TYPED form (review #10), one factory per entity table:
+
+```ts
+export const rootScope = {
+  accounts: (owner: string) => scopedRoot<typeof schema.accounts>(SCOPES.accounts, owner),
+  …
+};
+```
+
+`db.query.contacts.findMany({ where: rootScope.accounts('x') })` is a compile error (asserted by a `@ts-expect-error`
+in the smoke's type tests), so handing one table's scope to another table's query cannot apply the wrong posture.
+
+The posture is ONE derivation: `entityScope` folds the pattern-implied behaviors (`resolveImpliedBehaviors`), the same
+helper the repository's `behaviors` come from — so an app pattern implying `soft_delete` filters deleted rows at the
+repository root, every hop, `SCOPES` and `rootScope` alike (review #9).
 
 ```ts
 // a loader outside any repository
 await db.query.accounts.findMany({
-  where: { AND: [{ id: { in: ids } }, scopedRoot(SCOPES.accounts, 'AccountLoader')] },
+  where: { AND: [{ id: { in: ids } }, rootScope.accounts('AccountLoader')] },
   columns: { id: true, name: true },
   with: { contacts: { columns: { email: true } } },
 });
@@ -342,8 +371,11 @@ nobody. Route it through a generated repository; if it cannot be (a cross-entity
 `scopedRoot(SCOPES.<table>, owner)`.*
 
 Enforced:
-- **inside this repository** — every `db.query.` call in `templates/` and `runtime/` is either on a generated
-  repository (and carries `this.rootFilter`) or is named in an allowlist with a reason; a grep gate fails otherwise;
+- **inside this repository** — `src/__tests__/templates/no-unscoped-db-query.test.ts` scans `templates/`,
+  `src/emitters/`, `src/cli/shared/` and `runtime/`: every `db.query.<t>.findFirst/findMany(` must be followed by
+  `where: { RAW: this.rootFilter(` or be named in its allowlist with a reason (empty today), and a dynamic
+  `db.query[…]` is banned. It asserts it reaches the six reads of the repository template, and that every allowlist
+  entry still names a real hit. Mutation-checked: replacing `findById`'s root with `{ id: { eq: id } }` turns it red;
 - **for consumers** — documented in the codegen consumer skill and in the manifest's own header. A generator cannot
   lint consumer code.
 
@@ -397,12 +429,16 @@ consumer posture — I9's warning that `bun run typecheck` does not validate a r
   `queries:` finder with mask;
 - the defaults: `findById(id)` is exactly the row type;
 - negatives (`@ts-expect-error`, which TS2578 keeps honest): an unknown column in a mask; an unknown relation in `with`;
-  reading a column the mask excluded; a pre-rendered `SQL` passed as `where`; `with` on a relation-less entity.
+  reading a column the mask excluded; a pre-rendered `SQL` passed as `where`; `service.count(<SQL>)` and
+  `service.list({ where: <SQL> })` (review #3); one table's `rootScope` on another table's query (review #10).
+  (`with` on a relation-less entity is typed `ReadOptions<C, never>`; the CRM fixture has no relation-less entity,
+  so that negative is not asserted.)
 
 ### 8.2 Runtime SQL — `just test-unit`, no Docker (`.toSQL()` on real statements)
 
-Over a generated-shape repository on a tenant + soft-delete + user-tracking entity, for **each** of `findById`,
-`findByIds`, `list`, a `queries:` finder and an FK finder, with and without `columns` / `with` / `where`:
+Over a generated-shape repository (`read-api-sql.spec.ts`; it type-checks, using the manifest's conditional
+`IncludeOf`) on a tenant + soft-delete entity, for **each** of `findById`, `findByIds`, `list`, a unique `queries:`
+finder and an FK finder, with and without `columns` / `with` / `where`:
 - the root predicate renders on the alias (`"d0"."tenant_id"`), never on the real name;
 - the caller's `where` renders on the alias;
 - the root `select` names exactly the masked columns (plus `id` for a `findByIds` that omitted it);
@@ -429,8 +465,7 @@ on the tenant column, the root selecting exactly the mask, rows in input order. 
 
 ### 8.5 Mutation checks
 
-Recorded at §10: remove the root filter from the template → R3 red; render `where` against `this.table` → R1 and the
-§8.2 alias tests red; revert `withRequester` → R5 red.
+Recorded in §11.
 
 ---
 
@@ -491,6 +526,25 @@ is `PgTable`, so `(t) => eq(t.id, id)` had no `id`. Now `rootFilter<T extends Pg
 (table: T) => SQL`, with `T` inferred from the RQBv2 `RAW` slot it is passed to — the concrete aliased table — so the
 predicate is typed the same way in a bare spine and a composed one.
 
+### Found #7 — review of #859, ten findings, all fixed here
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | `findByIds(ids, { columns: { id: false } })` sent an empty mask: Drizzle threw, or with `with` returned `[]` | `byIdsColumns` sends no mask when `id` was the only exclusion; `inInputOrder` THROWS on a row without `id` |
+| 2 | an uppercase / braced / unhyphenated uuid matched in SQL but was dropped by the JS re-order (base `findByIds` too) | `idKey` canonicalises a `uuid` key on both sides and in de-duplication |
+| 3 | `service.count(<SQL>)` compiled through `BaseService`'s `unknown` and threw at runtime | `BaseService.count(where?: Parameters<TRepo['count']>[0])`; negatives in the type tests. `IBaseRepository.count` stays `unknown` — it is the structural constraint, and a narrower function type fails strict variance. `BaseService.list` stays `unknown` because generated services override it with the typed signature; a HAND-WRITTEN service extending `BaseService` therefore keeps an untyped `list` (stated in the CHANGELOG) |
+| 4 | Found #1's `checkColumns<C>` had no gate | `just test-baseline` typechecks the generated tree a SECOND time against `drizzle-orm@1.0.0-rc.5` (the `drizzle-orm-rc5` devDependency alias, types only; tsconfig derived from the baseline one at run time). Mutation: dropping `<C>` → TS2352 on rc.5, red. Plus a template test pinning `checkColumns<C>(` on every masked read |
+| 5 | §5.3's `db.query` grep gate did not exist | written (§5.3) |
+| 6 | the shape gate missed `rootFilter(() => eq(this.table.id, id))` (red only in Docker) | §4.2's extended bans; M1–M3 red in `just test-unit` |
+| 7 | `activeParentFilter` was bound to the un-aliased table | `activeParentFilter(parentTable, fkKey: string): (table) => SQL`, correlated on the handle it is given; SQL test on the alias |
+| 8 | the break table was incomplete | CHANGELOG + PR: vendored consumers run `codegen project update` first; every read needs `relations` on the client — and a repository now fails at CONSTRUCTION naming the cause (`requireRelationalQuery`); `withRequester`'s sync throw → rejection; the list use case's `where`; `rootScopeRawOn` → `rootFilter`; `activeParentFilter`. "The compiler finds every one" is replaced by which rows are compile errors and which are runtime |
+| 9 | `entityScope` ignored pattern-implied behaviors, so `SCOPES` could disagree with the repository | folded through `resolveImpliedBehaviors` (§5.2); mutation-checked unit test |
+| 10 | `scopedRoot` was untyped against its table | the manifest's `rootScope.<table>(owner)` (§5.2) |
+
+Not fixed here, filed: the junction service's `listAssoc` dereferences a counterparty that scope filtered out
+(pre-existing, #862), and `= any($1::uuid[])` instead of `in ($1…$n)` for large id lists (#863). An empty mask at a
+HOP (`with: { owner: { columns: {} } }`) is not guarded at compile time; Drizzle throws `No fields selected` at runtime.
+
 ### Found #5 — smaller things fixed in passing
 
 - `SortTerm` was declared twice in `base-repository.ts` (interface merging hid it). One declaration.
@@ -501,7 +555,21 @@ predicate is typed the same way in a bare spine and a composed one.
 
 ## §11 Acceptance
 
-*(gate output from the run after the last edit — see the PR body)*
+Gate output from the run made after the last edit — recorded in the PR body's acceptance comment for the final commit;
+the numbers for this revision are filled in below when that run completes.
+
+**Mutations, each confirmed red and then reverted:**
+
+| Mutation | Gate that goes red |
+|---|---|
+| render the caller's `where` on `this.table` in `rootFilter` | `test-integration` R1/R2 (`invalid reference to FROM-clause entry for table "regions"`, #840's error); every §8.2 alias test |
+| `rootFilter` scope on `this.table` | every §8.2 alias test |
+| revert `withRequester` to `als.run(ctx, fn)` | §8.2 lazy-thenable tests |
+| a wrong `Equal<>` in the type tests | `test-smoke-relationship` (`TS2344`) |
+| `this.checkColumns(` without `<C>` | `test-baseline`'s rc.5 leg (`TS2352`) |
+| `rootFilter(() => eq(this.table.id, id))` in `findById` | `no-untethered-raw-callback.test.ts` |
+| `findById`'s root as `{ id: { eq: id } }` | `no-unscoped-db-query.test.ts` |
+| `entityScope` without the implied behaviors | `build-graph.test.ts` (review #9) |
 
 ## §11a Issues
 
@@ -511,6 +579,9 @@ Filed with this spec (public tracker, host described by shape only):
 - #842 — `withRequester` must await its callback inside the context (§6);
 - #843 — export the manifest's per-entity scope, and a supported root scope for reads outside a repository (§5);
 - #844 — follow-up (not built): a root-scoping query client (§5.3).
+
+Follow-ups filed from the #859 review: #862 (junction `listAssoc` on a scope-filtered counterparty) and #863
+(`= any($1::uuid[])` for large id lists).
 
 Related, not in scope: #802 (reads take no `tx` — the read options object is where `tx` would go), #800 (filtered
 entity over a base table), REL-3 #588.

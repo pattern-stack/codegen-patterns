@@ -137,6 +137,9 @@ export class DealRepository extends IntegratedEntityRepository<
 
   constructor(@Inject(DRIZZLE) db: DrizzleClient<Relations>) {
     super(db);
+    // Every read runs on db.query.deals — fail HERE, naming the cause,
+    // if the injected client was built without the relations manifest.
+    this.requireRelationalQuery('deals');
   }
 
   // ═══════════════════════════════════════════════════════════════════════

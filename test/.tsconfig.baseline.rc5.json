@@ -1,0 +1,52 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "paths": {
+      "@gen/*": [
+        "../packages/api/src/*"
+      ],
+      "@shared/http/page": [
+        "../runtime/http/pagination"
+      ],
+      "@shared/subsystems/*": [
+        "../runtime/subsystems/*"
+      ],
+      "@shared/constants/*": [
+        "../runtime/constants/*"
+      ],
+      "@shared/types/*": [
+        "../runtime/types/*"
+      ],
+      "@shared/base-classes/*": [
+        "../runtime/base-classes/*"
+      ],
+      "@shared/openapi": [
+        "../runtime/shared/openapi/index.ts"
+      ],
+      "@shared/openapi/*": [
+        "../runtime/shared/openapi/*"
+      ],
+      "@shared/*": [
+        "../runtime/shared/*",
+        "../runtime/*",
+        "../test/scaffold/shared/*"
+      ],
+      "drizzle-orm": [
+        "../node_modules/drizzle-orm-rc5"
+      ],
+      "drizzle-orm/*": [
+        "../node_modules/drizzle-orm-rc5/*"
+      ]
+    }
+  },
+  "include": [
+    "../packages/api/src/**/*"
+  ]
+}

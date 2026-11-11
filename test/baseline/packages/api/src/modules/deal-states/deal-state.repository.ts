@@ -64,6 +64,9 @@ export class DealStateRepository extends BaseRepository<DealState, typeof deal_s
 
   constructor(@Inject(DRIZZLE) db: DrizzleClient<Relations>) {
     super(db);
+    // Every read runs on db.query.deal_states — fail HERE, naming the cause,
+    // if the injected client was built without the relations manifest.
+    this.requireRelationalQuery('deal_states');
   }
 
   // ═══════════════════════════════════════════════════════════════════════

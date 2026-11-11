@@ -10,9 +10,9 @@
  *
  *  1. `BaseRepository.scopePredicate()` — the root of the core
  *     `select().from()` builder, folded into the single `WHERE` by `scopeAnd()`.
- *  2. The generated repository's RQBv2 root filter — `{ RAW: (t) => … }` on
- *     `db.query.<table>.findFirst/findMany`, which is the path a `with` include
- *     takes (`baseQuery()` cannot carry a `with`). Note the `t`: the relational
+ *  2. The generated repository's RQBv2 root filter —
+ *     `{ RAW: this.rootFilter(pred) }` on `db.query.<table>.findFirst/findMany`,
+ *     which is the path EVERY generated read takes (READ-1 §3). Note the `t`: the relational
  *     query builder ALIASES the root, so the predicate must render against the
  *     handle it passes the callback, never against the repository's own.
  *  3. The emitted relations manifest — `where: { RAW: (t) => hopScope(t, …) }`
@@ -254,13 +254,17 @@ export const UNSCOPED: ScopeConfig = Object.freeze({
  * });
  * ```
  *
+ * Prefer the manifest's per-table `rootScope.<table>(owner)`, which fixes `T`
+ * to that table: handing one table's scope to another table's query is then a
+ * compile error rather than a wrong posture or a missing-column throw.
+ *
  * It is `hopScope` shaped as a filter — the same `scopeFilter` a repository's
  * root and every manifest hop use — and it renders against the handle RQBv2
  * passes the callback, i.e. the aliased root.
  */
-export function scopedRoot(
+export function scopedRoot<T extends PgTable = PgTable>(
   cfg: ScopeConfig,
   owner: string,
-): { RAW: (table: PgTable) => SQL } {
-  return { RAW: (table: PgTable) => hopScope(table, cfg, owner) };
+): { RAW: (table: T) => SQL } {
+  return { RAW: (table: T) => hopScope(table, cfg, owner) };
 }

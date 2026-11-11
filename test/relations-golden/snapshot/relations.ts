@@ -9,7 +9,7 @@
 import { defineRelations } from 'drizzle-orm';
 import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';
 
-import { hopScope, UNSCOPED, type ScopeConfig } from '@pattern-stack/codegen/runtime/base-classes/scope-filters';
+import { hopScope, UNSCOPED, scopedRoot, type ScopeConfig } from '@pattern-stack/codegen/runtime/base-classes/scope-filters';
 import * as schema from './schema';
 
 export const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, tenantColumn: 'tenantId', softDelete: true, userTracking: true, enforcement: 'strict' };
@@ -28,6 +28,15 @@ export const SCOPES = {
 	opportunities: UNSCOPED,
 	persons: UNSCOPED,
 } as const satisfies Partial<Record<keyof typeof schema, ScopeConfig>>;
+
+/** The ROOT scope of one table, typed to it: AND it into a hand-written `db.query.<table>` root `where`. */
+export const rootScope = {
+	accounts: (owner: string) => scopedRoot<typeof schema.accounts>(SCOPES.accounts, owner),
+	contacts: (owner: string) => scopedRoot<typeof schema.contacts>(SCOPES.contacts, owner),
+	notes: (owner: string) => scopedRoot<typeof schema.notes>(SCOPES.notes, owner),
+	opportunities: (owner: string) => scopedRoot<typeof schema.opportunities>(SCOPES.opportunities, owner),
+	persons: (owner: string) => scopedRoot<typeof schema.persons>(SCOPES.persons, owner),
+};
 
 export const relations = defineRelations(schema, (r) => ({
 	accounts: {

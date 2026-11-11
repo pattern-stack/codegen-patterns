@@ -80,6 +80,23 @@ const UNTETHERED = /\bRAW\s*:\s*\(\s*\)\s*=>/;
  */
 const PRERENDERED = /\bRAW\s*:\s*(?!\(|this\.rootFilter\()[A-Za-z_$]/;
 
+/**
+ * READ-1 review #6 — the shapes of the SAME defect at the call site READ-1 moved
+ * every root predicate to, `rootFilter`'s argument:
+ *  - a zero-argument callback (`rootFilter(() => …)`), which can only be closing
+ *    over a table it was not handed;
+ *  - a callback that names this repository's own handle (`this.table`,
+ *    `this.tableRef`, `this.col(`) or the table export (`<%= entityNamePlural %>.`)
+ *    inside a `rootFilter(` / `RAW:` line — the relational builder aliased that
+ *    table away;
+ *  - a `RAW:` whose value is on the NEXT line, which the line-based checks above
+ *    cannot see — so it is banned as a shape.
+ */
+const ROOTFILTER_UNTETHERED = /\brootFilter\(\s*\(\s*\)\s*=>/;
+const OWN_HANDLE_IN_CALLBACK =
+	/(\brootFilter\(|\bRAW\s*:).*(\bthis\.(table|tableRef)\b|\bthis\.col\(|<%= *entityNamePlural *%>\.)/;
+const RAW_VALUE_ON_NEXT_LINE = /\bRAW\s*:\s*$/;
+
 function scan(): string[] {
 	const offenders: string[] = [];
 	for (const pattern of SCANNED) {
@@ -87,7 +104,13 @@ function scan(): string[] {
 			const abs = join(REPO_ROOT, file);
 			const lines = readFileSync(abs, 'utf8').split('\n');
 			for (const [index, line] of lines.entries()) {
-				if (UNTETHERED.test(line) || PRERENDERED.test(line)) {
+				if (
+					UNTETHERED.test(line) ||
+					PRERENDERED.test(line) ||
+					ROOTFILTER_UNTETHERED.test(line) ||
+					OWN_HANDLE_IN_CALLBACK.test(line) ||
+					RAW_VALUE_ON_NEXT_LINE.test(line)
+				) {
 					offenders.push(`${relative(REPO_ROOT, abs)}:${index + 1}: ${line.trim()}`);
 				}
 			}
@@ -155,6 +178,28 @@ describe('a RAW callback must take the table it renders against', () => {
 		// …and leaves the legitimate forms alone.
 		expect(UNTETHERED.test('{ RAW: (t) => hopScope(t, CFG, "a.b") },')).toBe(false);
 		expect(UNTETHERED.test('{ RAW: callerWhere },')).toBe(false);
+	});
+
+	it('catches the rootFilter-argument forms of the defect (review #6), and leaves the threaded form alone', () => {
+		// M1 from the review — green on every unit gate before this, red only in Docker.
+		expect(ROOTFILTER_UNTETHERED.test('where: { RAW: this.rootFilter(() => eq(this.table.id, id)) },')).toBe(true);
+		expect(OWN_HANDLE_IN_CALLBACK.test('where: { RAW: this.rootFilter(() => eq(this.table.id, id)) },')).toBe(true);
+		expect(OWN_HANDLE_IN_CALLBACK.test("where: { RAW: this.rootFilter((t) => eq(this.col('id'), id)) },")).toBe(true);
+		expect(
+			OWN_HANDLE_IN_CALLBACK.test('where: { RAW: this.rootFilter((t) => eq(<%= entityNamePlural %>.id, id)) },'),
+		).toBe(true);
+		// M2 — a RAW that ignores its table and reaches for the core builder's guard.
+		expect(OWN_HANDLE_IN_CALLBACK.test('{ RAW: (_t) => this.scopeAnd(query?.where?.(this.table)) ?? sql`true` },')).toBe(true);
+		// M3 — the value moved to the next line.
+		expect(RAW_VALUE_ON_NEXT_LINE.test('      where: { RAW:')).toBe(true);
+		// The shipped forms pass.
+		for (const ok of [
+			'where: { RAW: this.rootFilter((t) => eq(t.id, id)) },',
+			'where: { RAW: this.rootFilter(query?.where) },',
+			"where: { RAW: (t) => hopScope(t, ACCOUNTS_SCOPE, 'contacts.account') } }),",
+		]) {
+			expect(ROOTFILTER_UNTETHERED.test(ok) || OWN_HANDLE_IN_CALLBACK.test(ok) || RAW_VALUE_ON_NEXT_LINE.test(ok)).toBe(false);
+		}
 	});
 
 	it('catches the pre-rendered form READ-1 banned, and leaves the callback forms alone', () => {

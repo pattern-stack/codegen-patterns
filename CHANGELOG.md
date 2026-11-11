@@ -11,9 +11,18 @@ varchar(n) USING "col"::varchar(n)`, and an explicit cast to `varchar(n)` cuts t
 characters rather than failing. Before migrating, run `select max(length(col)) from <table>` on
 every such column and raise `max_length` (or clean the data) wherever it exceeds `n`.
 
-**Breaking (generated read API, READ-1 — `docs/specs/READ-1.md`).** Regenerate
-(`codegen entity new --all --force`, plus `junction new --all --force`) and update the call
-sites below. Each break is one shape, and the compiler finds every one of them.
+**Breaking (generated read API, READ-1 — `docs/specs/READ-1.md`).** Upgrade in this order:
+
+1. **Vendored runtime (`runtime: vendored`): run `codegen project update` first.** `entity new`
+   does not refresh `@shared/base-classes`, and the regenerated repositories call `rootFilter`,
+   `checkColumns`, `byIdsColumns`, `inInputOrder`, `uniqueIds` and `requireRelationalQuery`; the
+   manifest imports `UNSCOPED` and `scopedRoot`.
+2. Regenerate: `codegen entity new --all --force`, plus `junction new --all --force`.
+3. Fix the call sites below. Each changed call SHAPE is a **compile error** at the call site,
+   including through a generated service (`service.count(eq(…))` and `service.list({ where: <SQL> })`
+   are type errors). The last three rows are runtime behaviour, each loud or result-preserving.
+   One residual: a HAND-WRITTEN service extending `BaseService` inherits `list(options?: unknown)`
+   (generated services override it with the typed signature).
 
 | Break | Before | After |
 |---|---|---|
@@ -23,7 +32,11 @@ sites below. Each break is one shape, and the compiler finds every one of them.
 | `<Entity>Result` / `ResultOf` take the column mask first | `AccountResult<TWith>` · `ResultOf<'accounts', TWith>` | `AccountResult<undefined, TWith>` (both defaulted; `AccountResult` alone is the row) · `ResultOf<'accounts', TColumns, TWith>` |
 | `WithActor.memberPredicate` returns a row filter | `list({ where: repo.memberPredicate(id) })` with an `SQL` | the same call; the value is now `(table) => SQL` — pass it as `where`, or call it with a table |
 | `BaseRepository.rootScopeRawOn(t, …)` is replaced | `{ RAW: (t) => this.rootScopeRawOn(t, { softDelete }) }` | `{ RAW: this.rootFilter(pred) }` |
+| `activeParentFilter` returns a row filter | `this.activeParentFilter(parents, this.col('parentId'))` → `SQL` | `this.activeParentFilter(parents, 'parentId')` → `(table) => SQL`, correlated on the handle it is given |
+| The generated list use case's `where` seam | `listUseCase.execute(q, { where: eq(accounts.name, x) })` | `listUseCase.execute(q, { where: (t) => eq(t.name, x) })` |
 | Plain generated reads run on the relational query builder | `findById(id)` → `select … from "accounts" where …` | `select "d0"."id" … from "accounts" as "d0" where …` — same rows, same plan; any test asserting the old SQL text changes |
+| **Every** generated read needs the relations manifest on the `DRIZZLE` client | only `with` reads used `db.query` | a client built without `relations` now fails at repository **construction**, naming the cause: bind `drizzle({ client, relations })` |
+| `withRequester` awaits its callback inside the context | a synchronous throw in `fn` threw synchronously | it becomes a rejected promise — identical for any caller that `await`s |
 
 ### Breaking
 
@@ -52,9 +65,13 @@ sites below. Each break is one shape, and the compiler finds every one of them.
   (`rootFilter`), so the root and every hop are scoped on every method. The generated service
   forwards the same options, including on `queries:` finders (it dropped them before).
 - **The relations manifest exports its scope (#843).** `export const <TABLE>_SCOPE` for every
-  scoped entity table and `export const SCOPES` over every entity table (unscoped ones as
-  `UNSCOPED`). `scopedRoot(SCOPES.<table>, owner)` root-scopes a hand-written `db.query.*` read,
-  whose hops the manifest already scoped.
+  scoped entity table, `export const SCOPES` over every entity table (unscoped ones as
+  `UNSCOPED`), and `rootScope.<table>(owner)` — the root scope of a hand-written `db.query.*`
+  read, typed to its table (another table's scope is a compile error). The scope now folds in
+  pattern-implied behaviors, as the repository's `behaviors` always did.
+- **`findByIds` compares ids as the database spells them.** For a `uuid` key, an uppercase, braced
+  or unhyphenated id finds its row and de-duplicates against the canonical spelling (it was
+  silently absent before, in the base `findByIds` too).
 - **Configurable tenancy column (#791).** `tenant_scoped` no longer hard-codes `tenant_id`.
   `codegen.config.yaml` takes `tenancy: { column: <snake_name> }` (default `tenant_id`), and an
   entity may write `tenant_scoped: { column: <snake_name> }` to override it. If the entity already

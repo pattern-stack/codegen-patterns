@@ -323,9 +323,49 @@ const ISSUE_680_EXPECTATION = {
  * that the shape compiles. Every diagnostic fails the gate except the named
  * #680 expectation above.
  */
-function typecheckBaseline() {
-  const tsconfig = join(TEST_DIR, 'tsconfig.baseline.json');
-  console.log('Typechecking generated backend output (packages/api/src)...');
+/**
+ * READ-1 review #4 — the same typecheck against Drizzle **1.0.0-rc.5**, the pin
+ * consumers run, through the `drizzle-orm-rc5` alias (a devDependency; types
+ * only — nothing executes it). The repo pins rc.4, and READ-1 §10 Found #1 was a
+ * fix (`this.checkColumns<C>(…)`) whose absence is clean on rc.4 and 70+ TS2352
+ * on rc.5. Without this leg no gate could see it come back.
+ *
+ * The tsconfig is DERIVED from `tsconfig.baseline.json` (its paths plus the two
+ * `drizzle-orm` remaps), written beside it so its relative paths resolve, and
+ * removed afterwards — one path list, not two that can drift.
+ */
+function typecheckBaselineRc5() {
+  const base = JSON.parse(readFileSync(join(TEST_DIR, 'tsconfig.baseline.json'), 'utf8'));
+  const rc5 = join(ROOT, 'node_modules', 'drizzle-orm-rc5');
+  if (!existsSync(join(rc5, 'package.json'))) {
+    console.error('drizzle-orm-rc5 is not installed — run `just install` (the rc.5 typecheck leg needs it).');
+    process.exit(1);
+  }
+  const derived = {
+    ...base,
+    compilerOptions: {
+      ...base.compilerOptions,
+      paths: {
+        ...base.compilerOptions.paths,
+        'drizzle-orm': ['../node_modules/drizzle-orm-rc5'],
+        'drizzle-orm/*': ['../node_modules/drizzle-orm-rc5/*'],
+      },
+    },
+  };
+  const file = join(TEST_DIR, '.tsconfig.baseline.rc5.json');
+  writeFileSync(file, JSON.stringify(derived, null, 2));
+  try {
+    typecheckBaseline(file, 'drizzle-orm@1.0.0-rc.5');
+  } finally {
+    rmSync(file, { force: true });
+  }
+}
+
+function typecheckBaseline(
+  tsconfig = join(TEST_DIR, 'tsconfig.baseline.json'),
+  label = 'the repo pin',
+) {
+  console.log(`Typechecking generated backend output (packages/api/src) against ${label}...`);
   let output = '';
   // A non-zero (or missing) exit status fails the gate on its own, even with no
   // output — a tsc that dies silently compiled nothing (#688).
@@ -483,6 +523,7 @@ switch (command) {
     cleanGenDir();
     runCodegen();
     typecheckBaseline();
+    typecheckBaselineRc5();
     captureOutputState(GEN_DIR);
     const fullResult = compare();
     console.log('\n--- Results ---');

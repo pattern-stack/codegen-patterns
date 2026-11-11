@@ -85,9 +85,11 @@ const relations = defineRelations(schema, (r) => ({
 	},
 }));
 type Relations = typeof relations;
-type IncludeOf<T extends keyof Relations> = NonNullable<
-	DBQueryConfig<'one', Relations, Relations[T]>['with']
->;
+// The manifest's own conditional form (REL-2 §2.3) — a bare indexed access is TS2536.
+type IncludeOf<T extends keyof Relations> =
+	'with' extends keyof DBQueryConfig<'one', Relations, Relations[T]>
+		? NonNullable<DBQueryConfig<'one', Relations, Relations[T]>['with']>
+		: Record<string, never>;
 type ColumnsOf<T extends keyof Relations> = NonNullable<
 	DBQueryConfig<'many', Relations, Relations[T]>['columns']
 >;
@@ -135,6 +137,34 @@ class WidgetRepository extends BaseRepository<Widget, typeof widgets, Relations>
 		tenantColumn: 'tenantId',
 	};
 	protected override readonly scopeEnforcement = 'strict' as const;
+
+	constructor(db: ConstructorParameters<typeof BaseRepository<Widget, typeof widgets, Relations>>[0]) {
+		super(db);
+		this.requireRelationalQuery('widgets');
+	}
+
+	/** Exposed for the review-#1 guard test. */
+	order<T extends object>(rows: T[], ids: string[]): T[] {
+		return this.inInputOrder(rows, ids, false);
+	}
+
+	/** Exposed for the review-#7 test. */
+	activeOwner() {
+		return this.activeParentFilter(owners, 'ownerId');
+	}
+
+	// A unique `queries:` finder, in the generated shape.
+	async findBySku<C extends WidgetColumns | undefined = undefined, W extends WidgetInclude = WidgetNoInclude>(
+		sku: string,
+		opts?: ReadOptions<C, W>,
+	): Promise<WidgetResult<C, W> | null> {
+		const row = await this.db.query.widgets.findFirst({
+			where: { RAW: this.rootFilter((t) => eq(t.sku, sku)) },
+			columns: this.checkColumns<C>(opts?.columns),
+			with: opts?.with,
+		});
+		return (row as WidgetResult<C, W> | undefined) ?? null;
+	}
 
 	override async findById<C extends WidgetColumns | undefined = undefined, W extends WidgetInclude = WidgetNoInclude>(
 		id: string,
@@ -206,6 +236,7 @@ const CALLS: Array<[string, (r: WidgetRepository) => Promise<unknown>]> = [
 	['list', (r) => r.list()],
 	['list + where + with', (r) => r.list({ where: (t) => like(t.name, 'a%'), with: { owner: true } })],
 	['list + sort + limit + columns', (r) => r.list({ sort: [{ column: 'name', direction: 'asc' }], limit: 5, columns: { name: true } })],
+	['findBySku (queries: unique)', (r) => r.findBySku('s1', { columns: { name: true }, with: { owner: true } })],
 	['findByOwnerId', (r) => r.findByOwnerId('o1')],
 	['findByOwnerId + with', (r) => r.findByOwnerId('o1', { with: { owner: true }, limit: 3 })],
 ];
@@ -314,6 +345,63 @@ describe('READ-1 §2.4 — findByIds', () => {
 	});
 });
 
+describe('READ-1 review — findByIds edge cases', () => {
+	const UPPER = 'A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11';
+	const LOWER = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+
+	it('#1 `{ id: false }` alone: no empty mask is sent, rows come back, `id` stripped', async () => {
+		const { db, statements } = fakeDb([[LOWER, 'T1', null, 'o1', 'One', null]]);
+		const rows = await asT1(() => new WidgetRepository(db).findByIds([LOWER], { columns: { id: false } }));
+		expect(statements[0]!.text.slice(0, statements[0]!.text.indexOf(' from '))).toContain('"d0"."id"');
+		expect(rows).toEqual([{ tenantId: 'T1', deletedAt: null, ownerId: 'o1', name: 'One', sku: null }]);
+	});
+
+	it('#1 `{ id: false }` with a `with`: still selects the root (and `id`), never relations only', async () => {
+		const { db, statements } = fakeDb();
+		await asT1(() => new WidgetRepository(db).findByIds([LOWER], { columns: { id: false }, with: { owner: true } }));
+		const select = statements[0]!.text.slice(0, statements[0]!.text.indexOf(' from '));
+		expect(select).toContain('"d0"."id"');
+		expect(select).toContain('"d0"."name"');
+	});
+
+	it('#1 a row without `id` THROWS instead of being dropped', () => {
+		const repo = new WidgetRepository(fakeDb().db);
+		expect(() => repo.order([{ name: 'x' }], ['w1'])).toThrow(/a row came back without an `id`/);
+	});
+
+	it('#2 an uppercase / braced / unhyphenated uuid finds its row and is read once', async () => {
+		const { db, statements } = fakeDb([[LOWER, 'One']]);
+		const rows = await asT1(() =>
+			new WidgetRepository(db).findByIds(
+				[UPPER, `{${LOWER}}`, LOWER.replace(/-/g, '')],
+				{ columns: { id: true, name: true } },
+			),
+		);
+		expect(rows).toEqual([{ id: LOWER, name: 'One' }]);
+		const bound = statements[0]!.values.filter((v) => typeof v === 'string' && /a0ee/i.test(v));
+		expect(bound).toEqual([UPPER]);
+	});
+});
+
+describe('READ-1 review #7 — activeParentFilter renders on the handle it is given', () => {
+	it('correlates the EXISTS on the alias, never the real root name', async () => {
+		const { db, statements } = fakeDb();
+		const repo = new WidgetRepository(db);
+		await asT1(() => repo.list({ where: repo.activeOwner() }));
+		expect(statements[0]!.text).toContain('p.id = "d0"."owner_id"');
+		expect(statements[0]!.text).not.toContain('"widgets".');
+	});
+});
+
+describe('READ-1 review #8a — a client without the relations manifest fails at construction', () => {
+	it('names the cause', () => {
+		const bare = drizzle({ client: { query: async () => ({ rows: [] }) } as never });
+		expect(() => new WidgetRepository(bare as never)).toThrow(
+			/no relational query for 'widgets'.*drizzle\(\{ client, relations \}\)/,
+		);
+	});
+});
+
 describe('READ-1 §5 — scopedRoot: the root of a hand-written db.query', () => {
 	it('renders the same scope a repository renders, on the alias', async () => {
 		const { db, statements } = fakeDb();
@@ -341,9 +429,11 @@ describe('READ-1 §5 — scopedRoot: the root of a hand-written db.query', () =>
 describe('READ-1 §6 — withRequester awaits a lazy thenable INSIDE the context', () => {
 	it('a thenable whose `.then` reads the context sees it', async () => {
 		const { tryGetRequester } = await import('../../../../runtime/base-classes/tenant-context');
-		const lazy = {
-			then<R>(resolve: (v: string | undefined) => R) {
-				return resolve(tryGetRequester()?.tenantId ?? undefined);
+		// Reads the context only when `.then` is called — the shape of a Drizzle builder.
+		const lazy: PromiseLike<string | undefined> = {
+			then(onfulfilled) {
+				const seen = tryGetRequester()?.tenantId ?? undefined;
+				return Promise.resolve(onfulfilled ? onfulfilled(seen) : seen) as never;
 			},
 		};
 		expect(await asT1(() => lazy)).toBe(T1);

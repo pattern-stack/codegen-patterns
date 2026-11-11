@@ -261,6 +261,25 @@ export abstract class BaseRepository<
   }
 
   /**
+   * Fail at CONSTRUCTION when the injected client was built without this
+   * project's relations manifest (READ-1 review #8a). Every generated read runs
+   * on `db.query.<key>`, which exists only on a client built with
+   * `drizzle({ client, relations })`; without it, every read — not only an
+   * include — would fail later as `undefined is not an object`. Called by the
+   * generated constructor with its table's manifest key.
+   */
+  protected requireRelationalQuery(key: string): void {
+    const query = (this.db as { query?: Record<string, unknown> }).query;
+    if (query?.[key] === undefined) {
+      throw new Error(
+        `${this.constructor.name}: the injected Drizzle client has no relational query for '${key}'. ` +
+          'Generated reads run on db.query.<table>, so the client bound to DRIZZLE must be built with ' +
+          "this project's manifest: drizzle({ client, relations }) with `relations` from the generated relations.ts.",
+      );
+    }
+  }
+
+  /**
    * Pick the runner for a write: the caller-supplied transaction handle
    * if present, otherwise the repository's own client. Keeps the `tx`
    * parameter purely additive — callers without a transaction call as
@@ -549,7 +568,10 @@ export abstract class BaseRepository<
    * {@link RowFilter} AND this repository's scope, as one `RAW` callback for the
    * relational query builder:
    *
-   *   `where: { AND: [ { id: { in: ids } }, { RAW: this.rootFilter(opts.where) } ] }`
+   *   `where: { RAW: this.rootFilter((t) => inArray(t.id, ids)) }` — a keyed read
+   *   `where: { RAW: this.rootFilter(query?.where) }`             — `list()`
+   *
+   * It is the read's WHOLE root `where`: one predicate, rendered on the alias.
    *
    * **Both halves render against the table RQBv2 hands the callback, never
    * `this.tableRef`.** The relational builder ALIASES the root
@@ -610,9 +632,37 @@ export abstract class BaseRepository<
     return columns;
   }
 
-  /** De-duplicate an id list, keeping first-occurrence order. */
+  /**
+   * The key an id is compared by — the database's spelling, not the caller's.
+   *
+   * `in (…)` on a `uuid` column PARSES its operands, so `'A0EEBC99-…'`,
+   * `'{a0eebc99-…}'` and `'a0eebc99…'` (no hyphens) all match the row, but
+   * Postgres prints the canonical lowercase hyphenated form. Comparing the
+   * caller's raw string against that would silently drop the row (READ-1 review
+   * #2). So for a `uuid` primary key both sides are canonicalised; any other key
+   * type is compared as given — a `text` key distinguishes case, and so must we.
+   */
+  protected idKey(id: unknown): unknown {
+    if (typeof id !== 'string' || this.col('id').getSQLType() !== 'uuid') return id;
+    const hex = id.replace(/[{}-]/g, '').toLowerCase();
+    if (!/^[0-9a-f]{32}$/.test(hex)) return id;
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+
+  /**
+   * De-duplicate an id list by {@link idKey}, keeping first-occurrence order —
+   * so `'A0EE…'` and `'a0ee…'` are one id, read once.
+   */
   protected uniqueIds(ids: readonly string[]): string[] {
-    return [...new Set(ids)];
+    const seen = new Set<unknown>();
+    const unique: string[] = [];
+    for (const id of ids) {
+      const key = this.idKey(id);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(id);
+    }
+    return unique;
   }
 
   /**
@@ -624,9 +674,12 @@ export abstract class BaseRepository<
    *   - no mask, or a mask that already selects `id` → unchanged;
    *   - an INCLUSION mask (any `true`) without `id` → `id: true` added;
    *   - an EXCLUSION mask (only `false`s) that excludes `id` → that key dropped
-   *     (adding `id: true` would turn it into a one-column inclusion mask).
+   *     (adding `id: true` would turn it into a one-column inclusion mask) — and
+   *     if `id` was the ONLY exclusion, no mask at all: an empty `{}` selects no
+   *     root column, so Drizzle throws without a `with` and, with one, returns
+   *     rows with no `id` to order by (READ-1 review #1).
    */
-  protected byIdsColumns<C>(columns: C): { columns: C; stripId: boolean } {
+  protected byIdsColumns<C>(columns: C): { columns: C | undefined; stripId: boolean } {
     if (columns === undefined || columns === null || typeof columns !== 'object') {
       return { columns, stripId: false };
     }
@@ -638,7 +691,7 @@ export abstract class BaseRepository<
     }
     if (mask['id'] === false) {
       const { id: _excluded, ...rest } = mask;
-      return { columns: rest as C, stripId: true };
+      return { columns: Object.keys(rest).length === 0 ? undefined : (rest as C), stripId: true };
     }
     return { columns, stripId: false };
   }
@@ -647,6 +700,9 @@ export abstract class BaseRepository<
    * Put by-id rows back in the caller's order (first occurrence), dropping
    * nothing and inventing nothing: an id with no row is absent. With `stripId`,
    * removes the `id` key a mask that omitted it was given by `byIdsColumns`.
+   *
+   * A row WITHOUT an `id` is a defect in the statement, not a missing row, so it
+   * THROWS rather than being keyed under `undefined` and silently dropped.
    */
   protected inInputOrder<TRow extends object>(
     rows: readonly TRow[],
@@ -654,10 +710,19 @@ export abstract class BaseRepository<
     stripId: boolean,
   ): TRow[] {
     const byId = new Map<unknown, TRow>();
-    for (const row of rows) byId.set((row as Record<string, unknown>)['id'], row);
+    for (const row of rows) {
+      const id = (row as Record<string, unknown>)['id'];
+      if (id === undefined || id === null) {
+        throw new Error(
+          `${this.constructor.name}.findByIds: a row came back without an \`id\` — ` +
+            'the statement must select it to order by it. This is a bug in the read, not a missing row.',
+        );
+      }
+      byId.set(this.idKey(id), row);
+    }
     const ordered: TRow[] = [];
     for (const id of ids) {
-      const row = byId.get(id);
+      const row = byId.get(this.idKey(id));
       if (row === undefined) continue;
       if (stripId) delete (row as Record<string, unknown>)['id'];
       ordered.push(row);
@@ -868,8 +933,8 @@ export abstract class BaseRepository<
   }
 
   /**
-   * Build a WHERE clause fragment that restricts results to rows whose
-   * parent (identified by a belongs_to FK) is not soft-deleted.
+   * A {@link RowFilter}: "this row's parent (by a `belongs_to` FK) is not
+   * soft-deleted".
    *
    * Use this in custom repository methods when you need "rows reachable
    * from an active parent". The default findAll / findById behavior is
@@ -879,23 +944,26 @@ export abstract class BaseRepository<
    * `on_delete` FK rules do not fire for soft-deletes; use this helper
    * instead of expecting cascade semantics on the DB level.
    *
+   * The `EXISTS` correlates on the FK of the handle it is GIVEN — the aliased
+   * root on a generated read — never on this repository's own table, which the
+   * relational builder aliased away (READ-1 §4; the FROM-clause class of #840).
+   *
    * Example:
    *   async listActiveMessages(): Promise<Message[]> {
-   *     return this.list({
-   *       where: this.activeParentFilter(conversations, this.col('conversationId')),
-   *     });
+   *     return this.list({ where: this.activeParentFilter(conversations, 'conversationId') });
    *   }
    *
    * @param parentTable  The Drizzle table object for the parent entity.
-   * @param parentFkColumn  The FK column on this (child) table that references parent.id.
+   * @param fkKey  camelCase key of the FK column on this (child) table that references parent.id.
    */
   protected activeParentFilter(
     parentTable: PgTable,
-    parentFkColumn: PgColumn,
-  ): SQL {
-    return sql`EXISTS (
+    fkKey: string,
+  ): (table: PgTable) => SQL {
+    const owner = this.constructor.name;
+    return (table: PgTable) => sql`EXISTS (
       SELECT 1 FROM ${parentTable} p
-      WHERE p.id = ${parentFkColumn}
+      WHERE p.id = ${column(table, fkKey, owner)}
         AND p.deleted_at IS NULL
     )`;
   }

@@ -64,6 +64,9 @@ export class OpportunityRepository extends BaseRepository<Opportunity, typeof op
 
   constructor(@Inject(DRIZZLE) db: DrizzleClient<Relations>) {
     super(db);
+    // Every read runs on db.query.opportunities — fail HERE, naming the cause,
+    // if the injected client was built without the relations manifest.
+    this.requireRelationalQuery('opportunities');
   }
 
   // ═══════════════════════════════════════════════════════════════════════

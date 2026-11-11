@@ -375,8 +375,14 @@ rendered on the alias. `ListOptions<TTable>.where` / `count(where)` are a
 `RowFilter<TTable>` (`(t) => SQL`); a pre-rendered `SQL` and `orderBy` do not exist
 (`no-untethered-raw-callback.test.ts` bans a non-callback `RAW:`). `findByIds`: no
 statement for `[]`, de-duplicated, input order, absent ids dropped. The manifest
-exports every scoped table's `<TABLE>_SCOPE` and a `SCOPES` map (unscoped tables as
-`UNSCOPED`); `scopedRoot(cfg, owner)` root-scopes a hand-written `db.query`.
+exports every scoped table's `<TABLE>_SCOPE`, a `SCOPES` map (unscoped tables as
+`UNSCOPED`) and `rootScope.<table>(owner)` — the typed root scope of a hand-written
+`db.query` (another table's is a compile error). `entityScope` folds pattern-implied
+behaviors, like the repository. Gates: `no-unscoped-db-query.test.ts` (every emitted
+`db.query.*.find*` carries `rootFilter`), `no-untethered-raw-callback.test.ts` (the
+alias shapes), and `just test-baseline`'s second typecheck against Drizzle rc.5 via the
+`drizzle-orm-rc5` alias. A generated repository's constructor calls
+`requireRelationalQuery('<plural>')`.
 `withRequester` awaits its callback inside the ALS, so a lazy thenable builds in
 context. `<Entity>Result<TColumns, TWith>` (both defaulted); `ResultOf<T, C, W>`.
 

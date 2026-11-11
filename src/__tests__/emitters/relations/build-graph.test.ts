@@ -5,6 +5,8 @@
  * regression names itself instead of showing up as a diff hunk.
  */
 
+import { definePattern } from '../../../patterns/pattern-definition';
+import { registerLibraryPattern } from '../../../patterns/registry';
 import { describe, expect, it } from 'bun:test';
 
 import {
@@ -521,6 +523,34 @@ describe('manifest rendering', () => {
 // ---------------------------------------------------------------------------
 
 describe('entityScope', () => {
+	it('folds in PATTERN-implied behaviors, as the repository does (READ-1 review #9)', () => {
+		// A pattern implying soft_delete makes the repository filter deleted rows
+		// (entity-locals folds resolveImpliedBehaviors). The hops, SCOPES and
+		// scopedRoot must agree — one declaration, one posture (charter I1).
+		registerLibraryPattern(
+			definePattern({
+				name: 'ReadOneSoftDeleting',
+				extends: ['Base'],
+				repositoryClass: 'BaseRepository',
+				serviceClass: 'BaseService',
+				repositoryImport: '@shared/base-classes/base-repository',
+				serviceImport: '@shared/base-classes/base-service',
+				repositoryInheritedMethods: ['findById'],
+				serviceInheritedMethods: ['findById'],
+				impliedBehaviors: ['soft_delete'],
+				description: 'test-only: implies soft_delete',
+			}),
+		);
+		const def = definition('a', 'as');
+		def.entity.pattern = 'ReadOneSoftDeleting';
+		expect(entityScope(def, 'tenant_id')).toEqual({
+			tenantScoped: false,
+			softDelete: true,
+			userTracking: false,
+			enforcement: 'lenient',
+		});
+	});
+
 	it('is null when nothing is declared, so the manifest does not grow', () => {
 		expect(entityScope(definition('a', 'as'), 'tenant_id')).toBeNull();
 		expect(

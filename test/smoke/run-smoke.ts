@@ -663,7 +663,7 @@ function assertRelationshipEmission(tmpDir: string): void {
 	// ── REL-2 (#587): the per-hop scope predicate + the typed-include helpers ──
 	assertContains(
 		manifest,
-		/import \{ hopScope, UNSCOPED, type ScopeConfig \} from '@shared\/base-classes\/scope-filters';/,
+		/import \{ hopScope, UNSCOPED, scopedRoot, type ScopeConfig \} from '@shared\/base-classes\/scope-filters';/,
 		'generated/relations.ts imports the hop predicate (and UNSCOPED, for SCOPES) from the runtime',
 	);
 	assertContains(

@@ -64,6 +64,9 @@ export class UserRepository extends BaseRepository<User, typeof users, Relations
 
   constructor(@Inject(DRIZZLE) db: DrizzleClient<Relations>) {
     super(db);
+    // Every read runs on db.query.users — fail HERE, naming the cause,
+    // if the injected client was built without the relations manifest.
+    this.requireRelationalQuery('users');
   }
 
   // ═══════════════════════════════════════════════════════════════════════
