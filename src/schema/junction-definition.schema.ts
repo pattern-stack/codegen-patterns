@@ -41,19 +41,51 @@ const EntityNameSchema = z
 // ============================================================================
 
 /**
- * The identity role (`role` with `choices:`) is always NOT NULL — it is part of
- * the composite key — so `nullable: false` on it restates the rule. The entity
- * field rule would read that as "NOT NULL with no default" and refuse it, so
- * the redundant key is dropped before the field schema sees it.
+ * Whether a junction's `role` is its **identity role**: `role` with a non-empty
+ * `choices:`. That role is the junction's identity enum — always NOT NULL and
+ * part of the composite primary key. A `role` without `choices:` is an ordinary
+ * payload column. The one rule; the schema, `junction new`'s prompt, the
+ * semantic model, the CLI summary and the `LinkInput` key set all ask it here.
+ */
+export function hasIdentityRole(fields: unknown): boolean {
+	if (!fields || typeof fields !== 'object') return false;
+	const role = (fields as Record<string, unknown>).role as { choices?: unknown } | undefined;
+	return !!role && typeof role === 'object' && Array.isArray(role.choices) && role.choices.length > 0;
+}
+
+/**
+ * The identity role is always NOT NULL — it is part of the composite key — so
+ * `nullable: false` on it restates the rule. The entity field rule would read
+ * that as "NOT NULL with no default" and refuse it, so the redundant key is
+ * dropped before the field schema sees it.
  */
 function stripIdentityRoleNotNull(fields: unknown): unknown {
-	if (!fields || typeof fields !== 'object') return fields;
-	const role = (fields as Record<string, unknown>).role as Record<string, unknown> | undefined;
-	if (!role || typeof role !== 'object' || role.nullable !== false) return fields;
-	if (!Array.isArray(role.choices) || role.choices.length === 0) return fields;
+	if (!hasIdentityRole(fields)) return fields;
+	const role = (fields as Record<string, Record<string, unknown>>).role;
+	if (role.nullable !== false) return fields;
 	const { nullable: _redundant, ...rest } = role;
 	return { ...(fields as Record<string, unknown>), role: rest };
 }
+
+/**
+ * Entity-field keys a junction payload field accepts by shape but that nothing
+ * on a junction reads. Each is refused rather than parsed and dropped — the
+ * #690 class (a key that silently does nothing).
+ */
+const UNSUPPORTED_JUNCTION_FIELD_KEYS: Record<string, string> = {
+	choices_from: "the junction template has no file loader — list the values inline with 'choices:'",
+	unique:
+		'no unique index is emitted for a junction payload field — a junction row is unique by its composite primary key',
+	min_length: 'a junction has no DTOs, so the constraint would not be enforced',
+	max_length: 'a junction has no DTOs, so the constraint would not be enforced',
+	min: 'a junction has no DTOs, so the constraint would not be enforced',
+	max: 'a junction has no DTOs, so the constraint would not be enforced',
+	role: 'junction fields carry no analytics tags — the semantic model derives junction columns untagged',
+	agg: 'junction fields carry no analytics tags — the semantic model derives junction columns untagged',
+	aggs: 'junction fields carry no analytics tags — the semantic model derives junction columns untagged',
+	additivity: 'junction fields carry no analytics tags — the semantic model derives junction columns untagged',
+	time: 'junction fields carry no analytics tags — the semantic model derives junction columns untagged',
+};
 
 /**
  * Top-level junction YAML shape.
@@ -193,8 +225,24 @@ export const JunctionDefinitionSchema = z
 	)
 	.superRefine((d, ctx) => {
 		const fields = d.fields ?? {};
+		const [left, right] = d.between;
+		const ownColumns = new Set(['id', `${left}_id`, `${right}_id`]);
 		for (const [name, field] of Object.entries(fields)) {
 			const at = (key: string) => ['fields', name, key];
+			// The endpoint FKs are the junction's own columns, and it has no `id`
+			// (an optional surrogate id is #679 / #797). A same-named payload field
+			// would be dropped (`id`) or emitted twice (an endpoint FK).
+			if (ownColumns.has(name)) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message:
+						name === 'id'
+							? "a junction has no 'id' column — its key is the composite (" +
+								`${left}_id, ${right}_id) primary key`
+							: `'${name}' is the junction's own endpoint column — it is emitted from 'between:'`,
+					path: ['fields', name],
+				});
+			}
 			if (d.timestamps && (name === 'created_at' || name === 'updated_at')) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
@@ -202,14 +250,15 @@ export const JunctionDefinitionSchema = z
 					path: ['fields', name],
 				});
 			}
-			// The junction template has no file loader and no polymorphic columns.
-			if (field.choices_from !== undefined) {
+			for (const [key, why] of Object.entries(UNSUPPORTED_JUNCTION_FIELD_KEYS)) {
+				if ((field as Record<string, unknown>)[key] === undefined) continue;
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
-					message: "'choices_from' is not supported on a junction field — list the values inline with 'choices:'",
-					path: at('choices_from'),
+					message: `'${key}' is not supported on a junction field: ${why}`,
+					path: at(key),
 				});
 			}
+			// The junction template has no polymorphic columns.
 			if (field.type === 'entity_ref') {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
@@ -219,8 +268,7 @@ export const JunctionDefinitionSchema = z
 			}
 		}
 		// The identity role is part of the composite primary key: it cannot be NULL.
-		const role = fields.role;
-		if (role?.choices?.length && role.nullable === true) {
+		if (hasIdentityRole(fields) && fields.role?.nullable === true) {
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
 				message:

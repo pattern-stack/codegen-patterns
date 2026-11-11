@@ -23,7 +23,7 @@ export type <%= entityNamePascal %>LinkInput = globalThis.Partial<
   globalThis.Pick<<%= classNames.entity %>,
     <%- linkInputKeys %>
   >
->;
+><% if (linkInputRequiredKeys) { %> & globalThis.Pick<<%= classNames.entity %>, <%- linkInputRequiredKeys %>><% } %>;
 
 @Injectable()
 export class <%= classNames.service %> extends WithAnalytics(
@@ -90,7 +90,7 @@ export class <%= classNames.service %> extends WithAnalytics(
   async attach(
     <%= leftEntityCamel %>Id: string,
     <%= rightEntityCamel %>Id: string,
-    link?: <%= entityNamePascal %>LinkInput,
+    link<%= linkInputRequiredKeys ? '' : '?' %>: <%= entityNamePascal %>LinkInput,
   ): Promise<<%= classNames.entity %>> {
     return this.create({
       <%= leftColumnCamel %>: <%= leftEntityCamel %>Id,

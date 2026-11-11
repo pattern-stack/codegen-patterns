@@ -18,9 +18,13 @@ import path from "node:path";
 import { emittedStem } from '../../../src/config/file-naming.js';
 import yaml from "yaml";
 import { behaviorWithTimezone, timestampColumn } from "../../../src/schema/field-timestamp.js";
-import { JunctionDefinitionSchema } from "../../../src/schema/junction-definition.schema.js";
+import { JunctionDefinitionSchema, hasIdentityRole } from "../../../src/schema/junction-definition.schema.js";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
-import { junctionName as deriveJunctionName, junctionNaming } from "../../_shared/junction-fan-out.mjs";
+import {
+  junctionName as deriveJunctionName,
+  junctionLinkInput,
+  junctionNaming,
+} from "../../_shared/junction-fan-out.mjs";
 import {
   entityModuleNaming,
   projectEntityLookup,
@@ -224,9 +228,8 @@ export default {
 
     // `role` is the identity enum only when it has `choices:`; otherwise it is
     // an ordinary payload column (below) — never dropped.
-    const roleField = fields.role;
-    const roleChoices = roleField?.choices;
-    const hasRole = Array.isArray(roleChoices) && roleChoices.length > 0;
+    const hasRole = hasIdentityRole(fields);
+    const roleChoices = hasRole ? fields.role.choices : undefined;
     const roleEnumName = hasRole ? `${entityNameCamel}RoleEnum` : null;
     const roleEnumValues = hasRole ? roleChoices : [];
 
@@ -234,10 +237,8 @@ export default {
     // BaseJunctionFields gating (opt-outs per Q4 / #58 resolution)
     // ======================================================================
 
-    const temporal = config.temporal !== false; // default true
-    const sourced = config.sourced !== false;   // default true
-    const isPrimary = config.is_primary !== false; // default true
-    const timestamps = config.timestamps !== false; // default true
+    // The base-column flags as the schema resolved them — it owns their defaults.
+    const { temporal, sourced, is_primary: isPrimary, timestamps } = parsed.data;
 
     // ======================================================================
     // On-delete actions
@@ -277,15 +278,14 @@ export default {
 
     const outputPaths = resolveOutputPaths(junction);
 
-    // The service's `LinkInput` — the link-side columns a caller may supply on
-    // attach, exactly the base columns this junction emits.
-    const linkInputKeyList = [
-      ...(isPrimary ? ["'isPrimary'"] : []),
-      ...(temporal ? ["'startedAt'", "'endedAt'"] : []),
-      ...(sourced ? ["'sourcedFrom'", "'confidence'", "'matchedAt'"] : []),
-      ...(hasRole ? ["'role'"] : []),
-    ];
-    const linkInputKeys = linkInputKeyList.length > 0 ? linkInputKeyList.join(' | ') : 'never';
+    // The service's `LinkInput` — the link-side columns a caller supplies on
+    // attach: the base columns this junction emits, the identity role and the
+    // payload fields, `required: true` ones required (`junctionLinkInput`, the
+    // reader the parents' fan-out shares).
+    const linkInput = junctionLinkInput(definition);
+    const keyUnion = (keys) => keys.map((k) => `'${k}'`).join(' | ');
+    const linkInputKeys = linkInput.optional.length > 0 ? keyUnion(linkInput.optional) : 'never';
+    const linkInputRequiredKeys = linkInput.required.length > 0 ? keyUnion(linkInput.required) : null;
 
     // REL-2 (#587): the generated relation manifest, imported by the junction
     // repository to bind `BaseRepository`'s third type parameter. Relative to the
@@ -504,6 +504,7 @@ export default {
       isPrimary,
       timestamps,
       linkInputKeys,
+      linkInputRequiredKeys,
 
       // On-delete
       onDeleteLeft,

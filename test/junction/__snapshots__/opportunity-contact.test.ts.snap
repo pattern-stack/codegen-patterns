@@ -216,7 +216,7 @@ import type { Contact } from '../contacts/contact.entity';
  */
 export type OpportunityContactLinkInput = globalThis.Partial<
   globalThis.Pick<OpportunityContact,
-    'isPrimary' | 'startedAt' | 'endedAt' | 'sourcedFrom' | 'confidence' | 'matchedAt' | 'role'
+    'isPrimary' | 'startedAt' | 'endedAt' | 'sourcedFrom' | 'confidence' | 'matchedAt' | 'role' | 'lastContactedAt'
   >
 >;
 

@@ -15,6 +15,7 @@ import {
 } from '../../../../runtime/base-classes/junction-integration-repository';
 import type { DrizzleClient, DrizzleTx } from '../../../../runtime/types/drizzle';
 import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { drizzle } from 'drizzle-orm/pg-proxy';
 
 // ============================================================================
 // Tables / config
@@ -222,6 +223,47 @@ describe('JunctionIntegrationRepository.integrationUpsertOne', () => {
     const conflict = m.capture.conflict[0] as { target: unknown[] };
     expect(conflict.target).toHaveLength(2);
     expect(proj.id).toBe('o-ext::c-ext'); // 2-part composite
+  });
+
+  // `timestamps: false` (dealbrain dogfood #8): nothing is stamped, the
+  // projection carries no timestamps, and the conflict `set` is still a real
+  // one — Drizzle throws "No values to set" on an empty `set`, which would make
+  // every upsert on such a junction fail.
+  it('timestamps: false — no stamp, no timestamps in the projection, a non-empty conflict set', async () => {
+    class NoTimestampsRepository extends OppContactRepository {
+      protected override readonly behaviors = {
+        timestamps: false, softDelete: false, userTracking: false, tenantScoped: false,
+      };
+    }
+    const m = makeMock();
+    m.enqueue([{ id: 'opp-1' }]);
+    m.enqueue([{ id: 'con-1' }]);
+    m.enqueue([jrow()]);
+    const repo = new NoTimestampsRepository(m.db);
+
+    const proj = await repo.integrationUpsertOne(
+      { opportunityExternalId: 'o-ext', contactExternalId: 'c-ext', role: 'champion', userId: 'u' },
+      'hubspot',
+    );
+
+    const values = m.capture.values[0] as Record<string, unknown>;
+    expect('updatedAt' in values).toBe(false);
+    expect('createdAt' in proj).toBe(false);
+    expect('updatedAt' in proj).toBe(false);
+
+    const conflict = m.capture.conflict[0] as { target: never; set: Record<string, unknown> };
+    expect('updatedAt' in conflict.set).toBe(false);
+    // The captured config must build real SQL (the mock does not run Drizzle).
+    const real = drizzle(async () => ({ rows: [] }));
+    const sql = real
+      .insert(junctionTable)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [junctionTable.opportunityId, junctionTable.contactId, junctionTable.role],
+        set: conflict.set,
+      })
+      .toSQL().sql;
+    expect(sql).toContain('do update set "opportunity_id" =');
   });
 });
 

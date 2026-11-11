@@ -70,6 +70,25 @@ describe('junction payload fields use the entity column builder (#740)', () => {
 		expect(out).toMatch(/\n {2}index,\n/);
 	});
 
+	// A payload column is only usable if `attach` can write it: a `required: true`
+	// field is NOT NULL with no default, so it must be in `LinkInput` and the
+	// link argument must be required — or every attach fails with 23502.
+	it('puts payload fields in LinkInput; a required one makes the link argument required', async () => {
+		const service = render(
+			'service',
+			await junctionLocals(
+				'temporal: false\nsourced: false\nfields:\n  source: { type: string, required: true }\n  weight: { type: integer }\n',
+			),
+		);
+		expect(service).toContain(
+			"globalThis.Pick<OpportunityMeeting,\n    'isPrimary' | 'weight'\n  >\n> & globalThis.Pick<OpportunityMeeting, 'source'>;",
+		);
+		expect(service).toContain('link: OpportunityMeetingLinkInput,');
+		const optional = render('service', await junctionLocals('fields:\n  weight: { type: integer }\n'));
+		expect(optional).toContain('link?: OpportunityMeetingLinkInput,');
+		expect(optional).not.toContain('> & globalThis.Pick');
+	});
+
 	it('emits a role without choices as a plain column outside the key (dogfood #7)', async () => {
 		const out = render('entity', await junctionLocals('fields:\n  role: { type: string }\n'));
 		expect(out).toContain("role: text('role'),");

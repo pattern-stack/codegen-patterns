@@ -82,6 +82,11 @@ All notable changes to this project will be documented in this file.
   without a word. **Output changes** for junctions that declared any of these options: the columns
   gain the `NOT NULL`, the defaults and the FKs they asked for. A junction that declared none of them
   regenerates byte-identical, apart from one comment line on `is_primary`.
+- **Junction payload fields are writable through `attach` (#740).** They are part of
+  `<Junction>LinkInput`; a `required: true` field is a required key and makes the `link` argument of
+  `attach` and of the parents' `attach<X>` / `addTo<X>` required. Entity-field keys a junction would
+  ignore (`unique`, `min`/`max`/`min_length`/`max_length`, the analytics tags) and fields named `id`
+  or after an endpoint column are schema errors.
 - **A junction `role` without `choices:` is a column (dealbrain dogfood #7).** It used to be deleted
   silently. Now it's emitted as its declared type, and it's part of the key only when it's an enum
   with `choices:`.

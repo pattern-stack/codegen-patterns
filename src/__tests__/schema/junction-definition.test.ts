@@ -245,6 +245,34 @@ describe('junction payload fields parse against the entity field schema', () => 
 		).toBe(false);
 	});
 
+	// Keys the entity field schema accepts but nothing on a junction reads are
+	// refused, not parsed and dropped — the #690 class.
+	it('refuses entity-field keys a junction would silently ignore', () => {
+		for (const [key, value] of [
+			['unique', true],
+			['min_length', 1],
+			['max_length', 9],
+			['min', 0],
+			['max', 9],
+			['role', 'measure'],
+			['agg', 'sum'],
+			['time', true],
+		] as const) {
+			const type = key === 'time' ? 'datetime' : key.endsWith('length') ? 'string' : 'integer';
+			expect(messages(parse({ fields: { k: { type, [key]: value } } }))).toContainEqual(
+				expect.stringContaining(`fields.k.${key}: '${key}' is not supported on a junction field`),
+			);
+		}
+	});
+
+	it('refuses a payload field named like the junction’s own columns', () => {
+		for (const name of ['id', 'opportunity_id', 'contact_id']) {
+			expect(messages(parse({ fields: { [name]: { type: 'uuid' } } }))).toContainEqual(
+				expect.stringContaining(`fields.${name}:`),
+			);
+		}
+	});
+
 	it('defaults is_primary and timestamps to true; both opt out', () => {
 		const d = JunctionDefinitionSchema.parse({ pattern: 'Junction', between: ['a', 'b'] });
 		expect(d.is_primary).toBe(true);

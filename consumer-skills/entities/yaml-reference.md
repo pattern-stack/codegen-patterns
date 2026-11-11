@@ -306,9 +306,16 @@ fields:
 
 `fields:` entries are **entity fields**: the same schema, so `required`, `nullable`, `default`,
 `foreign_key`, `index`, `timezone` and `choices` mean what they mean in `fields:` above, and an
-unknown key is an error (it's `choices:`, not `values:`). There are two exceptions: `choices_from`
-and `entity_ref` aren't supported on a junction. A `role` **without** `choices:` is an ordinary
+unknown key is an error (it's `choices:`, not `values:`). Keys that nothing on a junction reads are
+refused rather than ignored: `choices_from`, `type: entity_ref`, `unique` (a row is unique by its
+composite key), `min` / `max` / `min_length` / `max_length` (a junction has no DTOs) and the
+analytics tags (`role` / `agg` / `aggs` / `additivity` / `time`). A field can't be named `id` or
+after an endpoint column (`opportunity_id`). A `role` **without** `choices:` is an ordinary
 column of its declared type. With `choices:` it's the identity enum and can't be `nullable: true`.
+
+Payload fields are part of the service's `<Junction>LinkInput`, so `attach` (and the parents'
+`attach<X>` / `addTo<X>`) can write them. A `required: true` field is a required key, and the
+`link` argument becomes required too.
 
 To adopt an existing link table that lacks some base columns, turn them off: `temporal: false`,
 `sourced: false`, `is_primary: false`, `timestamps: false`. With `timestamps: false` you may

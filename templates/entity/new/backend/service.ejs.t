@@ -212,7 +212,7 @@ export class <%= classNames.service %> extends WithAnalytics(
   async <%= fan.attachMethod %>(
     <%= fan.selfIdParam %>: string,
     <%= fan.counterpartyIdParam %>: string,
-    link?: <%= j.linkInputType %>,
+    link<%= fan.linkRequired ? '' : '?' %>: <%= j.linkInputType %>,
   ): Promise<<%= j.entityClass %>> {
     return this.<%= j.serviceProperty %>.attach(<%= fan.leftIdParam %>, <%= fan.rightIdParam %>, link);
   }

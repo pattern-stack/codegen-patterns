@@ -25,6 +25,7 @@ import { junctionName, junctionPlural } from '../../src/config/junction-naming.j
 import { junctionsDirFor } from '../../src/config/junctions-dir.js';
 import { findYamlFiles } from '../../src/utils/find-yaml-files.js';
 import { emittedStem } from '../../src/config/file-naming.js';
+import { hasIdentityRole } from '../../src/schema/junction-definition.schema.js';
 import { entityModuleNaming, relativeModuleDir } from './entity-naming.mjs';
 
 const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -60,6 +61,35 @@ export function junctionNaming(name, modulesDir) {
     linkInputType: `${pascal}LinkInput`,
     serviceProperty: `${camelCase(name)}Service`,
   };
+}
+
+/**
+ * A junction's `LinkInput` — the link-side columns a caller supplies on attach
+ * (camelCase entity keys): the base columns this junction emits, the identity
+ * role, and every payload field (#740). A payload field declaring
+ * `required: true` — the entity field's create contract, NOT NULL with no
+ * default — is a `required` key; the rest are `optional`. With any required
+ * key the `link` argument of `attach` (and of the parents' fan-out) is
+ * required too.
+ *
+ * One reader of the raw junction YAML for both the junction service (the type)
+ * and the parents' fan-out (whether `link` is optional), so the two agree.
+ */
+export function junctionLinkInput(def) {
+  const fields = def.fields ?? {};
+  const identityRole = hasIdentityRole(fields);
+  const optional = [
+    ...(def.is_primary !== false ? ['isPrimary'] : []),
+    ...(def.temporal !== false ? ['startedAt', 'endedAt'] : []),
+    ...(def.sourced !== false ? ['sourcedFrom', 'confidence', 'matchedAt'] : []),
+    ...(identityRole ? ['role'] : []),
+  ];
+  const required = [];
+  for (const [name, field] of Object.entries(fields)) {
+    if (name === 'role' && identityRole) continue;
+    (field?.required === true ? required : optional).push(camelCase(name));
+  }
+  return { optional, required };
 }
 
 /**
@@ -138,6 +168,8 @@ export function junctionFanOutFor(entityName, ctx) {
       setPrimaryMethod: `${counterpartyPlural}SetPrimary`,
       // `is_primary: false` junctions have no column to set, so no setPrimary.
       hasIsPrimary: def.is_primary !== false,
+      // A `required: true` payload field makes the link argument required.
+      linkRequired: junctionLinkInput(def).required.length > 0,
     });
   }
   return blocks;

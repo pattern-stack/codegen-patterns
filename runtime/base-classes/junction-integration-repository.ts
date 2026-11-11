@@ -87,13 +87,18 @@ export abstract class JunctionIntegrationRepository<
         ? [this.col(cfg.left.column), this.col(cfg.right.column), this.col(cfg.roleColumn)]
         : [this.col(cfg.left.column), this.col(cfg.right.column)];
 
+      // A conflict re-asserts the existing row so RETURNING yields it. With
+      // timestamps that is the `updatedAt` stamp; without them (`timestamps:
+      // false`) nothing else changes, so the left key is set to the value it
+      // already has — Drizzle refuses an empty `set` ("No values to set").
+      const set: Record<string, unknown> = this.behaviors.timestamps
+        ? { updatedAt: now }
+        : { [cfg.left.column]: leftId };
+
       const rows = await db
         .insert(this.tableRef)
         .values(values)
-        .onConflictDoUpdate({
-          target,
-          set: { ...(this.behaviors.timestamps ? { updatedAt: now } : {}) },
-        })
+        .onConflictDoUpdate({ target, set })
         .returning();
 
       const saved = rows[0] as Record<string, unknown>;
@@ -172,7 +177,9 @@ export abstract class JunctionIntegrationRepository<
    * `id` (junctions have no surrogate id) plus the local FK columns, role (when
    * role-bearing) and timestamps — matching the emitted
    * `<Junction>IntegrationProjection` interface (id + leftId + rightId + role? +
-   * createdAt + updatedAt — the timestamps only when the junction emits them). Junction projections are purely structural, so this
+   * createdAt + updatedAt — the timestamps only under `behaviors.timestamps`,
+   * i.e. unless the junction sets `timestamps: false`). Junction projections are
+   * purely structural, so this
    * is fully generic over `integrationConfig` — no per-junction override is emitted.
    */
   protected toProjection(

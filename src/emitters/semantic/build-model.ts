@@ -17,7 +17,7 @@ import { junctionName, junctionPlural, junctionTableName } from '../../config/ju
 import { getBehavior } from '../../behaviors/index';
 import type { ParsedEntity, ParsedField } from '../../analyzer/types';
 import { tenantColumnName } from '../../schema/tenancy';
-import type { JunctionDefinition } from '../../schema/junction-definition.schema';
+import { hasIdentityRole, type JunctionDefinition } from '../../schema/junction-definition.schema';
 import type {
 	AggColType,
 	DerivedExprNode,
@@ -127,8 +127,7 @@ function buildJunctionFields(def: JunctionDefinition): {
 	put(`${right}_id`, 'uuid');
 	const compositeKey = [`${left}_id`, `${right}_id`];
 
-	const role = payload.role;
-	const identityRole = !!role && Array.isArray(role.choices) && role.choices.length > 0;
+	const identityRole = hasIdentityRole(payload);
 	if (identityRole) {
 		put('role', 'enum', { role: 'dimension', hasDeclaredDomain: true });
 		compositeKey.push('role');
