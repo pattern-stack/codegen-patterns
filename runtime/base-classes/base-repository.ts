@@ -123,16 +123,7 @@ export interface SortTerm {
  *
  * `undefined` means "no predicate".
  */
-export type RowFilter<TTable extends PgTable> = {
-  // Method-parameter (bivariant) checking, deliberately: inside a capability
-  // mixin the repository's `TTable` is erased to `PgTable`, and a strictly
-  // contravariant function type would reject the concrete filter a caller writes
-  // for it (`RowFilter<typeof ledgers>` → `RowFilter<PgTable>`). Bivariance only
-  // admits a sub/supertype pair — a filter for ANOTHER concrete table is still
-  // unassignable (their table names differ), and a pre-rendered `SQL` still is
-  // not a function at all.
-  bivariance(table: TTable): SQL | undefined;
-}['bivariance'];
+export type RowFilter<TTable extends PgTable> = (table: TTable) => SQL | undefined;
 
 /**
  * Options for `list()` — the many-row read. Generic over the table, with no
@@ -648,11 +639,15 @@ export abstract class BaseRepository<
    * `'{a0eebc99-…}'` and `'a0eebc99…'` (no hyphens) all match the row, but
    * Postgres prints the canonical lowercase hyphenated form. Comparing the
    * caller's raw string against that would silently drop the row (READ-1 review
-   * #2). So for a `uuid` primary key both sides are canonicalised; any other key
-   * type is compared as given — a `text` key distinguishes case, and so must we.
+   * #2). So for a `uuid` primary key both sides are canonicalised. Any other key
+   * is compared as its TEXT (`String(id)`): an integer key comes back as a number
+   * for the caller's `'7'`, and a `text` key still distinguishes case.
    */
   protected idKey(id: unknown): unknown {
-    if (typeof id !== 'string' || this.col('id').getSQLType() !== 'uuid') return id;
+    // Not a uuid key: compare as TEXT. A caller's `'7'` and the driver's `7` for an
+    // integer key are the same row (Postgres coerced the bind) — review R-2.
+    if (this.col('id').getSQLType() !== 'uuid') return id === null || id === undefined ? id : String(id);
+    if (typeof id !== 'string') return id;
     const hex = id.replace(/[{}-]/g, '').toLowerCase();
     if (!/^[0-9a-f]{32}$/.test(hex)) return id;
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;

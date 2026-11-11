@@ -110,6 +110,14 @@ export async function negatives(): Promise<void> {
 	// @ts-expect-error — nor is a raw `sql` fragment
 	await accountRepo.list({ where: sql`true` });
 	// The SERVICE layer — what use cases call — rejects the stale shapes too (review #3).
+	// A row filter written for ANOTHER table is rejected on every read surface (review R-1).
+	const contactFilter = (t: typeof contacts) => eq(t.email, 'x');
+	// @ts-expect-error — another table's filter on a repository list
+	await accountRepo.list({ where: contactFilter });
+	// @ts-expect-error — another table's filter on a repository count
+	await accountRepo.count(contactFilter);
+	// @ts-expect-error — another table's filter on a service count
+	await accountService.count(contactFilter);
 	// @ts-expect-error — a pre-rendered SQL is not a service `count` filter
 	await accountService.count(eq(accounts.name, 'x'));
 	// @ts-expect-error — nor a service `list` where

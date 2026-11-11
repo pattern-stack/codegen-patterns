@@ -80,3 +80,6 @@ test/tmp/
 
 # `just studio-demo` writes a real generated project here.
 .studio-demo/
+
+# READ-1: derived by test/run-test.ts for the rc.5 typecheck leg, removed on exit
+test/.tsconfig.baseline.rc5.json

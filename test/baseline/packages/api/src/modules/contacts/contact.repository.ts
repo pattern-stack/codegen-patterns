@@ -11,7 +11,7 @@ import type { DrizzleClient, DrizzleTx } from '@shared/types/drizzle';
 import type { ColumnsOf, IncludeOf, Relations, ResultOf } from '../../generated/relations';
 import { IntegratedEntityRepository } from '@shared/base-classes/integrated-entity-repository';
 import type { IntegrationUpsertConfig } from '@shared/base-classes/integration-upsert-config';
-import type { BehaviorConfig, ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
+import type { BehaviorConfig, ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
 import { contacts, type Contact } from './contact.entity';
 import { accounts } from '../accounts/account.entity';
 import { users } from '../users/user.entity';
@@ -212,6 +212,16 @@ export class ContactRepository extends IntegratedEntityRepository<
       offset: query?.offset,
     });
     return rows as Array<ContactResult<C, W>>;
+  }
+
+  /**
+   * `where` is a ROW FILTER over THIS table. Overridden only to type it: inside a
+   * capability mixin the base's `count` is typed over `PgTable`, which would let
+   * another table's filter through — and, where column names coincide, count on
+   * the wrong predicate (READ-1 review R-1).
+   */
+  override async count(where?: RowFilter<typeof contacts>): Promise<number> {
+    return super.count(where);
   }
 
   // ═══════════════════════════════════════════════════════════════════════

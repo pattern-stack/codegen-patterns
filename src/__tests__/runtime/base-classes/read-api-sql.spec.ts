@@ -21,7 +21,7 @@ import { describe, expect, it } from 'bun:test';
 import { defineRelations, eq, inArray, like } from 'drizzle-orm';
 import type { InferSelectModel } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';
 
 import {
@@ -380,6 +380,26 @@ describe('READ-1 review — findByIds edge cases', () => {
 		expect(rows).toEqual([{ id: LOWER, name: 'One' }]);
 		const bound = statements[0]!.values.filter((v) => typeof v === 'string' && /a0ee/i.test(v));
 		expect(bound).toEqual([UPPER]);
+	});
+});
+
+describe('READ-1 review R-2 — a non-uuid key is compared as text', () => {
+	const counters = pgTable('counters', { id: integer('id').primaryKey(), label: text('label') });
+	class CounterRepository extends BaseRepository<InferSelectModel<typeof counters>, typeof counters, Relations> {
+		readonly table = counters;
+	}
+
+	it("findByIds(['7']) finds the row the driver returns as 7, in input order", async () => {
+		// Postgres coerced the '7' bind and matched; node-postgres hands back a number.
+		const { db } = fakeDb([
+			[9, 'nine'],
+			[7, 'seven'],
+		]);
+		const rows = await new CounterRepository(db).findByIds(['7', '9', '7']);
+		expect(rows).toEqual([
+			{ id: 7, label: 'seven' },
+			{ id: 9, label: 'nine' },
+		]);
 	});
 });
 

@@ -64,7 +64,7 @@ import { <%= cap.mixin %> } from '<%= cap.importPath %>';
 <% if (hasIntegrationSurface) { -%>
 import type { IntegrationUpsertConfig } from '<%= integrationUpsertConfigImport %>';
 <% } -%>
-import type { <% if (hasTimestamps || hasSoftDelete || hasUserTracking || tenantScoped) { %>BehaviorConfig, <% } %>ListOptions, ReadOptions } from '<%= baseRepositoryImport %>';
+import type { <% if (hasTimestamps || hasSoftDelete || hasUserTracking || tenantScoped) { %>BehaviorConfig, <% } %>ListOptions, ReadOptions, RowFilter } from '<%= baseRepositoryImport %>';
 <% if (eavEnabled) { -%>
 import { FieldValueService } from '<%= eavFieldValueImportDir %>/<%= eavFieldValueStem %>.service';
 <% } -%>
@@ -321,6 +321,16 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
       offset: query?.offset,
     });
     return rows as Array<<%- _readResult %>>;
+  }
+
+  /**
+   * `where` is a ROW FILTER over THIS table. Overridden only to type it: inside a
+   * capability mixin the base's `count` is typed over `PgTable`, which would let
+   * another table's filter through — and, where column names coincide, count on
+   * the wrong predicate (READ-1 review R-1).
+   */
+  override async count(where?: RowFilter<typeof <%= entityNamePlural %>>): Promise<number> {
+    return super.count(where);
   }
 <% if (hasDeclarativeQueries) { -%>
 

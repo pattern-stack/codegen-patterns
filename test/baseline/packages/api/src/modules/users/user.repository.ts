@@ -10,7 +10,7 @@ import type { DrizzleClient } from '@shared/types/drizzle';
 // sees it (REL-1 §4).
 import type { ColumnsOf, IncludeOf, Relations, ResultOf } from '../../generated/relations';
 import { BaseRepository } from '@shared/base-classes/base-repository';
-import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
+import type { ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
 import { users, type User } from './user.entity';
 
 /**
@@ -140,6 +140,16 @@ export class UserRepository extends BaseRepository<User, typeof users, Relations
       offset: query?.offset,
     });
     return rows as Array<UserResult<C, W>>;
+  }
+
+  /**
+   * `where` is a ROW FILTER over THIS table. Overridden only to type it: inside a
+   * capability mixin the base's `count` is typed over `PgTable`, which would let
+   * another table's filter through — and, where column names coincide, count on
+   * the wrong predicate (READ-1 review R-1).
+   */
+  override async count(where?: RowFilter<typeof users>): Promise<number> {
+    return super.count(where);
   }
 
   // ═══════════════════════════════════════════════════════════════════════

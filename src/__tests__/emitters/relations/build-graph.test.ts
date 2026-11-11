@@ -6,7 +6,7 @@
  */
 
 import { definePattern } from '../../../patterns/pattern-definition';
-import { registerLibraryPattern } from '../../../patterns/registry';
+import { _unregisterLibraryPatternForTests, registerLibraryPattern } from '../../../patterns/registry';
 import { describe, expect, it } from 'bun:test';
 
 import {
@@ -541,14 +541,19 @@ describe('entityScope', () => {
 				description: 'test-only: implies soft_delete',
 			}),
 		);
-		const def = definition('a', 'as');
-		def.entity.pattern = 'ReadOneSoftDeleting';
-		expect(entityScope(def, 'tenant_id')).toEqual({
-			tenantScoped: false,
-			softDelete: true,
-			userTracking: false,
-			enforcement: 'lenient',
-		});
+		try {
+			const def = definition('a', 'as');
+			def.entity.pattern = 'ReadOneSoftDeleting';
+			expect(entityScope(def, 'tenant_id')).toEqual({
+				tenantScoped: false,
+				softDelete: true,
+				userTracking: false,
+				enforcement: 'lenient',
+			});
+		} finally {
+			// The registry is process-wide: leave it as the test found it.
+			_unregisterLibraryPatternForTests('ReadOneSoftDeleting');
+		}
 	});
 
 	it('is null when nothing is declared, so the manifest does not grow', () => {

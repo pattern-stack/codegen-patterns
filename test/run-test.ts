@@ -353,6 +353,9 @@ function typecheckBaselineRc5() {
     },
   };
   const file = join(TEST_DIR, '.tsconfig.baseline.rc5.json');
+  // `typecheckBaseline` fails by `process.exit(1)`, which skips a `finally` — so
+  // the derived file is also removed on process exit (and is gitignored).
+  process.on('exit', () => rmSync(file, { force: true }));
   writeFileSync(file, JSON.stringify(derived, null, 2));
   try {
     typecheckBaseline(file, 'drizzle-orm@1.0.0-rc.5');

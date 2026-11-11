@@ -531,8 +531,8 @@ predicate is typed the same way in a bare spine and a composed one.
 | # | Finding | Fix |
 |---|---|---|
 | 1 | `findByIds(ids, { columns: { id: false } })` sent an empty mask: Drizzle threw, or with `with` returned `[]` | `byIdsColumns` sends no mask when `id` was the only exclusion; `inInputOrder` THROWS on a row without `id` |
-| 2 | an uppercase / braced / unhyphenated uuid matched in SQL but was dropped by the JS re-order (base `findByIds` too) | `idKey` canonicalises a `uuid` key on both sides and in de-duplication |
-| 3 | `service.count(<SQL>)` compiled through `BaseService`'s `unknown` and threw at runtime | `BaseService.count(where?: Parameters<TRepo['count']>[0])`; negatives in the type tests. `IBaseRepository.count` stays `unknown` — it is the structural constraint, and a narrower function type fails strict variance. `BaseService.list` stays `unknown` because generated services override it with the typed signature; a HAND-WRITTEN service extending `BaseService` therefore keeps an untyped `list` (stated in the CHANGELOG) |
+| 2 | an uppercase / braced / unhyphenated uuid matched in SQL but was dropped by the JS re-order (base `findByIds` too) | `idKey` canonicalises a `uuid` key on both sides and in de-duplication; any other key is compared as `String(id)` — an integer key's `'7'` finds the driver's `7` (re-review R-2, unit test, mutation-checked) |
+| 3 | `service.count(<SQL>)` compiled through `BaseService`'s `unknown` and threw at runtime | `BaseService.count(where?: Parameters<TRepo['count']>[0])`, concrete because the generated repository overrides `count` (Found #8); negatives in the type tests, cross-table on plain AND composed repositories. `IBaseRepository.count` stays `unknown` — it is the structural constraint, and a narrower function type fails strict variance. `BaseService.list` stays `unknown` because generated services override it with the typed signature; a HAND-WRITTEN service extending `BaseService` therefore keeps an untyped `list` (stated in the CHANGELOG) |
 | 4 | Found #1's `checkColumns<C>` had no gate | `just test-baseline` typechecks the generated tree a SECOND time against `drizzle-orm@1.0.0-rc.5` (the `drizzle-orm-rc5` devDependency alias, types only; tsconfig derived from the baseline one at run time). Mutation: dropping `<C>` → TS2352 on rc.5, red. Plus a template test pinning `checkColumns<C>(` on every masked read |
 | 5 | §5.3's `db.query` grep gate did not exist | written (§5.3) |
 | 6 | the shape gate missed `rootFilter(() => eq(this.table.id, id))` (red only in Docker) | §4.2's extended bans; M1–M3 red in `just test-unit` |
@@ -541,18 +541,32 @@ predicate is typed the same way in a bare spine and a composed one.
 | 9 | `entityScope` ignored pattern-implied behaviors, so `SCOPES` could disagree with the repository | folded through `resolveImpliedBehaviors` (§5.2); mutation-checked unit test |
 | 10 | `scopedRoot` was untyped against its table | the manifest's `rootScope.<table>(owner)` (§5.2) |
 
+Re-review R-3 (the shape gates are line-based; a multi-line or aliased form passes `test-unit`, caught only by
+the Docker job) is filed as #864. The rc.5 leg's derived tsconfig is removed on process exit and gitignored; the
+build-graph test unregisters the pattern it registers.
+
 Not fixed here, filed: the junction service's `listAssoc` dereferences a counterparty that scope filtered out
 (pre-existing, #862), and `= any($1::uuid[])` instead of `in ($1…$n)` for large id lists (#863). An empty mask at a
 HOP (`with: { owner: { columns: {} } }`) is not guarded at compile time; Drizzle throws `No fields selected` at runtime.
 
-### Found #8 — `RowFilter` is checked bivariantly, on purpose
+### Found #8 — a composed repository's `count` must be typed on the subclass
 
 Typing `BaseService.count` from `TRepo` (review #3) failed the junction smoke's composed `ledger`: inside a capability
-mixin the repository's `TTable` is erased to `PgTable`, so its `count` takes `RowFilter<PgTable>`, and a strictly
-contravariant `(table: T) => …` rejects the `RowFilter<typeof ledgers>` the list use case passes. `RowFilter` is now
-declared through a method signature, which TypeScript checks bivariantly. That admits a concrete table ↔ `PgTable`
-pair and nothing else: a filter written for another concrete table is still a compile error (asserted in the smoke's
-type tests), and a pre-rendered `SQL` is still not a function.
+mixin written `return X as TBase & typeof X` (the app pattern's `WithAudited`, `capability-mixin.ts`'s example) the
+repository's inherited `count` is typed over `PgTable`, and the strict `RowFilter<typeof ledgers>` did not fit it.
+
+The first fix made `RowFilter` bivariant. Re-review (R-1) showed why that was wrong: at a site typed `RowFilter<PgTable>`,
+EVERY concrete table is a sub/supertype pair, so ANOTHER table's filter compiled on the composed repository's and
+service's `count` — and where column names coincide (`id`, `tenant_id`, `deleted_at`, …) it would count on the wrong
+predicate. The negative that should have caught it was claimed but never landed (an unasserted edit no-op'd).
+
+The fix that holds: `RowFilter` is the plain `(table: T) => SQL | undefined` again, and the generated repository emits
+`override count(where?: RowFilter<typeof <table>>)` beside `list`, so `count`'s parameter is concrete on every
+repository, composed or not, and the service's `Parameters<TRepo['count']>[0]` is concrete with it. Gated by:
+- the junction smoke's custom-layout legs, which compile `ledger-read-api.type-test.ts` beside the COMPOSED ledger:
+  own-table `count` / `list` on repository and service compile; another table's filter on each of the four is a
+  `@ts-expect-error`. Mutation: removing the `count` override turns the leg red;
+- the relationship smoke's cross-table negatives on a plain repository and service (`list`, `count`).
 
 ### Found #5 — smaller things fixed in passing
 
