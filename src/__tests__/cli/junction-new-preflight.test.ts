@@ -26,8 +26,8 @@ afterEach(() => {
 	tempDirs.length = 0;
 });
 
-const NOTE = 'entity:\n  name: note\n  plural: notes\n  table: notes\nfields:\n  body:\n    type: string\n';
-const USER = 'entity:\n  name: user\n  plural: users\n  table: users\nfields:\n  email:\n    type: string\n';
+const NOTE = 'entity:\n  name: note\n  plural: notes\nfields:\n  body:\n    type: string\n';
+const USER = 'entity:\n  name: user\n  plural: users\nfields:\n  email:\n    type: string\n';
 
 function mkProject(): string {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'junction-preflight-'));

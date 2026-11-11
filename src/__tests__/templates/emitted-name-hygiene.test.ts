@@ -123,23 +123,23 @@ function renderAll(def: Record<string, unknown>, extra: Record<string, unknown> 
 const base = {
 	// A neutral name: an entity named after a lib global would bind that type in every rendered file and
 	// exempt it from rule 1, blinding the matrix to a bare use of it.
-	entity: { name: 'widget', plural: 'widgets', table: 'widgets', pattern: 'Base' },
+	entity: { name: 'widget', plural: 'widgets', pattern: 'Base' },
 	fields: { title: { type: 'string', required: true }, status: { type: 'enum', choices: ['open', 'closed'] } },
 	relationships: { account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' } },
 	behaviors: ['timestamps'],
 };
 
 const MATRIX: [string, Record<string, unknown>, Record<string, unknown>][] = [
-	['an entity with plural options', { ...base, entity: { ...base.entity, plural: 'options', table: 'options' } }, {}],
+	['an entity with plural options', { ...base, entity: { ...base.entity, plural: 'options' } }, {}],
 	[
 		'an eav entity',
-		{ ...base, entity: { ...base.entity, name: 'opportunity', plural: 'opportunities', table: 'opportunities', pattern: 'Integrated' }, eav: true },
+		{ ...base, entity: { ...base.entity, name: 'opportunity', plural: 'opportunities', pattern: 'Integrated' }, eav: true },
 		{},
 	],
 	[
 		'an eav_value_table entity',
 		{
-			entity: { name: 'field_value', plural: 'field_values', table: 'field_values', pattern: 'Metadata' },
+			entity: { name: 'field_value', plural: 'field_values', pattern: 'Metadata' },
 			eav_value_table: true,
 			eav_definition_table: 'field_definition',
 			fields: {

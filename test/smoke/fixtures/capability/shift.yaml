@@ -3,7 +3,6 @@
 entity:
   name: shift
   plural: shifts
-  table: shifts
 
 fields:
   starts_at:

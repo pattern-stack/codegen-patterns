@@ -42,7 +42,7 @@ const render = (locals: Record<string, unknown>) =>
 
 // Self-FK integrated entity (the account oracle shape).
 const account = {
-  entity: { name: 'account', plural: 'accounts', table: 'accounts', pattern: 'Integrated' },
+  entity: { name: 'account', plural: 'accounts', pattern: 'Integrated' },
   fields: {
     user_id: { type: 'uuid', required: true },
     name: { type: 'string', required: true },
@@ -60,7 +60,7 @@ const account = {
 
 // Non-self integrated FK (contact belongs_to account) + soft_delete + eav.
 const contact = {
-  entity: { name: 'contact', plural: 'contacts', table: 'contacts', pattern: 'Integrated' },
+  entity: { name: 'contact', plural: 'contacts', pattern: 'Integrated' },
   eav: true,
   fields: {
     user_id: { type: 'uuid', required: true },
@@ -74,7 +74,7 @@ const contact = {
 
 // Plain Base entity — emits no integration surface.
 const widget = {
-  entity: { name: 'widget', plural: 'widgets', table: 'widgets', pattern: 'Base' },
+  entity: { name: 'widget', plural: 'widgets', pattern: 'Base' },
   fields: { label: { type: 'string', required: true } },
   behaviors: [],
 };

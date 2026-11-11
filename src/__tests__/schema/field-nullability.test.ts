@@ -88,7 +88,7 @@ describe('notNullWithoutDefault', () => {
 describe('FieldDefinitionSchema — what the rule leans on', () => {
 	const parse = (field: Record<string, unknown>) =>
 		EntityDefinitionSchema.parse({
-			entity: { name: 'stat_line', plural: 'stat_lines', table: 'stat_lines' },
+			entity: { name: 'stat_line', plural: 'stat_lines' },
 			fields: { pts: { type: 'integer', ...field } },
 		}).fields.pts;
 
@@ -105,7 +105,7 @@ describe('FieldDefinitionSchema — what the rule leans on', () => {
 
 	it('rejects nullable: false without required: true and without a default', () => {
 		const result = EntityDefinitionSchema.safeParse({
-			entity: { name: 'stat_line', plural: 'stat_lines', table: 'stat_lines' },
+			entity: { name: 'stat_line', plural: 'stat_lines' },
 			fields: { pts: { type: 'integer', required: false, nullable: false } },
 		});
 		expect(result.success).toBe(false);

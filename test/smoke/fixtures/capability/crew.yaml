@@ -8,7 +8,6 @@
 entity:
   name: crew
   plural: crews
-  table: crews
   context: org
 
 fields:

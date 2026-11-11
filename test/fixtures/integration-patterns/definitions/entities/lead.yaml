@@ -10,7 +10,6 @@
 entity:
   name: lead
   plural: leads
-  table: leads
   surface: crm
   pattern: Integrated
 behaviors:

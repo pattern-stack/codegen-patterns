@@ -61,7 +61,7 @@ function definition(
 	extra: Record<string, unknown> = {},
 ): EntityDefinition {
 	return EntityDefinitionSchema.parse({
-		entity: { name, plural, table: plural },
+		entity: { name, plural },
 		fields,
 		relationships,
 		...extra,

@@ -39,7 +39,6 @@ function mkEntitiesDir(
 			'entity:',
 			`  name: ${ent.name}`,
 			`  plural: ${plural}`,
-			`  table: ${plural}`,
 			scopeableLine,
 			'fields:',
 			'  id:',

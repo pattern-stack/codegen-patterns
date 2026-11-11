@@ -6,7 +6,6 @@
 entity:
   name: opportunity
   plural: opportunities
-  table: opportunities
 
 fields:
   name:

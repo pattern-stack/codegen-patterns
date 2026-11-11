@@ -35,7 +35,7 @@ function parse(raw: unknown): EntityDefinition {
 }
 
 const ACCOUNT = {
-	entity: { name: 'account', plural: 'accounts', table: 'accounts' },
+	entity: { name: 'account', plural: 'accounts' },
 	fields: { name: { type: 'string', required: true } },
 	relationships: {
 		contacts: { type: 'has_many', target: 'contact', foreign_key: 'account_id' },
@@ -48,7 +48,7 @@ const ACCOUNT = {
 };
 
 const CONTACT = {
-	entity: { name: 'contact', plural: 'contacts', table: 'contacts' },
+	entity: { name: 'contact', plural: 'contacts' },
 	fields: { account_id: { type: 'uuid', required: true }, email: { type: 'string' } },
 	relationships: {
 		account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' },
@@ -56,7 +56,7 @@ const CONTACT = {
 };
 
 const OPPORTUNITY = {
-	entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities' },
+	entity: { name: 'opportunity', plural: 'opportunities' },
 	fields: { account_id: { type: 'uuid', required: true }, name: { type: 'string' } },
 	relationships: {
 		account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' },
@@ -282,7 +282,7 @@ describe('buildIncludeAllowlists — what fails the build', () => {
 	// silent disagreement is an allowlist that 400s every path with no explanation.
 	it('an entity with no relationship of its OWN cannot carry an allowlist', () => {
 		const TAG = {
-			entity: { name: 'tag', plural: 'tags', table: 'tags' },
+			entity: { name: 'tag', plural: 'tags' },
 			fields: { label: { type: 'string', required: true } },
 			// No `relationships:` — in a real project its edges would come from a
 			// junction YAML, which this emitter sees and the hygen half does not.
@@ -304,7 +304,7 @@ describe('buildIncludeAllowlists — what fails the build', () => {
 		expect(() =>
 			compile([
 				{
-					entity: { name: 'tag', plural: 'tags', table: 'tags' },
+					entity: { name: 'tag', plural: 'tags' },
 					fields: { label: { type: 'string', required: true } },
 					relationships: {
 						deep: {
@@ -427,7 +427,7 @@ describe('declaresOwnRelation matches the template’s includes', () => {
 	for (const { name, relationships, expected } of cases) {
 		it(`${name} → ${expected}`, async () => {
 			const raw = {
-				entity: { name: 'thing', plural: 'things', table: 'things' },
+				entity: { name: 'thing', plural: 'things' },
 				fields: { account_id: { type: 'uuid' } },
 				...(relationships === undefined ? {} : { relationships }),
 			};
@@ -451,7 +451,7 @@ describe('declaresOwnRelation matches the template’s includes', () => {
 // ---------------------------------------------------------------------------
 
 const LEAGUE = {
-	entity: { name: 'league', plural: 'leagues', table: 'leagues' },
+	entity: { name: 'league', plural: 'leagues' },
 	fields: { name: { type: 'string', required: true } },
 	relationships: {
 		fantasy_teams: { type: 'has_many', target: 'fantasy_team', foreign_key: 'league_id' },
@@ -459,7 +459,7 @@ const LEAGUE = {
 };
 
 const FANTASY_TEAM = {
-	entity: { name: 'fantasy_team', plural: 'fantasy_teams', table: 'fantasy_teams' },
+	entity: { name: 'fantasy_team', plural: 'fantasy_teams' },
 	fields: { league_id: { type: 'uuid', required: true } },
 	relationships: {
 		home_league: { type: 'belongs_to', target: 'league', foreign_key: 'league_id' },
@@ -467,12 +467,12 @@ const FANTASY_TEAM = {
 };
 
 const SPONSOR_BRAND = {
-	entity: { name: 'sponsor_brand', plural: 'sponsor_brands', table: 'sponsor_brands' },
+	entity: { name: 'sponsor_brand', plural: 'sponsor_brands' },
 	fields: { name: { type: 'string' } },
 };
 
 const TROPHY = {
-	entity: { name: 'trophy', plural: 'trophies', table: 'trophies' },
+	entity: { name: 'trophy', plural: 'trophies' },
 	fields: { league_id: { type: 'uuid' } },
 };
 

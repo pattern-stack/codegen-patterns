@@ -6,7 +6,6 @@
 entity:
   name: asset_tag
   plural: asset_tags
-  table: asset_tags
   pattern: Base
 
 tenant_scoped: true

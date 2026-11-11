@@ -4,7 +4,6 @@
 entity:
   name: opportunity
   plural: opportunities
-  table: opportunities
   scopeable: true
 
 fields:

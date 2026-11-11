@@ -6,7 +6,6 @@
 entity:
   name: field_definition
   plural: field_definitions
-  table: field_definitions
   pattern: Base
 
 fields:

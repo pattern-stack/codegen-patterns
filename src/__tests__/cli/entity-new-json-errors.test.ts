@@ -26,7 +26,7 @@ afterEach(() => {
 });
 
 const VALID_ENTITY =
-	'entity:\n  name: note\n  plural: notes\n  table: notes\nfields:\n  body:\n    type: string\n';
+	'entity:\n  name: note\n  plural: notes\nfields:\n  body:\n    type: string\n';
 
 /** A package-mode project; `withEntity` adds `entities/note.yaml`. */
 function mkProject(withEntity: boolean): string {

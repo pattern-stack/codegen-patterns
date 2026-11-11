@@ -10,7 +10,6 @@
 entity:
   name: user
   plural: users
-  table: users
   sync: api
 
 fields:

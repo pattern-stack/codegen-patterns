@@ -16,7 +16,6 @@ const base = {
   entity: {
     name: 'message',
     plural: 'messages',
-    table: 'messages',
     pattern: 'Integrated',
     surface: 'messaging',
   },

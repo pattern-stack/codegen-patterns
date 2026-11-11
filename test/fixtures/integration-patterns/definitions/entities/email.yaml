@@ -1,7 +1,6 @@
 entity:
   name: email
   plural: emails
-  table: emails
   surface: mail
   # RFC-0002 §4/§8: pattern: Integrated unlocks the integration assembly +
   # default sink emission (the projection/upsert path E2 wires).

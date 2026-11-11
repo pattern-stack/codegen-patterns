@@ -146,7 +146,7 @@ describe('parsed relationship structure', () => {
 
 describe('resolveRelationshipReferences', () => {
 	const { relationships } = loadRelationships(REL_FIXTURES_DIR);
-	const { entities } = loadEntities(resolve(FIXTURES_DIR, 'entities'));
+	const { entities } = loadEntities(resolve(FIXTURES_DIR, 'entities'), { tablePrefix: '' });
 
 	it('validates endpoints against entity names', () => {
 		const issues = resolveRelationshipReferences(relationships, entities);
@@ -162,7 +162,7 @@ describe('resolveRelationshipReferences', () => {
 // ============================================================================
 
 describe('buildDomainGraph with relationships', () => {
-	const { entities } = loadEntities(resolve(FIXTURES_DIR, 'entities'));
+	const { entities } = loadEntities(resolve(FIXTURES_DIR, 'entities'), { tablePrefix: '' });
 	resolveReferences(entities);
 	const { relationships } = loadRelationships(REL_FIXTURES_DIR);
 

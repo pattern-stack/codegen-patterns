@@ -59,6 +59,7 @@ export function config(over: Partial<FrontendEmitConfig> = {}): FrontendEmitConf
 		catalogCategories: [],
 		textareaThreshold: 500,
 		tenancyColumn: 'tenant_id',
+		tablePrefix: '',
 		...over,
 	};
 }

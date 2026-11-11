@@ -8,7 +8,6 @@
 entity:
   name: org_lead
   plural: org_leads
-  table: org_leads
   pattern: Integrated
 
 tenant_scoped:

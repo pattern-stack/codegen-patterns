@@ -10,7 +10,7 @@ import {
 } from '../../schema/reserved-entity-names';
 
 const entity = (name: string) => ({
-  entity: { name, plural: `${name}s`, table: `${name}s` },
+  entity: { name, plural: `${name}s` },
   fields: { body: { type: 'string' } },
 });
 
@@ -38,7 +38,7 @@ describe('reserved entity names (#813)', () => {
     'generatedTypeName agrees with the template rule for %s',
     (name) => {
       const locals = buildBackendLocals(
-        { entity: { name, plural: `${name}s`, table: `${name}s`, pattern: 'Base' }, fields: {}, relationships: {}, behaviors: [] },
+        { entity: { name, plural: `${name}s`, pattern: 'Base' }, fields: {}, relationships: {}, behaviors: [] },
         withEntities(),
       ) as Record<string, unknown>;
       expect(locals.entityNamePascal).toBe(generatedTypeName(name));

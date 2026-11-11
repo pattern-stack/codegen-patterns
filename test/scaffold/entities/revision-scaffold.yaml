@@ -7,7 +7,6 @@
 entity:
   name: revision
   plural: revisions
-  table: revisions
   pattern: Base
 
 fields:

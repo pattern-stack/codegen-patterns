@@ -75,6 +75,7 @@ function context(
 ): SemanticEmitContext {
 	return {
 		tenancyColumn,
+		tablePrefix: '',
 		entities: entities.map((e) => registryEntry(e.name, e.plural)),
 		parsed: new Map(entities.map((e) => [e.name, e])),
 		junctions,
@@ -381,11 +382,25 @@ describe('junctions', () => {
 	const junction = (a: string, b: string): JunctionDefinition =>
 		({ pattern: 'Junction', between: [a, b] }) as unknown as JunctionDefinition;
 
-	it('derives name, plural and a CAMEL-cased table var', () => {
-		expect(junctionIdentity(junction('opportunity', 'contact'))).toEqual({
+	it('derives name, plural, the SQL table and a CAMEL-cased table var', () => {
+		expect(junctionIdentity(junction('opportunity', 'contact'), '')).toEqual({
 			name: 'opportunity_contact',
 			plural: 'opportunity_contacts',
 			table: 'opportunity_contacts',
+			tableVar: 'opportunityContacts',
+		});
+	});
+
+	it('the SQL table follows tables.prefix and the junction table_name; the names do not (TABLE-0)', () => {
+		expect(junctionIdentity(junction('opportunity', 'contact'), 'app_')).toMatchObject({
+			plural: 'opportunity_contacts',
+			table: 'app_opportunity_contacts',
+			tableVar: 'opportunityContacts',
+		});
+		const named = { ...junction('opportunity', 'contact'), table_name: 'deal_people' } as JunctionDefinition;
+		expect(junctionIdentity(named, 'app_')).toMatchObject({
+			plural: 'opportunity_contacts',
+			table: 'deal_people',
 			tableVar: 'opportunityContacts',
 		});
 	});

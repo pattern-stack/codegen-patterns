@@ -51,7 +51,6 @@ const baseEntity = {
   entity: {
     name: 'contact',
     plural: 'contacts',
-    table: 'contacts',
     pattern: 'Integrated',
   },
   fields: {

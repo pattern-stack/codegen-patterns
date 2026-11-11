@@ -19,7 +19,6 @@
 entity:
   name: field_config
   plural: field_configs
-  table: field_configs
   pattern: Base
 
 fields:

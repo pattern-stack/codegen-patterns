@@ -7,7 +7,6 @@
 entity:
   name: account_profile
   plural: account_profiles
-  table: account_profiles
   pattern: Base
 
 fields:

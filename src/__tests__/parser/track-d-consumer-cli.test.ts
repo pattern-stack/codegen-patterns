@@ -45,7 +45,6 @@ function write(rel: string, content: string): string {
 const ENTITY_WITH_SURFACE = `entity:
   name: transcript
   plural: transcripts
-  table: transcripts
   surface: transcript
   context: integration
 fields:
@@ -84,7 +83,6 @@ describe('Track D · entity.surface / entity.context (0.12.2)', () => {
 			`entity:
   name: transcript
   plural: transcripts
-  table: transcripts
 surface: transcript
 fields:
   title:
@@ -128,11 +126,11 @@ describe('Track D · entity discovery excludes the providers subtree (0.12.2)', 
 		const providersDir = join(dir, 'definitions', 'providers');
 
 		// Without exclusion the provider file is loaded as an entity and fails.
-		const naive = loadEntities(entitiesDir);
+		const naive = loadEntities(entitiesDir, { tablePrefix: '' });
 		expect(naive.issues.some((i) => i.severity === 'error')).toBe(true);
 
 		// With exclusion the load is clean: only the real entity is parsed.
-		const scoped = loadEntities(entitiesDir, { excludeDirs: [providersDir] });
+		const scoped = loadEntities(entitiesDir, { tablePrefix: '', excludeDirs: [providersDir] });
 		expect(scoped.issues.some((i) => i.severity === 'error')).toBe(false);
 		expect(scoped.entities).toHaveLength(1);
 		expect(scoped.entities[0]!.name).toBe('transcript');

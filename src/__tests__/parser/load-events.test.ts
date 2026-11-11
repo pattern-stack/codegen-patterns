@@ -217,7 +217,6 @@ function makeEntity(events: EntityDefinition['events']): EntityDefinition {
 		entity: {
 			name: 'contact',
 			plural: 'contacts',
-			table: 'contacts',
 			expose: ['repository', 'rest', 'trpc'],
 		},
 		fields: { id: { type: 'uuid', required: true, nullable: false } },
@@ -308,7 +307,6 @@ function makeEmitEntity(
 		entity: {
 			name,
 			plural: `${name}s`,
-			table: `${name}s`,
 			expose: ['repository', 'rest'],
 		},
 		fields: { id: { type: 'uuid', required: true, nullable: false } },

@@ -8,7 +8,6 @@
 entity:
   name: person
   plural: persons
-  table: persons
 
 fields:
   contact_id:

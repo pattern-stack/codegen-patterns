@@ -42,7 +42,7 @@ function readFrontmatter(source: string): { frontmatter: string; body: string } 
 }
 
 const opportunityDefinition = {
-  entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities', pattern: 'Integrated' },
+  entity: { name: 'opportunity', plural: 'opportunities', pattern: 'Integrated' },
   fields: {
     user_id: { type: 'uuid', required: true },
     name: { type: 'string', required: true },

@@ -48,7 +48,7 @@ function renderRepository(locals: Record<string, unknown>): string {
 }
 
 const baseEntity = {
-  entity: { name: 'contact', plural: 'contacts', table: 'contacts', pattern: 'Integrated' },
+  entity: { name: 'contact', plural: 'contacts', pattern: 'Integrated' },
   fields: {
     email: { type: 'string', required: true },
   },
@@ -275,7 +275,6 @@ describe('backend repository template — belongs_to + explicit FK query collisi
     entity: {
       name: 'field_config',
       plural: 'field_configs',
-      table: 'field_configs',
       pattern: 'Base',
     },
     fields: { value: { type: 'string', required: true } },

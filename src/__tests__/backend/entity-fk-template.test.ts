@@ -51,7 +51,7 @@ const EMPTY_BASE_LOCALS = withEntities();
 // ============================================================================
 
 const messageDefinitionCascade = {
-  entity: { name: 'message', plural: 'messages', table: 'messages', pattern: 'Base' },
+  entity: { name: 'message', plural: 'messages', pattern: 'Base' },
   fields: {
     body: { type: 'string', required: true },
   },
@@ -81,7 +81,7 @@ const messageDefinitionSoftDeleteCascade = {
 // ============================================================================
 
 const messageDefinitionRestrict = {
-  entity: { name: 'message', plural: 'messages', table: 'messages', pattern: 'Base' },
+  entity: { name: 'message', plural: 'messages', pattern: 'Base' },
   fields: {
     body: { type: 'string', required: true },
   },
@@ -102,7 +102,7 @@ const messageDefinitionRestrict = {
 // ============================================================================
 
 const childDefinitionSetNull = {
-  entity: { name: 'comment', plural: 'comments', table: 'comments', pattern: 'Base' },
+  entity: { name: 'comment', plural: 'comments', pattern: 'Base' },
   fields: {
     body: { type: 'string', required: true },
   },
@@ -123,7 +123,7 @@ const childDefinitionSetNull = {
 // ============================================================================
 
 const messageDefinitionNoOnDelete = {
-  entity: { name: 'message', plural: 'messages', table: 'messages', pattern: 'Base' },
+  entity: { name: 'message', plural: 'messages', pattern: 'Base' },
   fields: {
     body: { type: 'string', required: true },
   },
@@ -249,7 +249,7 @@ describe('soft-delete FK warning (issue #41)', () => {
 
 // Integrated entity declaring the behavior explicitly.
 const integratedExplicitDefinition = {
-  entity: { name: 'contact', plural: 'contacts', table: 'contacts', pattern: 'Integrated' },
+  entity: { name: 'contact', plural: 'contacts', pattern: 'Integrated' },
   fields: { email: { type: 'string', required: true } },
   relationships: {},
   behaviors: ['timestamps', 'external_id_tracking'],
@@ -258,7 +258,7 @@ const integratedExplicitDefinition = {
 // Integrated entity that does NOT re-declare external_id_tracking — the pattern
 // implies it (impliedBehaviors fold).
 const integratedImpliedDefinition = {
-  entity: { name: 'contact', plural: 'contacts', table: 'contacts', pattern: 'Integrated' },
+  entity: { name: 'contact', plural: 'contacts', pattern: 'Integrated' },
   fields: { email: { type: 'string', required: true } },
   relationships: {},
   behaviors: ['timestamps'],
@@ -266,7 +266,7 @@ const integratedImpliedDefinition = {
 
 // Plain Base entity carrying the behavior directly (no pattern).
 const baseWithBehaviorDefinition = {
-  entity: { name: 'widget', plural: 'widgets', table: 'widgets', pattern: 'Base' },
+  entity: { name: 'widget', plural: 'widgets', pattern: 'Base' },
   fields: { label: { type: 'string', required: true } },
   relationships: {},
   behaviors: ['external_id_tracking'],
@@ -274,7 +274,7 @@ const baseWithBehaviorDefinition = {
 
 // Plain Base entity WITHOUT the behavior — must emit no index.
 const baseNoBehaviorDefinition = {
-  entity: { name: 'widget', plural: 'widgets', table: 'widgets', pattern: 'Base' },
+  entity: { name: 'widget', plural: 'widgets', pattern: 'Base' },
   fields: { label: { type: 'string', required: true } },
   relationships: {},
   behaviors: [],
@@ -362,7 +362,7 @@ describe('external_id_tracking unique index emission', () => {
 // Fixture: message with conversation_id declared as a required, indexed field
 // AND as a belongs_to relationship (no nullable on the relationship).
 const messageDefinitionFieldBackedFk = {
-  entity: { name: 'message', plural: 'messages', table: 'messages', pattern: 'Base' },
+  entity: { name: 'message', plural: 'messages', pattern: 'Base' },
   fields: {
     body: { type: 'string', required: true },
     conversation_id: { type: 'uuid', required: true, index: true },
@@ -451,7 +451,7 @@ describe('belongs_to FK inherits field required + index (#34 follow-on)', () => 
 
   it('emits the index for a nullable indexed FK (index independent of nullability)', () => {
     const nullableIndexed = {
-      entity: { name: 'message', plural: 'messages', table: 'messages', pattern: 'Base' },
+      entity: { name: 'message', plural: 'messages', pattern: 'Base' },
       fields: {
         body: { type: 'string', required: true },
         conversation_id: { type: 'uuid', index: true },
@@ -477,7 +477,7 @@ describe('belongs_to FK inherits field required + index (#34 follow-on)', () => 
 
   it('does NOT emit an index when the field-backed FK has no index:true', () => {
     const noIndex = {
-      entity: { name: 'message', plural: 'messages', table: 'messages', pattern: 'Base' },
+      entity: { name: 'message', plural: 'messages', pattern: 'Base' },
       fields: {
         body: { type: 'string', required: true },
         conversation_id: { type: 'uuid', required: true },

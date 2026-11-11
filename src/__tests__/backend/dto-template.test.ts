@@ -54,7 +54,7 @@ function render(template: string, locals: Record<string, unknown>): string {
 
 // Fixture with a decimal field and a json field — covers both bugs.
 const agentDefinition = {
-  entity: { name: 'agent', plural: 'agents', table: 'agents', pattern: 'Integrated' },
+  entity: { name: 'agent', plural: 'agents', pattern: 'Integrated' },
   fields: {
     name: { type: 'string', required: true },
     temperature: { type: 'decimal', required: true },
@@ -124,7 +124,7 @@ describe('backend DTO templates — Zod type leaks (issue #35)', () => {
     // A Base entity that declares the external_id_tracking behavior directly —
     // proves the output emission tracks the behavior flag, not the pattern name.
     const baseSynced = {
-      entity: { name: 'thing', plural: 'things', table: 'things' },
+      entity: { name: 'thing', plural: 'things' },
       fields: { label: { type: 'string', required: true } },
       relationships: {},
       behaviors: ['external_id_tracking'],
@@ -132,7 +132,7 @@ describe('backend DTO templates — Zod type leaks (issue #35)', () => {
 
     // A plain Base entity — no external-id tracking at all.
     const plainBase = {
-      entity: { name: 'task', plural: 'tasks', table: 'tasks' },
+      entity: { name: 'task', plural: 'tasks' },
       fields: { title: { type: 'string', required: true } },
       relationships: {},
       behaviors: [],

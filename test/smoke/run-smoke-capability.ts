@@ -662,7 +662,7 @@ async function leg(mode: Mode): Promise<number> {
 				.map((d) => path.join(tmpDir, d))
 				.filter((d) => fs.existsSync(d))
 				.flatMap((d) => fs.readdirSync(d).filter((f) => f.endsWith('.yaml')).map((f) => path.join(d, f)));
-			const scan = assertTimestampColumns(path.join(tmpDir, 'src/modules'), collectTimezoneOptOuts(yamls));
+			const scan = assertTimestampColumns(path.join(tmpDir, 'src/modules'), collectTimezoneOptOuts(yamls, ''));
 			log(`[${mode}] timestamptz scan OK (${scan.calls} calls in ${scan.files} entity files)`);
 		}
 

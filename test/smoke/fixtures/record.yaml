@@ -7,7 +7,6 @@
 entity:
   name: record
   plural: records
-  table: records
   pattern: Base
 
 fields:

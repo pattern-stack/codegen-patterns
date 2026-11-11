@@ -40,7 +40,7 @@ function render(locals: Record<string, unknown>): string {
 const EMPTY_BASE_LOCALS = withEntities();
 
 const integrationDefinition = {
-  entity: { name: 'integration', plural: 'integrations', table: 'integrations', pattern: 'Base' },
+  entity: { name: 'integration', plural: 'integrations', pattern: 'Base' },
   fields: {
     name: { type: 'string', required: true },
     status: { type: 'enum', choices: ['active', 'paused', 'disabled'], required: true },
@@ -102,7 +102,7 @@ describe('backend entity template — pgEnum emission', () => {
 
   it('omits enumFields and pgEnum import when no enum fields present', () => {
     const noEnum = {
-      entity: { name: 'task', plural: 'tasks', table: 'tasks', pattern: 'Base' },
+      entity: { name: 'task', plural: 'tasks', pattern: 'Base' },
       fields: { title: { type: 'string', required: true } },
       relationships: {},
       behaviors: [],
@@ -120,13 +120,13 @@ describe('backend entity template — enum namespacing across entities (no colli
   // duplicate barrel export (TS2308) and a duplicate `CREATE TYPE role` at the
   // DB level (a real migration conflict). Hit building a real consumer app.
   const fieldConfig = {
-    entity: { name: 'field_config', plural: 'field_configs', table: 'field_configs', pattern: 'Base' },
+    entity: { name: 'field_config', plural: 'field_configs', pattern: 'Base' },
     fields: { role: { type: 'enum', choices: ['a', 'b'], required: true } },
     relationships: {},
     behaviors: [],
   };
   const canonicalField = {
-    entity: { name: 'canonical_field', plural: 'canonical_fields', table: 'canonical_fields', pattern: 'Base' },
+    entity: { name: 'canonical_field', plural: 'canonical_fields', pattern: 'Base' },
     fields: { role: { type: 'enum', choices: ['a', 'b'], required: true } },
     relationships: {},
     behaviors: [],

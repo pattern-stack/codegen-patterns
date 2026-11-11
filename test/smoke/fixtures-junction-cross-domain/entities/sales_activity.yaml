@@ -6,7 +6,6 @@
 entity:
   name: sales_activity
   plural: sales_activities
-  table: sales_activities
   pattern: Activity
 
 fields:

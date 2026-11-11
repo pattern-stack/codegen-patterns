@@ -13,7 +13,6 @@
 entity:
   name: person
   plural: persons
-  table: persons
 
 fields:
   name:

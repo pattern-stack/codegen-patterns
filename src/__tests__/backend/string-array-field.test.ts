@@ -24,7 +24,7 @@ import { withEntities } from './_entity-lookup';
 const BASE = withEntities({ runtimeMode: 'vendored' });
 
 const definition = {
-	entity: { name: 'player', plural: 'players', table: 'players' },
+	entity: { name: 'player', plural: 'players' },
 	fields: {
 		nicknames: { type: 'string_array', nullable: true },
 		positions: { type: 'string_array', choices: ['pg', 'sg', 'sf'], required: true, default: ['pg'] },

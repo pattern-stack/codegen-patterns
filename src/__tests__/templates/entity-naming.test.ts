@@ -52,24 +52,51 @@ describe('createEntityLookup', () => {
 			'entity:\n  name: person\n  plural: personnel\n  context: hr\n',
 		);
 		fs.writeFileSync(path.join(dir, 'broken.yaml'), 'entity: [unclosed');
-		const lookup = createEntityLookup(dir);
+		const lookup = createEntityLookup(dir, { tablePrefix: '' });
 		expect(lookup('person')).toEqual({ name: 'person', plural: 'personnel', context: 'hr' });
 		expect(lookup('nobody')).toBeNull();
 	});
 
-	it('resolves by declared plural — the table a field-level foreign_key: names', () => {
+	it('resolves by SQL table name — the table a field-level foreign_key: names (TABLE-0)', () => {
 		const dir = tmp();
 		fs.writeFileSync(path.join(dir, 'person.yaml'), 'entity:\n  name: person\n  plural: persons\n');
-		const lookup = createEntityLookup(dir);
-		expect(lookup.byPlural('persons')).toEqual({ name: 'person', plural: 'persons' });
+		const lookup = createEntityLookup(dir, { tablePrefix: '' });
+		expect(lookup.byTable('persons')).toEqual({ name: 'person', plural: 'persons' });
 		// `people` is what pluralize('person') gives; nothing declares it.
-		expect(lookup.byPlural('people')).toBeNull();
+		expect(lookup.byTable('people')).toBeNull();
+	});
+
+	it('a table_name, not the plural, is the key a foreign_key: resolves through (TABLE-0)', () => {
+		const dir = tmp();
+		fs.writeFileSync(
+			path.join(dir, 'ticket.yaml'),
+			'entity:\n  name: ticket\n  plural: tickets\n  table_name: issues\n',
+		);
+		const lookup = createEntityLookup(dir, { tablePrefix: 'app_' });
+		expect(lookup.byTable('issues')?.name).toBe('ticket');
+		expect(lookup.byTable('tickets')).toBeNull();
+		expect(lookup.byTable('app_tickets')).toBeNull();
+	});
+
+	it('the project prefix reaches the key; an entity table_prefix overrides it (TABLE-0)', () => {
+		const dir = tmp();
+		fs.writeFileSync(path.join(dir, 'note.yaml'), 'entity:\n  name: note\n  plural: notes\n');
+		fs.writeFileSync(path.join(dir, 'deal.yaml'), "entity:\n  name: deal\n  plural: deals\n  table_prefix: crm__\n");
+		const lookup = createEntityLookup(dir, { tablePrefix: 'app_' });
+		expect(lookup.byTable('app_notes')?.name).toBe('note');
+		expect(lookup.byTable('crm__deals')?.name).toBe('deal');
+		expect(lookup.byTable('notes')).toBeNull();
+	});
+
+	it('requires the prefix', () => {
+		// @ts-expect-error — the missing key is the point
+		expect(() => createEntityLookup(tmp(), {})).toThrow(/tablePrefix/);
 	});
 
 	it('a missing directory resolves nothing (the callers decide whether that is an error)', () => {
-		const lookup = createEntityLookup(path.join(tmp(), 'absent'));
+		const lookup = createEntityLookup(path.join(tmp(), 'absent'), { tablePrefix: '' });
 		expect(lookup('person')).toBeNull();
-		expect(lookup.byPlural('persons')).toBeNull();
+		expect(lookup.byTable('persons')).toBeNull();
 	});
 });
 
@@ -77,7 +104,10 @@ describe('entityLookupFrom', () => {
 	it('is the same lookup over blocks in hand', () => {
 		const lookup = entityLookupFrom([{ name: 'person', plural: 'persons' }]);
 		expect(lookup('person')).toEqual({ name: 'person', plural: 'persons' });
-		expect(lookup.byPlural('persons')?.name).toBe('person');
+		expect(lookup.byTable('persons')?.name).toBe('person');
+		expect(entityLookupFrom([{ name: 'person', plural: 'persons' }], { tablePrefix: 'x_' }).byTable('x_persons')?.name).toBe(
+			'person',
+		);
 		expect(lookup('crew')).toBeNull();
 	});
 });
@@ -87,30 +117,47 @@ describe('createEntityLookup — the CLI walk and its guards', () => {
 		const dir = tmp();
 		fs.mkdirSync(path.join(dir, '.cache'));
 		fs.writeFileSync(path.join(dir, '.cache', 'ghost.yaml'), 'entity:\n  name: ghost\n  plural: ghosts\n');
-		expect(createEntityLookup(dir)('ghost')).toBeNull();
+		expect(createEntityLookup(dir, { tablePrefix: '' })('ghost')).toBeNull();
 	});
 
 	it('two YAMLs declaring the same plural is a load error naming both files', () => {
 		const dir = tmp();
 		fs.writeFileSync(path.join(dir, 'person.yaml'), 'entity:\n  name: person\n  plural: persons\n');
 		fs.writeFileSync(path.join(dir, 'human.yaml'), 'entity:\n  name: human\n  plural: persons\n');
-		const lookup = createEntityLookup(dir);
+		const lookup = createEntityLookup(dir, { tablePrefix: '' });
 		expect(() => lookup('person')).toThrow(
-			`two entity YAMLs declare the table 'persons': ${path.join(dir, 'human.yaml')} and ${path.join(dir, 'person.yaml')}`,
+			`two entity YAMLs declare the plural 'persons': ${path.join(dir, 'human.yaml')} and ${path.join(dir, 'person.yaml')}`,
 		);
 		expect(() => entityLookupFrom([{ name: 'a', plural: 'x' }, { name: 'b', plural: 'x' }])('a')).toThrow(
-			"two entity YAMLs declare the table 'x'",
+			"two entity YAMLs declare the plural 'x'",
+		);
+	});
+
+	it('two YAMLs resolving to one SQL table is a load error naming both files (TABLE-0, #800)', () => {
+		const dir = tmp();
+		fs.writeFileSync(path.join(dir, 'artifact.yaml'), 'entity:\n  name: artifact\n  plural: artifacts\n');
+		fs.writeFileSync(
+			path.join(dir, 'slack_message.yaml'),
+			'entity:\n  name: slack_message\n  plural: slack_messages\n  table_name: artifacts\n',
+		);
+		const lookup = createEntityLookup(dir, { tablePrefix: '' });
+		expect(() => lookup('artifact')).toThrow(
+			`two entity YAMLs resolve to the SQL table 'artifacts': ${path.join(dir, 'artifact.yaml')} and ` +
+				`${path.join(dir, 'slack_message.yaml')}. A table has one owning entity (two entities over one table is #800).`,
 		);
 	});
 
 	it('names the directory searched and the file expected', () => {
 		const dir = tmp();
-		const lookup = createEntityLookup(dir, [dir]);
+		const lookup = createEntityLookup(dir, { candidates: [dir], tablePrefix: '' });
 		expect(lookup.missingEntity('ghost')).toBe(
 			`no YAML under ${dir} declares \`entity: { name: ghost }\` (expected e.g. ${path.join(dir, 'ghost.yaml')})`,
 		);
-		expect(lookup.missingPlural('ghosts')).toBe(`no YAML under ${dir} declares \`plural: ghosts\``);
-		const none = createEntityLookup(null, ['/p/defs', '/p/entities']);
+		expect(lookup.missingTable('ghosts')).toBe(
+			`no YAML under ${dir} resolves to the SQL table 'ghosts' — a \`table_name: ghosts\`, ` +
+				"or a `plural:` that is 'ghosts' under the table prefix ''",
+		);
+		const none = createEntityLookup(null, { candidates: ['/p/defs', '/p/entities'], tablePrefix: '' });
 		expect(none.missingEntity('ghost')).toContain('no entities directory exists (looked for /p/defs, /p/entities');
 	});
 });

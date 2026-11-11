@@ -9,7 +9,6 @@
 entity:
   name: canonical_field
   plural: canonical_fields
-  table: canonical_fields
   pattern: Base
 
 fields:

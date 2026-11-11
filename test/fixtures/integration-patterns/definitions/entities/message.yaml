@@ -20,7 +20,6 @@
 entity:
   name: message
   plural: messages
-  table: messages
   surface: crm
   pattern: Integrated
 behaviors:

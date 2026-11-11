@@ -26,7 +26,7 @@ import { includesConstName } from '../../../emitters/relations/emit-includes';
 import { deriveQueryMethodName } from '../../../schema/query-routes';
 
 const baseEntity = {
-	entity: { name: 'account', plural: 'accounts', table: 'accounts' },
+	entity: { name: 'account', plural: 'accounts' },
 	fields: {
 		name: { type: 'string', required: true },
 		user_id: { type: 'uuid', required: true },

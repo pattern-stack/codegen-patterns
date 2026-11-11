@@ -15,7 +15,7 @@ import { loadEntityFromYaml } from '../../utils/yaml-loader';
 import { resolve } from 'path';
 
 const base = {
-	entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities' },
+	entity: { name: 'opportunity', plural: 'opportunities' },
 	fields: { name: { type: 'string', required: true } },
 };
 

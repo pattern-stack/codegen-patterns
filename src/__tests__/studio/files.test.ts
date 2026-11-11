@@ -27,7 +27,6 @@ const roots: string[] = [];
 const VALID_ENTITY = `entity:
   name: contact
   plural: contacts
-  table: contacts
 
 fields:
   email:
@@ -121,7 +120,7 @@ describe('validateContent — reserved names (#813)', () => {
 	it('rejects an entity named date with exactly one custom issue at entity.name', () => {
 		const outcome = validateContent(
 			'entity',
-			'entity:\n  name: date\n  plural: dates\n  table: dates\nfields:\n  body:\n    type: string\n',
+			'entity:\n  name: date\n  plural: dates\nfields:\n  body:\n    type: string\n',
 		);
 		expect(outcome.ok).toBe(false);
 		if (outcome.ok) throw new Error('unreachable');

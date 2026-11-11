@@ -15,9 +15,13 @@
           "type": "string",
           "description": "Plural form in snake_case (e.g., 'opportunities')"
         },
-        "table": {
-          "type": "string",
-          "description": "Database table name"
+        "table_name": {
+          "description": "Literal SQL table name, used verbatim (default: <tables.prefix><plural>)",
+          "type": "string"
+        },
+        "table_prefix": {
+          "description": "Overrides the project's tables.prefix for this table; '' opts out. Exclusive with table_name",
+          "type": "string"
         },
         "expose": {
           "description": "Which layers to generate",
@@ -34,8 +38,7 @@
       },
       "required": [
         "name",
-        "plural",
-        "table"
+        "plural"
       ],
       "description": "Entity configuration"
     },
@@ -273,6 +276,37 @@
               "name"
             ]
           }
+        ]
+      }
+    },
+    "unique_indexes": {
+      "description": "Unique constraints: 1+ fields, optional where (partial) and nulls_not_distinct",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Columns the unique constraint spans (1+)"
+          },
+          "name": {
+            "description": "Constraint name, lowercase snake_case, max 63 (default <table>_<col1>_<col2>_uniq); required with `where`",
+            "type": "string"
+          },
+          "where": {
+            "description": "Raw SQL predicate making this a partial unique index; needs `name`, exclusive with nulls_not_distinct: true",
+            "type": "string"
+          },
+          "nulls_not_distinct": {
+            "description": "true: UNIQUE NULLS NOT DISTINCT constraint. Default on tenant_scoped entities; false opts out. PostgreSQL 15+",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "fields"
         ]
       }
     }

@@ -25,7 +25,6 @@ const contactDefinition = {
   entity: {
     name: 'contact',
     plural: 'contacts',
-    table: 'contacts',
     pattern: 'Integrated',
   },
   fields: {
@@ -47,7 +46,7 @@ const contactDefinition = {
 
 // Entity without pattern key
 const noFamilyDefinition = {
-  entity: { name: 'task', plural: 'tasks', table: 'tasks' },
+  entity: { name: 'task', plural: 'tasks' },
   fields: { title: { type: 'string', required: true } },
   relationships: {},
   behaviors: [],
@@ -55,7 +54,7 @@ const noFamilyDefinition = {
 
 // Activity pattern entity
 const activityDefinition = {
-  entity: { name: 'note', plural: 'notes', table: 'notes', pattern: 'Activity' },
+  entity: { name: 'note', plural: 'notes', pattern: 'Activity' },
   fields: { body: { type: 'string', required: true } },
   relationships: {},
   behaviors: ['timestamps'],
@@ -312,14 +311,14 @@ describe('buildBackendLocals', () => {
 
   it('produces collision-free class names for different entities sharing a query', () => {
     const accountDef = {
-      entity: { name: 'account', plural: 'accounts', table: 'accounts', pattern: 'Integrated' },
+      entity: { name: 'account', plural: 'accounts', pattern: 'Integrated' },
       fields: { domain: { type: 'string', required: true } },
       relationships: {},
       behaviors: [],
       queries: [{ by: ['domain'], unique: true }],
     };
     const opportunityDef = {
-      entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities', pattern: 'Integrated' },
+      entity: { name: 'opportunity', plural: 'opportunities', pattern: 'Integrated' },
       fields: { domain: { type: 'string', required: true } },
       relationships: {},
       behaviors: [],
@@ -402,7 +401,6 @@ describe('buildBackendLocals — PATTERN-5 registry integration', () => {
       entity: {
         name: 'deal',
         plural: 'deals',
-        table: 'deals',
         patterns: ['Integrated', 'Activity'],
       },
       fields: {},
@@ -437,7 +435,6 @@ describe('buildBackendLocals — PATTERN-5 registry integration', () => {
       entity: {
         name: 'opportunity',
         plural: 'opportunities',
-        table: 'opportunities',
         pattern: 'CrmEntityTest',
       },
       fields: {},
@@ -494,7 +491,7 @@ describe('buildBackendLocals — PATTERN-5 registry integration', () => {
     for (const [lowerName, expected] of Object.entries(want)) {
       const pascal = lowerName.charAt(0).toUpperCase() + lowerName.slice(1);
       const def = {
-        entity: { name: 't', plural: 'ts', table: 'ts', pattern: pascal },
+        entity: { name: 't', plural: 'ts', pattern: pascal },
         fields: {},
         relationships: {},
         behaviors: [],
@@ -510,7 +507,7 @@ describe('buildBackendLocals — PATTERN-5 registry integration', () => {
 
   it('package mode rewrites library base-class imports to @pattern-stack/codegen/runtime (ADR-037)', () => {
     const def = {
-      entity: { name: 'contact', plural: 'contacts', table: 'contacts', pattern: 'Integrated' },
+      entity: { name: 'contact', plural: 'contacts', pattern: 'Integrated' },
       fields: {},
       relationships: {},
       behaviors: [],
@@ -529,7 +526,7 @@ describe('buildBackendLocals — PATTERN-5 registry integration', () => {
   // ACTIVITY-SUBJECT-1 — Activity inherited-method strings are config-driven now.
   it('Activity advertises the config-driven subject finders (not the CRM names)', () => {
     const def = {
-      entity: { name: 'meeting', plural: 'meetings', table: 'meetings', pattern: 'Activity' },
+      entity: { name: 'meeting', plural: 'meetings', pattern: 'Activity' },
       fields: {},
       relationships: {},
       behaviors: [],
@@ -553,7 +550,6 @@ describe('buildBackendLocals — PATTERN-5 registry integration', () => {
       entity: {
         name: 'message',
         plural: 'messages',
-        table: 'messages',
         patterns: ['Integrated', 'Activity'],
       },
       fields: {},
@@ -581,7 +577,6 @@ describe('buildBackendLocals — PATTERN-5 registry integration', () => {
       entity: {
         name: 'message',
         plural: 'messages',
-        table: 'messages',
         patterns: ['PeLead', 'Integrated'],
       },
       fields: {},
@@ -599,7 +594,7 @@ describe('buildBackendLocals — PATTERN-5 registry integration', () => {
 describe('impliedBehaviors fold — pattern-implied behaviors merge into emit', () => {
   // A pattern: Integrated entity with NO explicit external_id_tracking behavior.
   const integratedNoExplicitBehavior = {
-    entity: { name: 'account', plural: 'accounts', table: 'accounts', pattern: 'Integrated' },
+    entity: { name: 'account', plural: 'accounts', pattern: 'Integrated' },
     fields: { name: { type: 'string', required: true } },
     relationships: {},
     behaviors: ['timestamps'],
@@ -612,7 +607,7 @@ describe('impliedBehaviors fold — pattern-implied behaviors merge into emit', 
   });
 
   it('resolveImpliedBehaviors walks the patterns: [...] array form', () => {
-    const multi = { name: 'deal', plural: 'deals', table: 'deals', patterns: ['Integrated'] };
+    const multi = { name: 'deal', plural: 'deals', patterns: ['Integrated'] };
     expect(resolveImpliedBehaviors(multi)).toContain('external_id_tracking');
   });
 
@@ -642,7 +637,7 @@ describe('impliedBehaviors fold — pattern-implied behaviors merge into emit', 
 
   it('a Base entity (no pattern) does NOT gain external_id_tracking', () => {
     const base = {
-      entity: { name: 'task', plural: 'tasks', table: 'tasks', pattern: 'Base' },
+      entity: { name: 'task', plural: 'tasks', pattern: 'Base' },
       fields: { title: { type: 'string', required: true } },
       relationships: {},
       behaviors: [],
@@ -661,7 +656,7 @@ describe('renderPatternConfigLiteral — idiomatic TS literal emission', () => {
   // throwaway entity.
   const sampleLocals = mod.buildBackendLocals(
     {
-      entity: { name: 'x', plural: 'xs', table: 'xs', pattern: 'Base' },
+      entity: { name: 'x', plural: 'xs', pattern: 'Base' },
       fields: {},
       relationships: {},
       behaviors: [],
@@ -752,7 +747,6 @@ describe('capability composition emission (ADR-041)', () => {
     entity: {
       name: 'account',
       plural: 'accounts',
-      table: 'accounts',
       patterns,
       ...extra,
     },
@@ -987,7 +981,7 @@ describe('roles: → belongs_to emission (CAP-2)', () => {
   const withRoles = async (roles: Record<string, unknown>, fields: Record<string, unknown> = {}) => {
     const { deriveRoleRelationships } = await import('../../roles/derive.ts');
     return {
-      entity: { name: 'meeting', plural: 'meetings', table: 'meetings' },
+      entity: { name: 'meeting', plural: 'meetings' },
       fields: { title: { type: 'string', required: true }, ...fields },
       relationships: { ...deriveRoleRelationships(roles as never) },
       behaviors: ['timestamps'],
@@ -1053,7 +1047,7 @@ describe('roles: → belongs_to emission (CAP-2)', () => {
     );
     const declaredLocals = buildBackendLocals(
       {
-        entity: { name: 'meeting', plural: 'meetings', table: 'meetings' },
+        entity: { name: 'meeting', plural: 'meetings' },
         fields: { host_contact_id: { type: 'uuid', required: true } },
         relationships: {
           host: { type: 'belongs_to', target: 'contact', foreign_key: 'host_contact_id', nullable: true },
@@ -1073,7 +1067,7 @@ describe('roles: → belongs_to emission (CAP-2)', () => {
   it('a declared (non-role) relationship is keyed by its relationship name', () => {
     const locals = buildBackendLocals(
       {
-        entity: { name: 'contact', plural: 'contacts', table: 'contacts' },
+        entity: { name: 'contact', plural: 'contacts' },
         fields: {},
         relationships: { employer: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' } },
         behaviors: [],
@@ -1089,7 +1083,7 @@ describe('roles: → belongs_to emission (CAP-2)', () => {
   it('two declared belongs_to onto one target: two keys, two write keys, one table import', () => {
     const locals = buildBackendLocals(
       {
-        entity: { name: 'game', plural: 'games', table: 'games', pattern: 'Integrated' },
+        entity: { name: 'game', plural: 'games', pattern: 'Integrated' },
         fields: {},
         relationships: {
           home_team: { type: 'belongs_to', target: 'account', foreign_key: 'home_team_id' },
@@ -1130,7 +1124,6 @@ describe('library capability configs (CAP-3, ADR-041.1)', () => {
       entity: {
         name: 'meeting',
         plural: 'meetings',
-        table: 'meetings',
         patterns: ['Activity', 'Communication'],
         ...entityExtra,
       },
@@ -1145,7 +1138,6 @@ describe('library capability configs (CAP-3, ADR-041.1)', () => {
     entity: {
       name: 'account',
       plural: 'accounts',
-      table: 'accounts',
       patterns: ['Actor'],
       ...(actor === undefined ? {} : { config: { Actor: actor } }),
     },
@@ -1330,7 +1322,6 @@ describe('library capability configs (CAP-3, ADR-041.1)', () => {
         entity: {
           name: 'note',
           plural: 'notes',
-          table: 'notes',
           patterns: ['CeVerbatim'],
           config: { CeVerbatim: { column: 'status' } },
         },
