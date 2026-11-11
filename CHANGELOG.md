@@ -33,7 +33,9 @@ All notable changes to this project will be documented in this file.
   now resolves by SQL table and references the owner's export), the Electric shape's `table` param and the semantic
   model's `tableName`. The Drizzle export, `db.query` key, module folder, classes and REST route stay on `plural`, so
   `entity: { name: ticket, plural: tickets, table_name: issues }` emits `export const tickets = pgTable('issues', …)`
-  and `db.query.tickets`. With neither key set the output is byte-identical. See `docs/specs/TABLE-0.md`.
+  and `db.query.tickets`. With neither key set the output is byte-identical. Two definitions — entities or
+  junctions — resolving to one SQL table is a pre-flight error of `entity new` / `junction new` (and an
+  `entity validate` error between entities). See `docs/specs/TABLE-0.md`.
 
 ### Removed
 

@@ -14,7 +14,7 @@ import { resolve } from 'node:path';
 import ejs from 'ejs';
 import { buildBackendLocals } from '../../../templates/entity/new/backend/entity-locals.js';
 import { entityLookupFrom } from '../../../templates/_shared/entity-naming.mjs';
-import { sqlTableName } from '../../config/table-naming';
+import { sqlTableCollisions, sqlTableName } from '../../config/table-naming';
 import { EntityDefinitionSchema } from '../../schema/entity-definition.schema';
 import { JunctionDefinitionSchema } from '../../schema/junction-definition.schema';
 import { CodegenConfigSchema } from '../../schema/codegen-config.schema';
@@ -208,5 +208,27 @@ describe('schema — table_name / table_prefix', () => {
 		expect(CodegenConfigSchema.parse({ tables: { prefix: 'app_' } }).tables.prefix).toBe('app_');
 		expect(CodegenConfigSchema.safeParse({ tables: { prefix: 'App' } }).success).toBe(false);
 		expect(CodegenConfigSchema.safeParse({ tables: { schema: 'x' } }).success).toBe(false);
+	});
+});
+
+describe('sqlTableCollisions — one SQL table, one owner (TABLE-0)', () => {
+	const owner = (table: string, owner: string) => ({ table, owner, file: `${owner}.yaml` });
+
+	it('reports every table two definitions share, entities and junctions alike', () => {
+		const out = sqlTableCollisions([
+			owner('issues', "entity 'ticket'"),
+			owner('issues', "entity 'issue'"),
+			owner('ticket_tags', "junction 'ticket_tag'"),
+			owner('ticket_tags', "entity 'tagging'"),
+			owner('tags', "entity 'tag'"),
+		]);
+		expect(out.map((c) => [c.table, c.owners.map((o) => o.owner)])).toEqual([
+			['issues', ["entity 'ticket'", "entity 'issue'"]],
+			['ticket_tags', ["junction 'ticket_tag'", "entity 'tagging'"]],
+		]);
+	});
+
+	it('is empty when every table has one owner', () => {
+		expect(sqlTableCollisions([owner('issues', "entity 'ticket'"), owner('tags', "entity 'tag'")])).toEqual([]);
 	});
 });

@@ -100,4 +100,23 @@ describe('junction new pre-flight (JUNC-0)', () => {
 		expect(payload.failed.filter((f: { file: string }) => f.file === file)).toHaveLength(1);
 		expect(generatedAnything(root)).toBe(false);
 	});
+
+	test('an entity and a junction resolving to one SQL table are rejected (TABLE-0)', async () => {
+		const root = mkProject();
+		// `table_name:` lands the entity on the junction's derived table, with no
+		// shared plural — the plural check cannot see it.
+		fs.writeFileSync(
+			path.join(root, 'entities', 'link.yaml'),
+			'entity:\n  name: link\n  plural: links\n  table_name: note_users\nfields:\n  url:\n    type: string\n',
+		);
+		fs.writeFileSync(path.join(root, 'junctions', 'note_user.yaml'), 'pattern: Junction\nbetween: [note, user]\n');
+		const { code, out } = await run(['junction', 'new', '--all', '--force', '--json', '--cwd', root]);
+		expect(code).toBe(1);
+		const payload = JSON.parse(out.slice(out.indexOf('{')));
+		expect(payload.stopped).toBe('pre-flight');
+		const hits = payload.failed.filter((f: { message: string }) => f.message.includes("same SQL table 'note_users'"));
+		expect(hits).toHaveLength(1);
+		expect(hits[0].message).toContain("entity 'link' and junction 'note_user'");
+		expect(generatedAnything(root)).toBe(false);
+	});
 });

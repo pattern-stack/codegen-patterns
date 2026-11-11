@@ -73,3 +73,50 @@ export const TABLE_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
 
 /** A prefix: empty, or lowercase snake_case (trailing `_` / `__` allowed — `crm__`). */
 export const TABLE_PREFIX_PATTERN = /^([a-z][a-z0-9_]*)?$/;
+
+/** One generated table and the definition that owns it, for the collision check. */
+export interface SqlTableOwner {
+	/** The resolved SQL table name. */
+	table: string;
+	/** `entity 'ticket'` / `junction 'ticket_tag'` — names the owner in the message. */
+	owner: string;
+	/** The YAML that declares it. */
+	file: string;
+}
+
+/** A SQL table two or more definitions resolve to. */
+export interface SqlTableCollision {
+	table: string;
+	owners: SqlTableOwner[];
+}
+
+/**
+ * Every SQL table more than one definition resolves to — entities AND junctions
+ * in one namespace, because they are tables in one database (TABLE-0). With
+ * `table_name:` and prefixes, two definitions can land on one table without
+ * sharing a plural, so the plural check alone does not catch it. A collision is
+ * a generation error, never last-write-wins: two `pgTable('…')` over one name
+ * is two schemas fighting for one table. (Two entities deliberately over one
+ * table is #800's design — a filtered entity — not something this accepts.)
+ */
+export function sqlTableCollisions(owners: readonly SqlTableOwner[]): SqlTableCollision[] {
+	const byTable = new Map<string, SqlTableOwner[]>();
+	for (const o of owners) {
+		const list = byTable.get(o.table);
+		if (list) list.push(o);
+		else byTable.set(o.table, [o]);
+	}
+	return [...byTable.entries()]
+		.filter(([, list]) => list.length > 1)
+		.map(([table, list]) => ({ table, owners: list }))
+		.sort((a, b) => a.table.localeCompare(b.table));
+}
+
+/** The one wording of a collision, for the CLI pre-flight and the analyzer. */
+export function sqlTableCollisionMessage(c: SqlTableCollision): string {
+	return (
+		`${c.owners.map((o) => o.owner).join(' and ')} resolve to the same SQL table '${c.table}' — ` +
+		'a table has one owning definition; change a `table_name:` / `table_prefix:` / `plural:` ' +
+		'(two entities over one table is #800)'
+	);
+}

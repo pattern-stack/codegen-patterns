@@ -8,12 +8,21 @@ Every block of an `entities/<name>.yaml` file and what it generates.
 
 ```yaml
 entity:
-  name: contact            # REQUIRED. singular snake_case. Drives class names + table.
-  plural: contacts         # REQUIRED. snake_case; the Drizzle table export
-  table: contacts          # REQUIRED. the database table name
+  name: contact            # REQUIRED. singular snake_case. Drives class names.
+  plural: contacts         # REQUIRED. snake_case; the Drizzle table export, db.query key, module folder
+  table_name: crm_contacts # optional. the literal SQL table name, used verbatim (no prefix)
+  table_prefix: crm__      # optional. overrides codegen.config.yaml `tables.prefix`; '' opts out.
+                           #   Exclusive with table_name.
   pattern: Synced          # the family — Base | Synced | Activity | Metadata | Knowledge
                            #   (or an app-defined pattern). See families-and-queries.md.
 ```
+
+**The SQL table name** (TABLE-0) is `table_name` if set, else `<table_prefix ?? tables.prefix><plural>`. With neither
+key and no project prefix it is `plural`. Only SQL-facing names follow it: `pgTable('…')`, index / constraint names
+(`<table>_…`), the Electric shape's `table`, and a field's `foreign_key: <table>.<column>`, which names the **SQL** table.
+The export, `db.query` key, folder, classes and REST route stay on `plural`. There is no `table:` key. Two definitions
+(entities or junctions) resolving to one SQL table is a generation error. Junction YAMLs take the same
+`table_name:` / `table_prefix:`.
 
 **Reserved names.** `promise`, `array` and `date` are rejected (also as relationship names): the generated type
 would shadow the `Promise`, `Array` or `Date` global, which generated code uses in nearly every signature. No other
@@ -154,7 +163,7 @@ relationships:
   `codegen entity new --all`. One run is enough: every `has_many` onto an entity
   in the run is wired. A single-file `entity new <parent>.yaml` wires a
   `has_many` only when its target has already been generated.
-- The target's table and folder come from the target's own YAML (`plural:`,
+- The target's table export and folder come from the target's own YAML (`plural:`,
   `context:`), never from pluralizing its name. A `belongs_to` (or field
   `foreign_key:`) whose target has no YAML in the entities directory is a
   generation error; a `has_many` onto one is simply not wired.

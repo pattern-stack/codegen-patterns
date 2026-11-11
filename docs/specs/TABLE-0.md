@@ -57,7 +57,10 @@ you meant it, rename it to `table_name:`.
 
 Every reader that emits a name takes the project prefix as a **required** argument: `sqlTableName`,
 `junctionTableName`, `loadEntities`, `loadEntityRegistry`, `createEntityLookup`, `loadOwnedTableNames`.
-`sqlTableName` throws on a non-string prefix. A forgotten prefix must not silently emit an unprefixed table — the
+`sqlTableName` throws on a non-string prefix. One reader defaults instead: `buildBackendLocals` falls back to the
+schema default when `baseLocals.tablePrefix` is absent, exactly as it does for `baseLocals.tenancyColumn` (#791) — its
+one production caller, `templates/entity/new/prompt.js`, always passes the config value, and ~250 unit-test call sites
+build locals by hand. Making both keys required there is one change for both, not this PR's. A forgotten prefix must not silently emit an unprefixed table — the
 CLAUDE.md gate rule (c) failure shape (a unit test caught exactly this: an undefined prefix concatenated into
 `undefinedopportunity_contacts`).
 
@@ -72,8 +75,14 @@ a table the host owns.
 
 ## Two entities over one table (#800)
 
-The entity lookup refuses two YAMLs that resolve to one SQL table (and, separately, two that share a plural — they
-would share an export). That is deliberate: a second entity over the same table is only meaningful with a
+One SQL table has one owning definition. `sqlTableCollisions` (`src/config/table-naming.ts`) is the check, over
+entities **and** junctions in one namespace — `table_name:` and prefixes let two definitions meet on a table without
+sharing a plural, so the plural check alone cannot see it. It runs in `entity new` / `junction new`'s shared
+pre-flight (`preflightEntityTargets`, a run-level rejection before anything is written) and in `analyzeDomain`
+(`entity validate`, entities only — it is not given the junction definitions). The hygen entity lookup also refuses
+two entity YAMLs on one table (and, separately, two that share a plural — they would share an export) as a last line.
+First-class `relationship:` tables are not in the set: they keep their own `table:` rule until #679 folds them into
+junctions. That is deliberate: a second entity over the same table is only meaningful with a
 distinguishing filter (`artifacts where type = 'x'`), which is #800's design. TABLE-0 is the precondition — before it,
 the second entity's export had to equal the table, so two entities could not even be declared — and the collision
 error names #800.

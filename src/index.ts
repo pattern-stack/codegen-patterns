@@ -16,8 +16,9 @@ import {
 	getAllOrchestrationPatterns,
 	getAllPatternNames,
 } from './patterns/registry.js';
-import type { AnalysisResult, OutputFormat } from './analyzer/types';
+import type { AnalysisIssue, AnalysisResult, OutputFormat } from './analyzer/types';
 import { TablesConfigSchema, TenancyConfigSchema } from './schema/codegen-config.schema.js';
+import { sqlTableCollisionMessage, sqlTableCollisions } from './config/table-naming.js';
 
 /**
  * Options for `analyzeDomain`. All fields are optional and additive — omitting
@@ -113,6 +114,17 @@ export async function analyzeDomain(
 			: undefined,
 	});
 
+	// TABLE-0 — two entities resolving to one SQL table (`entity new`'s
+	// pre-flight also checks junctions against them).
+	const tableCollisionIssues: AnalysisIssue[] = sqlTableCollisions(
+		entities.map((e) => ({ table: e.table, owner: `entity '${e.name}'`, file: e.sourcePath })),
+	).map((c) => ({
+		severity: 'error',
+		type: 'sql_table_collision',
+		message: sqlTableCollisionMessage(c),
+		path: c.owners[0]!.file,
+	}));
+
 	// Compute statistics
 	const statistics = computeStatistics(graph);
 
@@ -127,6 +139,7 @@ export async function analyzeDomain(
 		...orchestrationProjectIssues,
 		...semanticIssues,
 		...rolesProjectIssues,
+		...tableCollisionIssues,
 	];
 
 	// Determine validity (only errors make it invalid)
