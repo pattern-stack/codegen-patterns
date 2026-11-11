@@ -26,6 +26,22 @@ All notable changes to this project will be documented in this file.
   column takes the entity out of the null-tenant partition — a requester with no tenant gets a
   not-null violation (23502) on create.
 
+- **The SQL table name is decoupled from the entity's code names (TABLE-0).** An entity (or junction) may set
+  `table_name:` — the literal SQL table, used verbatim — or `table_prefix:` to override a new project default,
+  `tables: { prefix }` in `codegen.config.yaml` (default `''`; `table_prefix: ''` opts one table out). Only SQL-facing
+  names follow it: `pgTable('…')`, index / unique / constraint names, a field `foreign_key: <table>.<column>` (which
+  now resolves by SQL table and references the owner's export), the Electric shape's `table` param and the semantic
+  model's `tableName`. The Drizzle export, `db.query` key, module folder, classes and REST route stay on `plural`, so
+  `entity: { name: ticket, plural: tickets, table_name: issues }` emits `export const tickets = pgTable('issues', …)`
+  and `db.query.tickets`. With neither key set the output is byte-identical. See `docs/specs/TABLE-0.md`.
+
+### Removed
+
+- **`entity.table:` (TABLE-0).** It was required and validated, but never reached `pgTable` — the table was always
+  named from `plural`. It is now an unrecognized key. Delete the line from every entity YAML (it equalled `plural` in
+  every known project: `sed -i '' '/^  table: /d' <entity yamls>`); where it differed from `plural` and you meant it,
+  rename it to `table_name:`. Relationship YAMLs keep their own `table:`.
+
 ### Fixed
 
 - **A field named `tenant_id` on a `tenant_scoped` entity no longer emits a duplicate column

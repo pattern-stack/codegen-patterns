@@ -29,6 +29,7 @@ import {
 	collectEntitySurfaces,
 } from './provider-module-generator.js';
 import { loadEntities } from '../../parser/load-entities.js';
+import { TablesConfigSchema } from '../../schema/codegen-config.schema.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import type { AnalysisIssue } from '../../analyzer/types.js';
 import { projectLayout } from './project-layout.js';
@@ -101,6 +102,7 @@ export async function preflightEntityTargets(
 	const entitiesDirForEmits = projectLayout(ctx.cwd, ctx.config).entities;
 	const eventsDirForEmits = projectLayout(ctx.cwd, ctx.config).eventsDir;
 	const allEntitiesForEmits = loadEntities(entitiesDirForEmits, {
+		tablePrefix: TablesConfigSchema.parse(ctx.config?.tables ?? {}).prefix,
 		excludeDirs: [projectLayout(ctx.cwd, ctx.config).providers],
 	}).entities;
 	const validatedNames = new Set(validated.map((v) => v.name));

@@ -20,9 +20,9 @@ import { loadEntities } from '../../parser/load-entities';
 import type { JunctionDefinition } from '../../schema/junction-definition.schema';
 import { findYamlFiles } from '../../utils/find-yaml-files';
 import { detectYamlType, loadJunctionFromYaml } from '../../utils/yaml-loader';
-import { junctionIdentity } from './build-model';
+import { junctionName } from '../../config/junction-naming.js';
 import { sortEntities, type SemanticEmitContext } from './types';
-import { TenancyConfigSchema } from '../../schema/codegen-config.schema';
+import { TablesConfigSchema, TenancyConfigSchema } from '../../schema/codegen-config.schema';
 
 /**
  * Directory names, not `paths.*` defaults: the caller resolves those from the
@@ -43,6 +43,8 @@ export interface SemanticConfigInput {
 	};
 	/** #791 — the project's default tenant column; its role is dimension. */
 	tenancy?: { column?: string };
+	/** TABLE-0 — the project's SQL table prefix; each entity's `tableName` is the resolved SQL name. */
+	tables?: { prefix?: string };
 	generate?: {
 		semantic?: unknown;
 		[key: string]: unknown;
@@ -68,7 +70,7 @@ export function loadJunctionDefinitions(junctionsDir: string): JunctionDefinitio
 		defs.push(result.definition);
 	}
 	return defs.sort((a, b) =>
-		junctionIdentity(a).name.localeCompare(junctionIdentity(b).name),
+		junctionName(a.between).localeCompare(junctionName(b.between)),
 	);
 }
 
@@ -87,7 +89,8 @@ export function loadSemanticEmitContext(
 		opts.entitiesDir ?? path.resolve(cwd, config?.paths?.entities ?? ENTITIES_DIRNAME);
 	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, JUNCTIONS_DIRNAME);
 
-	const { registry } = loadEntityRegistry(entitiesDir);
+	const tablePrefix = TablesConfigSchema.parse(config?.tables ?? {}).prefix;
+	const { registry } = loadEntityRegistry(entitiesDir, { tablePrefix });
 	const entities: EntityRegistryEntry[] = sortEntities([...registry.values()]);
 
 	if (entities.length === 0) {
@@ -97,7 +100,7 @@ export function loadSemanticEmitContext(
 	}
 
 	const parsed = new Map<string, ParsedEntity>(
-		loadEntities(entitiesDir).entities.map((entity) => [entity.name, entity]),
+		loadEntities(entitiesDir, { tablePrefix }).entities.map((entity) => [entity.name, entity]),
 	);
 
 	const outDir = path.resolve(
@@ -113,6 +116,7 @@ export function loadSemanticEmitContext(
 			parsed,
 			junctions: loadJunctionDefinitions(junctionsDir),
 			tenancyColumn: TenancyConfigSchema.parse(config?.tenancy ?? {}).column,
+			tablePrefix,
 		},
 		outDir,
 	};

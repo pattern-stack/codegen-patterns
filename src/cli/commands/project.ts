@@ -62,7 +62,7 @@ import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
 import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
-import { TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
+import { TablesConfigSchema, TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
 
 // ---------------------------------------------------------------------------
 // summary + hints
@@ -593,6 +593,7 @@ export class ProjectInspectCommand extends Command {
 		const analyzed = await analyzeDomain(entitiesDir, {
 			junctionsDir: junctionsDirFor(ctx.cwd),
 			tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
+			tablePrefix: TablesConfigSchema.parse(ctx.config?.tables ?? {}).prefix,
 		});
 		const result =
 			loaderIssues.length === 0
@@ -670,6 +671,7 @@ export class ProjectInspectCommand extends Command {
 		const analysis = await analyzeDomain(entitiesDir, {
 			junctionsDir: junctionsDirFor(ctx.cwd),
 			tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
+			tablePrefix: TablesConfigSchema.parse(ctx.config?.tables ?? {}).prefix,
 		});
 		const transitiveSuggestions = suggestTransitiveRelationships(analysis.graph);
 		const existing = readManifest(ctx.cwd);
@@ -863,6 +865,7 @@ export class ProjectGraphCommand extends Command {
 			relationshipsDir,
 			junctionsDir: junctionsDirFor(ctx.cwd),
 			tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
+			tablePrefix: TablesConfigSchema.parse(ctx.config?.tables ?? {}).prefix,
 		});
 		const serialized = serializeDomainGraph(result.graph);
 

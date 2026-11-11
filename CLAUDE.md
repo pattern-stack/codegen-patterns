@@ -300,10 +300,15 @@ queries:
   `modules/deal-states/deal-state.entity.ts` declaring `export const deal_states =
   pgTable('deal_states', …)`. Never build a stem by hand — `emittedStem('find', name,
   'by-id')`, not a template literal with typed hyphens (NAME-2, #695/#684).
+- **The SQL table name is not the export** (TABLE-0). `pgTable('…')`, index / constraint names, Electric
+  shapes, the semantic `tableName` and `foreign_key:` targets read `sqlTableName` / `junctionTableName`
+  (`src/config/table-naming.ts`): the YAML's `table_name:` verbatim, else `<table_prefix ?? tables.prefix><plural>`.
+  The export, `db.query` key, folder and classes stay on `plural`. Every reader that emits a name takes the prefix
+  as a required argument (`sqlTableName` throws on a missing one) — never default it to `''` at such a call site.
 
 ### Configuration
 
-Project config in `codegen.config.yaml`. Key sections: `paths`, `locations`, `generate`, `naming`, `frontend`. See README.md for full reference.
+Project config in `codegen.config.yaml`. Key sections: `paths`, `locations`, `generate`, `tenancy`, `tables`, `frontend`. See README.md for full reference.
 
 Auto-detect: `just scan` generates a config from project conventions.
 

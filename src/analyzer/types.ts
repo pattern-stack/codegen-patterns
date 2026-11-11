@@ -179,6 +179,7 @@ export interface ParsedEvent {
 export interface ParsedEntity {
 	name: string;
 	plural: string;
+	/** The resolved SQL table name (`src/config/table-naming.ts`, TABLE-0) — not the Drizzle export, which is `plural`. */
 	table: string;
 	/**
 	 * Single pattern name (ADR-031). Mutually exclusive with `patterns`.

@@ -102,6 +102,16 @@ for a field `foreign_key:` to a host-owned table (e.g. `tenants.id`, no entity Y
 when the same run generates the target (`--all`, or a junction's two parents; `--renderSet`, #815) or the target is
 already on disk. A single-file `entity new` of the parent leaves it unwired until the target exists.
 
+**SQL table name** (TABLE-0). Two names, one rule: `sqlTableName` in `src/config/table-naming.ts`
+(junctions: `junctionTableName`). `table_name:` (verbatim) → else `<prefix><plural>`, prefix = entity `table_prefix:`
+→ else `tables.prefix` in `codegen.config.yaml` (default `''`). SQL-facing names read it — `pgTable('…')`, index /
+unique / constraint names, the Electric shape `table` param, the semantic model's `tableName`, a field
+`foreign_key: <table>.<column>` (resolved through `entityLookup.byTable`), `ParsedEntity.table`, registry `table`.
+TypeScript-facing names never do — the export, `db.query.<plural>`, relations-manifest keys, folders, classes, the REST
+route. Every reader takes the prefix as a **required** argument (a missing one throws, never defaults to unprefixed).
+The old `entity.table:` key is gone (it never reached pgTable). Two entities resolving to one SQL table is a load
+error until #800 designs filtered entities. Enum type names (`pgEnum`) do not take the prefix (#346/#479).
+
 **Tenant scoping column** (ADR-042, #791). `tenant_scoped: true` scopes on `tenancy.column` from `codegen.config.yaml`
 (default `tenant_id`); `tenant_scoped: { column: organization_id }` overrides it per entity. A field or `belongs_to`
 FK already named that column is **adopted** (one column, its own nullability/FK, removed from the create/update DTOs),
@@ -207,8 +217,9 @@ tarball smoke (`just test-post-publish`) covers package mode from the packed art
 ```yaml
 entity:
   name: contact                 # singular snake_case; not `promise` | `array` | `date` (#813)
-  plural: contacts
-  table: contacts
+  plural: contacts              # Drizzle export + db.query key + module folder; the SQL table by default
+  table_name: crm_contacts      # optional: the literal SQL table, verbatim (adopt a host table). TABLE-0
+  table_prefix: crm__           # optional: overrides tables.prefix; '' opts out. Exclusive with table_name
   pattern: Integrated           # Integrated | Activity | Metadata | Knowledge | Base | app-defined (ADR-031)
   patterns: [Integrated, Actor] # composition (ADR-041): ONE inheritable spine + N kind:'capability' patterns.
                                 #   two spines is a hard error; order is nesting order, rightmost outermost.

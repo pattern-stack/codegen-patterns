@@ -1,0 +1,88 @@
+# TABLE-0 — The SQL table name is not the entity's code name
+
+**Status:** implemented · **Issue:** #848 · **Stacked on:** #839 (#791)
+
+## Problem
+
+`entity: { name, plural, table }` validated `table` — it was even required — but no emitter used it for the table
+name. `entity.ejs.t` emitted `pgTable('<plural>', …)`, so `plural` decided four things at once: the SQL table, the
+Drizzle export, the module folder and the relations-manifest / `db.query` key. A host adopting an existing schema whose
+table names differ from its domain vocabulary (a renamed concept over a legacy table) could not say so: the generated
+code had to carry the table's name everywhere, and the YAML's `table:` silently lied.
+
+## Decision
+
+Two names, one rule — `sqlTableName(source, projectPrefix)` in `src/config/table-naming.ts` (junctions:
+`junctionTableName` in `src/config/junction-naming.ts`, the same rule over the derived junction plural).
+
+| Key | Where | Meaning |
+|---|---|---|
+| `table_name:` | entity block, junction YAML | The literal SQL table name, used **verbatim** — no prefix reaches it. |
+| `table_prefix:` | entity block, junction YAML | Overrides the project prefix for this table; `''` opts out. Exclusive with `table_name`. |
+| `tables.prefix` | `codegen.config.yaml` | Project default prefix, default `''`. |
+
+Resolution: `table_name` → else `<table_prefix ?? tables.prefix><plural>`. With neither key and no project prefix the
+SQL name is `plural`, so existing output is byte-identical (`just test-baseline` is unchanged).
+
+### What follows the SQL name
+
+- the `pgTable('…')` argument (entities and junctions);
+- every index / unique / constraint name stemmed on the table (`<table>_<col>_idx`, `<table>_<cols>_uniq`,
+  `uq_<table>_…external_id`);
+- a field-level `foreign_key: <table>.<column>` — it names a SQL table, resolved through `entityLookup.byTable` to the
+  owning entity, whose **export** the `.references()` callback and the import then name;
+- the owned-table set (#636) a host-owned `foreign_key:` is checked against;
+- the Electric shape's `table` param (entities and junction collections) — the URL-path form keeps the plural, which is
+  the API route;
+- the semantic model's `tableName` (entities and junctions);
+- `ParsedEntity.table` and `EntityRegistryEntry.table` (analyzer output, the `foreign_key` consistency check).
+
+### What does not
+
+The Drizzle export, the `db.query.<plural>` / relations-manifest key, the module folder, file stems, class names and the
+REST route all stay on `plural` / `name`. Drizzle carries the SQL name on the table object, so the relations manifest,
+RQBv2 includes and the runtime base classes need nothing: an include through `db.query.tickets` compiles to SQL over
+the real table (pinned by `src/__tests__/cli/table-naming-generation.test.ts`, which generates a project and compiles
+an include to SQL).
+
+### `entity.table:` is deleted
+
+Every in-repo YAML (87 files) and every known consumer YAML wrote `table:` equal to `plural`, and it never reached
+`pgTable`. Honouring it would have been byte-identical too, but it would have kept a required key whose only content is
+a duplicate of `plural`, under a name that does not say "SQL". It is now an unrecognized key (the ARCH-1 treatment).
+Migration: delete the line — `sed -i '' '/^  table: /d' entities/**/*.yaml` — or, where it differed from `plural` and
+you meant it, rename it to `table_name:`.
+
+### The prefix is a required argument
+
+Every reader that emits a name takes the project prefix as a **required** argument: `sqlTableName`,
+`junctionTableName`, `loadEntities`, `loadEntityRegistry`, `createEntityLookup`, `loadOwnedTableNames`.
+`sqlTableName` throws on a non-string prefix. A forgotten prefix must not silently emit an unprefixed table — the
+CLAUDE.md gate rule (c) failure shape (a unit test caught exactly this: an undefined prefix concatenated into
+`undefinedopportunity_contacts`).
+
+## ADR-0004 alignment (not built)
+
+ADR-0004 (a consumer's data-layer naming decision) chose "bounded context as a table prefix now
+(`<context>__<table>`), a Postgres schema later (`pgSchema('<context>').table('<table>')`)". `table_prefix` is the
+mechanism that decision needs: a context prefix is the value `'<context>__'`. The deferred knob that derives the prefix
+from `entity.context` — and later swaps prefix for `pgSchema` — replaces step 2's prefix source inside `sqlTableName`;
+the prefix/base split it needs is already step 2's shape. An explicit `table_name` stays outside both, because it names
+a table the host owns.
+
+## Two entities over one table (#800)
+
+The entity lookup refuses two YAMLs that resolve to one SQL table (and, separately, two that share a plural — they
+would share an export). That is deliberate: a second entity over the same table is only meaningful with a
+distinguishing filter (`artifacts where type = 'x'`), which is #800's design. TABLE-0 is the precondition — before it,
+the second entity's export had to equal the table, so two entities could not even be declared — and the collision
+error names #800.
+
+## Not changed
+
+- `pgEnum` type names do not take the prefix (#346 / #479 own enum naming).
+- First-class `relationship:` YAMLs keep their own `table:` key (default `${name}s`, #700); #679 folds them into
+  junctions, which already follow this rule.
+- Junction exports stay camelCase (`ticketTags`) while entity exports are snake (`ticket_revisions`) — the relations
+  manifest therefore mixes the two. Fixing that renames every junction export, so it is a separate, breaking change
+  (#849).

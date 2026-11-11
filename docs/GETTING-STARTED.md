@@ -26,10 +26,10 @@ Create `entities/task.yaml`:
 entity:
   name: task
   plural: tasks
-  table: tasks
 ```
 
-This is the minimum — a named entity mapping to a database table. Now add fields:
+This is the minimum — a named entity mapping to a database table (`tasks`, its plural; set `table_name:` when the
+SQL table is named differently). Now add fields:
 
 ```yaml
 fields:

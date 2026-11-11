@@ -5,6 +5,7 @@
  * Reuses existing yaml-loader and entity-definition schema from codegen.
  */
 
+import { sqlTableName } from '../config/table-naming.js';
 import { resolve } from 'node:path';
 import { findYamlFiles } from '../utils/find-yaml-files';
 import {
@@ -90,7 +91,7 @@ export interface LoadEntitiesResult {
 /**
  * Transform a loaded entity definition into a ParsedEntity
  */
-function transformToEntity(result: LoadResult): ParsedEntity {
+function transformToEntity(result: LoadResult, tablePrefix: string): ParsedEntity {
 	const { definition, filePath } = result;
 
 	// Search queries use a different shape (name/filters/search) and
@@ -110,7 +111,7 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 	const entity: ParsedEntity = {
 		name: definition.entity.name,
 		plural: definition.entity.plural,
-		table: definition.entity.table,
+		table: sqlTableName(definition.entity, tablePrefix),
 		pattern: definition.entity.pattern,
 		patterns: definition.entity.patterns,
 		patternConfig: definition.entity.config,
@@ -321,7 +322,11 @@ function loadErrorToIssue(error: LoadError): AnalysisIssue[] {
  */
 export function loadEntities(
 	entitiesDir: string,
-	opts?: { excludeDirs?: string[] },
+	opts: {
+		/** The project's resolved `tables.prefix` — every `ParsedEntity.table` is the SQL name (TABLE-0). */
+		tablePrefix: string;
+		excludeDirs?: string[];
+	},
 ): LoadEntitiesResult {
 	const entities: ParsedEntity[] = [];
 	const issues: AnalysisIssue[] = [];
@@ -333,7 +338,7 @@ export function loadEntities(
 	// ProviderDefinitionSchema, not the entity loader.
 	let files: string[];
 	try {
-		files = findYamlFiles(resolvedDir, { excludeDirs: opts?.excludeDirs });
+		files = findYamlFiles(resolvedDir, { excludeDirs: opts.excludeDirs });
 	} catch (err) {
 		issues.push({
 			severity: 'error',
@@ -359,7 +364,7 @@ export function loadEntities(
 		const result = loadEntityFromYaml(filePath);
 
 		if (result.success) {
-			entities.push(transformToEntity(result));
+			entities.push(transformToEntity(result, opts.tablePrefix));
 		} else {
 			issues.push(...loadErrorToIssue(result));
 		}

@@ -35,6 +35,7 @@ import {
 } from '../../../../src/schema/field-nullability.js';
 import { fieldWithTimezone, timestampColumn } from '../../../../src/schema/field-timestamp.js';
 import { resolveTenancy } from '../../../../src/schema/tenancy.js';
+import { sqlTableName } from '../../../../src/config/table-naming.js';
 import { rewriteSharedImport, subsystemsImport } from '../../../../src/config/runtime-mode.mjs';
 import { DEFAULT_CODEGEN_CONFIG } from '../../../../src/config/project-config.js';
 import {
@@ -869,7 +870,12 @@ function collectRepositoryDeps(belongsTo, existingHasMany) {
  *   silently dropped one is not.
  */
 function processFieldFeatures(renderedFields, fields, naming, ownedTables, suppressedIndexNames) {
+  // TABLE-0: a `foreign_key: <table>.<column>` names a SQL TABLE, and index
+  // names are SQL identifiers — both read `entityTableName`. The `.references()`
+  // callback and the import name the target's Drizzle EXPORT (its `plural`),
+  // which differs from the table once `table_name` / a prefix is in play.
   const entityNamePlural = naming.ownNaming.plural;
+  const entityTableName = naming.entityTableName;
   const owned = ownedTables === undefined
     ? null
     : (ownedTables instanceof Set ? ownedTables : new Set(ownedTables));
@@ -885,41 +891,44 @@ function processFieldFeatures(renderedFields, fields, naming, ownedTables, suppr
     // --- foreign_key (#354) ---
     if (typeof field.foreign_key === 'string' && field.foreign_key.includes('.')) {
       const [relatedTable, fkColumn] = field.foreign_key.split('.');
-      const isSelfFk = relatedTable === entityNamePlural;
+      const isSelfFk = relatedTable === entityTableName;
       // #636 — a target codegen does not generate is host-owned: emit the
       // column with no DB-level FK and no import rather than an import that
       // cannot resolve. Self-FKs are owned by definition.
       const isOwned = isSelfFk || owned === null || owned.has(relatedTable);
       if (isOwned) {
-        // Every FK callback is annotated (#631): see `hasFk`.
-        pf.drizzleChain += `.references((): AnyPgColumn => ${relatedTable}.${fkColumn})`;
-        hasFieldFk = true;
-
-        if (!isSelfFk && !seenImports.has(relatedTable)) {
-          seenImports.add(relatedTable);
-          // The segment names a TABLE: the entity that owns it is the one whose
-          // YAML declares that plural (NAME-0) — not `singularize(table)`.
-          const owner = naming.entityLookup?.byPlural
-            ? naming.entityLookup.byPlural(relatedTable)
+        // The segment names a TABLE: the entity that owns it is the one whose
+        // SQL table name it is (NAME-0, TABLE-0) — not `singularize(table)`.
+        let relatedExport = entityNamePlural;
+        if (!isSelfFk) {
+          const owner = naming.entityLookup?.byTable
+            ? naming.entityLookup.byTable(relatedTable)
             : null;
           if (!owner) {
-            const why = naming.entityLookup?.missingPlural
-              ? naming.entityLookup.missingPlural(relatedTable)
+            const why = naming.entityLookup?.missingTable
+              ? naming.entityLookup.missingTable(relatedTable)
               : 'no entity lookup was supplied';
             throw new Error(
               `[codegen] '${naming.entityName}' field '${pf.name}' foreign_key: '${field.foreign_key}' — ` +
                 `the table '${relatedTable}' is not owned by any entity YAML (${why}). ` +
-                `Either declare that entity (a YAML with \`plural: ${relatedTable}\`), or drop the ` +
+                `Either declare that entity (a YAML whose SQL table is '${relatedTable}'), or drop the ` +
                 `column-level \`foreign_key:\` and keep '${pf.name}' a plain column; codegen ` +
                 `cannot import a table it does not generate.`,
             );
           }
           const resolved = resolveTargetNaming(owner.name, naming, { required: true });
-          fkImports.push({
-            relatedTable,
-            importPath: `${resolved.importDir}/${emittedStem(owner.name)}.entity`,
-          });
+          relatedExport = resolved.plural;
+          if (!seenImports.has(relatedExport)) {
+            seenImports.add(relatedExport);
+            fkImports.push({
+              relatedTable: relatedExport,
+              importPath: `${resolved.importDir}/${emittedStem(owner.name)}.entity`,
+            });
+          }
         }
+        // Every FK callback is annotated (#631): see `hasFk`.
+        pf.drizzleChain += `.references((): AnyPgColumn => ${relatedExport}.${fkColumn})`;
+        hasFieldFk = true;
       }
       // else: host-owned target — plain column, no FK, no import. `index: true`
       // below still applies; a host-owned reference is usually worth indexing.
@@ -929,8 +938,8 @@ function processFieldFeatures(renderedFields, fields, naming, ownedTables, suppr
     if (field.index === true && !(suppressedIndexNames && suppressedIndexNames.has(pf.name))) {
       indexExpressions.push({
         comment: null,
-        expr: `index('${entityNamePlural}_${pf.name}_idx').on(t.${pf.camelName})`,
-        name: `${entityNamePlural}_${pf.name}_idx`,
+        expr: `index('${entityTableName}_${pf.name}_idx').on(t.${pf.camelName})`,
+        name: `${entityTableName}_${pf.name}_idx`,
         builder: 'index',
         source: `field '${pf.name}' (index: true)`,
       });
@@ -1002,7 +1011,7 @@ function entityTableColumns({
  */
 function processUniqueIndexes(
   entries,
-  { entityName, entityNamePlural, tenancy = null, tableColumns },
+  { entityName, tableName, tenancy = null, tableColumns },
 ) {
   const tenantScoped = tenancy !== null;
   if (!Array.isArray(entries)) return [];
@@ -1020,14 +1029,14 @@ function processUniqueIndexes(
       if (seen.has(f)) throw new Error(`${label}: field '${f}' is listed twice.`);
       seen.add(f);
       if (!propByColumn.has(f)) {
-        throw new Error(`${label}: '${f}' is not a column of '${entityNamePlural}'. Columns: ${columnList}.`);
+        throw new Error(`${label}: '${f}' is not a column of '${tableName}'. Columns: ${columnList}.`);
       }
     }
 
     const partial = ui.where !== undefined;
     const nnd = partial ? false : (ui.nulls_not_distinct ?? tenantScoped);
     const cols = tenantScoped ? [tenancy.column, ...ui.fields] : ui.fields;
-    const name = ui.name || `${entityNamePlural}_${cols.join('_')}_uniq`;
+    const name = ui.name || `${tableName}_${cols.join('_')}_uniq`;
     const onCols = cols.map((c) => `t.${propByColumn.get(c)}`).join(', ');
 
     let expr;
@@ -1614,7 +1623,17 @@ export function buildBackendLocals(definition, baseLocals) {
   // Every OTHER entity this one references is named from its own YAML through
   // the same function (NAME-0) — `resolveTargetNaming` reads this context.
   const entityLookup = baseLocals?.entityLookup ?? null;
-  const targetNaming = { entityName, ownNaming, modulesDir, entityLookup };
+  // TABLE-0: the SQL table name — the `pgTable('…')` argument and the stem of
+  // every index / constraint name. One rule (`src/config/table-naming.ts`);
+  // everything that is TypeScript (the export, `db.query` key, folder, classes)
+  // stays on `ownNaming.plural`. `baseLocals.tablePrefix` is the project's
+  // `tables.prefix` that prompt.js reads from the config; absent (locals built
+  // by hand in a unit test) means the schema default.
+  const entityTableName = sqlTableName(
+    entity,
+    baseLocals.tablePrefix ?? DEFAULT_CODEGEN_CONFIG.tables.prefix,
+  );
+  const targetNaming = { entityName, ownNaming, entityTableName, modulesDir, entityLookup };
   const entityNamePlural = ownNaming.plural;
   // NAME-2: the emitted file stems. `entityName` / `entityNamePlural` stay the
   // YAML snake_case names — they are the class-name and DB-identifier source.
@@ -2061,7 +2080,7 @@ export function buildBackendLocals(definition, baseLocals) {
       ...fieldUniqueEntries(fields, tenancy),
       ...(definition.unique_indexes ?? []).map((ui, i) => ({ ...ui, source: `unique_indexes[${i}]` })),
     ],
-    { entityName, entityNamePlural, tenancy, tableColumns },
+    { entityName, tableName: entityTableName, tenancy, tableColumns },
   );
 
   // belongs_to FK columns that declared `index: true` on their underlying
@@ -2072,8 +2091,8 @@ export function buildBackendLocals(definition, baseLocals) {
     .filter((rel) => rel.hasIndex && !suppressedIndexNames.has(rel.field))
     .map((rel) => ({
       comment: null,
-      expr: `index('${entityNamePlural}_${rel.field}_idx').on(t.${rel.camelField})`,
-      name: `${entityNamePlural}_${rel.field}_idx`,
+      expr: `index('${entityTableName}_${rel.field}_idx').on(t.${rel.camelField})`,
+      name: `${entityTableName}_${rel.field}_idx`,
       builder: 'index',
       source: `belongs_to '${rel.field}' index`,
     }));
@@ -2093,8 +2112,8 @@ export function buildBackendLocals(definition, baseLocals) {
     // Every scoped read filters on this column, so it is indexed unconditionally.
     tableConstraints.unshift({
       comment: `tenant_scoped behavior (ADR-042) — every scoped read filters on ${tenancy.column}`,
-      expr: `index('${entityNamePlural}_${tenancy.column}_idx').on(t.${tenancy.prop})`,
-      name: `${entityNamePlural}_${tenancy.column}_idx`,
+      expr: `index('${entityTableName}_${tenancy.column}_idx').on(t.${tenancy.prop})`,
+      name: `${entityTableName}_${tenancy.column}_idx`,
       builder: 'index',
       source: 'tenant_scoped',
     });
@@ -2112,9 +2131,9 @@ export function buildBackendLocals(definition, baseLocals) {
             comment:
               'external_id_tracking + tenant_scoped — per-tenant ON CONFLICT target for integrationUpsert',
             expr:
-              `unique('uq_${entityNamePlural}_tenant_provider_external_id')` +
+              `unique('uq_${entityTableName}_tenant_provider_external_id')` +
               `.on(t.${tenancy.prop}, t.provider, t.externalId).nullsNotDistinct()`,
-            name: `uq_${entityNamePlural}_tenant_provider_external_id`,
+            name: `uq_${entityTableName}_tenant_provider_external_id`,
             builder: 'unique',
             partial: false,
             columns: [tenancy.column, 'provider', 'external_id'],
@@ -2122,8 +2141,8 @@ export function buildBackendLocals(definition, baseLocals) {
           }
         : {
             comment: 'external_id_tracking behavior — ON CONFLICT target for integrationUpsert',
-            expr: `uniqueIndex('uq_${entityNamePlural}_provider_external_id').on(t.provider, t.externalId)`,
-            name: `uq_${entityNamePlural}_provider_external_id`,
+            expr: `uniqueIndex('uq_${entityTableName}_provider_external_id').on(t.provider, t.externalId)`,
+            name: `uq_${entityTableName}_provider_external_id`,
             builder: 'uniqueIndex',
             partial: false,
             columns: ['provider', 'external_id'],
@@ -2453,6 +2472,8 @@ export function buildBackendLocals(definition, baseLocals) {
     entityNamePascal,
     entityNamePlural,
     entityNamePluralPascal,
+    // TABLE-0: the SQL table name (pgTable argument); never a TS identifier.
+    entityTableName,
 
     // ADR-043 §6: HTTP surface gate (controller + search controller + wiring)
     apiEnabled,

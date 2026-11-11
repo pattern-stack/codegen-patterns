@@ -23,7 +23,7 @@ import {
 	loadEntityFromYaml,
 	loadJunctionFromYaml,
 } from '../../utils/yaml-loader';
-import { TenancyConfigSchema } from '../../schema/codegen-config.schema';
+import { TablesConfigSchema, TenancyConfigSchema } from '../../schema/codegen-config.schema';
 import { runtimeImport, type RuntimeMode } from '../../cli/shared/runtime-import';
 import { junctionIdentity } from './build-graph';
 import { sortEntities, type RelationsEmitContext } from './types';
@@ -49,6 +49,8 @@ export interface RelationsConfigInput {
 	runtime?: unknown;
 	/** #791 — the project's default tenant column; the hop predicates filter on it. */
 	tenancy?: { column?: string };
+	/** TABLE-0 — the project's SQL table prefix; the registry resolves each entity's table name. */
+	tables?: { prefix?: string };
 	[key: string]: unknown;
 }
 
@@ -103,7 +105,9 @@ export function loadRelationsEmitContext(
 	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, JUNCTIONS_DIRNAME);
 	const outDir = path.resolve(cwd, config?.paths?.generated ?? GENERATED_DIRNAME);
 
-	const { registry } = loadEntityRegistry(entitiesDir);
+	const { registry } = loadEntityRegistry(entitiesDir, {
+		tablePrefix: TablesConfigSchema.parse(config?.tables ?? {}).prefix,
+	});
 	const mode: RuntimeMode = config?.runtime === 'vendored' ? 'vendored' : 'package';
 
 	return {

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { junctionName } from '../config/junction-naming.js';
+import { TABLE_NAME_PATTERN, TABLE_PREFIX_PATTERN } from '../config/table-naming.js';
 import { BASE_JUNCTION_FIELD_NAMES } from '../patterns/library/base-junction-fields.js';
 
 /**
@@ -71,6 +72,22 @@ export const JunctionDefinitionSchema = z
 		between: z.tuple([EntityNameSchema, EntityNameSchema]),
 
 		/**
+		 * The SQL table name (TABLE-0) — same two keys, same rule as an entity's
+		 * (`src/config/table-naming.ts`): `table_name` is the literal SQL name,
+		 * used verbatim; `table_prefix` overrides the project's `tables.prefix`
+		 * (`''` opts out). Neither changes the junction's name, export, folder or
+		 * classes, which stay derived from `between:`.
+		 */
+		table_name: z
+			.string()
+			.regex(TABLE_NAME_PATTERN, 'table_name must be a lowercase snake_case SQL table name')
+			.optional(),
+		table_prefix: z
+			.string()
+			.regex(TABLE_PREFIX_PATTERN, "table_prefix must be empty or lowercase snake_case (e.g. 'crm__')")
+			.optional(),
+
+		/**
 		 * Emit BaseJunctionFields temporal columns (`started_at`, `ended_at`,
 		 * `matched_at`). Default true. Matches Relationship's `temporal` toggle.
 		 */
@@ -112,6 +129,11 @@ export const JunctionDefinitionSchema = z
 			.default({ left: true, right: true }),
 	})
 	.strict()
+	.refine((d) => !(d.table_name !== undefined && d.table_prefix !== undefined), {
+		message:
+			"'table_name' and 'table_prefix' are mutually exclusive — table_name is the literal SQL name and takes no prefix",
+		path: ['table_prefix'],
+	})
 	.refine((d) => d.between[0] !== d.between[1], {
 		message: '`between` endpoints must be distinct',
 		path: ['between'],

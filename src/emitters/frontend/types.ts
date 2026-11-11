@@ -66,6 +66,11 @@ export interface FrontendEmitConfig {
 	 * so the client graph resolves the same tenant scope as the backend manifest.
 	 */
 	tenancyColumn: string;
+	/**
+	 * The project's `tables.prefix` (TABLE-0) — a junction collection's Electric
+	 * shape names its SQL table, which the prefix reaches.
+	 */
+	tablePrefix: string;
 }
 
 /** One `frontend.catalog.categories[]` entry (blurb defaulted to '' by the schema). */

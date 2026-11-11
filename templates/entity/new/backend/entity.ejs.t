@@ -27,7 +27,7 @@ export const <%= ef.enumName %> = pgEnum('<%= ef.dbName %>', [<%- ef.choices.map
 <%_ } _%>
 
 export const <%= entityNamePlural %> = pgTable(
-  '<%= entityNamePlural %>',
+  '<%= entityTableName %>',
   {
     id: uuid('id').primaryKey().defaultRandom(),
 <%_ belongsTo.forEach(rel => { _%>

@@ -15,13 +15,15 @@
 
 import { resolve } from 'node:path';
 import { emittedStem } from '../config/file-naming.js';
+import { sqlTableName } from '../config/table-naming.js';
 import { findYamlFiles } from '../utils/find-yaml-files';
 import { loadEntityFromYaml, type LoadError } from '../utils/yaml-loader';
 import type { AnalysisIssue } from '../analyzer/types';
 
 export interface EntityRegistryEntry {
 	name: string; // 'deal_state'
-	plural: string; // authoritative, from YAML entity.plural
+	plural: string; // authoritative, from YAML entity.plural — the Drizzle export + `db.query` key
+	/** The resolved SQL table name (`src/config/table-naming.ts`, TABLE-0). Never an identifier in emitted TS. */
 	table: string;
 	className: string; // 'DealState'  (pascal of name)
 	classNamePlural: string;
@@ -85,7 +87,13 @@ function loadErrorToIssue(error: LoadError): AnalysisIssue[] {
  * @returns A name-keyed registry plus any issues encountered (missing dir,
  *   malformed files). Never throws.
  */
-export function loadEntityRegistry(entitiesDir: string): LoadEntityRegistryResult {
+export function loadEntityRegistry(
+	entitiesDir: string,
+	opts: {
+		/** The project's resolved `tables.prefix`; every entry's `table` is the SQL name. */
+		tablePrefix: string;
+	},
+): LoadEntityRegistryResult {
 	const registry = new Map<string, EntityRegistryEntry>();
 	const issues: AnalysisIssue[] = [];
 
@@ -116,7 +124,7 @@ export function loadEntityRegistry(entitiesDir: string): LoadEntityRegistryResul
 		registry.set(entity.name, {
 			name: entity.name,
 			plural: entity.plural, // authoritative — never derived
-			table: entity.table,
+			table: sqlTableName(entity, opts.tablePrefix),
 			className: pascalCase(entity.name),
 			classNamePlural: pascalCase(entity.plural),
 			camelName: camelCase(entity.name),

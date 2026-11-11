@@ -34,6 +34,7 @@ import {
 } from "../../_shared/entity-naming.mjs";
 import { loadRuntimeMode, runtimeImport } from "../../../src/config/runtime-mode.mjs";
 import { configOrDefaults, loadProjectConfig } from "../../../src/config/project-config.js";
+import { junctionTableName } from "../../../src/config/junction-naming.js";
 
 // ============================================================================
 // Naming Helpers (inlined to avoid import issues with Hygen)
@@ -218,14 +219,18 @@ export default {
     const modulesDir = config_.paths.modules_dir;
     const junctionName = deriveJunctionName(config.between);
     const junction = junctionNaming(junctionName, modulesDir);
-    const tableName = junction.plural;
+    // TABLE-0: the SQL table name (`pgTable('…')`) — `junctionTableName`, the
+    // one rule over the junction YAML's `table_name` / `table_prefix` and the
+    // project's `tables.prefix`. The export, folder and classes stay on the
+    // plural derived from `between:`.
+    const tableName = junctionTableName(config, config_.tables.prefix);
     const entityNamePascal = pascalCase(junctionName);
     const entityNameCamel = camelCase(junctionName);
-    const entityNamePlural = tableName;
+    const entityNamePlural = junction.plural;
     const tableVarName = camelCase(entityNamePlural);
     const entityNamePluralPascal = pascalCase(entityNamePlural);
     // NAME-2 — emitted file stems (kebab). `junctionName` / `entityNamePlural`
-    // stay snake: they are the class-name source and the SQL table name.
+    // stay snake: they are the class-name and export source.
     const entityFileStem = emittedStem(junctionName);
     const entityPluralFileStem = emittedStem(entityNamePlural);
 

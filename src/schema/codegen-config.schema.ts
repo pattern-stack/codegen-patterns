@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_TENANT_COLUMN, TENANT_COLUMN_PATTERN } from "./tenancy.js";
+import { TABLE_PREFIX_PATTERN } from "../config/table-naming.js";
 import { poolOverrideIssues } from "../../runtime/subsystems/jobs/pool-config.js";
 
 /**
@@ -425,6 +426,35 @@ export const TenancyConfigSchema = z
 export type TenancyConfig = z.infer<typeof TenancyConfigSchema>;
 
 // ============================================================================
+// Tables (TABLE-0)
+// ============================================================================
+
+/**
+ * The `tables:` block — project defaults for SQL table names.
+ *
+ * - `prefix` — prepended to every generated entity and junction table whose
+ *   YAML does not set `table_name:` (taken verbatim) or its own
+ *   `table_prefix:` (`''` opts out). Default `''`. Only the SQL name changes:
+ *   the Drizzle export, `db.query` key and module folder stay on `plural`.
+ *   ADR-0004's `<context>__` convention is a prefix value; the deferred knob
+ *   that derives it from `entity.context` lands beside this one. The rule lives
+ *   in one place, `src/config/table-naming.ts`.
+ *
+ * `.strict()` — an unknown key under `tables:` is an error naming it.
+ */
+export const TablesConfigSchema = z
+  .object({
+    prefix: z
+      .string()
+      .regex(TABLE_PREFIX_PATTERN, "tables.prefix must be empty or lowercase snake_case (e.g. 'crm__')")
+      .default(''),
+  })
+  .strict()
+  .default({});
+
+export type TablesConfig = z.infer<typeof TablesConfigSchema>;
+
+// ============================================================================
 // Locations (path + import pairs — the frontend emitter's roots)
 // ============================================================================
 
@@ -749,6 +779,7 @@ export const CodegenConfigObjectSchema = z
     frontend: FrontendConfigSchema,
     auth: AuthConfigSchema,
     tenancy: TenancyConfigSchema,
+    tables: TablesConfigSchema,
     dev: DevConfigSchema.optional(),
     subsystems: SubsystemsConfigSchema.optional(),
     events: EventsConfigSchema.optional(),

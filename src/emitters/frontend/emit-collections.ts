@@ -39,7 +39,9 @@ function buildElectricCollection(
 	ctx: FrontendEmitContext,
 ): string {
 	const { config } = ctx;
-	const { camelName, plural, name, fileStem } = entity;
+	// `table` is the SQL name (TABLE-0) — the shape's `table` param; `plural` is
+	// the API route segment, which follows the code vocabulary.
+	const { camelName, plural, name, fileStem, table } = entity;
 
 	const imports: string[] = [
 		"import { electricCollectionOptions } from '@tanstack/electric-db-collection';",
@@ -64,7 +66,7 @@ function buildElectricCollection(
 \t\t\t\t${SSR_ORIGIN_EXPR},
 \t\t\t).toString(),
 \t\t\tparams: {
-\t\t\t\ttable: '${plural}',
+\t\t\t\ttable: '${table}',
 \t\t\t},`;
 	} else {
 		const shapeUrl = baseUrlExpr(config.shapeUrl, plural, config.apiBaseUrlImport);
@@ -178,7 +180,7 @@ export function buildJunctionCollectionFile(
 	ctx: FrontendEmitContext,
 ): string {
 	const { config } = ctx;
-	const { camelName, plural, name } = junction;
+	const { camelName, plural, name, table } = junction;
 
 	const imports: string[] = [
 		"import { electricCollectionOptions } from '@tanstack/electric-db-collection';",
@@ -202,7 +204,7 @@ export function buildJunctionCollectionFile(
 \t\t\t\t${SSR_ORIGIN_EXPR},
 \t\t\t).toString(),
 \t\t\tparams: {
-\t\t\t\ttable: '${plural}',
+\t\t\t\ttable: '${table}',
 \t\t\t},`;
 	} else {
 		const shapeUrl = baseUrlExpr(config.shapeUrl, plural, config.apiBaseUrlImport);

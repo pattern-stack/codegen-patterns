@@ -64,6 +64,7 @@
     "src/config/junction-naming.ts",
     "src/config/file-naming.ts",
     "src/config/module-tree.ts",
+    "src/config/table-naming.ts",
     "src/config/project-config.ts",
     "src/schema/codegen-config.schema.ts",
     "src/schema/field-nullability.ts",
