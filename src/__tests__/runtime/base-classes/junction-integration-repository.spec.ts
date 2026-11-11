@@ -225,7 +225,7 @@ describe('JunctionIntegrationRepository.integrationUpsertOne', () => {
     expect(proj.id).toBe('o-ext::c-ext'); // 2-part composite
   });
 
-  // `timestamps: false` (dealbrain dogfood #8): nothing is stamped, the
+  // `timestamps: false` (#740): nothing is stamped, the
   // projection carries no timestamps, and the conflict `set` is still a real
   // one — Drizzle throws "No values to set" on an empty `set`, which would make
   // every upsert on such a junction fail.

@@ -61,7 +61,7 @@ All notable changes to this project will be documented in this file.
   `created_at` / `updated_at`, nothing stamped on write, none in the integration projection). Both
   default to `true`, so existing junctions are unchanged. This lets a junction adopt an existing
   link table: before, a row read on one without those columns failed with
-  `column d0.is_primary does not exist` (dealbrain dogfood #8).
+  `column d0.is_primary does not exist` (#740).
 
 ### Changed
 
@@ -87,7 +87,7 @@ All notable changes to this project will be documented in this file.
   `attach` and of the parents' `attach<X>` / `addTo<X>` required. Entity-field keys a junction would
   ignore (`unique`, `min`/`max`/`min_length`/`max_length`, the analytics tags) and fields named `id`
   or after an endpoint column are schema errors.
-- **A junction `role` without `choices:` is a column (dealbrain dogfood #7).** It used to be deleted
+- **A junction `role` without `choices:` is a column (#740).** It used to be deleted
   silently. Now it's emitted as its declared type, and it's part of the key only when it's an enum
   with `choices:`.
 - **A field named `tenant_id` on a `tenant_scoped` entity no longer emits a duplicate column

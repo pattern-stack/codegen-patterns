@@ -112,7 +112,7 @@ const UNSUPPORTED_JUNCTION_FIELD_KEYS: Record<string, string> = {
  * `role` is special only when it has `choices:` — then it is the junction's
  * identity enum (always NOT NULL, part of the composite key). A `role`
  * without `choices:` is an ordinary payload column of its declared type (#7
- * of the dealbrain dogfood: it used to be deleted silently).
+ * from adopting a host application's schema: it used to be deleted silently).
  */
 export const JunctionDefinitionSchema = z
 	.object({

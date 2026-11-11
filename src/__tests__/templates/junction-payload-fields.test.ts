@@ -1,6 +1,6 @@
 /**
  * Junction payload fields are entity fields (#740, #690) and the base columns
- * can be opted out of (dealbrain dogfood #7, #8).
+ * can be opted out of (#740).
  *
  * Runs the real prompt.js + the junction's entity / service / repository
  * templates in a temp project, so the assertions are on emitted source.
@@ -89,7 +89,7 @@ describe('junction payload fields use the entity column builder (#740)', () => {
 		expect(optional).not.toContain('> & globalThis.Pick');
 	});
 
-	it('emits a role without choices as a plain column outside the key (dogfood #7)', async () => {
+	it('emits a role without choices as a plain column outside the key (#740)', async () => {
 		const out = render('entity', await junctionLocals('fields:\n  role: { type: string }\n'));
 		expect(out).toContain("role: text('role'),");
 		expect(out).toContain('primaryKey({ columns: [table.opportunityId, table.meetingId] })');
@@ -103,7 +103,7 @@ describe('junction payload fields use the entity column builder (#740)', () => {
 	});
 });
 
-describe('junction base-column opt-outs (dogfood #8)', () => {
+describe('junction base-column opt-outs (#740)', () => {
 	it('is_primary: false drops the column, setPrimary and the LinkInput key', async () => {
 		const locals = await junctionLocals('temporal: false\nsourced: false\nis_primary: false\n');
 		expect(render('entity', locals)).not.toContain('is_primary');

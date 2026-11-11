@@ -199,7 +199,7 @@ describe('junction schema rejects malformed input', () => {
 });
 
 // ============================================================================
-// Payload fields are entity fields (#740, #690, dogfood #7/#8)
+// Payload fields are entity fields (#740, #690)
 // ============================================================================
 
 describe('junction payload fields parse against the entity field schema', () => {
@@ -217,7 +217,7 @@ describe('junction payload fields parse against the entity field schema', () => 
 		expect(r.success).toBe(false);
 	});
 
-	it('accepts a role without choices as an ordinary column (dogfood #7)', () => {
+	it('accepts a role without choices as an ordinary column (#740)', () => {
 		const r = parse({ fields: { role: { type: 'string' } } });
 		expect(r.success).toBe(true);
 	});
