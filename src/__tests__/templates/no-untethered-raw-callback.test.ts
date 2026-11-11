@@ -19,10 +19,13 @@
  * Same form as `no-basequery-where.test.ts` (SCOPE-0, #616), and for the same
  * reason: the defect is invisible in review and expensive at runtime.
  *
- * What is NOT banned: `{ RAW: <SQLWrapper> }` — a plain pre-built predicate,
- * which is how a CALLER's own `where` is folded in. Only the zero-argument
- * CALLBACK form is wrong, because the only reason to take a callback is to
- * receive the table.
+ * READ-1 (#840) banned the SECOND shape: `{ RAW: <SQL value> }` — a pre-built
+ * predicate handed to a relational filter. REL-2 left it allowed as "how a
+ * caller's own `where` is folded in", and that is exactly the defect: a caller's
+ * SQL was built against the real table, so `list({ where, with })` failed with
+ * the same FROM-clause error the root filter had (the third instance of the
+ * class). On an aliased statement a `RAW` slot takes a callback that receives the
+ * table, or `this.rootFilter(…)` — which returns one — and nothing else.
  *
  * Comments are scanned too, deliberately — the DRZ-1 guard earned that the same
  * way, and this one did on its first run: the only hit was a doc comment in
@@ -70,6 +73,13 @@ const SCANNED = [
 /** `RAW: () =>` / `RAW: ()=>`, with any whitespace. */
 const UNTETHERED = /\bRAW\s*:\s*\(\s*\)\s*=>/;
 
+/**
+ * READ-1 (#840): `RAW: <value>` — anything that is neither a callback (`(`) nor
+ * the repository's root filter, which returns one. A pre-rendered SQL in a
+ * relational filter names the real table, which the builder aliased away.
+ */
+const PRERENDERED = /\bRAW\s*:\s*(?!\(|this\.rootFilter\()[A-Za-z_$]/;
+
 function scan(): string[] {
 	const offenders: string[] = [];
 	for (const pattern of SCANNED) {
@@ -77,7 +87,7 @@ function scan(): string[] {
 			const abs = join(REPO_ROOT, file);
 			const lines = readFileSync(abs, 'utf8').split('\n');
 			for (const [index, line] of lines.entries()) {
-				if (UNTETHERED.test(line)) {
+				if (UNTETHERED.test(line) || PRERENDERED.test(line)) {
 					offenders.push(`${relative(REPO_ROOT, abs)}:${index + 1}: ${line.trim()}`);
 				}
 			}
@@ -87,7 +97,7 @@ function scan(): string[] {
 }
 
 describe('a RAW callback must take the table it renders against', () => {
-	it('no emitted or shipped file uses the zero-argument RAW callback form', () => {
+	it('no emitted or shipped file uses the zero-argument or the pre-rendered RAW form', () => {
 		const offenders = scan();
 		expect(
 			offenders,
@@ -110,7 +120,7 @@ describe('a RAW callback must take the table it renders against', () => {
 			join(REPO_ROOT, 'templates/entity/new/backend/repository.ejs.t'),
 			'utf8',
 		);
-		expect(repositoryTemplate).toContain('RAW: (t) => this.rootScopeRawOn(t,');
+		expect(repositoryTemplate).toContain('where: { RAW: this.rootFilter(');
 	});
 
 	// The spec paragraph that states the contract, pinned by name. Not a docs-wide
@@ -128,7 +138,7 @@ describe('a RAW callback must take the table it renders against', () => {
 			.split('\n')
 			.find((line) => line.startsWith('2. The generated repository'));
 		expect(callSiteTwo, 'REL-2.md §3 lost its numbered call site 2').toBeDefined();
-		expect(callSiteTwo!).toContain('RAW: (t) => this.rootScopeRawOn(t,');
+		expect(callSiteTwo!).toContain('RAW: this.rootFilter(');
 		expect(callSiteTwo!).not.toMatch(UNTETHERED);
 	});
 
@@ -145,5 +155,15 @@ describe('a RAW callback must take the table it renders against', () => {
 		// …and leaves the legitimate forms alone.
 		expect(UNTETHERED.test('{ RAW: (t) => hopScope(t, CFG, "a.b") },')).toBe(false);
 		expect(UNTETHERED.test('{ RAW: callerWhere },')).toBe(false);
+	});
+
+	it('catches the pre-rendered form READ-1 banned, and leaves the callback forms alone', () => {
+		// The exact line the generated `list()` carried before #840.
+		expect(PRERENDERED.test('...(callerWhere === undefined ? [] : [{ RAW: callerWhere }]),')).toBe(true);
+		expect(PRERENDERED.test('{ RAW: sql`true` },')).toBe(true);
+		expect(PRERENDERED.test('{ RAW: inArray(accounts.id, ids) },')).toBe(true);
+		expect(PRERENDERED.test('where: { RAW: this.rootFilter((t) => eq(t.id, id)) },')).toBe(false);
+		expect(PRERENDERED.test('{ RAW: (t) => hopScope(t, CFG, "a.b") },')).toBe(false);
+		expect(PRERENDERED.test('RAW?: SQLWrapper | ((table) => SQL)')).toBe(false);
 	});
 });

@@ -311,6 +311,13 @@ by every smoke.
 
 ### 2.4 Two execution paths, one scope
 
+> **Revised 2026-11-11 (READ-1, `docs/specs/READ-1.md` §3).** The two paths below are now ONE for generated reads:
+> every generated `findById` / `findByIds` / `list` / finder runs on RQBv2, with or without options, and its root
+> predicate is `{ RAW: this.rootFilter(where) }` — the caller's row filter AND the scope, one callback rendered on the
+> alias. `rootScopeRawOn` was replaced by `rootFilter`; the pre-rendered `ListOptions.where: SQL` and `orderBy` were
+> deleted, because carrying the caller's SQL onto this path failed exactly as below (#840, the third instance). The
+> table is kept as the record of what REL-2 shipped.
+
 `baseQuery()` (the core `select().from()` builder REL-0 typed) cannot carry a `with`. So:
 
 | Call | Path | Root scope |
@@ -398,9 +405,10 @@ Three call sites, one implementation:
    AND-ed with the caller's `extra`. TEN-1's `scopePredicate()` and `tenantPredicate()` survive as one-line handles over
    `userScopePredicateFor` / `tenantAxisPredicate`, so nothing that called them changed and there is still exactly one
    implementation per axis.
-2. The generated repository's RQBv2 root filter — `{ RAW: (t) => this.rootScopeRawOn(t, { softDelete }) }`, which is
-   `scopeFilter(t, …) ?? sql\`true\``. **The `t` is the table RQBv2 hands the callback, not `this.tableRef`** — the
-   builder aliases the root, so the other form names a table that is not in scope (§2.4, §10 Found #9).
+2. The generated repository's RQBv2 root filter — `{ RAW: this.rootFilter(where) }` (READ-1 §3.2; REL-2 shipped it as
+   `rootScopeRawOn(t, …)`), a callback that renders `scopeFilter(t, …)` AND the caller's row filter on `t`.
+   **The `t` is the table RQBv2 hands the callback, not `this.tableRef`** — the builder aliases the root, so the other
+   form names a table that is not in scope (§2.4, §10 Found #9).
 3. The emitted manifest's relation `where` — `{ RAW: (t) => hopScope(t, ACCOUNTS_SCOPE, 'contacts.account') }`.
 
 Two and three are the same rule, and so is `orderByOn`: **render against the table the callback is handed.** Call site

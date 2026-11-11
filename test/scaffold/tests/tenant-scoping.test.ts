@@ -231,7 +231,7 @@ d('reads are tenant-scoped', () => {
     // Asking for B's row BY NAME, as A: the leaf predicate matches, the tenant
     // does not. This is the shape that was broken for the user axis (#616).
     const rows = await asTenant(TENANT_A, () =>
-      repo.list({ where: eq(tenantEntities.name, 'b-row') }),
+      repo.list({ where: (t) => eq(t.name, 'b-row') }),
     );
     expect(rows).toHaveLength(0);
   });
@@ -241,7 +241,7 @@ d('reads are tenant-scoped', () => {
     expect(await asTenant(TENANT_A, () => repo.count())).toBe(1);
     expect(await asTenant(TENANT_B, () => repo.count())).toBe(1);
     expect(
-      await asTenant(TENANT_A, () => repo.count(eq(tenantEntities.name, 'b-row'))),
+      await asTenant(TENANT_A, () => repo.count((t) => eq(t.name, 'b-row'))),
     ).toBe(0);
   });
 

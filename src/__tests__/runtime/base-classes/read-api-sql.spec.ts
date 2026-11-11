@@ -1,0 +1,360 @@
+/**
+ * READ-1 (docs/specs/READ-1.md §8.2) — the generated read surface, as SQL.
+ *
+ * `WidgetRepository` below is written in EXACTLY the shape
+ * `templates/entity/new/backend/repository.ejs.t` emits (READ-1 §2.3): every
+ * read on RQBv2, its root predicate one `{ RAW: this.rootFilter(…) }`. The
+ * GENERATED repository is driven against Postgres by
+ * `test/scaffold/tests/read-api.test.ts` (`just test-integration`); this file
+ * pins the SQL each method renders, without Docker, through a fake `pg` client
+ * that records every statement and serves canned rows.
+ *
+ * What each test guards:
+ *   - the root predicate renders on the ALIAS (`"d0"."…"`), never on the real
+ *     table name — on every method, with and without options (#840);
+ *   - a caller's `where` is a function of the alias too;
+ *   - the root `select` names exactly the mask (+ `id` for `findByIds`, stripped);
+ *   - every hop carries `hopScope`;
+ *   - `findByIds`' contract: no statement for `[]`, de-duplication, input order.
+ */
+import { describe, expect, it } from 'bun:test';
+import { defineRelations, eq, inArray, like } from 'drizzle-orm';
+import type { InferSelectModel } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';
+
+import {
+	BaseRepository,
+	type BehaviorConfig,
+	type ListOptions,
+	type ReadOptions,
+} from '../../../../runtime/base-classes/base-repository';
+import {
+	hopScope,
+	scopedRoot,
+	UNSCOPED,
+	type ScopeConfig,
+} from '../../../../runtime/base-classes/scope-filters';
+import { withRequester } from '../../../../runtime/base-classes/tenant-context';
+
+// ── the schema, as the entity templates emit one ───────────────────────────
+const owners = pgTable('owners', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	tenantId: uuid('tenant_id'),
+	deletedAt: timestamp('deleted_at'),
+	name: text('name').notNull(),
+});
+
+const widgets = pgTable('widgets', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	tenantId: uuid('tenant_id'),
+	deletedAt: timestamp('deleted_at'),
+	ownerId: uuid('owner_id').notNull(),
+	name: text('name').notNull(),
+	sku: text('sku'),
+});
+
+const schema = { owners, widgets };
+
+// ── the manifest, as `emit-manifest.ts` renders it ──────────────────────────
+const OWNERS_SCOPE: ScopeConfig = {
+	tenantScoped: true,
+	tenantColumn: 'tenantId',
+	softDelete: true,
+	userTracking: false,
+	enforcement: 'strict',
+};
+const WIDGETS_SCOPE: ScopeConfig = { ...OWNERS_SCOPE };
+
+const relations = defineRelations(schema, (r) => ({
+	owners: {
+		widgets: r.many.widgets({
+			from: r.owners.id,
+			to: r.widgets.ownerId,
+			where: { RAW: (t) => hopScope(t, WIDGETS_SCOPE, 'owners.widgets') },
+		}),
+	},
+	widgets: {
+		owner: r.one.owners({
+			from: r.widgets.ownerId,
+			to: r.owners.id,
+			optional: false,
+			where: { RAW: (t) => hopScope(t, OWNERS_SCOPE, 'widgets.owner') },
+		}),
+	},
+}));
+type Relations = typeof relations;
+type IncludeOf<T extends keyof Relations> = NonNullable<
+	DBQueryConfig<'one', Relations, Relations[T]>['with']
+>;
+type ColumnsOf<T extends keyof Relations> = NonNullable<
+	DBQueryConfig<'many', Relations, Relations[T]>['columns']
+>;
+type ResultOf<
+	T extends keyof Relations,
+	C extends ColumnsOf<T> | undefined,
+	W extends IncludeOf<T>,
+> = BuildQueryResult<Relations, Relations[T], { columns: C; with: W }>;
+
+// ── a fake pg client: records statements, serves canned rows ────────────────
+interface Recorded {
+	text: string;
+	values: unknown[];
+}
+function fakeDb(rows: unknown[][] = []) {
+	const statements: Recorded[] = [];
+	const client = {
+		query: async (cfg: { text: string }, values?: unknown[]) => {
+			statements.push({ text: cfg.text, values: values ?? [] });
+			return { rows, fields: [] };
+		},
+	};
+	// The fake is structurally a `pg` client for every method drizzle calls.
+	const db = drizzle({ client: client as never, relations });
+	return { db, statements };
+}
+
+// ── the repository, in the generated shape ──────────────────────────────────
+type Widget = InferSelectModel<typeof widgets>;
+type WidgetColumns = ColumnsOf<'widgets'>;
+type WidgetInclude = IncludeOf<'widgets'>;
+type WidgetNoInclude = Record<string, never>;
+type WidgetResult<
+	C extends WidgetColumns | undefined = undefined,
+	W extends WidgetInclude = WidgetNoInclude,
+> = ResultOf<'widgets', C, W>;
+
+class WidgetRepository extends BaseRepository<Widget, typeof widgets, Relations> {
+	readonly table = widgets;
+	protected override readonly behaviors: BehaviorConfig = {
+		timestamps: false,
+		softDelete: true,
+		userTracking: false,
+		tenantScoped: true,
+		tenantColumn: 'tenantId',
+	};
+	protected override readonly scopeEnforcement = 'strict' as const;
+
+	override async findById<C extends WidgetColumns | undefined = undefined, W extends WidgetInclude = WidgetNoInclude>(
+		id: string,
+		opts?: ReadOptions<C, W>,
+	): Promise<WidgetResult<C, W> | null> {
+		const row = await this.db.query.widgets.findFirst({
+			where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
+			columns: this.checkColumns(opts?.columns),
+			with: opts?.with,
+		});
+		return (row as WidgetResult<C, W> | undefined) ?? null;
+	}
+
+	override async findByIds<C extends WidgetColumns | undefined = undefined, W extends WidgetInclude = WidgetNoInclude>(
+		ids: readonly string[],
+		opts?: ReadOptions<C, W>,
+	): Promise<Array<WidgetResult<C, W>>> {
+		const unique = this.uniqueIds(ids);
+		if (unique.length === 0) return [];
+		const mask = this.byIdsColumns(this.checkColumns(opts?.columns));
+		const rows = await this.db.query.widgets.findMany({
+			where: { RAW: this.rootFilter((t) => inArray(t.id, unique)) },
+			columns: mask.columns,
+			with: opts?.with,
+		});
+		return this.inInputOrder(rows, unique, mask.stripId) as Array<WidgetResult<C, W>>;
+	}
+
+	override async list<C extends WidgetColumns | undefined = undefined, W extends WidgetInclude = WidgetNoInclude>(
+		query?: ListOptions<typeof widgets> & ReadOptions<C, W>,
+	): Promise<Array<WidgetResult<C, W>>> {
+		const sort = query?.sort;
+		const rows = await this.db.query.widgets.findMany({
+			where: { RAW: this.rootFilter(query?.where) },
+			columns: this.checkColumns(query?.columns),
+			with: query?.with,
+			orderBy: sort === undefined || sort.length === 0 ? undefined : (t) => this.orderByOn(t, sort) ?? [],
+			limit: query?.limit,
+			offset: query?.offset,
+		});
+		return rows as Array<WidgetResult<C, W>>;
+	}
+
+	async findByOwnerId<C extends WidgetColumns | undefined = undefined, W extends WidgetInclude = WidgetNoInclude>(
+		id: string,
+		opts?: { cursor?: string; limit?: number } & ReadOptions<C, W>,
+	): Promise<Array<WidgetResult<C, W>>> {
+		const rows = await this.db.query.widgets.findMany({
+			where: { RAW: this.rootFilter((t) => eq(t.ownerId, id)) },
+			columns: this.checkColumns(opts?.columns),
+			with: opts?.with,
+			limit: opts?.limit,
+		});
+		return rows as Array<WidgetResult<C, W>>;
+	}
+}
+
+const T1 = '11111111-1111-4111-8111-111111111111';
+const asT1 = <T>(fn: () => PromiseLike<T> | T) =>
+	withRequester({ userId: 'u1', organizationId: null, tenantId: T1 }, fn);
+
+/** Every way a generated read can be called, against one repository. */
+const CALLS: Array<[string, (r: WidgetRepository) => Promise<unknown>]> = [
+	['findById', (r) => r.findById('w1')],
+	['findById + columns', (r) => r.findById('w1', { columns: { name: true } })],
+	['findById + with', (r) => r.findById('w1', { with: { owner: true } })],
+	['findByIds', (r) => r.findByIds(['w1', 'w2'])],
+	['findByIds + columns + with', (r) => r.findByIds(['w1'], { columns: { name: true }, with: { owner: { columns: { name: true } } } })],
+	['list', (r) => r.list()],
+	['list + where + with', (r) => r.list({ where: (t) => like(t.name, 'a%'), with: { owner: true } })],
+	['list + sort + limit + columns', (r) => r.list({ sort: [{ column: 'name', direction: 'asc' }], limit: 5, columns: { name: true } })],
+	['findByOwnerId', (r) => r.findByOwnerId('o1')],
+	['findByOwnerId + with', (r) => r.findByOwnerId('o1', { with: { owner: true }, limit: 3 })],
+];
+
+describe('READ-1 §3 — every generated read renders its root on the alias, scoped', () => {
+	for (const [name, call] of CALLS) {
+		it(name, async () => {
+			const { db, statements } = fakeDb();
+			await asT1(() => call(new WidgetRepository(db)));
+			expect(statements).toHaveLength(1);
+			const sql = statements[0]!.text;
+			// The root is aliased, and its scope renders on the alias.
+			expect(sql).toContain('from "widgets" as "d0"');
+			expect(sql).toContain('"d0"."deleted_at" is null');
+			expect(sql).toContain('"d0"."tenant_id" = $');
+			// Nothing on the statement names the real root table as a qualifier.
+			expect(sql).not.toContain('"widgets".');
+			expect(statements[0]!.values).toContain(T1);
+		});
+	}
+
+	it('a caller `where` renders on the alias, ANDed with the scope', async () => {
+		const { db, statements } = fakeDb();
+		await asT1(() => new WidgetRepository(db).list({ where: (t) => like(t.name, 'a%'), with: { owner: true } }));
+		expect(statements[0]!.text).toMatch(/"d0"\."name" like \$\d/);
+	});
+
+	it('every hop carries hopScope — the include and the root agree', async () => {
+		const { db, statements } = fakeDb();
+		await asT1(() => new WidgetRepository(db).findById('w1', { with: { owner: true } }));
+		const sql = statements[0]!.text;
+		expect(sql).toContain('"d1"."deleted_at" is null');
+		expect(sql).toContain('"d1"."tenant_id" = $');
+	});
+
+	it('the root `select` names exactly the mask', async () => {
+		const { db, statements } = fakeDb();
+		await asT1(() => new WidgetRepository(db).findById('w1', { columns: { name: true, sku: true } }));
+		const select = statements[0]!.text.slice(0, statements[0]!.text.indexOf(' from '));
+		expect(select).toBe('select "d0"."name" as "name", "d0"."sku" as "sku"');
+	});
+
+	it('strict, no ambient context: throws before any statement is sent', async () => {
+		const { db, statements } = fakeDb();
+		await expect(new WidgetRepository(db).findById('w1')).rejects.toThrow(/requester context/i);
+		expect(statements).toHaveLength(0);
+	});
+
+	it('an empty mask throws, naming the repository', async () => {
+		const { db, statements } = fakeDb();
+		const runtimeMask: Record<string, true> = {};
+		await expect(
+			asT1(() => new WidgetRepository(db).findById('w1', { columns: runtimeMask })),
+		).rejects.toThrow(/WidgetRepository: an empty `columns` mask/);
+		expect(statements).toHaveLength(0);
+	});
+});
+
+describe('READ-1 §2.4 — findByIds', () => {
+	it('`[]` issues no statement', async () => {
+		const { db, statements } = fakeDb();
+		expect(await asT1(() => new WidgetRepository(db).findByIds([]))).toEqual([]);
+		expect(statements).toHaveLength(0);
+	});
+
+	it('duplicates are bound once; rows come back in INPUT order; a missing id is absent', async () => {
+		// Postgres returns them in its own order — w3, w1 — and w2 does not exist.
+		const { db, statements } = fakeDb([
+			['w3', 'Three'],
+			['w1', 'One'],
+		]);
+		const rows = await asT1(() =>
+			new WidgetRepository(db).findByIds(['w1', 'w2', 'w1', 'w3'], { columns: { id: true, name: true } }),
+		);
+		expect(rows).toEqual([
+			{ id: 'w1', name: 'One' },
+			{ id: 'w3', name: 'Three' },
+		]);
+		const idParams = statements[0]!.values.filter((v) => typeof v === 'string' && v.startsWith('w'));
+		expect(idParams).toEqual(['w1', 'w2', 'w3']);
+	});
+
+	it('a mask that omits `id` still orders — `id` is selected, then stripped', async () => {
+		const { db, statements } = fakeDb([
+			['B', 'w2'],
+			['A', 'w1'],
+		]);
+		const rows = await asT1(() =>
+			new WidgetRepository(db).findByIds(['w1', 'w2'], { columns: { name: true } }),
+		);
+		expect(statements[0]!.text.slice(0, statements[0]!.text.indexOf(' from '))).toBe(
+			'select "d0"."name" as "name", "d0"."id" as "id"',
+		);
+		expect(rows).toEqual([{ name: 'A' }, { name: 'B' }]);
+	});
+
+	it('an EXCLUSION mask that excludes `id` keeps its other exclusions and still orders', async () => {
+		const { db, statements } = fakeDb();
+		await asT1(() =>
+			new WidgetRepository(db).findByIds(['w1'], { columns: { id: false, sku: false } }),
+		);
+		const select = statements[0]!.text.slice(0, statements[0]!.text.indexOf(' from '));
+		expect(select).toContain('"d0"."id"');
+		expect(select).not.toContain('"d0"."sku"');
+		expect(select).toContain('"d0"."name"');
+	});
+});
+
+describe('READ-1 §5 — scopedRoot: the root of a hand-written db.query', () => {
+	it('renders the same scope a repository renders, on the alias', async () => {
+		const { db, statements } = fakeDb();
+		await asT1(() =>
+			db.query.widgets.findMany({
+				where: { AND: [{ id: { in: ['w1'] } }, scopedRoot(WIDGETS_SCOPE, 'WidgetLoader')] },
+			}),
+		);
+		const loader = statements[0]!.text;
+		const repo = fakeDb();
+		await asT1(() => new WidgetRepository(repo.db).findByIds(['w1']));
+		for (const sql of [loader, repo.statements[0]!.text]) {
+			expect(sql).toContain('"d0"."deleted_at" is null');
+			expect(sql).toContain('"d0"."tenant_id" = $');
+		}
+	});
+
+	it('UNSCOPED renders no predicate', async () => {
+		const { db, statements } = fakeDb();
+		await db.query.owners.findMany({ where: scopedRoot(UNSCOPED, 'x') });
+		expect(statements[0]!.text).toContain('where true');
+	});
+});
+
+describe('READ-1 §6 — withRequester awaits a lazy thenable INSIDE the context', () => {
+	it('a thenable whose `.then` reads the context sees it', async () => {
+		const { tryGetRequester } = await import('../../../../runtime/base-classes/tenant-context');
+		const lazy = {
+			then<R>(resolve: (v: string | undefined) => R) {
+				return resolve(tryGetRequester()?.tenantId ?? undefined);
+			},
+		};
+		expect(await asT1(() => lazy)).toBe(T1);
+	});
+
+	it('a Drizzle query returned UN-awaited still builds inside the context (strict hop)', async () => {
+		const { db, statements } = fakeDb();
+		// Returning the builder, not awaiting it: the hop's `hopScope` reads the
+		// ALS when the statement is BUILT, which used to be after the context
+		// had exited — `No requester context active`.
+		await asT1(() => db.query.widgets.findMany({ with: { owner: true } }));
+		expect(statements[0]!.text).toContain('"d1"."tenant_id" = $');
+	});
+});

@@ -179,11 +179,11 @@ d('count()', () => {
 
     // All three rows are provider=salesforce; only one is live AND owned.
     expect(
-      await asUserA(() => repo.count(eq(crmEntities.provider, 'salesforce'))),
+      await asUserA(() => repo.count((t) => eq(t.provider, 'salesforce'))),
     ).toBe(1);
     // The other user's row is reachable by its own predicate — and still not counted.
-    expect(await asUserA(() => repo.count(eq(crmEntities.name, 'other')))).toBe(0);
-    expect(await asUserA(() => repo.count(eq(crmEntities.name, 'deleted')))).toBe(0);
+    expect(await asUserA(() => repo.count((t) => eq(t.name, 'other')))).toBe(0);
+    expect(await asUserA(() => repo.count((t) => eq(t.name, 'deleted')))).toBe(0);
   });
 
   test('without an ambient context the user scope is lenient, soft-delete is not', async () => {
@@ -239,7 +239,7 @@ d('finders built on baseQuery(leaf)', () => {
   test('a userId leaf still honours the soft-delete guard', async () => {
     const { live, deleted } = await seed();
 
-    const found = await asUserA(() => repo.list({ where: eq(crmEntities.userId, USER_A) }));
+    const found = await asUserA(() => repo.list({ where: (t) => eq(t.userId, USER_A) }));
     expect(found).toHaveLength(1);
     expect(found[0].id).toBe(live.id);
     expect(found.some((r: any) => r.id === deleted.id)).toBe(false);
@@ -250,7 +250,7 @@ d('finders built on baseQuery(leaf)', () => {
 
     // Asking for USER_B's rows BY NAME, as USER_A: the leaf predicate matches,
     // the scope does not. Pre-fix the scope was gone and this returned the row.
-    const found = await asUserA(() => repo.list({ where: eq(crmEntities.userId, USER_B) }));
+    const found = await asUserA(() => repo.list({ where: (t) => eq(t.userId, USER_B) }));
     expect(found).toHaveLength(0);
     expect(otherUser.id).toBeDefined();
   });

@@ -66,7 +66,7 @@ describe('backend repository template — behaviors config (issue #33)', () => {
     expect(output).toContain('softDelete: true');
     expect(output).toContain('userTracking: false');
     expect(output).toContain(
-      "import type { BehaviorConfig, ListOptions } from '@shared/base-classes/base-repository';",
+      "import type { BehaviorConfig, ListOptions, ReadOptions } from '@shared/base-classes/base-repository';",
     );
   });
 
@@ -116,7 +116,7 @@ describe('backend repository template — behaviors config (issue #33)', () => {
     expect(output).toContain('softDelete: false');
     expect(output).toContain('userTracking: true');
     expect(output).toContain(
-      "import type { BehaviorConfig, ListOptions } from '@shared/base-classes/base-repository';",
+      "import type { BehaviorConfig, ListOptions, ReadOptions } from '@shared/base-classes/base-repository';",
     );
   });
 
@@ -167,20 +167,13 @@ describe('backend repository template — user_tracking behavior (issue #38)', (
   });
 });
 
-describe('backend repository template — declarative queries use baseQuery(leaf)', () => {
-  // Regression: the declarative query methods must go through baseQuery()
-  // (which applies the soft-delete isNull(deletedAt) filter and the
-  // userTracking scope) rather than raw this.db.select().
-  //
-  // SCOPE-0 (#616) tightened this from "calls baseQuery()" to "passes the leaf
-  // predicate AS ITS ARGUMENT". Chaining `.where(...)` onto the returned
-  // builder does call baseQuery() — and then REPLACES everything it applied
-  // (drizzle's `.where()` is `this.config.where = where`), which is how these
-  // finders shipped leaking soft-deleted and other users' rows. The earlier
-  // form of this test asserted `this.baseQuery()` literally and therefore
-  // passed on the leaky emission; that is why the assertion is now on the
-  // argument, and why the repo-wide shape guard
-  // (src/__tests__/templates/no-basequery-where.test.ts) exists.
+describe('backend repository template — every shaped read carries its predicate INTO rootFilter (READ-1)', () => {
+  // SCOPE-0 (#616) found finders that chained `.where(...)` onto `baseQuery()`
+  // and so REPLACED its guards. READ-1 moved every shaped read onto the
+  // relational path, where the same rule reads: the leaf predicate is handed to
+  // `this.rootFilter(...)` — which ANDs the scope — as a function of the ALIASED
+  // root `t`. It is never a second `where` beside it, and never rendered against
+  // `this.table` (that names a table RQBv2 aliased away — REL-2 Found #9, #840).
   const queriesEntity = {
     ...baseEntity,
     behaviors: ['timestamps', 'soft_delete'],
@@ -190,77 +183,71 @@ describe('backend repository template — declarative queries use baseQuery(leaf
     ],
   };
 
-  it('unique (findByX with limit 1) query passes the predicate to baseQuery()', () => {
-    const locals = buildBackendLocals(queriesEntity, withEntities());
-    const output = renderRepository(locals);
-
-    expect(output).toContain('async findByEmail(email: string)');
-    expect(output).toContain(
-      "await this.baseQuery(eq(this.table['email'], email))",
-    );
-    // Must not use raw db.select() for the declarative read path.
+  it('unique finder: the predicate is rootFilter\'s argument, rendered on `t`', () => {
+    const output = renderRepository(buildBackendLocals(queriesEntity, withEntities()));
+    expect(output).toContain('async findByEmail<C extends ContactColumns | undefined = undefined>(');
+    expect(output).toContain('where: { RAW: this.rootFilter((t) => eq(t.email, email)) },');
     expect(output).not.toContain('this.db.select().from(this.table)');
   });
 
-  it('non-unique list query also passes the predicate to baseQuery()', () => {
-    const locals = buildBackendLocals(queriesEntity, withEntities());
-    const output = renderRepository(locals);
-
-    expect(output).toContain('async findByUserId(userId: string)');
-    expect(output).toContain(
-      "await this.baseQuery(eq(this.table['userId'], userId))",
-    );
+  it('non-unique finder: the same, through findMany', () => {
+    const output = renderRepository(buildBackendLocals(queriesEntity, withEntities()));
+    expect(output).toContain('async findByUserId<C extends ContactColumns | undefined = undefined>(');
+    expect(output).toContain('where: { RAW: this.rootFilter((t) => eq(t.userId, userId)) },');
   });
 
-  it('emits NO `baseQuery().where(` — the guards would be replaced, not AND-ed', () => {
-    const locals = buildBackendLocals(queriesEntity, withEntities());
-    const output = renderRepository(locals);
-
+  it('every relational read has exactly one root predicate, and it is rootFilter', () => {
+    const output = renderRepository(buildBackendLocals(queriesEntity, withEntities()));
     expect(output).not.toMatch(/baseQuery\(\s*\)\s*\.where\s*\(/);
-    // Every read still goes through the choke point.
-    const matches = output.match(/this\.baseQuery\(/g) ?? [];
-    expect(matches.length).toBeGreaterThanOrEqual(2);
+    const reads = output.match(/this\.db\.query\.contacts\.find(First|Many)\(/g) ?? [];
+    const roots = output.match(/where: \{ RAW: this\.rootFilter\(/g) ?? [];
+    // findById, findByIds, list, findByEmail, findByUserId
+    expect(reads.length).toBe(5);
+    expect(roots.length).toBe(reads.length);
+    // Nothing on the relational path renders against the repository's own table.
+    expect(output).not.toContain("this.rootFilter((t) => eq(this.table");
   });
 
-  it('a multi-column query wraps its predicates in and() inside baseQuery()', () => {
-    const locals = buildBackendLocals(
-      {
-        ...baseEntity,
-        behaviors: ['timestamps', 'soft_delete'],
-        queries: [{ by: ['email', 'user_id'] }],
-      },
-      withEntities(),
+  it('a multi-column finder ANDs its predicates inside rootFilter', () => {
+    const output = renderRepository(
+      buildBackendLocals(
+        { ...baseEntity, behaviors: ['timestamps', 'soft_delete'], queries: [{ by: ['email', 'user_id'] }] },
+        withEntities(),
+      ),
     );
-    const output = renderRepository(locals);
-
     expect(output).toContain(
-      "await this.baseQuery(and(eq(this.table['email'], email), eq(this.table['userId'], userId)))",
+      'where: { RAW: this.rootFilter((t) => and(eq(t.email, email), eq(t.userId, userId))) },',
     );
-    expect(output).not.toMatch(/baseQuery\(\s*\)\s*\.where\s*\(/);
   });
 
-  it('the FK-traversal method passes its predicate to baseQuery() and drops the `as any`', () => {
-    const locals = buildBackendLocals(
-      {
-        ...baseEntity,
-        behaviors: ['timestamps', 'soft_delete'],
-        relationships: {
-          account: {
-            type: 'belongs_to',
-            target: 'account',
-            foreign_key: 'account_id',
-          },
+  it('the FK-traversal finder carries its predicate into rootFilter and its limit into the statement', () => {
+    const output = renderRepository(
+      buildBackendLocals(
+        {
+          ...baseEntity,
+          behaviors: ['timestamps', 'soft_delete'],
+          relationships: { account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' } },
         },
-      },
-      withEntities(),
+        withEntities(),
+      ),
     );
-    const output = renderRepository(locals);
-
-    expect(output).toContain(
-      "let q = this.baseQuery(eq(this.table['accountId'], id));",
-    );
-    expect(output).toContain('q = q.limit(opts.limit) as typeof q;');
+    expect(output).toContain('where: { RAW: this.rootFilter((t) => eq(t.accountId, id)) },');
+    expect(output).toContain('limit: opts?.limit,');
     expect(output).not.toContain('(q as any)');
+  });
+
+  it('findByIds de-duplicates, skips an empty list, and restores input order', () => {
+    const output = renderRepository(buildBackendLocals(queriesEntity, withEntities()));
+    expect(output).toContain('const unique = this.uniqueIds(ids);');
+    expect(output).toContain('if (unique.length === 0) return [];');
+    expect(output).toContain('where: { RAW: this.rootFilter((t) => inArray(t.id, unique)) },');
+    expect(output).toContain('return this.inInputOrder(rows, unique, mask.stripId)');
+  });
+
+  it('a relation-less entity takes `columns` but no `with` (REL-2 §2.5)', () => {
+    const output = renderRepository(buildBackendLocals(queriesEntity, withEntities()));
+    expect(output).toContain('opts?: ReadOptions<C, never>,');
+    expect(output).not.toContain('with: opts?.with');
   });
 });
 
@@ -289,8 +276,8 @@ describe('backend repository template — belongs_to + explicit FK query collisi
     behaviors: [],
   };
 
-  // REL-2 (#587): a finder is now generic over its include (`async findByX<TWith
-  // extends …>(`), so the definition marker is the name followed by `<` or `(`.
+  // A finder is generic over its read options (`async findByX<C extends …>(`),
+  // so the definition marker is the name followed by `<` or `(`.
   const countMethodDefs = (out: string, method: string): number =>
     (out.match(new RegExp(`async ${method}[<(]`, 'g')) ?? []).length;
 
@@ -309,15 +296,13 @@ describe('backend repository template — belongs_to + explicit FK query collisi
     // REL-2 (#587): it is now generic over its include, and the single-row shape
     // shows in the return type rather than in the parameter list.
     expect(output).toContain(
-      'async findByFieldDefinitionId<TWith extends FieldConfigInclude = FieldConfigNoInclude>(\n' +
+      'async findByFieldDefinitionId<C extends FieldConfigColumns | undefined = undefined, W extends FieldConfigInclude = FieldConfigNoInclude>(\n' +
         '    fieldDefinitionId: string,\n' +
-        '    opts?: { with?: TWith },\n' +
-        '  ): Promise<FieldConfigResult<TWith> | null>',
+        '    opts?: ReadOptions<C, W>,\n' +
+        '  ): Promise<FieldConfigResult<C, W> | null>',
     );
     // The FK-traversal array variant must NOT also be emitted.
-    expect(output).not.toContain(
-      'opts?: { cursor?: string; limit?: number; with?: TWith },',
-    );
+    expect(output).not.toContain('opts?: { cursor?: string; limit?: number } & ReadOptions<C, W>,');
   });
 
   it('still emits the FK-traversal method when there is NO colliding declarative query (CGP-358 unchanged)', () => {
@@ -331,17 +316,13 @@ describe('backend repository template — belongs_to + explicit FK query collisi
     expect(countMethodDefs(output, 'findByFieldDefinitionId')).toBe(1);
     // The FK-traversal (cursor/limit) variant is the survivor here, now carrying
     // the include as a third option (REL-2 §4).
-    expect(output).toContain(
-      'opts?: { cursor?: string; limit?: number; with?: TWith },',
-    );
+    expect(output).toContain('opts?: { cursor?: string; limit?: number } & ReadOptions<C, W>,');
   });
 
   it('emits the FK-traversal method when there are no declarative queries at all', () => {
     const noQueries = { ...collisionEntity, queries: undefined as unknown as [] };
     const output = renderRepository(buildBackendLocals(noQueries, withEntities()));
     expect(countMethodDefs(output, 'findByFieldDefinitionId')).toBe(1);
-    expect(output).toContain(
-      'opts?: { cursor?: string; limit?: number; with?: TWith },',
-    );
+    expect(output).toContain('opts?: { cursor?: string; limit?: number } & ReadOptions<C, W>,');
   });
 });
