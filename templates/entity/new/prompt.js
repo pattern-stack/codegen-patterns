@@ -391,6 +391,9 @@ export default {
       modulesDir: BASE_PATHS.modulesDir,
       runtimeMode,
       ownedTableNames,
+      // #791: the project's default tenant column (`tenancy.column`). An entity's
+      // own `tenant_scoped: { column }` overrides it inside the extension.
+      tenancyColumn: getProjectConfig().tenancy.column,
       // REL-2 (#587): the extension computes the relation-manifest and
       // api-includes specifiers RELATIVE to each module folder, so it needs the
       // same generated dir the emitters write into. Passed explicitly because
@@ -515,6 +518,8 @@ export default {
       // `processedFields` / `createDtoFields` are the NON-FK fields; the
       // belongs_to FK columns are emitted onto both the entity and CreateXDto
       // from `belongsToFkFields`, so both sets include them.
+      // An adopted tenant FK (#791) is on the entity but not on CreateXDto,
+      // so the DTO set reads `createFkFields`.
       const fkKeysCamel = backendLocals.belongsToFkFields.map((f) => f.camelName);
       const entityKeysCamel = new Set([
         ...backendLocals.processedFields.map((f) => f.camelName),
@@ -522,7 +527,7 @@ export default {
       ]);
       const dtoKeysCamel = new Set([
         ...backendLocals.createDtoFields.map((f) => f.camelName),
-        ...fkKeysCamel,
+        ...backendLocals.createFkFields.map((f) => f.camelName),
       ]);
 
       return emitsBlock.map((emitName) => {

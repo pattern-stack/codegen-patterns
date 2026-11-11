@@ -102,6 +102,14 @@ for a field `foreign_key:` to a host-owned table (e.g. `tenants.id`, no entity Y
 when the same run generates the target (`--all`, or a junction's two parents; `--renderSet`, #815) or the target is
 already on disk. A single-file `entity new` of the parent leaves it unwired until the target exists.
 
+**Tenant scoping column** (ADR-042, #791). `tenant_scoped: true` scopes on `tenancy.column` from `codegen.config.yaml`
+(default `tenant_id`); `tenant_scoped: { column: organization_id }` overrides it per entity. A field or `belongs_to`
+FK already named that column is **adopted** (one column, its own nullability/FK, removed from the create/update DTOs),
+otherwise a nullable `uuid` is emitted. One rule: `resolveTenancy` in `src/schema/tenancy.ts` — never re-derive the
+column name in a template or emitter. Runtime reads `BehaviorConfig.tenantColumn` / `ScopeConfig.tenantColumn`
+(camelCase, absent = `tenantId`); never write the literal `'tenantId'` against a table. The ambient context field stays
+`tenantId` — it names the value, not a column.
+
 **Every generated FK callback is `.references((): AnyPgColumn => <table>.id)`** (NAME-1, #631) — backend
 belongs_to + field `foreign_key:`, junction and relationship endpoints. Two tables with FKs to each other (or any
 longer FK cycle) therefore compile; the annotation is type-only. A backend service composes each other

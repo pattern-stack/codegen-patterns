@@ -46,6 +46,8 @@ export interface RelationsConfigInput {
 	};
 	/** ADR-037 runtime mode — decides the manifest's `hopScope` import specifier. */
 	runtime?: unknown;
+	/** #791 — the project's default tenant column; the hop predicates filter on it. */
+	tenancy?: { column?: string };
 	[key: string]: unknown;
 }
 
@@ -109,6 +111,7 @@ export function loadRelationsEmitContext(
 			definitions: loadEntityDefinitions(entitiesDir),
 			junctions: loadJunctionDefinitions(junctionsDir),
 			scopeFiltersImport: runtimeImport(mode, 'base-classes/scope-filters'),
+			tenancyColumn: config?.tenancy?.column,
 		},
 		outDir,
 	};

@@ -48,13 +48,13 @@ export const <%= entityNamePlural %> = pgTable(
     provider: varchar('provider'),
     providerMetadata: jsonb('provider_metadata'),
 <%_ } _%>
-<%_ if (tenantScoped) { _%>
+<%_ if (tenantColumnEmitted) { _%>
     // tenant_scoped (ADR-042). NULLABLE on purpose: flipping the flag on an
     // existing table is then an additive ADD COLUMN, and the host tightens it
     // to NOT NULL after backfilling. No .references() — the tenants table is
     // host-owned, and codegen emits a DB-level FK only for tables it generates
     // (#636).
-    tenantId: uuid('tenant_id'),
+    <%= tenantColumnProp %>: uuid('<%= tenantColumnName %>'),
 <%_ } _%>
 <%_ if (hasTimestamps) { _%>
     createdAt: <%- timestampColumn('created_at') %>.notNull().defaultNow(),

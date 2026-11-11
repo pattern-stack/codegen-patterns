@@ -63,6 +63,7 @@ import {
 } from "./assembly-emission-generator";
 import { subsystemsImport, type RuntimeMode } from "./runtime-import";
 import { emittedStem } from '../../config/file-naming.js';
+import { resolveTenancy, type TenantScopedDeclaration } from '../../schema/tenancy.js';
 import {
   fieldColumnNullable,
   foreignKeyColumnNullable,
@@ -863,6 +864,9 @@ export interface EmitAdaptersEntity {
     string,
     { type?: string; target?: string; foreign_key?: string; nullable?: boolean }
   >;
+  /** `tenant_scoped:` (ADR-042, #791) — an adopted tenant column leaves the sink's
+   *  write surface, exactly as it leaves `buildIntegrationSurface`'s. */
+  tenant_scoped?: TenantScopedDeclaration;
   /** Cross-cutting behavior names for this entity (from the YAML `behaviors:`
    *  block, e.g. `["timestamps", "soft_delete"]`). Used by `buildSinkInput` to
    *  determine whether the projection carries `createdAt`/`updatedAt` — mirrors
@@ -901,6 +905,9 @@ interface EmitAdaptersBaseOptions {
   /** Runtime mode (ADR-037) — selects the runtime import specifiers in every
    *  emitted adapter/module/tokens/sink/assembly file. Defaults to `package`. */
   mode?: RuntimeMode;
+  /** The project's default tenant column, `tenancy.column` (#791). Omitted ⇒
+   *  `tenant_id`. */
+  tenancyColumn?: string;
 }
 
 /**
@@ -1127,7 +1134,13 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
           sinksDir,
           aliases,
         );
-        const sinkInput = buildSinkInput(def!, surface, slugs[0], sinkRepoImportSpecifier);
+        const sinkInput = buildSinkInput(
+          def!,
+          surface,
+          slugs[0],
+          sinkRepoImportSpecifier,
+          opts.tenancyColumn,
+        );
         const basePath = join(sinksDir, `${emittedStem(entityName)}.sink.generated.ts`);
         const baseContent = generateSinkBase({ ...sinkInput, mode });
         if (!opts.dryRun) writeIfChanged(basePath, baseContent);
@@ -1272,9 +1285,18 @@ export function buildSinkInput(
   surface: string,
   provider: string,
   repoImportSpecifier: string,
+  tenancyColumn?: string,
 ): SinkEmitInput {
   const fields = def.fields ?? {};
   const relationships = def.relationships ?? {};
+
+  // #791 — the tenant column the repository stamps. When the entity ADOPTS one
+  // it declares (a field, or a belongs_to FK), it leaves the write surface here
+  // as it does in `buildIntegrationSurface` (entity-locals.js): the upsert's
+  // `set` must never rewrite a row's owning tenant (#715). The projection and
+  // the find view keep it.
+  const tenancy = resolveTenancy(def.entity.name, def, tenancyColumn);
+  const adoptedTenantColumn = tenancy?.adopted ? tenancy.column : null;
 
   // FK column names (belongs_to foreign_key) — excluded from copy-through.
   const fkColumns = new Set<string>();
@@ -1310,7 +1332,10 @@ export function buildSinkInput(
   // Used by the write object; excluded fields omitted → repo never writes them on
   // upsert → no-clobber for segmentation-owned columns (e.g. conversationExternalId).
   const copyThroughFields = Object.entries(fields)
-    .filter((entry) => isCopyThrough(entry) && !excludeSet.has(entry[0]))
+    .filter(
+      (entry) =>
+        isCopyThrough(entry) && !excludeSet.has(entry[0]) && entry[0] !== adoptedTenantColumn,
+    )
     .map(([name, f]) => ({
       camelName: snakeToCamel(name),
       tsType: tsTypeFor(f.type, fieldColumnNullable(f)),
@@ -1322,7 +1347,9 @@ export function buildSinkInput(
   // (prompt-extension.js:440-441).
   const entityNamePlural = def.entity.plural ?? pluralize.plural(def.entity.name);
   const fkExternalKeys = Object.entries(relationships)
-    .filter(([, rel]) => rel.type === "belongs_to")
+    .filter(
+      ([, rel]) => rel.type === "belongs_to" && rel.foreign_key !== adoptedTenantColumn,
+    )
     .map(([relName, rel]) => {
       const target = rel.target ?? relName;
       const foreignKey = rel.foreign_key ?? `${target}_id`;

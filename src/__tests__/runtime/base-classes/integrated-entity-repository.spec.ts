@@ -393,3 +393,69 @@ describe('IntegratedEntityRepository — no user-ownership finders (#746)', () =
     expect(method in IntegratedEntityRepository.prototype).toBe(false);
   });
 });
+
+// ============================================================================
+// #791 — a tenant column other than tenant_id
+// ============================================================================
+
+describe('IntegratedEntityRepository — tenantColumn (#791)', () => {
+  const orgAccounts = pgTable('org_accounts', {
+    id: text('id').primaryKey(),
+    externalId: text('external_id'),
+    provider: text('provider'),
+    organizationId: text('organization_id'),
+    userId: text('user_id'),
+    name: text('name'),
+    domain: text('domain'),
+    parentAccountId: text('parent_account_id'),
+    createdAt: timestamp('created_at'),
+    updatedAt: timestamp('updated_at'),
+  });
+
+  class OrgAccountRepository extends IntegratedEntityRepository<
+    Account,
+    typeof orgAccounts,
+    AccountIntegrationWrite & { organizationId?: string },
+    Account
+  > {
+    readonly table = orgAccounts;
+    // A HAND-WRITTEN config that forgets the tenant prefix and lists the
+    // tenant column as a write column — the runtime backstops both.
+    protected readonly integrationConfig: IntegrationUpsertConfig = {
+      ...baseConfig,
+      writeColumns: ['userId', 'name', 'domain', 'organizationId'],
+    };
+    protected readonly behaviors = {
+      timestamps: true,
+      softDelete: false,
+      userTracking: false,
+      tenantScoped: true,
+      tenantColumn: 'organizationId',
+    };
+    protected override readonly scopeEnforcement = 'strict' as const;
+  }
+
+  it('stamps, prefixes the conflict target with, and never `set`s the configured column', async () => {
+    const { withRequester } = await import('../../../../runtime/base-classes/tenant-context');
+    const m = makeMock();
+    m.enqueue([row()]);
+    const repo = new OrgAccountRepository(m.db);
+
+    await withRequester({ userId: 'u1', organizationId: 'org-a', tenantId: 'org-a' }, () =>
+      repo.integrationUpsertOne(
+        { externalId: 'ext-1', userId: 'user-1', name: 'Acme', domain: null },
+        'hubspot',
+      ),
+    );
+
+    const values = m.capture.values[0] as Record<string, unknown>;
+    expect(values.organizationId).toBe('org-a');
+    expect('tenantId' in values).toBe(false);
+    const conflict = m.capture.conflict[0] as {
+      target: Array<{ name: string }>;
+      set: Record<string, unknown>;
+    };
+    expect(conflict.target.map((c) => c.name)).toEqual(['organization_id', 'provider', 'external_id']);
+    expect('organizationId' in conflict.set).toBe(false);
+  });
+});

@@ -956,3 +956,85 @@ describe('BaseRepository — by-id writes are refused while the filter is droppe
     });
   });
 });
+
+// ============================================================================
+// #791 — a tenant column other than tenant_id (BehaviorConfig.tenantColumn)
+// ============================================================================
+
+/** An existing schema keyed by `organization_id`, with no `tenant_id` at all. */
+const orgWidgets = pgTable('org_widget', {
+  id: text('id').primaryKey(),
+  organizationId: text('organization_id').notNull(),
+  name: text('name'),
+});
+
+class OrgTenantRepo extends BaseRepository<
+  { id: string; organizationId: string },
+  typeof orgWidgets
+> {
+  readonly table = orgWidgets;
+  protected readonly behaviors: BehaviorConfig = {
+    timestamps: false,
+    softDelete: false,
+    userTracking: false,
+    tenantScoped: true,
+    tenantColumn: 'organizationId',
+  };
+  protected readonly scopeEnforcement = 'strict' as const;
+  constructor() {
+    super(new QueryBuilder() as unknown as DrizzleClient);
+  }
+  stamp(input: Record<string, unknown>): Record<string, unknown> {
+    return this.stampTenant(input);
+  }
+  guardUpdate(input: Record<string, unknown>): Record<string, unknown> {
+    return this.guardTenantOnUpdate(input);
+  }
+  renderFindById(id: string): { sql: string; params: unknown[] } {
+    return this.baseQuery(eq(this.table['id'], id)).toSQL();
+  }
+}
+
+describe('BaseRepository — tenantColumn (#791)', () => {
+  it('filters reads on the configured column', async () => {
+    const repo = new OrgTenantRepo();
+    await asTenant('org-a', async () => {
+      const { sql, params } = repo.renderFindById('w1');
+      expect(sql).toContain('"org_widget"."organization_id" = $');
+      expect(sql).not.toContain('tenant_id');
+      expect(params).toContain('org-a');
+    });
+  });
+
+  it('stamps the configured column on create, and never a tenantId key', async () => {
+    const repo = new OrgTenantRepo();
+    await asTenant('org-a', async () => {
+      expect(repo.stamp({ name: 'w' })).toEqual({ name: 'w', organizationId: 'org-a' });
+    });
+  });
+
+  it('rejects a disagreeing value in the configured column on create and update', async () => {
+    const repo = new OrgTenantRepo();
+    await asTenant('org-a', async () => {
+      expect(() => repo.stamp({ name: 'w', organizationId: 'org-b' })).toThrow(
+        /create\(\) was given organizationId/,
+      );
+      expect(() => repo.guardUpdate({ organizationId: 'org-b' })).toThrow(CrossTenantWriteError);
+      expect(repo.guardUpdate({ organizationId: 'org-a' })).toEqual({ organizationId: 'org-a' });
+    });
+  });
+
+  it('without tenantColumn, a table that has no tenant_id fails loud, naming the repository', async () => {
+    class Forgot extends OrgTenantRepo {
+      protected override readonly behaviors: BehaviorConfig = {
+        timestamps: false,
+        softDelete: false,
+        userTracking: false,
+        tenantScoped: true,
+      };
+    }
+    await asTenant('org-a', async () => {
+      expect(() => new Forgot().renderFindById('w1')).toThrow(/Forgot/);
+    });
+  });
+});

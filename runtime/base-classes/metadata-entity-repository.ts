@@ -23,7 +23,7 @@ export abstract class MetadataEntityRepository<
    *
    * **Not available on a tenant-scoped repository** (ADR-042 / TEN-1 §5.2).
    * The conflict target here is a SINGLE caller-supplied column, backed by an
-   * author-declared unique index. Prepending `tenant_id` would break `ON
+   * author-declared unique index. Prepending the tenant column would break `ON
    * CONFLICT` inference against that index, and NOT prepending it means tenant
    * B's batch updates tenant A's row — an active cross-tenant write. Neither is
    * acceptable, so the combination throws instead. The `conflictTarget`-less
@@ -55,7 +55,7 @@ export abstract class MetadataEntityRepository<
           'before any WHERE applies, so this upsert would cross the tenant ' +
           'boundary. Call upsertMany without `conflictTarget` (it delegates ' +
           'to create(), which stamps and scopes), or declare a composite ' +
-          '(tenant_id, …) unique index and upsert through it. See ADR-042, ' +
+          `(${this.tenantColumn}, …) unique index and upsert through it. See ADR-042, ` +
           'TEN-1 §5.2 and #703.',
       );
     }

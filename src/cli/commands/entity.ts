@@ -860,6 +860,7 @@ export class EntityNewCommand extends Command {
 						modulesAbs: layout.modules,
 						aliases: tsAliases?.aliases ?? {},
 						mode: runtimeMode,
+						tenancyColumn: ctx.config?.tenancy?.column,
 					});
 				});
 			} catch (err: unknown) {

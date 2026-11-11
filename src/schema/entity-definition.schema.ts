@@ -1225,34 +1225,50 @@ export const EntityDefinitionSchema = z
     // entries here.
     analytics: AnalyticsBlockSchema.optional(),
 
-    // Repository-level tenant isolation (ADR-042 / TEN-1). When `true`, codegen:
-    //   (a) emits a nullable `tenant_id uuid` column + a `<table>_tenant_id_idx`
-    //       index on this entity's table,
-    //   (b) sets `tenantScoped: true` in the generated `BehaviorConfig` AND
+    // Repository-level tenant isolation (ADR-042 / TEN-1). When `true` (or the
+    // object form below), codegen:
+    //   (a) scopes the entity on its TENANT COLUMN — `tenant_id` unless the
+    //       project's `tenancy.column` or this entity's `{ column: … }` names
+    //       another (#791). If the entity already declares that column — a
+    //       field, or a `belongs_to` foreign key — the behavior ADOPTS it
+    //       (keeping its type, FK and nullability; it leaves the create/update
+    //       DTOs). Otherwise it emits a nullable `uuid` column under that name.
+    //       Either way the column gets a `<table>_<column>_idx` index. One rule,
+    //       `src/schema/tenancy.ts`.
+    //   (b) sets `tenantScoped: true` (and `tenantColumn`, when it is not
+    //       `tenantId`) in the generated `BehaviorConfig` AND
     //       `scopeEnforcement: 'strict'` on the generated repository, so a
     //       missing ambient tenant THROWS rather than reading the union of
     //       every tenant (charter I3 — there is no lenient opt-down),
-    //   (c) prefixes `tenant_id` onto every field `unique: true` and `unique_indexes:` entry and onto
-    //       the `external_id_tracking` conflict target, so two tenants may hold
-    //       the same natural key.
+    //   (c) prefixes the tenant column onto every field `unique: true` and
+    //       `unique_indexes:` entry and onto the `external_id_tracking` conflict
+    //       target, so two tenants may hold the same natural key.
     //
-    // The unit of opt-in is the entity; there is no project-wide default, and
-    // therefore no per-entity override of one. `clean-lite-ps` only — a
-    // `tenant_scoped: true` entity under `generate.architecture: clean` is a
-    // generation-time error rather than a repository that claims an isolation
-    // it does not have (#602, charter I11).
-    //
-    // The column is NULLABLE so flipping the flag on an existing table is an
-    // additive `ADD COLUMN`; the host tightens it to NOT NULL after backfilling.
-    // It carries no `.references()`: the tenants table is host-owned, and
-    // codegen emits a DB-level FK only for tables it generates (#636).
+    // An emitted column is NULLABLE so flipping the flag on an existing table is
+    // an additive `ADD COLUMN`; the host tightens it to NOT NULL after
+    // backfilling. It carries no `.references()`: the tenants table is
+    // host-owned, and codegen emits a DB-level FK only for tables it generates
+    // (#636; a `references:` key is #792). An adopted column keeps its own
+    // declaration.
     //
     // REL-2 (#587) is the flag's second reader: it tells the RELATION GRAPH that a
-    // hop into this entity must carry the tenant predicate. Deciding that per hop
-    // by inspecting the table's columns would be re-deriving what this declaration
-    // already says (charter I1), so the answer travels as generated data — a
-    // per-entity constant in the emitted manifest.
-    tenant_scoped: z.boolean().optional().default(false),
+    // hop into this entity must carry the tenant predicate, on its tenant column.
+    // Deciding that per hop by inspecting the table's columns would be
+    // re-deriving what this declaration already says (charter I1), so the answer
+    // travels as generated data — a per-entity constant in the emitted manifest.
+    tenant_scoped: z
+      .union([
+        z.boolean(),
+        z
+          .object({
+            column: z
+              .string()
+              .regex(/^[a-z][a-z0-9_]*$/, 'tenant_scoped.column must be a snake_case column name'),
+          })
+          .strict(),
+      ])
+      .optional()
+      .default(false),
 
     // Unique constraints (#356, #784). Field-level `unique: true` (#511) goes through the same builder.
     // An entry has four shapes:

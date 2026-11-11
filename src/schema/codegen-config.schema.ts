@@ -395,6 +395,35 @@ export const AuthConfigSchema = z
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 
 // ============================================================================
+// Tenancy (ADR-042, #791)
+// ============================================================================
+
+/**
+ * The `tenancy:` block — the project default for the column `tenant_scoped`
+ * entities are scoped on.
+ *
+ * - `column` — snake_case column name, default `tenant_id`. An entity's own
+ *   `tenant_scoped: { column: … }` overrides it. When the entity already
+ *   declares a field or a `belongs_to` foreign key with that name, the tenant
+ *   behavior ADOPTS it rather than emitting a second column; otherwise it emits
+ *   a nullable `uuid` column under that name. The rule lives in one place,
+ *   `src/schema/tenancy.ts`.
+ *
+ * `.strict()` — an unknown key under `tenancy:` is an error naming it.
+ */
+export const TenancyConfigSchema = z
+  .object({
+    column: z
+      .string()
+      .regex(/^[a-z][a-z0-9_]*$/, 'tenancy.column must be a snake_case column name')
+      .default('tenant_id'),
+  })
+  .strict()
+  .default({});
+
+export type TenancyConfig = z.infer<typeof TenancyConfigSchema>;
+
+// ============================================================================
 // Locations (path + import pairs — the frontend emitter's roots)
 // ============================================================================
 
@@ -718,6 +747,7 @@ export const CodegenConfigObjectSchema = z
     locations: LocationsConfigSchema.optional(),
     frontend: FrontendConfigSchema,
     auth: AuthConfigSchema,
+    tenancy: TenancyConfigSchema,
     dev: DevConfigSchema.optional(),
     subsystems: SubsystemsConfigSchema.optional(),
     events: EventsConfigSchema.optional(),

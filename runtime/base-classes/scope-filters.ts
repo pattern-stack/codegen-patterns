@@ -64,12 +64,29 @@ import {
 export interface ScopeConfig {
   /** `tenant_scoped: true` — filter by the ambient tenant (ADR-042). */
   tenantScoped: boolean;
+  /**
+   * The tenant column's property key on the table (#791) — `'organizationId'`
+   * for a project or entity that names `organization_id`. Absent means
+   * `'tenantId'`, the default `tenant_id` column; the generator writes it only
+   * when it differs, so a default project's output is unchanged. Forgetting it
+   * on a table whose column has another name is loud, not silent: `column()`
+   * throws naming the owner, because the table has no `tenantId`.
+   */
+  tenantColumn?: string;
   /** The `soft_delete` behavior — exclude rows with a `deleted_at`. */
   softDelete: boolean;
   /** The `user_tracking` behavior — filter by the ambient requester's scope. */
   userTracking: boolean;
   /** What a MISSING ambient context means: silence, or a throw. */
   enforcement: 'lenient' | 'strict';
+}
+
+/** The default tenant column key — the `tenant_id` column ADR-042 emits. */
+export const DEFAULT_TENANT_COLUMN_KEY = 'tenantId';
+
+/** The tenant column key a config names, defaulted (#791). */
+export function tenantColumnOf(cfg: Pick<ScopeConfig, 'tenantColumn'>): string {
+  return cfg.tenantColumn ?? DEFAULT_TENANT_COLUMN_KEY;
 }
 
 /** A config with nothing on — no predicate, no `where` emitted for it. */
@@ -84,7 +101,10 @@ export function isUnscoped(cfg: ScopeConfig): boolean {
  *   `null`               -> `IS NULL` (the null-tenant partition, not a wildcard).
  *   a string             -> `= tenantId`.
  *
- * Throws (naming `owner`) when the table has no `tenant_id` — a declaration
+ * `tenantColumn` is the column's property key — `'tenantId'` unless the entity
+ * is scoped on another column (#791).
+ *
+ * Throws (naming `owner`) when the table has no such column — a declaration
  * saying `tenant_scoped: true` over a table without the column is a query that
  * would otherwise go out with one guard silently missing.
  */
@@ -92,9 +112,10 @@ export function tenantPredicateFor(
   table: PgTable,
   tenantId: string | null | undefined,
   owner: string,
+  tenantColumn: string = DEFAULT_TENANT_COLUMN_KEY,
 ): SQL | undefined {
   if (tenantId === undefined) return undefined;
-  const col = column(table, 'tenantId', owner);
+  const col = column(table, tenantColumn, owner);
   return tenantId === null ? isNull(col) : eq(col, tenantId);
 }
 
@@ -114,7 +135,12 @@ export function tenantAxisPredicate(
 ): SQL | undefined {
   if (!cfg.tenantScoped) return undefined;
   if (tryGetRequester()?.tenantScope === 'all') return undefined;
-  return tenantPredicateFor(table, getTenantId(cfg.enforcement, owner), owner);
+  return tenantPredicateFor(
+    table,
+    getTenantId(cfg.enforcement, owner),
+    owner,
+    tenantColumnOf(cfg),
+  );
 }
 
 /**

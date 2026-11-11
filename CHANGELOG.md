@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **Configurable tenancy column (#791).** `tenant_scoped` no longer hard-codes `tenant_id`.
+  `codegen.config.yaml` takes `tenancy: { column: <snake_name> }` (default `tenant_id`), and an
+  entity may write `tenant_scoped: { column: <snake_name> }` to override it. If the entity already
+  declares that column — a field, or a `belongs_to` foreign key — the behavior **adopts** it instead
+  of emitting a second column, keeping its type, FK and nullability. This is how a host whose
+  tables are already keyed by `organization_id` adopts `tenant_scoped` without a rename migration.
+  The column, its index, the per-tenant unique prefix, the external-id constraint, the integration
+  conflict target and the relations manifest's hop predicates all use the resolved column. An
+  adopted column leaves the create/update DTOs and the integration upsert's write surface, as an
+  emitted one does. Runtime: `BehaviorConfig` / `ScopeConfig` gain an optional `tenantColumn`
+  (camelCase key; absent means `tenantId`). A project that sets neither key regenerates
+  byte-identically.
+
+### Fixed
+
+- **A field named `tenant_id` on a `tenant_scoped` entity no longer emits a duplicate column
+  (#715).** It is adopted as the tenant column (TS1117 before). The upsert `set` also drops the
+  tenant column at runtime, whatever a hand-written integration config lists.
+
 ## [0.32.0] — 2026-11-07
 
 **Breaking (DDL).** Gaps batch 1: declared uniqueness is now enforced in the database

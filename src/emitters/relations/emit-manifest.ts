@@ -29,10 +29,15 @@ export function scopeConstName(table: string): string {
 	return `${table.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase()}_SCOPE`;
 }
 
-/** `{ tenantScoped: true, softDelete: true, userTracking: false, enforcement: 'strict' }`. */
+/**
+ * `{ tenantScoped: true, softDelete: true, userTracking: false, enforcement: 'strict' }`,
+ * with `tenantColumn: '<key>'` after `tenantScoped` when the entity is scoped on
+ * a column other than `tenant_id` (#791).
+ */
 function renderScopeLiteral(cfg: ScopeConfigLiteral): string {
+	const tenantColumn = cfg.tenantColumn ? `tenantColumn: '${cfg.tenantColumn}', ` : '';
 	return (
-		`{ tenantScoped: ${cfg.tenantScoped}, softDelete: ${cfg.softDelete}, ` +
+		`{ tenantScoped: ${cfg.tenantScoped}, ${tenantColumn}softDelete: ${cfg.softDelete}, ` +
 		`userTracking: ${cfg.userTracking}, enforcement: '${cfg.enforcement}' }`
 	);
 }
@@ -59,7 +64,7 @@ function renderEdge(edge: RelationEdge): string {
 		`to: ${renderRef(edge.to)}`,
 		...(edge.optional === undefined ? [] : [`optional: ${edge.optional}`]),
 		// The hop predicate. `owner` names the RELATION so a throw (a scoped target
-		// with no `tenant_id`, a missing boundary under `strict`) points at the
+		// without its tenant column, a missing boundary under `strict`) points at the
 		// declaration that is wrong rather than at a table name.
 		...(edge.targetScope === null
 			? []

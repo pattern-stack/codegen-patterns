@@ -570,3 +570,62 @@ describe('every edge carries its TARGET\'s scope', () => {
 		}
 	});
 });
+
+// #791 — the manifest's scope constant names the tenant column, so a REL-2 hop
+// into an entity scoped on another column filters on THAT column.
+describe('the tenant column travels with the scope (#791)', () => {
+	const entries = () => [
+		{
+			entry: registryEntry('account', 'accounts'),
+			def: definition(
+				'account',
+				'accounts',
+				{ organization_id: { type: 'uuid', required: true } },
+				{ contacts: { type: 'has_many', target: 'contact', foreign_key: 'account_id' } },
+				{ tenant_scoped: true },
+			),
+		},
+		{
+			entry: registryEntry('contact', 'contacts'),
+			def: definition(
+				'contact',
+				'contacts',
+				{ account_id: { type: 'uuid', required: true } },
+				{ account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' } },
+				{ tenant_scoped: { column: 'team_id' } },
+			),
+		},
+	];
+
+	it('entityScope carries tenantColumn only when it is not tenantId', () => {
+		const [account, contact] = entries();
+		expect(entityScope(account!.def)).toEqual({
+			tenantScoped: true,
+			softDelete: false,
+			userTracking: false,
+			enforcement: 'strict',
+		});
+		expect(entityScope(account!.def, 'organization_id')?.tenantColumn).toBe('organizationId');
+		// The entity's own column wins over the project default.
+		expect(entityScope(contact!.def, 'organization_id')?.tenantColumn).toBe('teamId');
+	});
+
+	it('the manifest constants render it, from the project default and the override', () => {
+		const out = buildRelationsManifest(
+			buildRelationGraph({ ...context(entries()), tenancyColumn: 'organization_id' }),
+		);
+		expect(out).toContain(
+			"const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, tenantColumn: 'organizationId', softDelete: false, userTracking: false, enforcement: 'strict' };",
+		);
+		expect(out).toContain(
+			"const CONTACTS_SCOPE: ScopeConfig = { tenantScoped: true, tenantColumn: 'teamId', softDelete: false, userTracking: false, enforcement: 'strict' };",
+		);
+	});
+
+	it('a default project renders no tenantColumn at all', () => {
+		const out = buildRelationsManifest(buildRelationGraph(context(entries())));
+		expect(out).toContain(
+			"const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, softDelete: false, userTracking: false, enforcement: 'strict' };",
+		);
+	});
+});

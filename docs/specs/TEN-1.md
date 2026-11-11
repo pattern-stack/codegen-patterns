@@ -9,6 +9,12 @@ post-implementation truth: the gate's four decisions are recorded in §Decisions
 `docs/adrs/ADR-042-automatic-repository-tenant-scoping.md` (incl. its 2026-09-17 revision note) · ADR-044 §6 ·
 `docs/specs/REL-0.md` (the typed repository this builds on) · `docs/specs/DRZ-2.md` §A1–A10
 
+> **Later change — 2026-11-11 (#791).** Every `tenant_id` / `tenantId` this spec names is now the *resolved* tenant
+> column: `tenancy.column` in `codegen.config.yaml` (default `tenant_id`) or the entity's `tenant_scoped: { column }`,
+> and a field or `belongs_to` FK already named that column is adopted rather than emitted twice. The runtime reads
+> `BehaviorConfig.tenantColumn` (absent = `'tenantId'`). The default output is unchanged. See ADR-042's 2026-11-11
+> revision note.
+
 ## Why
 
 ADR-042 is Accepted and unimplemented. Generated entity repositories emit **zero** tenant filtering: the only ambient

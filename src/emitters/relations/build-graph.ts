@@ -12,6 +12,7 @@ import pluralize from 'pluralize';
 import type { EntityDefinition } from '../../schema/entity-definition.schema';
 import type { JunctionDefinition } from '../../schema/junction-definition.schema';
 import { foreignKeyColumnNullable } from '../../schema/field-nullability';
+import { DEFAULT_TENANT_PROP, resolveTenancy } from '../../schema/tenancy';
 import {
 	camelCase,
 	RelationKeyCollisionError,
@@ -62,7 +63,9 @@ function behaviorNames(def: EntityDefinition): Set<string> {
  * One entity's declared scope posture (REL-2 §3.1).
  *
  * Every field is read from the entity's own YAML — the `tenant_scoped:` flag and
- * the `soft_delete` / `user_tracking` behaviors. Nothing is recovered by looking
+ * the `soft_delete` / `user_tracking` behaviors — plus the project's default
+ * tenant column, resolved by the same rule the entity template uses
+ * (`resolveTenancy`, #791), so a hop filters on the column the table has. Nothing is recovered by looking
  * at the emitted table's columns: that would be re-deriving what the declaration
  * already says, which is the I1 violation this project exists to remove (and the
  * exact thing TEN-1 §8 asks REL-2 not to do).
@@ -75,13 +78,18 @@ function behaviorNames(def: EntityDefinition): Set<string> {
  * Returns `null` when nothing is declared, so the manifest for an unscoped graph
  * is byte-identical to REL-1's.
  */
-export function entityScope(def: EntityDefinition): ScopeConfigLiteral | null {
+export function entityScope(
+	def: EntityDefinition,
+	tenancyColumn?: string,
+): ScopeConfigLiteral | null {
 	const names = behaviorNames(def);
+	const tenancy = resolveTenancy(def.entity.name, def, tenancyColumn);
 	const cfg: ScopeConfigLiteral = {
-		tenantScoped: def.tenant_scoped === true,
+		tenantScoped: tenancy !== null,
+		...(tenancy && tenancy.prop !== DEFAULT_TENANT_PROP ? { tenantColumn: tenancy.prop } : {}),
 		softDelete: names.has('soft_delete'),
 		userTracking: names.has('user_tracking'),
-		enforcement: def.tenant_scoped === true ? 'strict' : 'lenient',
+		enforcement: tenancy !== null ? 'strict' : 'lenient',
 	};
 	if (!cfg.tenantScoped && !cfg.softDelete && !cfg.userTracking) return null;
 	return cfg;
@@ -148,7 +156,7 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 	// here, from the target's own YAML — the same registry-first rule naming uses.
 	const scopeOf = (entityName: string): ScopeConfigLiteral | null => {
 		const def = ctx.definitions.get(entityName);
-		return def ? entityScope(def) : null;
+		return def ? entityScope(def, ctx.tenancyColumn) : null;
 	};
 
 	// ── declared `relationships:` ────────────────────────────────────────────

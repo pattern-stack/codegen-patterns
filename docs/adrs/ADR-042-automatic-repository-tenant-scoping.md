@@ -84,6 +84,41 @@
 > the constraint, so a nullable column in it admits one NULL per key. A partial entry (`where:`) cannot be NULLS NOT
 > DISTINCT on drizzle-orm 1.0.0-rc.4, so it does not deduplicate null-tenant rows. Requires PostgreSQL 15+.
 
+> **Revision note — 2026-11-11 (#791): the tenant column is configurable, and a declared one is adopted.**
+> §5 hard-coded `tenant_id` / `tenantId` in the template, the emitters and four runtime sites, so `tenant_scoped`
+> could not describe a host whose tables are already keyed by `organization_id`, `workspace_id` or `team_id` — the
+> existing-schema case, where renaming the column to adopt the flag is a cross-cutting migration with no benefit.
+> What changed:
+>
+> 1. **Where the name comes from.** `codegen.config.yaml` gains `tenancy: { column: <snake_name> }` (default
+>    `tenant_id`), and an entity may write `tenant_scoped: { column: <snake_name> }` instead of `true`. The entity's
+>    column wins over the project's. This supersedes §5's note "no per-entity override today": the project default
+>    exists now, and the per-entity form is its override (for the column, not for opting in or out).
+> 2. **Adopt, don't duplicate.** If the entity already declares that column — a `belongs_to` whose `foreign_key:` is
+>    it, else a field of that name — `tenant_scoped` ADOPTS it: the column is emitted once, by its own declaration,
+>    keeping its FK and its nullability (an adopted `required: true` field stays NOT NULL; §7's nullable default
+>    applies only to a column the behavior emits). An adopted field must be `type: uuid`. This resolves #715's
+>    collision: a field named `tenant_id` under `tenant_scoped` is now the supported way to declare the tenant
+>    column, not a duplicate object key (TS1117). The adopted column leaves the create/update DTOs (the repository
+>    stamps it, as it stamps an emitted one), stays on the output DTO, and stays out of the integration upsert's
+>    write surface (`writeColumns`, the FK resolvers and the sink's copy-through) so `set` never rewrites a row's
+>    owning tenant. Its own `index: true` folds into the tenant index, which has the same name.
+> 3. **Every site reads the resolved column.** The column, the `<table>_<column>_idx` index, the unique prefix
+>    (whose default name becomes `<table>_<column>_<cols>_uniq`), the external-id constraint's columns, the emitted
+>    integration `conflictTarget`, and the relations manifest's per-entity scope constant. The external-id
+>    constraint keeps its name, `uq_<table>_tenant_provider_external_id` — "tenant" names the concept there.
+> 4. **Runtime.** `BehaviorConfig` and `ScopeConfig` gain an optional `tenantColumn` (the camelCase key). Absent
+>    means `'tenantId'`, and the generator writes it only when the column is named otherwise, so a default project's
+>    output is byte-identical. It is the one optional `BehaviorConfig` field because forgetting it is loud: the table
+>    has no `tenantId`, so the first scoped query throws naming the repository or relation. `tenantPredicateFor`,
+>    `stampTenant`, `guardTenantOnUpdate`, the integrated conflict target and `upsertMany`'s refusal all read it.
+>    The ambient context keeps `tenantId` — it names the value, not a column.
+>
+> The rule lives in one place, `resolveTenancy` (`src/schema/tenancy.ts`), read by the entity prompt, the relations
+> emitter and the integration sink derivation. Still open: a `references:` key for a real FK on an emitted tenant
+> column (#792), NOT NULL by default for a new project, a non-uuid tenant `type:`, and whether the events
+> subsystem's `multi_tenant` `tenant_id` follows this config.
+
 > **Sequencing note.** This ADR settles the *mechanism* for automatic data isolation. It is opt-in and additive: nothing changes for an entity until it carries `tenant_scoped: true`, and the new ALS field is ignored by every existing `userTracking`-only repo. A host application that already carries a `tenantId` claim through its access token adopts this as a config change plus a boundary interceptor, not a hand-port across N repositories.
 
 ## Context
@@ -271,7 +306,10 @@ The three emission sites, with line-accurate anchors:
 
 The composite-index machinery **already exists** — it is `processUniqueIndexes()` in `templates/entity/new/clean-lite-ps/prompt-extension.js:601-609`, which emits `uniqueIndex('<name>').on(<cols>)` into the pgTable extra-config callback consumed at `entity.ejs.t:73-81` (`clpTableConstraints`). The `external_id_tracking` behavior is the existing precedent for *machine-synthesized* composite uniqueness: it injects a `uniqueIndex` over `(provider, external_id)` (`prompt-extension.js:642-646`, `:1308`). Tenant scoping reuses that path: when `tenant_scoped`, prepend `tenant_id` to each single-column unique's column list before it reaches `processUniqueIndexes()`, and suppress the bare per-field `.unique()` in favor of the composite. This is additive code in `prompt-extension.js`, not a new emission paradigm.
 
-> **Note — no per-entity *override* today.** `tenant_scoped` is an opt-*in*; there is no inverse "this one entity escapes a project-wide tenant default," because there is no project-wide default. If a future `codegen.config.yaml` `tenancy.default_scoped: true` lands, the per-entity flag becomes the override; until then opt-in is the only axis.
+> **Note — superseded by the 2026-11-11 revision note (#791).** The project-wide default now exists as
+> `tenancy.column`, and `tenant_scoped: { column }` overrides it per entity. Opt-in itself is still per entity.
+>
+> **Original note — no per-entity *override* today.** `tenant_scoped` is an opt-*in*; there is no inverse "this one entity escapes a project-wide tenant default," because there is no project-wide default. If a future `codegen.config.yaml` `tenancy.default_scoped: true` lands, the per-entity flag becomes the override; until then opt-in is the only axis.
 
 ### 6. Jobs / background context — enter the ALS from the run's `tenantId`
 

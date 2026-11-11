@@ -27,6 +27,7 @@ This spec's per-hop predicate is ADR-042's predicate, evaluated at a different p
 | From TEN-1 / ADR-042 §3–§4 | REL-2's use |
 |---|---|
 | `behaviors.tenantScoped` (from `tenant_scoped: true`) | one of the three flags a hop's scope config carries |
+| `behaviors.tenantColumn` (#791 — the configured or adopted tenant column, when not `tenant_id`) | carried beside `tenantScoped` in the manifest's per-entity constant, so a hop filters on the column the target table has |
 | `getTenantId(enforcement)` — three-state: a string, an explicit `null`, or absent (throws under `strict`) | called by the hop predicate, at query-build time |
 | `scopeEnforcement: 'lenient' \| 'strict'`, default `strict` for tenant-scoped entities | decides whether a missing context is silence or a throw |
 | `tenantPredicate()` inside `scopeAnd()` | REL-2 **refactors this into a shared builder** (§3) rather than writing a second copy |
@@ -370,6 +371,8 @@ the RELATION in a throw, so a misdeclaration points at the declaration that is w
 ```ts
 export interface ScopeConfig {
   tenantScoped: boolean;
+  /** #791 — the tenant column's key when it is not `tenantId`; absent ⇒ `'tenantId'`. */
+  tenantColumn?: string;
   softDelete: boolean;
   userTracking: boolean;
   enforcement: 'lenient' | 'strict';
@@ -384,8 +387,8 @@ export function hopScope(table: PgTable, cfg: ScopeConfig, owner: string): SQL;
 /** The two axes on their own, so the class can expose a handle on each. */
 export function userScopePredicateFor(table, enforcement, owner): SQL | undefined;
 export function tenantAxisPredicate(table, cfg, owner): SQL | undefined;
-/** TEN-1 §3.1's primitive, rehoused here because this is what composes it. */
-export function tenantPredicateFor(table, tenantId, owner): SQL | undefined;
+/** TEN-1 §3.1's primitive, rehoused here because this is what composes it. `tenantColumn` defaults to `'tenantId'` (#791). */
+export function tenantPredicateFor(table, tenantId, owner, tenantColumn?): SQL | undefined;
 ```
 
 Three call sites, one implementation:

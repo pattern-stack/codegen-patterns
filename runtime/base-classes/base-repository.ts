@@ -22,6 +22,7 @@ import { column } from './table-columns';
 import {
   scopeFilter,
   tenantAxisPredicate,
+  tenantColumnOf,
   tenantPredicateFor,
   userScopePredicateFor,
   type ScopeConfig,
@@ -98,8 +99,20 @@ export interface BehaviorConfig {
   softDelete: boolean;
   userTracking: boolean;
   /** ADR-042 — filter every read/by-id write by the ambient tenant, and stamp
-   *  `tenant_id` on create. Emitted from the entity's `tenant_scoped: true`. */
+   *  the tenant column on create. Emitted from the entity's `tenant_scoped:`. */
   tenantScoped: boolean;
+  /**
+   * The tenant column's property key (#791) — `'organizationId'` for an entity
+   * scoped on `organization_id`. Read only when `tenantScoped`.
+   *
+   * The one optional field, and deliberately so: absent means `'tenantId'` (the
+   * default `tenant_id` column), and the generator writes it only when the
+   * column is named otherwise, so a default project's output is unchanged.
+   * Unlike a forgotten `tenantScoped`, a forgotten `tenantColumn` is loud: the
+   * table has no `tenantId`, so the first scoped query throws naming the
+   * repository (`column()`), and nothing reads or writes unscoped.
+   */
+  tenantColumn?: string;
 }
 
 /** One ordering term, as a COLUMN KEY rather than a rendered expression. */
@@ -453,6 +466,7 @@ export abstract class BaseRepository<
   protected scopeConfigFor(opts?: { softDelete?: boolean }): ScopeConfig {
     return {
       tenantScoped: this.behaviors.tenantScoped,
+      tenantColumn: this.tenantColumn,
       softDelete: opts?.softDelete === true,
       userTracking: this.behaviors.userTracking,
       enforcement: this.scopeEnforcement,
@@ -554,8 +568,17 @@ export abstract class BaseRepository<
   }
 
   /**
-   * Stamp `tenant_id` onto an insert from the ambient tenant. No-op unless
-   * `behaviors.tenantScoped`.
+   * The tenant column's property key — `behaviors.tenantColumn`, else
+   * `'tenantId'` (#791). Every tenant read and write in this class and the
+   * family bases goes through here, never through the literal.
+   */
+  protected get tenantColumn(): string {
+    return tenantColumnOf(this.behaviors);
+  }
+
+  /**
+   * Stamp the tenant column onto an insert from the ambient tenant. No-op
+   * unless `behaviors.tenantScoped`.
    *
    * An explicitly-supplied `tenantId` does NOT win. The point of an ambient
    * scope is that ordinary request-scope code cannot name a tenant, and a
@@ -578,7 +601,8 @@ export abstract class BaseRepository<
   protected stampTenant(input: Record<string, unknown>): Record<string, unknown> {
     if (!this.behaviors.tenantScoped) return input;
     const owner = this.constructor.name;
-    const explicit = input['tenantId'];
+    const key = this.tenantColumn;
+    const explicit = input[key];
 
     // Cross-tenant tooling: no ambient tenant to agree with, so the caller must
     // name the owner — and may name any of them.
@@ -598,14 +622,14 @@ export abstract class BaseRepository<
       if (tenantId !== undefined && explicit !== tenantId) {
         throw new CrossTenantWriteError(
           owner,
-          `create() was given tenant_id ${describeTenant(explicit)} while ` +
+          `create() was given ${key} ${describeTenant(explicit)} while ` +
             `acting within ${describeTenant(tenantId)}`,
         );
       }
       return input;
     }
 
-    return { ...input, tenantId: tenantId ?? null };
+    return { ...input, [key]: tenantId ?? null };
   }
 
   /**
@@ -624,7 +648,8 @@ export abstract class BaseRepository<
     input: Record<string, unknown>,
   ): Record<string, unknown> {
     if (!this.behaviors.tenantScoped) return input;
-    const explicit = input['tenantId'];
+    const key = this.tenantColumn;
+    const explicit = input[key];
     if (explicit === undefined) return input;
 
     const owner = this.constructor.name;
@@ -632,7 +657,7 @@ export abstract class BaseRepository<
     if (tenantId !== undefined && explicit !== tenantId) {
       throw new CrossTenantWriteError(
         owner,
-        `update() was given tenant_id ${describeTenant(explicit)} while ` +
+        `update() was given ${key} ${describeTenant(explicit)} while ` +
           `acting within ${describeTenant(tenantId)}`,
       );
     }

@@ -1,7 +1,8 @@
 # Smoke fixture: tenant_note (TEN-1 #585 / ADR-042, and #636)
 #
-# The only fixture in this set that carries `tenant_scoped: true`, so it is what
-# type-checks the tenant emission under a CONSUMER's stricter tsconfig — which,
+# The fixture in this set that carries the default (emitted `tenant_id`) shape of
+# `tenant_scoped` — org_task.yaml carries the adopted-column one (#791) — so it
+# is what type-checks the tenant emission under a CONSUMER's stricter tsconfig — which,
 # per charter I9, is the only gate that validates a `runtime/base-classes/**`
 # type change at all (`bun run typecheck` does not compile that tree against a
 # consumer's settings). It runs in both runtime modes: `run-smoke.ts` (vendored)
@@ -35,7 +36,13 @@ entity:
   table: tenant_notes
   pattern: Base
 
-tenant_scoped: true
+# #791: the smoke's default scenario sets the project default to
+# `organization_id` (for org_task.yaml); this entity overrides it back to
+# `tenant_id`, so every assertion on it is unchanged and the per-entity override
+# is exercised through the CLI. Without that project block (the subsystems
+# smoke) the override is simply the default.
+tenant_scoped:
+  column: tenant_id
 
 fields:
   title:

@@ -1,0 +1,58 @@
+# Smoke fixture: org_task (#791 — a configurable tenancy column)
+#
+# The existing-schema case: a table already keyed by `organization_id`, which
+# `tenant_scoped` ADOPTS instead of emitting a second `tenant_id` column.
+#
+# In `run-smoke.ts`'s default scenario the project config sets
+# `tenancy: { column: organization_id }`, so `tenant_scoped: true` here resolves
+# to the declared `organization_id` field through the real CLI — prompt.js's
+# `tenancy.column` read, the entity template, and the relations manifest's
+# loader. The smoke then asserts, and its `tsc` compiles under the consumer's
+# tsconfig:
+#   - ONE `organizationId` column, NOT NULL (the field's own nullability), and
+#     one `org_tasks_organization_id_idx` (the field's `index: true` folds into it),
+#   - `tenantColumn: 'organizationId'` in the BehaviorConfig, and no `tenantId`,
+#   - the per-tenant unique `(organization_id, slug)`,
+#   - `organizationId` absent from CreateOrgTaskDto,
+#   - the manifest's ORG_TASKS_SCOPE naming `tenantColumn: 'organizationId'`, so
+#     the `parentTask` self-hop (REL-2) filters on organization_id.
+#
+# `run-smoke-subsystems.ts` reads this directory WITHOUT the `tenancy:` block, so
+# there the project default is `tenant_id`: org_task emits its own `tenant_id`
+# column beside a plain `organization_id` field. Both shapes must compile.
+entity:
+  name: org_task
+  plural: org_tasks
+  table: org_tasks
+  pattern: Base
+
+tenant_scoped: true
+
+fields:
+  organization_id:
+    type: uuid
+    required: true
+    index: true
+
+  title:
+    type: string
+    required: true
+    max_length: 200
+
+  slug:
+    type: string
+    required: true
+    max_length: 200
+    unique: true
+
+  parent_task_id:
+    type: uuid
+
+relationships:
+  parent_task:
+    type: belongs_to
+    target: org_task
+    foreign_key: parent_task_id
+
+behaviors:
+  - timestamps

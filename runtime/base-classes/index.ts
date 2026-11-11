@@ -15,6 +15,7 @@ export {
   isUnscoped,
   scopeFilter,
   tenantAxisPredicate,
+  tenantColumnOf,
   tenantPredicateFor,
   userScopePredicateFor,
 } from './scope-filters';

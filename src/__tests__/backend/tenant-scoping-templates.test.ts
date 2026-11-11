@@ -289,7 +289,8 @@ describe('tenant_scoped + external_id_tracking', () => {
     // Charter I1: the runtime reads the declared target rather than
     // introspecting the table to discover the entity is tenant-scoped.
     const scoped = buildIntegrationSurface(
-      'Integrated', [], [], true, false, false, undefined, true,
+      'Integrated', [], [], true, false, false, undefined,
+      { column: 'tenant_id', prop: 'tenantId', adopted: null },
     ) as { integrationConfig: { conflictTarget: string[] } };
     expect(scoped.integrationConfig.conflictTarget).toEqual([
       'tenantId',
@@ -298,7 +299,7 @@ describe('tenant_scoped + external_id_tracking', () => {
     ]);
 
     const unscoped = buildIntegrationSurface(
-      'Integrated', [], [], true, false, false, undefined, false,
+      'Integrated', [], [], true, false, false, undefined, null,
     ) as { integrationConfig: { conflictTarget: string[] } };
     expect(unscoped.integrationConfig.conflictTarget).toEqual(['provider', 'externalId']);
   });

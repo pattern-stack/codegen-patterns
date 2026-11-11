@@ -100,9 +100,9 @@ export abstract class IntegratedEntityRepository<
         ...(this.behaviors.timestamps ? { updatedAt: now } : {}),
       });
 
-      // `set` excludes the identity (externalId/provider) AND `tenantId`, which
-      // is never in `writeColumns` — a conflicting row's owning tenant is never
-      // rewritten. Resolved FKs are only written when non-null this run — never
+      // `set` excludes the identity (externalId/provider) AND the tenant column,
+      // which is never in `writeColumns` — a conflicting row's owning tenant is
+      // never rewritten. Resolved FKs are only written when non-null this run — never
       // clobber a previously resolved parent with null on a later run that
       // dropped the ref.
       const set: Record<string, unknown> = {
@@ -112,6 +112,9 @@ export abstract class IntegratedEntityRepository<
       for (const fk of cfg.fkResolvers) {
         if (resolvedFks[fk.column] !== null) set[fk.column] = resolvedFks[fk.column];
       }
+      // Belt-and-braces (#715): whatever a hand-written config lists, the
+      // upsert `set` never carries the tenant column.
+      if (this.behaviors.tenantScoped) delete set[this.tenantColumn];
 
       const rows = await db
         .insert(this.tableRef)
@@ -235,8 +238,8 @@ export abstract class IntegratedEntityRepository<
   }
 
   /**
-   * Resolve the `ON CONFLICT` target columns, prefixing `tenant_id` when this
-   * repository is tenant-scoped (ADR-042 / TEN-1 §5.1).
+   * Resolve the `ON CONFLICT` target columns, prefixing the tenant column when
+   * this repository is tenant-scoped (ADR-042 / TEN-1 §5.1; `tenantColumn`, #791).
    *
    * This is the write-side half of isolation, and the one `scopeAnd()` cannot
    * reach: an upsert's conflict target decides WHICH ROW gets updated before
@@ -245,19 +248,20 @@ export abstract class IntegratedEntityRepository<
    * write, strictly worse than a read leak.
    *
    * The generated `integrationConfig.conflictTarget` already carries
-   * `'tenantId'` for a tenant-scoped entity (one declaration, per charter I1);
+   * the tenant column for a tenant-scoped entity (one declaration, per charter I1);
    * this method is the runtime backstop that makes a hand-written config safe
    * too, and it never double-prefixes.
    *
    * The matching unique constraint is emitted as
-   * `unique(...).on(tenantId, provider, externalId).nullsNotDistinct()` — the
+   * `unique(...).on(<tenant>, provider, externalId).nullsNotDistinct()` — the
    * `NULLS NOT DISTINCT` matters because the tenant column is nullable, and
    * Postgres otherwise treats every null-tenant row as distinct, so the
    * conflict would never fire and the upsert would insert duplicates.
    */
   protected conflictTarget(declared: readonly string[]): PgColumn[] {
-    const names = this.behaviors.tenantScoped && !declared.includes('tenantId')
-      ? ['tenantId', ...declared]
+    const tenant = this.tenantColumn;
+    const names = this.behaviors.tenantScoped && !declared.includes(tenant)
+      ? [tenant, ...declared]
       : [...declared];
     return names.map((c) => this.col(c));
   }
