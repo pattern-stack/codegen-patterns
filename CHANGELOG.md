@@ -96,7 +96,8 @@ All notable changes to this project will be documented in this file.
   exact, because every output key is required by construction. It's emitted only for an entity
   with a `json` output field, so other DTOs are byte-identical. The schema itself is unchanged; a
   `.pick()` of it still infers the key optional. The baseline gate now asserts
-  `OutputDto ≡ Pick<Row, keyof OutputDto>` (`test/baseline-type-assertions.ts`).
+  `OutputDto ≡ Pick<Row, keyof OutputDto>`, with no key the row lacks, for every baseline entity
+  (`test/baseline-type-assertions.ts`).
 - **A to-one include onto a soft-deleted or user-tracked target is typed nullable (#850).** REL-1 set `optional: false` for a NOT NULL FK, but REL-2's hop `where` drops a deleted (or
   another user's) target, so the include was `null` at runtime while the type said `T`. The
   relations manifest and the frontend graph descriptor now emit `optional: true` for such an edge
