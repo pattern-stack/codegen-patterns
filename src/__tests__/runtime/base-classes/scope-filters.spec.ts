@@ -19,6 +19,7 @@ import {
 } from '../../../../runtime/base-classes/scope-filters';
 import {
 	MissingTenantIdError,
+	MissingUserIdError,
 	withAllTenants,
 	withOrgScope,
 	withRequester,
@@ -247,5 +248,36 @@ describe('hopScope', () => {
 				).toThrow("accounts.parentAccount: table has no column 'tenantId'");
 			},
 		);
+	});
+});
+
+describe('a requester with no userId — a tenant-only boundary (#853)', () => {
+	const tenantOnly = { tenantId: 't-1' };
+
+	it('needs no userId when nothing reads the user axis', async () => {
+		await withRequester(tenantOnly, async () => {
+			const { sql } = render(scopeFilter(widgets, cfg({ tenantScoped: true, enforcement: 'strict' }), 'W'));
+			expect(sql).toContain('"tenant_id" = $1');
+			expect(sql).not.toContain('user_id');
+		});
+	});
+
+	it("strict 'user' scope on a user_tracking table throws MissingUserIdError, naming the owner", async () => {
+		await withRequester(tenantOnly, async () => {
+			expect(() => userScopePredicateFor(widgets, 'strict', 'WidgetRepository')).toThrow(MissingUserIdError);
+			expect(() => userScopePredicateFor(widgets, 'strict', 'WidgetRepository')).toThrow(/WidgetRepository/);
+		});
+	});
+
+	it('lenient applies no user filter, as with no context at all', async () => {
+		await withRequester(tenantOnly, async () => {
+			expect(userScopePredicateFor(widgets, 'lenient', 'W')).toBeUndefined();
+		});
+	});
+
+	it("'superuser' scope still needs no userId", async () => {
+		await withRequester({ ...tenantOnly, scope: 'superuser' }, async () => {
+			expect(userScopePredicateFor(widgets, 'strict', 'W')).toBeUndefined();
+		});
 	});
 });

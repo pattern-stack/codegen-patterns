@@ -35,6 +35,7 @@ export {
   withTenantScope,
   withAllTenants,
   MissingTenantIdError,
+  MissingUserIdError,
   CrossTenantWriteError,
   SYSTEM_ACTOR_ID,
 } from './tenant-context';

@@ -46,6 +46,7 @@ import type { PgTable } from 'drizzle-orm/pg-core';
 import { column } from './table-columns';
 import {
   getTenantId,
+  MissingUserIdError,
   requireRequester,
   tryGetRequester,
   type RequesterScope,
@@ -167,6 +168,12 @@ export function userScopePredicateFor(
         : sql`false`;
     case 'user':
     default:
+      // A context with no user (a tenant-only boundary, #853): strict refuses
+      // to read unscoped; lenient applies no user filter, as with no context.
+      if (ctx.userId === undefined) {
+        if (enforcement === 'strict') throw new MissingUserIdError(owner);
+        return undefined;
+      }
       return eq(column(table, 'userId', owner), ctx.userId);
   }
 }

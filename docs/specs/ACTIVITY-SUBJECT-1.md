@@ -129,6 +129,13 @@ template edit is required** — the change is the pattern record, the runtime ba
 and tests. (The `as const` literal is structurally typed; the base declares
 `patternConfig` as the inferred config type so `this.patternConfig.subject` is typed.)
 
+*Revision 2026-11-11 (#852):* the claim that the **service** template also emits it was the bug. The service
+emitted `protected override readonly patternConfig`, but no service base class declares one
+(`ActivityEntityService` forwards the subject finders to the repository), so every Activity entity with
+`config:` failed `tsc` with TS4113. Only the repository emits `patternConfig` now. The cross-domain junction
+smoke's `sales_activity` carries `config: { Activity: { subject: opportunity } }`, so a consumer compile
+covers it.
+
 ## Config schema
 
 ```ts

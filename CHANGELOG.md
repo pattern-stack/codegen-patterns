@@ -89,6 +89,15 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **`pattern: Activity` with `config:` compiles (#852).** The service template emitted
+  `protected override readonly patternConfig`, but no service base declares one, so `tsc` failed
+  with TS4113. Only the repository emits it now; it owns the config, and the service forwards to
+  it. The cross-domain junction smoke now compiles an Activity entity with `config:`.
+- **`RequesterContext.userId` (and `organizationId`) are optional (#853).** A tenant-only boundary
+  (a job, a webhook, a probe) no longer has to invent a user: `withRequester({ tenantId }, fn)`.
+  Only the user axis reads `userId`. A `user_tracking` repository in `'user'` scope throws the new
+  `MissingUserIdError` under `strict` when it is absent, and applies no user filter under `lenient`.
+  Type change: code that reads `requester.userId` now sees `string | undefined`.
 - **`entity validate` no longer reports an FK column the generator emits as missing (#743).**
   `missing_fk_field` is gone. A `belongs_to` (or `cardinality: one` role) writes its own column,
   so a matching field is optional; declaring one is how you set `required` / `index`.
