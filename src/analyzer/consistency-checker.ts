@@ -93,27 +93,23 @@ function checkRelationshipConsistency(
 	const issues: AnalysisIssue[] = [];
 
 	for (const [relName, rel] of entity.relationships) {
-		// Check for belongs_to without matching foreign key field
-		if (rel.type === 'belongs_to') {
-			const fkField = entity.fields.get(rel.foreignKey);
-			if (!fkField) {
-				issues.push({
-					severity: 'warning',
-					type: 'missing_fk_field',
-					entity: entity.name,
-					field: relName,
-					message: `Relationship "${relName}" references foreign key "${rel.foreignKey}" but field doesn't exist`,
-					suggestion: `Add field "${rel.foreignKey}" with foreign_key reference`,
-				});
-			}
-		}
+		// No "missing FK field" check on a belongs_to: the relationship (or the
+		// role deriving it) EMITS its FK column, so a matching field is optional
+		// — declaring one is how an author sets `required` / `index` on it
+		// (#743; dealbrain dogfood #13).
 
 		// Check for has_many relationships - target should have the FK field
 		if (rel.type === 'has_many' || rel.type === 'has_one') {
 			const targetEntity = graph.entities.get(rel.target);
 			if (targetEntity) {
-				const targetFkField = targetEntity.fields.get(rel.foreignKey);
-				if (!targetFkField) {
+				// The target's column exists if it is a field OR the FK of one of
+				// the target's own belongs_to edges (which emit it).
+				const targetHasFk =
+					targetEntity.fields.has(rel.foreignKey) ||
+					[...targetEntity.relationships.values()].some(
+						(r) => r.type === 'belongs_to' && r.foreignKey === rel.foreignKey,
+					);
+				if (!targetHasFk) {
 					issues.push({
 						severity: 'warning',
 						type: 'missing_target_fk',
