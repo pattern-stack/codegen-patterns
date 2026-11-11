@@ -149,7 +149,14 @@ describe('generated time columns follow the project behaviors.timezone (#845)', 
 	});
 
 	it('the default stays timestamptz', async () => {
-		const out = render('junction', await junctionLocals(FIELD));
-		expect(out).not.toMatch(/timestamp\('(created_at|started_at)'\)/);
+		const junction = render('junction', await junctionLocals(FIELD));
+		for (const col of ['created_at', 'updated_at', 'started_at', 'ended_at', 'matched_at']) {
+			expect(junction).toContain(`timestamp('${col}', ${TZ})`);
+		}
+		const relationship = render('relationship', await relationshipLocals(FIELD));
+		for (const col of ['created_at', 'updated_at']) {
+			expect(relationship).toContain(`timestamp('${col}', ${TZ})`);
+		}
+		expect(`${junction}\n${relationship}`).not.toMatch(/timestamp\('[a-z_]+'\)/);
 	});
 });

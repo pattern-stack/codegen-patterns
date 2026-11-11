@@ -54,7 +54,8 @@ All notable changes to this project will be documented in this file.
   both, and a junction's `started_at` / `ended_at` / `matched_at`. It uses the same rule,
   `behaviorWithTimezone`, with no `behaviors:` list, so a host with naive junction timestamps no
   longer gets the skew there. Declared `datetime` payload fields keep their own `timezone:`. Default
-  output is byte-identical.
+  output is byte-identical. `timestampColumn` no longer defaults `withTimezone` to `true`: every
+  caller passes it, and a template call that drops it throws instead of silently emitting timestamptz.
 
 ### Changed
 
