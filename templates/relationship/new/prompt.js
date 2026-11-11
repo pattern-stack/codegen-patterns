@@ -29,6 +29,7 @@ import {
 } from "../../../src/schema/field-nullability.js";
 import {
   TIMEZONE_ON_NON_DATETIME_MESSAGE,
+  behaviorWithTimezone,
   fieldWithTimezone,
   timestampColumn,
   TIMEZONE_NOT_BOOLEAN_MESSAGE,
@@ -565,7 +566,12 @@ export default {
     // Module tree — `paths.modules_dir`, resolved (PATH-0 #642, PATH-1 #645)
     // ======================================================================
 
-    const modulesDir = configOrDefaults(loadProjectConfig(process.cwd())).paths.modules_dir;
+    const projectConfig = configOrDefaults(loadProjectConfig(process.cwd()));
+    const modulesDir = projectConfig.paths.modules_dir;
+    // #845: created_at / updated_at follow the project's `behaviors.timezone`
+    // through the one rule entity behavior columns use (`behaviorWithTimezone`);
+    // a relationship has no `behaviors:` list, so the project default decides.
+    const generatedTimeWithTimezone = behaviorWithTimezone([], "timestamps", projectConfig.behaviors.timezone);
 
     // ======================================================================
     // Endpoint naming — from each endpoint's OWN YAML (NAME-1, #633)
@@ -769,6 +775,7 @@ export default {
       // Drizzle
       drizzleImports,
       timestampColumn,
+      generatedTimeWithTimezone,
 
       // Output paths
       outputPaths,

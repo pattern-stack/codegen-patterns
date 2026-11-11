@@ -58,15 +58,15 @@ export const <%= tableVarName %> = pgTable(
 <%_ if (temporal) { _%>
 
     // Temporal window (temporal: true, default)
-    startedAt: <%- timestampColumn('started_at') %>,
-    endedAt: <%- timestampColumn('ended_at') %>,
+    startedAt: <%- timestampColumn('started_at', generatedTimeWithTimezone) %>,
+    endedAt: <%- timestampColumn('ended_at', generatedTimeWithTimezone) %>,
 <%_ } _%>
 <%_ if (sourced) { _%>
 
     // Provenance (sourced: true, default)
     sourcedFrom: text('sourced_from'),
     confidence: numeric('confidence', { precision: 5, scale: 4 }),
-    matchedAt: <%- timestampColumn('matched_at') %>,
+    matchedAt: <%- timestampColumn('matched_at', generatedTimeWithTimezone) %>,
 <%_ } _%>
 <%_ if (hasCustomFields) { _%>
 
@@ -85,8 +85,8 @@ export const <%= tableVarName %> = pgTable(
 <%_ } _%>
 
     // Timestamps
-    createdAt: <%- timestampColumn('created_at') %>.notNull().defaultNow(),
-    updatedAt: <%- timestampColumn('updated_at') %>.notNull().defaultNow(),
+    createdAt: <%- timestampColumn('created_at', generatedTimeWithTimezone) %>.notNull().defaultNow(),
+    updatedAt: <%- timestampColumn('updated_at', generatedTimeWithTimezone) %>.notNull().defaultNow(),
   },
   (table) => [
 <%_ if (hasRole) { _%>

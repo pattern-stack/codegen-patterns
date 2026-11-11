@@ -16,6 +16,7 @@ import { getBehavior, normalizeBehaviorConfig, timestampBehaviorNames } from '..
 import { resolveImpliedBehaviors } from '../../src/patterns/implied-behaviors';
 import { behaviorWithTimezone } from '../../src/schema/field-timestamp';
 import { loadCodegenConfig } from '../../src/config/project-config';
+import { junctionName, junctionPlural } from '../../src/config/junction-naming';
 
 /**
  * The `behaviors.timezone` the smoke project at `projectDir` was generated with,
@@ -52,6 +53,24 @@ function behaviorOptOutColumns(doc: any, projectBehaviorsTimezone: boolean): str
 }
 
 /**
+ * The time columns a junction / relationship template emits on its own, which
+ * follow the project `behaviors.timezone` (#845) — opt-outs when it is false.
+ */
+function templateTimeOptOutColumns(doc: any, projectBehaviorsTimezone: boolean): string[] {
+	if (doc.entity || behaviorWithTimezone([], 'timestamps', projectBehaviorsTimezone)) return [];
+	if (doc.relationship) return ['created_at', 'updated_at'];
+	if (doc.pattern === 'Junction') {
+		return [
+			...(doc.temporal === false ? [] : ['started_at', 'ended_at']),
+			...(doc.sourced === false ? [] : ['matched_at']),
+			'created_at',
+			'updated_at',
+		];
+	}
+	return [];
+}
+
+/**
  * `<table>.<column>` for every column the fixture YAMLs declare without time
  * zone: a `timezone: false` field, or a timestamp behavior switched off. An
  * entity's table is its SQL name — the one rule, `sqlTableName` (TABLE-0) —
@@ -72,13 +91,16 @@ export function collectTimezoneOptOuts(
 				.filter(([, f]) => (f as { timezone?: unknown } | null)?.timezone === false)
 				.map(([name]) => name),
 			...behaviorOptOutColumns(doc, projectBehaviorsTimezone),
+			...templateTimeOptOutColumns(doc, projectBehaviorsTimezone),
 		];
 		if (optOutFields.length === 0) continue;
 		const table = doc.entity
 			? sqlTableName(doc.entity, tablePrefix)
 			: doc.relationship
 				? doc.relationship.table
-				: undefined;
+				: doc.pattern === 'Junction' && Array.isArray(doc.between)
+					? junctionPlural(junctionName(doc.between))
+					: undefined;
 		if (!table) {
 			throw new Error(
 				`${file}: declares timezone: false on ${optOutFields.join(', ')} but its table cannot be named; ` +

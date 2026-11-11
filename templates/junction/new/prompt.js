@@ -19,6 +19,7 @@ import { emittedStem } from '../../../src/config/file-naming.js';
 import yaml from "yaml";
 import {
   TIMEZONE_ON_NON_DATETIME_MESSAGE,
+  behaviorWithTimezone,
   fieldWithTimezone,
   timestampColumn,
   TIMEZONE_NOT_BOOLEAN_MESSAGE,
@@ -216,6 +217,13 @@ export default {
     // ======================================================================
 
     const config_ = configOrDefaults(loadProjectConfig(cwd));
+    // #845: the time columns the junction itself emits (created_at /
+    // updated_at, and the BaseJunctionFields started_at / ended_at /
+    // matched_at) follow the project's `behaviors.timezone` — the one rule
+    // (`behaviorWithTimezone`) entity behavior columns use. A junction has no
+    // `behaviors:` list, so the project default decides. A declared datetime
+    // payload field keeps its own `timezone:`.
+    const generatedTimeWithTimezone = behaviorWithTimezone([], "timestamps", config_.behaviors.timezone);
     const modulesDir = config_.paths.modules_dir;
     const junctionName = deriveJunctionName(config.between);
     const junction = junctionNaming(junctionName, modulesDir);
@@ -521,6 +529,7 @@ export default {
       // Custom fields
       processedCustomFields,
       timestampColumn,
+      generatedTimeWithTimezone,
       hasCustomFields,
 
       // Drizzle

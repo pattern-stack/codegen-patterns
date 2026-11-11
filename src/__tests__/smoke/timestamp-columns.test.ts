@@ -94,4 +94,26 @@ describe('collectTimezoneOptOuts (#796)', () => {
 			'os.updated_at',
 		]);
 	});
+
+	it('with the project default off, names the time columns a junction / relationship emits itself (#845)', () => {
+		const dir = modules({
+			'j.yaml': 'pattern: Junction\nbetween: [opportunity, contact]\n',
+			'jlean.yaml': 'pattern: Junction\nbetween: [opportunity, meeting]\ntemporal: false\nsourced: false\n',
+			'r.yaml': 'relationship:\n  name: r\n  table: r_tbl\n',
+		});
+		const p = (n: string) => path.join(dir, n);
+		const files = [p('j.yaml'), p('jlean.yaml'), p('r.yaml')];
+		expect([...collectTimezoneOptOuts(files, true)]).toEqual([]);
+		expect([...collectTimezoneOptOuts(files, false)].sort()).toEqual([
+			'opportunity_contacts.created_at',
+			'opportunity_contacts.ended_at',
+			'opportunity_contacts.matched_at',
+			'opportunity_contacts.started_at',
+			'opportunity_contacts.updated_at',
+			'opportunity_meetings.created_at',
+			'opportunity_meetings.updated_at',
+			'r_tbl.created_at',
+			'r_tbl.updated_at',
+		]);
+	});
 });

@@ -20,7 +20,13 @@
  * declared naive; declared `withTimezone` it parses the offset-less string in
  * the PROCESS zone (a 4 h skew measured in America/New_York).
  *
- * The junction / relationship template time columns are always timestamptz.
+ * The time columns a junction or relationship template emits on its own
+ * (`created_at` / `updated_at`; a junction's `started_at` / `ended_at` /
+ * `matched_at`) follow the same rule with no `behaviors:` list — i.e. the
+ * project's `behaviors.timezone`. The setting means "this host's generated
+ * timestamps are naive UTC", so it holds for every time column codegen emits
+ * that the author did not declare as a field (a declared `datetime` field keeps
+ * its own `timezone:`).
  *
  * Readers: the entity schema (option validation), and the entity, junction and
  * relationship hygen prompts (imported as `src/schema/field-timestamp.js`).
