@@ -236,7 +236,9 @@ relationship smoke's `tsc`, it now gates the emitter in CI.
 - **The pre-#41 package does not load on Drizzle 1.0 at all** (T4) — `src/index.ts` transitively reaches a value
   import of `createMany` / `createOne`. Every published version (0.3.0, 0.3.1) is post-#41 and peers drizzle-orm `^1.0.0-rc.4`.
 - **Junction payload columns are in the model** (since the SEM-2 review fix); a junction's `pk` names no column
-  (#689); `role: { values: … }` on a junction generates no column (#690).
+  (#689); `role: { values: … }` on a junction generates no column (#690). *Revision 2026-11-11: fixed — junction
+  payload fields parse against the entity field schema, so `values:` is a schema error and every fixture uses
+  `choices:`.*
 - **Soft-deleted rows are summed unless the host's scope excludes them** — the model declares columns, not row
   filters (SEM-2 "what downstream must know").
 - **Never probe the sibling checkout without staging it** (T5). It has no `node_modules`, so `bun <script>`

@@ -9,4 +9,4 @@ fields:
     nullable: false
   role:
     type: enum
-    values: [champion, end_user]
+    choices: [champion, end_user]

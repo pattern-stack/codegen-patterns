@@ -136,6 +136,8 @@ export function junctionFanOutFor(entityName, ctx) {
       detachMethod: side === 'left' ? `detach${counterpartyPascal}` : `removeFrom${counterpartyPascal}`,
       listMethod: `${counterpartyPlural}List`,
       setPrimaryMethod: `${counterpartyPlural}SetPrimary`,
+      // `is_primary: false` junctions have no column to set, so no setPrimary.
+      hasIsPrimary: def.is_primary !== false,
     });
   }
   return blocks;

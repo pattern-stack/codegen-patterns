@@ -232,6 +232,7 @@ export class <%= classNames.service %> extends WithAnalytics(
       Array<{ entity: <%= fan.counterpartyPascal %>; link: <%= j.entityClass %> }>
     >;
   }
+<%_ if (fan.hasIsPrimary) { _%>
 
   async <%= fan.setPrimaryMethod %>(
     <%= fan.selfIdParam %>: string,
@@ -239,6 +240,7 @@ export class <%= classNames.service %> extends WithAnalytics(
   ): Promise<void> {
     return this.<%= j.serviceProperty %>.setPrimary(<%= fan.leftIdParam %>, <%= fan.rightIdParam %>);
   }
+<%_ } _%>
 <%_ }) _%>
 <% if (eavEnabled) { %>
   /**

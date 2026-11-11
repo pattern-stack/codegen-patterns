@@ -5,4 +5,4 @@ between: [opportunity, contact, activity]
 fields:
   role:
     type: enum
-    values: [a, b]
+    choices: [a, b]

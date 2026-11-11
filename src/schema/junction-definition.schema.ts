@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { junctionName } from '../config/junction-naming.js';
 import { TABLE_NAME_IS_NOT_A_KEY, TABLE_NAME_PATTERN, TABLE_PREFIX_PATTERN } from '../config/table-naming.js';
 import { BASE_JUNCTION_FIELD_NAMES } from '../patterns/library/base-junction-fields.js';
+import { FieldDefinitionSchema } from './entity-definition.schema.js';
 
 /**
  * Junction Definition Schema
@@ -40,24 +41,46 @@ const EntityNameSchema = z
 // ============================================================================
 
 /**
+ * The identity role (`role` with `choices:`) is always NOT NULL — it is part of
+ * the composite key — so `nullable: false` on it restates the rule. The entity
+ * field rule would read that as "NOT NULL with no default" and refuse it, so
+ * the redundant key is dropped before the field schema sees it.
+ */
+function stripIdentityRoleNotNull(fields: unknown): unknown {
+	if (!fields || typeof fields !== 'object') return fields;
+	const role = (fields as Record<string, unknown>).role as Record<string, unknown> | undefined;
+	if (!role || typeof role !== 'object' || role.nullable !== false) return fields;
+	if (!Array.isArray(role.choices) || role.choices.length === 0) return fields;
+	const { nullable: _redundant, ...rest } = role;
+	return { ...(fields as Record<string, unknown>), role: rest };
+}
+
+/**
  * Top-level junction YAML shape.
  *
  *   pattern: Junction
  *   between: [opportunity, contact]
  *   temporal: true        # optional, default true
  *   sourced: true         # optional, default true
+ *   is_primary: true      # optional, default true
+ *   timestamps: true      # optional, default true
  *   fields:
  *     role:
  *       type: enum
- *       values: [champion, decision_maker, influencer]
+ *       choices: [champion, decision_maker, influencer]
  *   queries:
  *     - by: [opportunity_id]
  *
- * Fields use the same shape as entity fields — validated downstream by the
- * template / codegen layer using the existing `FieldDefinitionSchema`.
- * This schema accepts the shape loosely (`z.any()`) and applies only the
- * reserved-column collision check; matches the relationship-schema
- * precedent (`relationship-definition.schema.ts` line ~250).
+ * Payload fields parse against the entity `FieldDefinitionSchema` — the same
+ * field contract, so `required`, `nullable`, `default`, `foreign_key`, `index`
+ * and `choices` mean what they mean on an entity, and the junction template
+ * renders them with the entity column builder (#740). An unknown key
+ * (`values:` for `choices:`, #690) is a parse error, not a dropped column.
+ *
+ * `role` is special only when it has `choices:` — then it is the junction's
+ * identity enum (always NOT NULL, part of the composite key). A `role`
+ * without `choices:` is an ordinary payload column of its declared type (#7
+ * of the dealbrain dogfood: it used to be deleted silently).
  */
 export const JunctionDefinitionSchema = z
 	.object({
@@ -107,7 +130,23 @@ export const JunctionDefinitionSchema = z
 		 * pairings). Shape is validated downstream by the codegen layer
 		 * using the existing entity FieldDefinitionSchema.
 		 */
-		fields: z.record(z.string(), z.any()).optional(),
+		fields: z
+			.preprocess(stripIdentityRoleNotNull, z.record(z.string(), FieldDefinitionSchema))
+			.optional(),
+
+		/**
+		 * Emit the BaseJunctionFields `is_primary` column (and the service's
+		 * `setPrimary` + the parents' `<plural>SetPrimary` fan-out). Default
+		 * true. `false` adopts a link table that has no such column.
+		 */
+		is_primary: z.boolean().optional().default(true),
+
+		/**
+		 * Emit `created_at` / `updated_at` and stamp them on write. Default
+		 * true. `false` adopts a link table without them; the columns may then
+		 * be declared as ordinary `fields:` if the table has only one of them.
+		 */
+		timestamps: z.boolean().optional().default(true),
 
 		/**
 		 * Declarative queries — same syntax as entity queries. Shape is
@@ -151,7 +190,45 @@ export const JunctionDefinitionSchema = z
 				'(is_primary, started_at, ended_at, sourced_from, confidence, matched_at)',
 			path: ['fields'],
 		},
-	);
+	)
+	.superRefine((d, ctx) => {
+		const fields = d.fields ?? {};
+		for (const [name, field] of Object.entries(fields)) {
+			const at = (key: string) => ['fields', name, key];
+			if (d.timestamps && (name === 'created_at' || name === 'updated_at')) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: `'${name}' is emitted by the junction's timestamps — set 'timestamps: false' to declare it as a field`,
+					path: ['fields', name],
+				});
+			}
+			// The junction template has no file loader and no polymorphic columns.
+			if (field.choices_from !== undefined) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: "'choices_from' is not supported on a junction field — list the values inline with 'choices:'",
+					path: at('choices_from'),
+				});
+			}
+			if (field.type === 'entity_ref') {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: "'entity_ref' is not supported on a junction field",
+					path: at('type'),
+				});
+			}
+		}
+		// The identity role is part of the composite primary key: it cannot be NULL.
+		const role = fields.role;
+		if (role?.choices?.length && role.nullable === true) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message:
+					"a junction 'role' with 'choices:' is part of the composite primary key and cannot be nullable",
+				path: ['fields', 'role', 'nullable'],
+			});
+		}
+	});
 
 export type JunctionDefinition = z.infer<typeof JunctionDefinitionSchema>;
 

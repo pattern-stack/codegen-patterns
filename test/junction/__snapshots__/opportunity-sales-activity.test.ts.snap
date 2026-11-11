@@ -31,7 +31,7 @@ export const opportunitySalesActivities = pgTable(
     opportunityId: uuid('opportunity_id').notNull().references((): AnyPgColumn => opportunities.id, { onDelete: 'restrict' }),
     salesActivityId: uuid('sales_activity_id').notNull().references((): AnyPgColumn => sales_activities.id, { onDelete: 'restrict' }),
 
-    // BaseJunctionFields — is_primary is always emitted
+    // BaseJunctionFields — is_primary (\`is_primary: false\` opts out)
     isPrimary: boolean('is_primary').notNull().default(false),
 
     // Temporal window (temporal: true, default)

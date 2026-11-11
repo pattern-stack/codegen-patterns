@@ -172,7 +172,7 @@ export abstract class JunctionIntegrationRepository<
    * `id` (junctions have no surrogate id) plus the local FK columns, role (when
    * role-bearing) and timestamps — matching the emitted
    * `<Junction>IntegrationProjection` interface (id + leftId + rightId + role? +
-   * createdAt + updatedAt). Junction projections are purely structural, so this
+   * createdAt + updatedAt — the timestamps only when the junction emits them). Junction projections are purely structural, so this
    * is fully generic over `integrationConfig` — no per-junction override is emitted.
    */
   protected toProjection(
@@ -191,8 +191,10 @@ export abstract class JunctionIntegrationRepository<
       [cfg.right.column]: r[cfg.right.column],
     };
     if (cfg.roleColumn) out[cfg.roleColumn] = r[cfg.roleColumn];
-    out['createdAt'] = r['createdAt'];
-    out['updatedAt'] = r['updatedAt'];
+    if (this.behaviors.timestamps) {
+      out['createdAt'] = r['createdAt'];
+      out['updatedAt'] = r['updatedAt'];
+    }
     return out as TIntegrationProjection;
   }
 

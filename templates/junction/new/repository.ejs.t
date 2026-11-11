@@ -55,7 +55,7 @@ export class <%= classNames.repository %> extends JunctionIntegrationRepository<
   // Junctions track temporal validity via started_at / ended_at, NOT via
   // deleted_at. is_primary flips replace soft-delete semantics (Q5 resolution).
   protected override readonly behaviors = {
-    timestamps: true,
+    timestamps: <%= timestamps %>,
     softDelete: false,
     userTracking: false,
     // Junction tables are not tenant-scopable in v1 (ADR-042 / TEN-1 §11):

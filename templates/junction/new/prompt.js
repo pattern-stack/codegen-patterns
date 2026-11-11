@@ -17,15 +17,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { emittedStem } from '../../../src/config/file-naming.js';
 import yaml from "yaml";
-import {
-  TIMEZONE_ON_NON_DATETIME_MESSAGE,
-  behaviorWithTimezone,
-  fieldWithTimezone,
-  timestampColumn,
-  TIMEZONE_NOT_BOOLEAN_MESSAGE,
-  timezoneNotBoolean,
-  timezoneOnNonDatetime,
-} from "../../../src/schema/field-timestamp.js";
+import { behaviorWithTimezone, timestampColumn } from "../../../src/schema/field-timestamp.js";
+import { JunctionDefinitionSchema } from "../../../src/schema/junction-definition.schema.js";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 import { junctionName as deriveJunctionName, junctionNaming } from "../../_shared/junction-fan-out.mjs";
 import {
@@ -34,6 +27,8 @@ import {
   relativeModuleDir,
 } from "../../_shared/entity-naming.mjs";
 import { loadRuntimeMode, runtimeImport } from "../../../src/config/runtime-mode.mjs";
+import { processFieldFeatures, processFields } from "../../entity/new/backend/entity-locals.js";
+import { loadOwnedTableNames } from "../../entity/new/prompt.js";
 import { configOrDefaults, loadProjectConfig } from "../../../src/config/project-config.js";
 import { junctionTableName } from "../../../src/config/junction-naming.js";
 
@@ -79,82 +74,32 @@ const ON_DELETE_MAP = {
 // Drizzle Import Set
 // ============================================================================
 
-function buildDrizzleImports(hasRole, temporal, sourced, hasCustomFields, processedCustomFields) {
+function buildDrizzleImports(hasRole, processedCustomFields, hasIndexes) {
+  // The base set is what the fixed columns can use; it is not narrowed per
+  // opt-out so a default junction's import list stays as it was.
   const needed = new Set(["pgTable", "primaryKey", "uuid", "timestamp", "boolean", "numeric", "text"]);
-
   if (hasRole) needed.add("pgEnum");
-  if (temporal) {
-    // started_at / ended_at already covered by "timestamp" above
+  for (const f of processedCustomFields) {
+    if (f.hasChoices) needed.add("pgEnum");
+    else needed.add(f.drizzleType);
   }
-  if (sourced) {
-    // sourced_from: text, confidence: numeric, matched_at: timestamp — already in set
-  }
-  if (hasCustomFields) {
-    for (const f of processedCustomFields) {
-      if (f.hasChoices) needed.add("pgEnum");
-      if (f.drizzleType && f.drizzleType !== "text" && f.drizzleType !== "timestamp") {
-        needed.add(f.drizzleType);
-      }
-    }
-  }
-
+  if (hasIndexes) needed.add("index");
   return Array.from(needed).sort();
 }
 
 // ============================================================================
-// Custom Field Processing
+// Payload Field Processing
 // ============================================================================
 
-const DRIZZLE_TYPE_MAP = {
-  string: "text",
-  integer: "integer",
-  decimal: "numeric",
-  boolean: "boolean",
-  uuid: "uuid",
-  date: "date",
-  datetime: "timestamp",
-  json: "jsonb",
-  enum: "text", // overridden below when hasChoices
-};
-
-// Array field types → their ELEMENT type (#281): the column is a Postgres
-// array of the element column — the entity pipeline's rule.
-const ARRAY_ELEMENT_TYPE = {
-  string_array: "string",
-};
-
-function processCustomFields(fields, junctionName) {
-  const processed = [];
-  for (const [fieldName, field] of Object.entries(fields ?? {})) {
-    const type = field.type || "string";
-    if (timezoneNotBoolean(field)) {
-      throw new Error(`[codegen] junction field '${fieldName}': ${TIMEZONE_NOT_BOOLEAN_MESSAGE}`);
-    }
-    if (timezoneOnNonDatetime({ ...field, type })) {
-      throw new Error(`[codegen] junction field '${fieldName}': ${TIMEZONE_ON_NON_DATETIME_MESSAGE}`);
-    }
-    const choices = field.choices;
-    const hasChoices = Array.isArray(choices) && choices.length > 0;
-    const elementType = ARRAY_ELEMENT_TYPE[type] ?? type;
-    const drizzleType = hasChoices ? "text" : (DRIZZLE_TYPE_MAP[elementType] ?? "text");
-    const enumName = hasChoices ? `${camelCase(junctionName)}${pascalCase(fieldName)}Enum` : null;
-
-    processed.push({
-      name: fieldName,
-      camelName: camelCase(fieldName),
-      type,
-      drizzleType,
-      choices: choices ?? [],
-      hasChoices,
-      enumName,
-      isArray: Object.prototype.hasOwnProperty.call(ARRAY_ELEMENT_TYPE, type),
-      // A datetime payload field is timestamptz unless `timezone: false` (#796).
-      columnCall: type === "datetime" && !hasChoices
-        ? timestampColumn(fieldName, fieldWithTimezone({ ...field, type }))
-        : null,
-    });
-  }
-  return processed;
+// Payload fields are entity fields (#740): `JunctionDefinitionSchema` parses
+// them against `FieldDefinitionSchema`, and they are rendered by the entity
+// column builder (`processFields` → `drizzleChain`, `processFieldFeatures` →
+// `.references()` + `index: true`) — one owner for nullability, defaults,
+// enums, FKs and indexes. Nothing here re-derives a column.
+function processPayloadFields(fields, junctionName, naming, ownedTables) {
+  const processed = processFields(fields, junctionName);
+  const features = processFieldFeatures(processed, fields, naming, ownedTables, new Set());
+  return { processed, ...features };
 }
 
 // ============================================================================
@@ -199,6 +144,21 @@ export default {
         `Not a junction definition — expected top-level 'pattern: Junction' in ${yamlPath}. ` +
         `Got: pattern=${definition.pattern ?? "(missing)"}`
       );
+    }
+
+    // The schema is the one owner of what a junction may declare — payload
+    // fields included (#740). `codegen junction new` runs it before hygen;
+    // running it here too keeps a direct hygen call from rendering a YAML the
+    // CLI would refuse. The raw definition is what the locals below read.
+    const parsed = JunctionDefinitionSchema.safeParse(definition);
+    if (!parsed.success) {
+      const issues = parsed.error.issues.map((issue) => {
+        const [head, field] = issue.path;
+        return head === "fields" && typeof field === "string"
+          ? `junction field '${field}': ${issue.message}`
+          : `${issue.path.join(".") || "(root)"}: ${issue.message}`;
+      });
+      throw new Error(`[codegen] ${yamlPath}: ${issues.join("; ")}`);
     }
 
     const config = definition;
@@ -262,6 +222,8 @@ export default {
     // Role enum
     // ======================================================================
 
+    // `role` is the identity enum only when it has `choices:`; otherwise it is
+    // an ordinary payload column (below) — never dropped.
     const roleField = fields.role;
     const roleChoices = roleField?.choices;
     const hasRole = Array.isArray(roleChoices) && roleChoices.length > 0;
@@ -274,6 +236,8 @@ export default {
 
     const temporal = config.temporal !== false; // default true
     const sourced = config.sourced !== false;   // default true
+    const isPrimary = config.is_primary !== false; // default true
+    const timestamps = config.timestamps !== false; // default true
 
     // ======================================================================
     // On-delete actions
@@ -289,23 +253,39 @@ export default {
     // ======================================================================
 
     const otherFields = { ...fields };
-    delete otherFields.role; // role is handled separately as the role enum
-    const processedCustomFields = processCustomFields(otherFields, junctionName);
+    if (hasRole) delete otherFields.role; // the identity role is the role enum above
+    const entityLookup = projectEntityLookup(cwd);
+    const payload = processPayloadFields(
+      otherFields,
+      junctionName,
+      { entityName: junctionName, ownNaming: junction, modulesDir, entityLookup },
+      Array.from(loadOwnedTableNames(cwd)),
+    );
+    const processedCustomFields = payload.processed;
     const hasCustomFields = processedCustomFields.length > 0;
+    const payloadIndexes = payload.indexExpressions;
 
     // ======================================================================
     // Drizzle imports
     // ======================================================================
 
-    const drizzleImports = buildDrizzleImports(
-      hasRole, temporal, sourced, hasCustomFields, processedCustomFields
-    );
+    const drizzleImports = buildDrizzleImports(hasRole, processedCustomFields, payloadIndexes.length > 0);
 
     // ======================================================================
     // Output paths
     // ======================================================================
 
     const outputPaths = resolveOutputPaths(junction);
+
+    // The service's `LinkInput` — the link-side columns a caller may supply on
+    // attach, exactly the base columns this junction emits.
+    const linkInputKeyList = [
+      ...(isPrimary ? ["'isPrimary'"] : []),
+      ...(temporal ? ["'startedAt'", "'endedAt'"] : []),
+      ...(sourced ? ["'sourcedFrom'", "'confidence'", "'matchedAt'"] : []),
+      ...(hasRole ? ["'role'"] : []),
+    ];
+    const linkInputKeys = linkInputKeyList.length > 0 ? linkInputKeyList.join(' | ') : 'never';
 
     // REL-2 (#587): the generated relation manifest, imported by the junction
     // repository to bind `BaseRepository`'s third type parameter. Relative to the
@@ -326,7 +306,6 @@ export default {
     // The table export and module folder of an endpoint are its `plural:` and
     // `context:`, read through the same function its own emission uses — never
     // `pluralize(name)` here.
-    const entityLookup = projectEntityLookup(cwd);
     const endpointNaming = (endpoint) => {
       const block = entityLookup(endpoint);
       if (!block) {
@@ -421,8 +400,9 @@ export default {
       { name: leftColumnCamel, tsType: 'string' },
       { name: rightColumnCamel, tsType: 'string' },
       ...(hasRole ? [{ name: 'role', tsType: roleTsType }] : []),
-      { name: 'createdAt', tsType: 'Date' },
-      { name: 'updatedAt', tsType: 'Date' },
+      ...(timestamps
+        ? [{ name: 'createdAt', tsType: 'Date' }, { name: 'updatedAt', tsType: 'Date' }]
+        : []),
     ];
 
     // Parent-table imports for the FK resolvers, deduped (#368). Junction
@@ -521,6 +501,9 @@ export default {
       // BaseJunctionFields gating
       temporal,
       sourced,
+      isPrimary,
+      timestamps,
+      linkInputKeys,
 
       // On-delete
       onDeleteLeft,
@@ -531,6 +514,12 @@ export default {
       timestampColumn,
       generatedTimeWithTimezone,
       hasCustomFields,
+      payloadIndexes,
+      // Tables a payload `foreign_key:` references, minus the two endpoint
+      // tables the entity file already imports.
+      payloadFkImports: payload.fkImports.filter(
+        (imp) => imp.relatedTable !== leftTable && imp.relatedTable !== rightTable,
+      ),
 
       // Drizzle
       drizzleImports,

@@ -12,8 +12,7 @@ sourced: true
 fields:
   role:
     type: enum
-    values: [champion, decision_maker, influencer, blocker, end_user]
-    nullable: false
+    choices: [champion, decision_maker, influencer, blocker, end_user]
 
 queries:
   - by: [opportunity_id]

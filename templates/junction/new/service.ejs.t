@@ -21,7 +21,7 @@ import type { <%= rightEntityPascal %> } from '<%= rightEntityImportFromJunction
  */
 export type <%= entityNamePascal %>LinkInput = globalThis.Partial<
   globalThis.Pick<<%= classNames.entity %>,
-    'isPrimary'<% if (temporal) { %> | 'startedAt' | 'endedAt'<% } %><% if (sourced) { %> | 'sourcedFrom' | 'confidence' | 'matchedAt'<% } %><% if (hasRole) { %> | 'role'<% } %>
+    <%- linkInputKeys %>
   >
 >;
 
@@ -148,6 +148,7 @@ export class <%= classNames.service %> extends WithAnalytics(
       }));
     }
   }
+<%_ if (isPrimary) { _%>
 
   /**
    * Mark the (`<%= leftEntityCamel %>Id`, `<%= rightEntityCamel %>Id`) row
@@ -169,6 +170,7 @@ export class <%= classNames.service %> extends WithAnalytics(
       );
     }
   }
+<%_ } _%>
 
   // Inherited from BaseService:
   //   findById, findByIds, list, count, exists, create, update, delete

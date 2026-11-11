@@ -199,6 +199,76 @@ describe('junction schema rejects malformed input', () => {
 });
 
 // ============================================================================
+// Payload fields are entity fields (#740, #690, dogfood #7/#8)
+// ============================================================================
+
+describe('junction payload fields parse against the entity field schema', () => {
+	const parse = (extra: Record<string, unknown>) =>
+		JunctionDefinitionSchema.safeParse({
+			pattern: 'Junction',
+			between: ['opportunity', 'contact'],
+			...extra,
+		});
+	const messages = (r: ReturnType<typeof parse>) =>
+		r.success ? [] : r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
+
+	it('rejects `values:` on a role — the key is `choices:` (#690)', () => {
+		const r = parse({ fields: { role: { type: 'enum', values: ['a'] } } });
+		expect(r.success).toBe(false);
+	});
+
+	it('accepts a role without choices as an ordinary column (dogfood #7)', () => {
+		const r = parse({ fields: { role: { type: 'string' } } });
+		expect(r.success).toBe(true);
+	});
+
+	it('rejects a nullable identity role — it is part of the composite key', () => {
+		const r = parse({ fields: { role: { type: 'enum', choices: ['a'], nullable: true } } });
+		expect(messages(r)).toContainEqual(expect.stringContaining('fields.role.nullable'));
+	});
+
+	it('accepts the redundant nullable: false on an identity role', () => {
+		expect(
+			parse({ fields: { role: { type: 'enum', choices: ['a'], nullable: false } } }).success,
+		).toBe(true);
+	});
+
+	it('applies the entity nullability rule (nullable: false needs a default)', () => {
+		expect(parse({ fields: { n: { type: 'integer', nullable: false } } }).success).toBe(false);
+		expect(parse({ fields: { n: { type: 'integer', nullable: false, default: 0 } } }).success).toBe(true);
+	});
+
+	it('rejects choices_from and entity_ref, which the junction template cannot render', () => {
+		expect(parse({ fields: { k: { type: 'enum', choices_from: 'k.yaml' } } }).success).toBe(false);
+		expect(
+			parse({ fields: { k: { type: 'entity_ref', allowed_types: ['contact'] } } }).success,
+		).toBe(false);
+	});
+
+	it('defaults is_primary and timestamps to true; both opt out', () => {
+		const d = JunctionDefinitionSchema.parse({ pattern: 'Junction', between: ['a', 'b'] });
+		expect(d.is_primary).toBe(true);
+		expect(d.timestamps).toBe(true);
+		const o = JunctionDefinitionSchema.parse({
+			pattern: 'Junction',
+			between: ['a', 'b'],
+			is_primary: false,
+			timestamps: false,
+		});
+		expect(o.is_primary).toBe(false);
+		expect(o.timestamps).toBe(false);
+	});
+
+	it('reserves created_at / updated_at only while timestamps are emitted', () => {
+		const field = { created_at: { type: 'datetime' } };
+		expect(messages(parse({ fields: field }))).toContainEqual(
+			expect.stringContaining("set 'timestamps: false'"),
+		);
+		expect(parse({ timestamps: false, fields: field }).success).toBe(true);
+	});
+});
+
+// ============================================================================
 // safeValidateJunctionDefinition helper
 // ============================================================================
 

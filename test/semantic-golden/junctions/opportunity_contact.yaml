@@ -2,10 +2,7 @@
 #
 # Shaped like the canonical `test/fixtures/junctions/opportunity_contact.yaml`
 # — temporal, sourced, the five-value `role` enum — so the golden model locks
-# the real junction shape rather than a reduced one. One deliberate difference:
-# `choices:`, not `values:`. The junction template reads `choices:` and
-# silently generates NO role column for `values:` (#690), so the canonical
-# fixture's role never reaches its table — or this model.
+# the real junction shape rather than a reduced one.
 #
 # Emits its own registry entry with `meta.kind: 'junction'` and two belongs_to
 # descriptors, an inverse has_many on each endpoint, and every column the
@@ -21,7 +18,6 @@ fields:
   role:
     type: enum
     choices: [champion, decision_maker, influencer, blocker, end_user]
-    nullable: false
   influence_score:
     type: decimal
 

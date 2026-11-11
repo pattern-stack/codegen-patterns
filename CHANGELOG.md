@@ -56,6 +56,12 @@ All notable changes to this project will be documented in this file.
   longer gets the skew there. Declared `datetime` payload fields keep their own `timezone:`. Default
   output is byte-identical. `timestampColumn` no longer defaults `withTimezone` to `true`: every
   caller passes it, and a template call that drops it throws instead of silently emitting timestamptz.
+- **Junction opt-outs for `is_primary` and the timestamps.** A junction may set `is_primary: false`
+  (no column, no `setPrimary`, no parent `<plural>SetPrimary`) and `timestamps: false` (no
+  `created_at` / `updated_at`, nothing stamped on write, none in the integration projection). Both
+  default to `true`, so existing junctions are unchanged. This lets a junction adopt an existing
+  link table: before, a row read on one without those columns failed with
+  `column d0.is_primary does not exist` (dealbrain dogfood #8).
 
 ### Changed
 
@@ -67,6 +73,18 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Junction payload fields are entity fields (#740, #690).** `fields:` in a junction YAML now parses
+  against the entity `FieldDefinitionSchema` and renders through the entity column builder, so
+  `required`, `nullable`, `default`, `foreign_key`, `index` and `timezone` reach the column. Before,
+  every payload column was a bare nullable column. A `date` payload field is now
+  `date(…, { mode: 'date' })`, the same as on an entity. An unknown key is a schema error: `values:`
+  instead of `choices:` used to drop the role column (and the role's place in the composite key)
+  without a word. **Output changes** for junctions that declared any of these options: the columns
+  gain the `NOT NULL`, the defaults and the FKs they asked for. A junction that declared none of them
+  regenerates byte-identical, apart from one comment line on `is_primary`.
+- **A junction `role` without `choices:` is a column (dealbrain dogfood #7).** It used to be deleted
+  silently. Now it's emitted as its declared type, and it's part of the key only when it's an enum
+  with `choices:`.
 - **A field named `tenant_id` on a `tenant_scoped` entity no longer emits a duplicate column
   (#715).** It is adopted as the tenant column (TS1117 before). The upsert `set` also drops the
   tenant column at runtime, whatever a hand-written integration config lists.

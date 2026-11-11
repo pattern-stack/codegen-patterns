@@ -530,7 +530,7 @@ export function renderColumnDefault(value, drizzleType) {
  * at the DB level (a real migration conflict). Namespacing yields
  * `field_config_role` (pg type) / `fieldConfigRoleEnum` (export) instead.
  */
-function processFields(fields, entityName = '') {
+export function processFields(fields, entityName = '') {
   const processed = [];
 
   for (const [fieldName, field] of Object.entries(fields)) {
@@ -873,7 +873,7 @@ function collectRepositoryDeps(belongsTo, existingHasMany) {
  *   tenant index is that index). Absent or empty → suppress nothing: an extra index is harmless, a
  *   silently dropped one is not.
  */
-function processFieldFeatures(renderedFields, fields, naming, ownedTables, suppressedIndexNames) {
+export function processFieldFeatures(renderedFields, fields, naming, ownedTables, suppressedIndexNames) {
   // TABLE-0: a `foreign_key: <table>.<column>` names a SQL TABLE, and index
   // names are SQL identifiers — both read `entityTableName`. The `.references()`
   // callback and the import name the target's Drizzle EXPORT (its `plural`),
