@@ -16,7 +16,7 @@ import { getBehavior, normalizeBehaviorConfig, timestampBehaviorNames } from '..
 import { resolveImpliedBehaviors } from '../../src/patterns/implied-behaviors';
 import { behaviorWithTimezone } from '../../src/schema/field-timestamp';
 import { loadCodegenConfig } from '../../src/config/project-config';
-import { junctionName, junctionPlural } from '../../src/config/junction-naming';
+import { junctionTableName } from '../../src/config/junction-naming';
 
 /**
  * The `behaviors.timezone` the smoke project at `projectDir` was generated with,
@@ -99,7 +99,7 @@ export function collectTimezoneOptOuts(
 			: doc.relationship
 				? doc.relationship.table
 				: doc.pattern === 'Junction' && Array.isArray(doc.between)
-					? junctionPlural(junctionName(doc.between))
+					? junctionTableName(doc, tablePrefix)
 					: undefined;
 		if (!table) {
 			throw new Error(

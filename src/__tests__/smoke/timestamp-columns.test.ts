@@ -103,8 +103,8 @@ describe('collectTimezoneOptOuts (#796)', () => {
 		});
 		const p = (n: string) => path.join(dir, n);
 		const files = [p('j.yaml'), p('jlean.yaml'), p('r.yaml')];
-		expect([...collectTimezoneOptOuts(files, true)]).toEqual([]);
-		expect([...collectTimezoneOptOuts(files, false)].sort()).toEqual([
+		expect([...collectTimezoneOptOuts(files, '', true)]).toEqual([]);
+		expect([...collectTimezoneOptOuts(files, '', false)].sort()).toEqual([
 			'opportunity_contacts.created_at',
 			'opportunity_contacts.ended_at',
 			'opportunity_contacts.matched_at',
