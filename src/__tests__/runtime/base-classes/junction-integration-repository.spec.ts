@@ -162,8 +162,12 @@ describe('JunctionIntegrationRepository.integrationUpsertOne', () => {
     expect(values.opportunityId).toBe('opp-1');
     expect(values.contactId).toBe('con-1');
     expect(values.role).toBe('champion');
-    const conflict = m.capture.conflict[0] as { target: unknown[] };
+    // #845: createdAt is stamped, never left to a session-zone DEFAULT now().
+    expect(values.createdAt).toBeInstanceOf(Date);
+    expect(values.createdAt).toBe(values.updatedAt);
+    const conflict = m.capture.conflict[0] as { target: unknown[]; set: Record<string, unknown> };
     expect(conflict.target).toHaveLength(3); // role-inclusive
+    expect('createdAt' in conflict.set).toBe(false);
     expect(proj.id).toBe('o-ext::c-ext::champion');
     // projection carries the full structural shape from the row, not just `id`
     // (regression: toProjection previously returned `{ id }` only)

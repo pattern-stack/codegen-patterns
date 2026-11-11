@@ -46,7 +46,8 @@ All notable changes to this project will be documented in this file.
   `behaviors: [{ name: timestamps, options: { timezone: false } }]` (or on `soft_delete`) to override
   it either way. Default output is byte-identical. `timezone` on any other behavior, or as a
   non-boolean, is a validation error. With the knob off, `DEFAULT now()` stores the *session*
-  TimeZone's wall time — keep sessions at UTC. `behaviors:` in `codegen.config.yaml` is a live block
+  TimeZone's wall time — keep sessions at UTC; the generated repositories never rely on it (the
+  integration upserts now stamp `createdAt` on insert, as `create` already did). `behaviors:` in `codegen.config.yaml` is a live block
   again; the key ARCH-1 deleted, `behaviors.strategy`, is still an unknown-key error.
 
 ### Changed

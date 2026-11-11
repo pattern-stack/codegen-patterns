@@ -57,7 +57,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { tscGateErrors } from './_consumer-errors';
-import { SMOKE_BEHAVIORS_TIMEZONE, assertTimestampColumns, collectTimezoneOptOuts } from './_timestamp-columns';
+import { assertTimestampColumns, collectTimezoneOptOuts, projectBehaviorsTimezone } from './_timestamp-columns';
 import { aliasPackageRuntime } from './_package-runtime';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -664,7 +664,7 @@ async function leg(mode: Mode): Promise<number> {
 				.flatMap((d) => fs.readdirSync(d).filter((f) => f.endsWith('.yaml')).map((f) => path.join(d, f)));
 			const scan = assertTimestampColumns(
 				path.join(tmpDir, 'src/modules'),
-				collectTimezoneOptOuts(yamls, '', SMOKE_BEHAVIORS_TIMEZONE),
+				collectTimezoneOptOuts(yamls, '', projectBehaviorsTimezone(tmpDir)),
 			);
 			log(`[${mode}] timestamptz scan OK (${scan.calls} calls in ${scan.files} entity files)`);
 		}

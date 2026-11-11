@@ -97,7 +97,11 @@ export abstract class IntegratedEntityRepository<
         provider,
         ...copyThrough,
         ...resolvedFks,
-        ...(this.behaviors.timestamps ? { updatedAt: now } : {}),
+        // `createdAt` is stamped here, not left to the column's `DEFAULT now()`:
+        // on a `timestamp without time zone` column (#845) that default stores
+        // the SESSION zone's wall time, while a JS Date is written as UTC. It is
+        // not in `set`, so a conflicting row keeps its original value.
+        ...(this.behaviors.timestamps ? { createdAt: now, updatedAt: now } : {}),
       });
 
       // `set` excludes the identity (externalId/provider) AND the tenant column,

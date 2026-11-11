@@ -167,8 +167,12 @@ behaviors:
 Why it matters: Drizzle parses a column by its *declared* type. Declared timestamptz, a naive
 column's offset-less text is read in the **process** time zone (a 4-hour skew measured in
 America/New_York); declared naive, it is read as UTC. With the knob off, values written through
-the generated repository are stored as UTC wall time; a database-side `DEFAULT now()` is stored in
-the **session** TimeZone, so keep sessions at UTC. `timezone` is accepted only on `timestamps` and
+the generated repositories are stored as UTC wall time — every write path (create, update, soft
+delete, integration upserts) stamps the timestamp itself as a JS `Date`. A database-side
+`DEFAULT now()` (a raw `INSERT` that omits the column) is stored in the **session** TimeZone, so
+keep sessions at UTC. With Electric sync, a switched-off behavior column is a `timestamp` column
+like a `timezone: false` field, so it arrives as a string unless `frontend.parsers.timestamp` is set
+(see `datetime` above). `timezone` is accepted only on `timestamps` and
 `soft_delete`, and only as `true` / `false`.
 
 ## `relationships:` — foreign keys + typed accessors

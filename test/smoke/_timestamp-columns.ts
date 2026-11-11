@@ -15,14 +15,17 @@ import { sqlTableName } from '../../src/config/table-naming';
 import { getBehavior, normalizeBehaviorConfig, timestampBehaviorNames } from '../../src/behaviors/index';
 import { resolveImpliedBehaviors } from '../../src/patterns/implied-behaviors';
 import { behaviorWithTimezone } from '../../src/schema/field-timestamp';
+import { loadCodegenConfig } from '../../src/config/project-config';
 
 /**
- * The `behaviors.timezone` every smoke project is generated with: none of them
- * writes a `behaviors:` block, so it is the schema default. A smoke that sets
- * the block must pass its own value — the scan then fails closed on any column
- * the two disagree about.
+ * The `behaviors.timezone` the smoke project at `projectDir` was generated with,
+ * read from its own `codegen.config.yaml` through the CLI's loader — so the
+ * schema owns the default and a smoke that sets the block is scanned against
+ * it. A project with no config file throws (fails closed).
  */
-export const SMOKE_BEHAVIORS_TIMEZONE = true;
+export function projectBehaviorsTimezone(projectDir: string): boolean {
+	return loadCodegenConfig(path.join(projectDir, 'codegen.config.yaml')).behaviors.timezone;
+}
 
 const TZ_CALL = /^timestamp\('([a-z0-9_]+)', \{ withTimezone: true, mode: 'date' \}\)/;
 const BARE_CALL = /^timestamp\('([a-z0-9_]+)'\)/;

@@ -89,6 +89,17 @@ describe('emission (entity.ejs.t)', () => {
 		expect(out).toContain(`deletedAt: ${tzCol('deleted_at')},`);
 	});
 
+	it('the project setting is required: an absent behaviorsTimezone throws, never defaults', () => {
+		const definition = {
+			entity: { name: 'ledger_entry', plural: 'ledger_entries', table: 'ledger_entries', pattern: 'Base' },
+			fields: { memo: { type: 'string', required: true } },
+			behaviors: BOTH,
+		};
+		expect(() => buildBackendLocals(definition, withEntities({ behaviorsTimezone: undefined }))).toThrow(
+			/behaviorsTimezone must be the project's behaviors\.timezone/,
+		);
+	});
+
 	it('entity knob on overrides a project off', () => {
 		const out = render(['timestamps', { name: 'soft_delete', options: { timezone: true } }], {
 			behaviorsTimezone: false,

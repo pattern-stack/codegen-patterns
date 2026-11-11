@@ -105,6 +105,14 @@ project knob through the real CLI); the smoke scan reads behavior opt-outs throu
 through the generated repository, reads 4 h off through a timestamptz declaration of the same column, and a
 `DEFAULT now()` under a non-UTC session is stored in that session's wall time (the knob assumes UTC sessions).
 
+So that the generated code never depends on that default, every runtime write path stamps the behavior time itself:
+`BaseRepository.create` / `update` / soft delete already did; the integration upserts
+(`IntegratedEntityRepository.integrationUpsertOne`, `JunctionIntegrationRepository`) now stamp `createdAt` on insert too
+(outside `set`, so a conflicting row keeps its value). Only a write that bypasses the repositories reaches the column
+default. The project setting is required through the layers: `buildBackendLocals` throws without
+`behaviorsTimezone`, and the smoke scan reads it from each generated project's own `codegen.config.yaml`
+(`projectBehaviorsTimezone`), so the config schema is the only owner of the default.
+
 Still always timestamptz: the junction and relationship template time columns. A host junction with naive
 `created_at` needs the same knob there (#679 territory).
 

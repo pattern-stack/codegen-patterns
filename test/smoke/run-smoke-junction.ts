@@ -33,7 +33,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { emittedDir, emittedStem } from '../../src/config/file-naming.js';
 import { tscGateErrors } from './_consumer-errors';
-import { SMOKE_BEHAVIORS_TIMEZONE, assertTimestampColumns, collectTimezoneOptOuts } from './_timestamp-columns';
+import { assertTimestampColumns, collectTimezoneOptOuts, projectBehaviorsTimezone } from './_timestamp-columns';
 
 import {
   bootstrapJunctionProject,
@@ -170,7 +170,7 @@ function assertJunctionEmission(
     .flatMap((d) => fs.readdirSync(d).filter((f) => f.endsWith('.yaml')).map((f) => path.join(d, f)));
   const tsScan = assertTimestampColumns(
     path.join(generatedSrc, P.modules),
-    collectTimezoneOptOuts(fixtureYamls, '', SMOKE_BEHAVIORS_TIMEZONE),
+    collectTimezoneOptOuts(fixtureYamls, '', projectBehaviorsTimezone(generatedSrc)),
   );
   log(`timestamptz scan OK (${tsScan.calls} calls in ${tsScan.files} entity files)`);
 

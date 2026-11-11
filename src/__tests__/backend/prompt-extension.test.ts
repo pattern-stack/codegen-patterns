@@ -8,7 +8,7 @@ import {
   identifierRef,
 } from '../../../templates/entity/new/backend/entity-locals.js';
 import { resolveImpliedBehaviors } from '../../patterns/implied-behaviors';
-import { withEntities } from './_entity-lookup';
+import { PROJECT_CONFIG_LOCALS, withEntities } from './_entity-lookup';
 
 // Minimal base locals (the real version has many more fields, but we only need
 // the shape to test the extension itself). `runtimeMode: 'vendored'` keeps the
@@ -512,7 +512,7 @@ describe('buildBackendLocals — PATTERN-5 registry integration', () => {
       relationships: {},
       behaviors: [],
     };
-    const locals = buildBackendLocals(def, { runtimeMode: 'package' });
+    const locals = buildBackendLocals(def, { ...PROJECT_CONFIG_LOCALS, runtimeMode: 'package' });
     // Class names are unchanged; only the import specifier flips.
     expect(locals.repositoryBaseClass).toBe('IntegratedEntityRepository');
     expect(locals.repositoryBaseImport).toBe(
@@ -661,7 +661,7 @@ describe('renderPatternConfigLiteral — idiomatic TS literal emission', () => {
       relationships: {},
       behaviors: [],
     },
-    {},
+    { ...PROJECT_CONFIG_LOCALS },
   ) as { renderPatternConfigLiteral: (v: unknown) => string };
   const render = sampleLocals.renderPatternConfigLiteral;
 
@@ -836,7 +836,7 @@ describe('capability composition emission (ADR-041)', () => {
     registerCapabilities();
     const vendored = buildBackendLocals(
       entityWith(['CeGroup', 'CeAudited']),
-      { runtimeMode: 'vendored' },
+      { ...PROJECT_CONFIG_LOCALS, runtimeMode: 'vendored' },
     );
     expect(vendored.capabilityMixins.map((c) => c.importPath)).toEqual([
       '@shared/base-classes/with-ce-group',
@@ -844,6 +844,7 @@ describe('capability composition emission (ADR-041)', () => {
     ]);
 
     const pkg = buildBackendLocals(entityWith(['CeGroup', 'CeAudited']), {
+      ...PROJECT_CONFIG_LOCALS,
       runtimeMode: 'package',
     });
     expect(pkg.capabilityMixins.map((c) => c.importPath)).toEqual([

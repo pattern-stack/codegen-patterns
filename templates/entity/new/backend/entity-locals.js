@@ -1862,8 +1862,16 @@ export function buildBackendLocals(definition, baseLocals) {
   // `behaviors.timezone`. The rule is `behaviorWithTimezone`
   // (src/schema/field-timestamp.ts); entity.ejs.t passes these to
   // `timestampColumn`, the one place the column literal is written.
-  const projectBehaviorsTimezone =
-    baseLocals.behaviorsTimezone ?? DEFAULT_CODEGEN_CONFIG.behaviors.timezone;
+  // Required: prompt.js reads it from the parsed config, whose schema owns the
+  // default. An absent value must not silently become `true` and drop a
+  // project's `behaviors.timezone: false`.
+  const projectBehaviorsTimezone = baseLocals.behaviorsTimezone;
+  if (typeof projectBehaviorsTimezone !== 'boolean') {
+    throw new Error(
+      `buildBackendLocals(${entity.name}): baseLocals.behaviorsTimezone must be the project's ` +
+        `behaviors.timezone (a boolean); got ${String(projectBehaviorsTimezone)}.`,
+    );
+  }
   const timestampsWithTimezone = behaviorWithTimezone(behaviors, 'timestamps', projectBehaviorsTimezone);
   const softDeleteWithTimezone = behaviorWithTimezone(behaviors, 'soft_delete', projectBehaviorsTimezone);
 
