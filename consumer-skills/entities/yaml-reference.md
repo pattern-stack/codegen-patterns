@@ -126,8 +126,11 @@ DDL; declare the constraint with field `unique: true` or `unique_indexes:`.
 Type notes:
 - `uuid` — typically the PK and foreign keys.
 - `enum` — requires `choices:`; generates a TS union + DB check/enum.
-- `json` — `jsonb`; typed as `Record<string, unknown>` unless you narrow it in
-  your own code.
+- `json` — `jsonb`; typed `unknown` on the row and the DTOs (`z.unknown()`) unless you
+  narrow it in your own code. On `<Entity>OutputDto` the key is required, as on the row:
+  the type is `Required<z.infer<…>>`, because Zod 3 infers a `z.unknown()` key as optional.
+  A schema you derive yourself (`<Entity>OutputSchema.pick(…)`) still infers it optional,
+  so wrap that in `Required<…>` too.
 - `datetime` vs `date` — timestamp vs date-only column. `datetime` is `timestamp with time zone`
   (#796), as are the `timestamps` / `soft_delete` columns (unless switched off — see `behaviors:`
   below) and the time columns a junction or relationship emits itself (which follow the project's

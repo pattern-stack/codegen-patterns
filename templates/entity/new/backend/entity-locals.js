@@ -2339,6 +2339,15 @@ export function buildBackendLocals(definition, baseLocals) {
     ...f,
     zodChainOutput: zodChainForOutput(f),
   }));
+  // Zod 3 infers an object key whose type admits `undefined` as OPTIONAL, and
+  // `z.unknown()` (a `json` column) admits it — so `z.infer` gives
+  // `data?: unknown` while the row is `data: unknown`. No Zod 3 schema of type
+  // `unknown` infers a required key, so the exported DTO type is `Required<…>`
+  // of the inference. Every output key is required by construction (no output
+  // chain is `.optional()`), so the wrap changes only those keys. Emitted only
+  // when such a key exists, so other DTOs are byte-identical (dealbrain
+  // dogfood #20).
+  const outputDtoHasUnknownKey = outputDtoFields.some((f) => f.zodType === 'z.unknown()');
 
   // Integration write-surface derivation (#374) — null unless pattern: Integrated.
   // Pass sinkPolicy (#490) so the delete knob and exclude_fields knob are applied
@@ -2599,6 +2608,7 @@ export function buildBackendLocals(definition, baseLocals) {
     processedFields: nonFkFields,
     createDtoFields: createDtoFieldsWithZod,
     outputDtoFields: outputDtoFields,
+    outputDtoHasUnknownKey,
     belongsTo: belongsTo,
     belongsToFkFields: belongsToFkFields,
     createFkFields,

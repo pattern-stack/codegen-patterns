@@ -28,4 +28,10 @@ export const <%= classNames.outputSchema %> = z.object({
 <%_ } _%>
 });
 
+<%_ if (outputDtoHasUnknownKey) { _%>
+// `Required<…>`: Zod 3 infers a `json` (`z.unknown()`) key as optional; the row
+// has it required. Every other key here is required already.
+export type <%= classNames.outputDto %> = globalThis.Required<z.infer<typeof <%= classNames.outputSchema %>>>;
+<%_ } else { _%>
 export type <%= classNames.outputDto %> = z.infer<typeof <%= classNames.outputSchema %>>;
+<%_ } _%>
