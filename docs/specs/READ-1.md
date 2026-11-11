@@ -564,8 +564,13 @@ type tests), and a pre-rendered `SQL` is still not a function.
 
 ## §11 Acceptance
 
-Gate output from the run made after the last edit — recorded in the PR body's acceptance comment for the final commit;
-the numbers for this revision are filled in below when that run completes.
+Gate output from the run made after the last code edit (`f48d72e6`, review fixes included):
+
+| Gate | Result |
+|---|---|
+| `just test-all` | **exit 0** — typecheck; `test-unit` 4304 pass / 3 skip (the `dist/`-gated singleton spec, unbuilt checkout) / 0 fail; `test-baseline` with BOTH typecheck legs (repo pin rc.4 and rc.5) passing with only the #680 expectation; every smoke PASS (default, subsystems ×2, relationship, junction ×4, junction-cross-domain ×2, capability ×2, integration, frontend); `test-junction` 12; `test-integration-emit` 56; `test-studio` 101; 47 expectations held |
+| `just test-integration` (Docker) | **197 pass, 2 skip, 0 fail** — including `read-api.test.ts` R1–R5 |
+| Host case (§8.4), scratch regeneration on rc.5 | 0 `tsc` errors over 20 entities + 2 junctions; the 25-id `findByIds` read: 1 statement, ~4 ms, 25 rows in input order, root + 3 hops on the tenant column |
 
 **Mutations, each confirmed red and then reverted:**
 
