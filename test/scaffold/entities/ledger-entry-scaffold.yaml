@@ -9,7 +9,6 @@
 entity:
   name: ledger_entry
   plural: ledger_entries
-  table: ledger_entries
   pattern: Base
 
 fields:

@@ -35,7 +35,7 @@ const ENTITY_TEMPLATE = fs
 
 function render(behaviors: unknown[], baseLocals: Record<string, unknown> = {}): string {
 	const definition = {
-		entity: { name: 'ledger_entry', plural: 'ledger_entries', table: 'ledger_entries', pattern: 'Base' },
+		entity: { name: 'ledger_entry', plural: 'ledger_entries', pattern: 'Base' },
 		fields: { memo: { type: 'string', required: true } },
 		behaviors,
 	};
@@ -91,7 +91,7 @@ describe('emission (entity.ejs.t)', () => {
 
 	it('the project setting is required: an absent behaviorsTimezone throws, never defaults', () => {
 		const definition = {
-			entity: { name: 'ledger_entry', plural: 'ledger_entries', table: 'ledger_entries', pattern: 'Base' },
+			entity: { name: 'ledger_entry', plural: 'ledger_entries', pattern: 'Base' },
 			fields: { memo: { type: 'string', required: true } },
 			behaviors: BOTH,
 		};
@@ -111,7 +111,7 @@ describe('emission (entity.ejs.t)', () => {
 
 describe('validation', () => {
 	const entityWith = (behaviors: unknown[]) => ({
-		entity: { name: 'ledger_entry', plural: 'ledger_entries', table: 'ledger_entries', pattern: 'Base' },
+		entity: { name: 'ledger_entry', plural: 'ledger_entries', pattern: 'Base' },
 		fields: { memo: { type: 'string' } },
 		behaviors,
 	});
@@ -159,7 +159,7 @@ describe('the project knob reaches the emitted file through the CLI', () => {
 		fs.mkdirSync(path.join(dir, 'entities'));
 		fs.writeFileSync(
 			path.join(dir, 'entities/ledger_entry.yaml'),
-			'entity:\n  name: ledger_entry\n  plural: ledger_entries\n  table: ledger_entries\n  pattern: Base\n' +
+			'entity:\n  name: ledger_entry\n  plural: ledger_entries\n  pattern: Base\n' +
 				`fields:\n  memo:\n    type: string\nbehaviors:\n${behaviorsYaml}`,
 		);
 		const r = spawnSync(
