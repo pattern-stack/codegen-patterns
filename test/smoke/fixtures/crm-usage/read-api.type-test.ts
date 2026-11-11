@@ -19,6 +19,7 @@ import type { AccountService } from './modules/accounts/account.service';
 import type { Account } from './modules/accounts/account.entity';
 import type { Contact } from './modules/contacts/contact.entity';
 import { accounts } from './modules/accounts/account.entity';
+import { contacts } from './modules/contacts/contact.entity';
 import { rootScope, type Relations } from './generated/relations';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 

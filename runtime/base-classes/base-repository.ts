@@ -123,7 +123,16 @@ export interface SortTerm {
  *
  * `undefined` means "no predicate".
  */
-export type RowFilter<TTable extends PgTable> = (table: TTable) => SQL | undefined;
+export type RowFilter<TTable extends PgTable> = {
+  // Method-parameter (bivariant) checking, deliberately: inside a capability
+  // mixin the repository's `TTable` is erased to `PgTable`, and a strictly
+  // contravariant function type would reject the concrete filter a caller writes
+  // for it (`RowFilter<typeof ledgers>` → `RowFilter<PgTable>`). Bivariance only
+  // admits a sub/supertype pair — a filter for ANOTHER concrete table is still
+  // unassignable (their table names differ), and a pre-rendered `SQL` still is
+  // not a function at all.
+  bivariance(table: TTable): SQL | undefined;
+}['bivariance'];
 
 /**
  * Options for `list()` — the many-row read. Generic over the table, with no

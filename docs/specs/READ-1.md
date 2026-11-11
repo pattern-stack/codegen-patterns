@@ -545,6 +545,15 @@ Not fixed here, filed: the junction service's `listAssoc` dereferences a counter
 (pre-existing, #862), and `= any($1::uuid[])` instead of `in ($1…$n)` for large id lists (#863). An empty mask at a
 HOP (`with: { owner: { columns: {} } }`) is not guarded at compile time; Drizzle throws `No fields selected` at runtime.
 
+### Found #8 — `RowFilter` is checked bivariantly, on purpose
+
+Typing `BaseService.count` from `TRepo` (review #3) failed the junction smoke's composed `ledger`: inside a capability
+mixin the repository's `TTable` is erased to `PgTable`, so its `count` takes `RowFilter<PgTable>`, and a strictly
+contravariant `(table: T) => …` rejects the `RowFilter<typeof ledgers>` the list use case passes. `RowFilter` is now
+declared through a method signature, which TypeScript checks bivariantly. That admits a concrete table ↔ `PgTable`
+pair and nothing else: a filter written for another concrete table is still a compile error (asserted in the smoke's
+type tests), and a pre-rendered `SQL` is still not a function.
+
 ### Found #5 — smaller things fixed in passing
 
 - `SortTerm` was declared twice in `base-repository.ts` (interface merging hid it). One declaration.
