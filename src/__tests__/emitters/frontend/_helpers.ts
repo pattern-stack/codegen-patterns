@@ -58,6 +58,7 @@ export function config(over: Partial<FrontendEmitConfig> = {}): FrontendEmitConf
 		dbEntitiesImport: '@repo/db/entities',
 		catalogCategories: [],
 		textareaThreshold: 500,
+		tenancyColumn: 'tenant_id',
 		...over,
 	};
 }

@@ -23,6 +23,7 @@ import {
 	loadEntityFromYaml,
 	loadJunctionFromYaml,
 } from '../../utils/yaml-loader';
+import { TenancyConfigSchema } from '../../schema/codegen-config.schema';
 import { runtimeImport, type RuntimeMode } from '../../cli/shared/runtime-import';
 import { junctionIdentity } from './build-graph';
 import { sortEntities, type RelationsEmitContext } from './types';
@@ -111,7 +112,7 @@ export function loadRelationsEmitContext(
 			definitions: loadEntityDefinitions(entitiesDir),
 			junctions: loadJunctionDefinitions(junctionsDir),
 			scopeFiltersImport: runtimeImport(mode, 'base-classes/scope-filters'),
-			tenancyColumn: config?.tenancy?.column,
+			tenancyColumn: TenancyConfigSchema.parse(config?.tenancy ?? {}).column,
 		},
 		outDir,
 	};

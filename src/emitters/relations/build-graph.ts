@@ -12,7 +12,7 @@ import pluralize from 'pluralize';
 import type { EntityDefinition } from '../../schema/entity-definition.schema';
 import type { JunctionDefinition } from '../../schema/junction-definition.schema';
 import { foreignKeyColumnNullable } from '../../schema/field-nullability';
-import { DEFAULT_TENANT_PROP, resolveTenancy } from '../../schema/tenancy';
+import { resolveTenancy } from '../../schema/tenancy';
 import {
 	camelCase,
 	RelationKeyCollisionError,
@@ -80,13 +80,13 @@ function behaviorNames(def: EntityDefinition): Set<string> {
  */
 export function entityScope(
 	def: EntityDefinition,
-	tenancyColumn?: string,
+	tenancyColumn: string,
 ): ScopeConfigLiteral | null {
 	const names = behaviorNames(def);
 	const tenancy = resolveTenancy(def.entity.name, def, tenancyColumn);
 	const cfg: ScopeConfigLiteral = {
 		tenantScoped: tenancy !== null,
-		...(tenancy && tenancy.prop !== DEFAULT_TENANT_PROP ? { tenantColumn: tenancy.prop } : {}),
+		...(tenancy ? { tenantColumn: tenancy.prop } : {}),
 		softDelete: names.has('soft_delete'),
 		userTracking: names.has('user_tracking'),
 		enforcement: tenancy !== null ? 'strict' : 'lenient',

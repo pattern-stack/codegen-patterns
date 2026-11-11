@@ -32,8 +32,8 @@ const schema = { deals, notes };
 
 const DEALS_SCOPE: ScopeConfig = { tenantScoped: true, tenantColumn: 'organizationId', softDelete: false, userTracking: false, enforcement: 'strict' };
 const NOTES_SCOPE: ScopeConfig = { tenantScoped: true, tenantColumn: 'organizationId', softDelete: false, userTracking: false, enforcement: 'strict' };
-// A manifest that forgot the column on a table that has no `tenant_id`.
-const NOTES_SCOPE_DEFAULT: ScopeConfig = { tenantScoped: true, softDelete: false, userTracking: false, enforcement: 'strict' };
+// A manifest naming the wrong column: `tenantId` on a table that has no `tenant_id`.
+const NOTES_SCOPE_DEFAULT: ScopeConfig = { tenantScoped: true, tenantColumn: 'tenantId', softDelete: false, userTracking: false, enforcement: 'strict' };
 
 const relations = defineRelations(schema, (r) => ({
 	deals: {

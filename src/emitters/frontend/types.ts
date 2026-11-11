@@ -61,6 +61,11 @@ export interface FrontendEmitConfig {
 	 * sets `ui_type: textarea`). Default 500.
 	 */
 	textareaThreshold: number | null;
+	/**
+	 * The project's `tenancy.column` (#791) — handed to REL-1's `buildRelationGraph`
+	 * so the client graph resolves the same tenant scope as the backend manifest.
+	 */
+	tenancyColumn: string;
 }
 
 /** One `frontend.catalog.categories[]` entry (blurb defaulted to '' by the schema). */

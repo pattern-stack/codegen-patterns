@@ -124,7 +124,7 @@ describe('relations golden manifest', () => {
 		);
 		// account: tenant_scoped + soft_delete + user_tracking ⇒ strict.
 		expect(emitted).toContain(
-			"const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, softDelete: true, userTracking: true, enforcement: 'strict' };",
+			"const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, tenantColumn: 'tenantId', softDelete: true, userTracking: true, enforcement: 'strict' };",
 		);
 		// contact: soft_delete only ⇒ lenient, one conjunct.
 		expect(emitted).toContain(

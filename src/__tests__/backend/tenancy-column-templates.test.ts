@@ -75,13 +75,13 @@ describe('#791 — a custom emitted tenant column', () => {
 		expect(out).not.toContain('workspace');
 	});
 
-	it('the BehaviorConfig names the column key; the default stays unwritten', () => {
+	it('the BehaviorConfig always names the column key, default or not', () => {
 		const out = renderRepository(projectDefault());
 		expect(out).toContain("    tenantScoped: true,\n    tenantColumn: 'workspaceId',\n  };");
 		expect(out).toContain("protected override readonly scopeEnforcement = 'strict' as const;");
 
 		const dflt = renderRepository(localsFor(deal()));
-		expect(dflt).not.toContain('tenantColumn');
+		expect(dflt).toContain("    tenantScoped: true,\n    tenantColumn: 'tenantId',\n  };");
 	});
 
 	it('the tenant column is listed once in a unique entry it is prefixed onto — listing it is C2', () => {
@@ -157,8 +157,8 @@ describe('#791 — adopting a declared field', () => {
 		);
 		expect(out.match(/tenantId:/g)).toHaveLength(1);
 		expect(out).toContain("tenantId: uuid('tenant_id').notNull(),");
-		expect(renderRepository(localsFor(deal({ fields: { tenant_id: { type: 'uuid' } } })))).not.toContain(
-			'tenantColumn',
+		expect(renderRepository(localsFor(deal({ fields: { tenant_id: { type: 'uuid' } } })))).toContain(
+			"tenantColumn: 'tenantId',",
 		);
 	});
 

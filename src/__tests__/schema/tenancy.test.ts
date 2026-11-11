@@ -10,12 +10,12 @@ import { resolveTenancy } from '../../schema/tenancy';
 
 describe('resolveTenancy (#791)', () => {
 	it('is null when the entity is not tenant_scoped', () => {
-		expect(resolveTenancy('note', {})).toBeNull();
-		expect(resolveTenancy('note', { tenant_scoped: false })).toBeNull();
+		expect(resolveTenancy('note', {}, 'tenant_id')).toBeNull();
+		expect(resolveTenancy('note', { tenant_scoped: false }, 'tenant_id')).toBeNull();
 	});
 
-	it('defaults to an emitted tenant_id', () => {
-		expect(resolveTenancy('note', { tenant_scoped: true })).toEqual({
+	it('emits the project tenant_id column when nothing adopts it', () => {
+		expect(resolveTenancy('note', { tenant_scoped: true }, 'tenant_id')).toEqual({
 			column: 'tenant_id',
 			prop: 'tenantId',
 			adopted: null,
@@ -45,13 +45,17 @@ describe('resolveTenancy (#791)', () => {
 
 	it('adopts a belongs_to whose foreign key is the column (ahead of a field of that name)', () => {
 		expect(
-			resolveTenancy('deal', {
-				tenant_scoped: { column: 'organization_id' },
-				fields: { organization_id: { type: 'uuid' } },
-				relationships: {
-					organization: { type: 'belongs_to', foreign_key: 'organization_id' },
+			resolveTenancy(
+				'deal',
+				{
+					tenant_scoped: { column: 'organization_id' },
+					fields: { organization_id: { type: 'uuid' } },
+					relationships: {
+						organization: { type: 'belongs_to', foreign_key: 'organization_id' },
+					},
 				},
-			}),
+				'tenant_id',
+			),
 		).toEqual({
 			column: 'organization_id',
 			prop: 'organizationId',
@@ -61,10 +65,14 @@ describe('resolveTenancy (#791)', () => {
 
 	it('refuses to adopt a non-uuid field, naming the entity and field', () => {
 		expect(() =>
-			resolveTenancy('deal', {
-				tenant_scoped: { column: 'org_slug' },
-				fields: { org_slug: { type: 'string' } },
-			}),
+			resolveTenancy(
+				'deal',
+				{
+					tenant_scoped: { column: 'org_slug' },
+					fields: { org_slug: { type: 'string' } },
+				},
+				'tenant_id',
+			),
 		).toThrow(/'deal': tenant_scoped adopts the field 'org_slug', but it is type: string/);
 	});
 });

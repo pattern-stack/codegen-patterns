@@ -54,6 +54,7 @@ import {
 } from '../../emitters/frontend/index.js';
 import { configuredSubsystemNames } from '../shared/subsystem-detect.js';
 import { projectLayout } from '../shared/project-layout.js';
+import { TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
 import {
 	buildJobBridgeTriggers,
 	buildJobScheduledEvents,
@@ -860,7 +861,7 @@ export class EntityNewCommand extends Command {
 						modulesAbs: layout.modules,
 						aliases: tsAliases?.aliases ?? {},
 						mode: runtimeMode,
-						tenancyColumn: ctx.config?.tenancy?.column,
+						tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
 					});
 				});
 			} catch (err: unknown) {

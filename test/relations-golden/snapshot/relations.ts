@@ -12,7 +12,7 @@ import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';
 import { hopScope, type ScopeConfig } from '@pattern-stack/codegen/runtime/base-classes/scope-filters';
 import * as schema from './schema';
 
-const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, softDelete: true, userTracking: true, enforcement: 'strict' };
+const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, tenantColumn: 'tenantId', softDelete: true, userTracking: true, enforcement: 'strict' };
 const CONTACTS_SCOPE: ScopeConfig = { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' };
 
 export const relations = defineRelations(schema, (r) => ({

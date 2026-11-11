@@ -55,7 +55,7 @@ export abstract class MetadataEntityRepository<
           'before any WHERE applies, so this upsert would cross the tenant ' +
           'boundary. Call upsertMany without `conflictTarget` (it delegates ' +
           'to create(), which stamps and scopes), or declare a composite ' +
-          `(${this.tenantColumn}, …) unique index and upsert through it. See ADR-042, ` +
+          `(${this.tenantColumnRef(this.constructor.name).name}, …) unique index and upsert through it. See ADR-042, ` +
           'TEN-1 §5.2 and #703.',
       );
     }

@@ -22,10 +22,10 @@ import { column } from './table-columns';
 import {
   scopeFilter,
   tenantAxisPredicate,
-  tenantColumnOf,
   tenantPredicateFor,
   userScopePredicateFor,
   type ScopeConfig,
+  type TenantAxis,
 } from './scope-filters';
 import {
   CrossTenantWriteError,
@@ -93,27 +93,16 @@ export type RowsOf<Q extends AnyPgSelectQueryBuilder, TRow> = PgSelectKind<
  * precisely because a silent `false` is the failure mode it guards against:
  * a repository that forgot to state its posture would read every tenant.
  * Stating it is one line per literal, and the compiler asks for it.
+ *
+ * `tenantScoped: true` REQUIRES `tenantColumn` (the column's property key,
+ * `'tenantId'` / `'organizationId'`): {@link TenantAxis} is a union, so a
+ * literal that says scoped and omits the column does not compile (#791).
  */
-export interface BehaviorConfig {
+export type BehaviorConfig = TenantAxis & {
   timestamps: boolean;
   softDelete: boolean;
   userTracking: boolean;
-  /** ADR-042 — filter every read/by-id write by the ambient tenant, and stamp
-   *  the tenant column on create. Emitted from the entity's `tenant_scoped:`. */
-  tenantScoped: boolean;
-  /**
-   * The tenant column's property key (#791) — `'organizationId'` for an entity
-   * scoped on `organization_id`. Read only when `tenantScoped`.
-   *
-   * The one optional field, and deliberately so: absent means `'tenantId'` (the
-   * default `tenant_id` column), and the generator writes it only when the
-   * column is named otherwise, so a default project's output is unchanged.
-   * Unlike a forgotten `tenantScoped`, a forgotten `tenantColumn` is loud: the
-   * table has no `tenantId`, so the first scoped query throws naming the
-   * repository (`column()`), and nothing reads or writes unscoped.
-   */
-  tenantColumn?: string;
-}
+};
 
 /** One ordering term, as a COLUMN KEY rather than a rendered expression. */
 export interface SortTerm {
@@ -352,7 +341,7 @@ export abstract class BaseRepository<
 
   /**
    * Insert a new entity. Timestamps are auto-injected when timestamps=true;
-   * `tenant_id` is stamped from the ambient tenant when tenantScoped=true.
+   * the tenant column is stamped from the ambient tenant when tenantScoped=true.
    */
   async create(input: Partial<TEntity>, tx?: DrizzleTx): Promise<TEntity> {
     const data = this.stampTenant(
@@ -412,7 +401,7 @@ export abstract class BaseRepository<
    *
    * This default delegates to `create()`, so it inherits the tenant stamp.
    * An override that builds its own `INSERT … ON CONFLICT` does NOT: the
-   * conflict target must include `tenant_id` or tenant B's write will update
+   * conflict target must include the tenant column or tenant B's write will update
    * tenant A's row. See `IntegratedEntityRepository.integrationUpsertOne` and
    * `MetadataEntityRepository.upsertMany` for how each one rules on that.
    */
@@ -464,13 +453,14 @@ export abstract class BaseRepository<
    * a property of the entity.
    */
   protected scopeConfigFor(opts?: { softDelete?: boolean }): ScopeConfig {
-    return {
-      tenantScoped: this.behaviors.tenantScoped,
-      tenantColumn: this.tenantColumn,
+    const rest = {
       softDelete: opts?.softDelete === true,
       userTracking: this.behaviors.userTracking,
       enforcement: this.scopeEnforcement,
     };
+    return this.behaviors.tenantScoped
+      ? { tenantScoped: true, tenantColumn: this.tenantColumn, ...rest }
+      : { tenantScoped: false, ...rest };
   }
 
   /**
@@ -568,21 +558,38 @@ export abstract class BaseRepository<
   }
 
   /**
-   * The tenant column's property key — `behaviors.tenantColumn`, else
-   * `'tenantId'` (#791). Every tenant read and write in this class and the
-   * family bases goes through here, never through the literal.
+   * The tenant column's property key — `behaviors.tenantColumn` (#791). Every
+   * tenant read and write in this class and the family bases goes through here,
+   * never through a literal. Only meaningful when `behaviors.tenantScoped`;
+   * asking an unscoped repository for it is a bug, so it throws.
    */
   protected get tenantColumn(): string {
-    return tenantColumnOf(this.behaviors);
+    const b = this.behaviors;
+    if (!b.tenantScoped) {
+      throw new Error(
+        `${this.constructor.name}: no tenant column — behaviors.tenantScoped is false.`,
+      );
+    }
+    return b.tenantColumn;
+  }
+
+  /**
+   * The tenant column resolved on this repository's table. Throws, naming the
+   * repository, when the table has no such column — so a wrong `tenantColumn`
+   * fails a WRITE as loudly as a read (Drizzle would otherwise drop an unknown
+   * insert key and the row would land in the null-tenant partition).
+   */
+  protected tenantColumnRef(owner: string): PgColumn {
+    return column(this.tableRef, this.tenantColumn, owner);
   }
 
   /**
    * Stamp the tenant column onto an insert from the ambient tenant. No-op
    * unless `behaviors.tenantScoped`.
    *
-   * An explicitly-supplied `tenantId` does NOT win. The point of an ambient
+   * An explicitly-supplied tenant value does NOT win. The point of an ambient
    * scope is that ordinary request-scope code cannot name a tenant, and a
-   * payload carrying its own `tenant_id` is exactly code naming one — a DTO
+   * payload carrying its own tenant value is exactly code naming one — a DTO
    * field that slipped through, a spread of an untrusted body. `scopeAnd()`
    * guards which rows a statement can SEE; nothing but this guards what an
    * insert WRITES. So an explicit value is honoured only when it AGREES with
@@ -592,7 +599,7 @@ export abstract class BaseRepository<
    *   - `withTenantScope(tenantId, fn)` moves the ambient tenant, so the write
    *     agrees with it and is auditable at the call site;
    *   - `withAllTenants(fn)` drops the tenant entirely, and there an explicit
-   *     `tenantId` is MANDATORY and may name any tenant — nothing else can
+   *     tenant value is MANDATORY and may name any tenant — nothing else can
    *     supply one. Omitting it throws `MissingTenantIdError`.
    *
    * Named `stampTenant`, not `withTenant`, to leave `withTenantScope` (the ALS
@@ -602,6 +609,7 @@ export abstract class BaseRepository<
     if (!this.behaviors.tenantScoped) return input;
     const owner = this.constructor.name;
     const key = this.tenantColumn;
+    const dbColumn = this.tenantColumnRef(owner).name;
     const explicit = input[key];
 
     // Cross-tenant tooling: no ambient tenant to agree with, so the caller must
@@ -622,7 +630,7 @@ export abstract class BaseRepository<
       if (tenantId !== undefined && explicit !== tenantId) {
         throw new CrossTenantWriteError(
           owner,
-          `create() was given ${key} ${describeTenant(explicit)} while ` +
+          `create() was given ${dbColumn} ${describeTenant(explicit)} while ` +
             `acting within ${describeTenant(tenantId)}`,
         );
       }
@@ -633,12 +641,12 @@ export abstract class BaseRepository<
   }
 
   /**
-   * Reject a `tenant_id` in an UPDATE payload that disagrees with the ambient
+   * Reject a tenant-column value in an UPDATE payload that disagrees with the ambient
    * tenant. No-op unless `behaviors.tenantScoped`.
    *
    * `scopeAnd()` guards WHICH row an update touches; it says nothing about what
    * is written into it. Without this, a caller could re-parent their own row
-   * into another tenant — `update(myRowId, { tenantId: other })` — which is a
+   * into another tenant — `update(myRowId, { <tenantColumn>: other })` — which is a
    * cross-tenant write dressed as an ordinary edit, and one that leaves no
    * trace in the WHERE clause to notice.
    *
@@ -648,16 +656,17 @@ export abstract class BaseRepository<
     input: Record<string, unknown>,
   ): Record<string, unknown> {
     if (!this.behaviors.tenantScoped) return input;
+    const owner = this.constructor.name;
     const key = this.tenantColumn;
+    const dbColumn = this.tenantColumnRef(owner).name;
     const explicit = input[key];
     if (explicit === undefined) return input;
 
-    const owner = this.constructor.name;
     const tenantId = getTenantId(this.scopeEnforcement, owner);
     if (tenantId !== undefined && explicit !== tenantId) {
       throw new CrossTenantWriteError(
         owner,
-        `update() was given ${key} ${describeTenant(explicit)} while ` +
+        `update() was given ${dbColumn} ${describeTenant(explicit)} while ` +
           `acting within ${describeTenant(tenantId)}`,
       );
     }

@@ -122,6 +122,7 @@ describe('the client descriptor IS the REL-1 graph (charter I1)', () => {
 		entities: ctx.entities,
 		definitions: ctx.definitions ?? new Map(),
 		junctions: ctx.junctions ?? [],
+		tenancyColumn: ctx.config.tenancyColumn,
 	});
 	const clientGraph = buildClientGraph(ctx);
 

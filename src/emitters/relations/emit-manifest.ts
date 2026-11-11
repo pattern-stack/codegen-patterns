@@ -31,8 +31,8 @@ export function scopeConstName(table: string): string {
 
 /**
  * `{ tenantScoped: true, softDelete: true, userTracking: false, enforcement: 'strict' }`,
- * with `tenantColumn: '<key>'` after `tenantScoped` when the entity is scoped on
- * a column other than `tenant_id` (#791).
+ * and `tenantColumn: '<key>'` after `tenantScoped` ALWAYS when the entity is
+ * tenant-scoped (#791) — the runtime's `ScopeConfig` requires it then.
  */
 function renderScopeLiteral(cfg: ScopeConfigLiteral): string {
 	const tenantColumn = cfg.tenantColumn ? `tenantColumn: '${cfg.tenantColumn}', ` : '';

@@ -259,10 +259,10 @@ export abstract class IntegratedEntityRepository<
    * conflict would never fire and the upsert would insert duplicates.
    */
   protected conflictTarget(declared: readonly string[]): PgColumn[] {
-    const tenant = this.tenantColumn;
-    const names = this.behaviors.tenantScoped && !declared.includes(tenant)
-      ? [tenant, ...declared]
-      : [...declared];
+    const names =
+      this.behaviors.tenantScoped && !declared.includes(this.tenantColumn)
+        ? [this.tenantColumn, ...declared]
+        : [...declared];
     return names.map((c) => this.col(c));
   }
 

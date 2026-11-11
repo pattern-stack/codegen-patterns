@@ -33,7 +33,7 @@ import {
   hasColumnDefault,
 } from '../../../../src/schema/field-nullability.js';
 import { fieldWithTimezone, timestampColumn } from '../../../../src/schema/field-timestamp.js';
-import { DEFAULT_TENANT_PROP, resolveTenancy } from '../../../../src/schema/tenancy.js';
+import { resolveTenancy } from '../../../../src/schema/tenancy.js';
 import { rewriteSharedImport, subsystemsImport } from '../../../../src/config/runtime-mode.mjs';
 import { DEFAULT_CODEGEN_CONFIG } from '../../../../src/config/project-config.js';
 import {
@@ -1879,10 +1879,9 @@ export function buildBackendLocals(definition, baseLocals) {
   const tenantScoped = tenancy !== null;
   // The tenant block in entity.ejs.t emits the column only when nothing adopts it.
   const tenantColumnEmitted = tenantScoped && tenancy.adopted === null;
-  // The BehaviorConfig / integration key; `null` for the default `tenantId`,
-  // which the repository template omits so default output is unchanged.
-  const behaviorTenantColumn =
-    tenantScoped && tenancy.prop !== DEFAULT_TENANT_PROP ? tenancy.prop : null;
+  // The BehaviorConfig key — ALWAYS emitted for a scoped entity (the runtime's
+  // `BehaviorConfig` requires it when `tenantScoped`); `null` only when unscoped.
+  const behaviorTenantColumn = tenantScoped ? tenancy.prop : null;
 
   // A tenant-scoped entity whose repository would upsert on a caller-supplied
   // conflict target is a cross-tenant WRITE waiting to happen: the ON CONFLICT

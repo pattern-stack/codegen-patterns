@@ -76,6 +76,7 @@ function context(
 		entities: entries.map((e) => e.entry),
 		definitions: new Map(entries.map((e) => [e.entry.name, e.def])),
 		junctions,
+		tenancyColumn: 'tenant_id',
 	};
 }
 
@@ -447,9 +448,9 @@ describe('manifest rendering', () => {
 
 describe('entityScope', () => {
 	it('is null when nothing is declared, so the manifest does not grow', () => {
-		expect(entityScope(definition('a', 'as'))).toBeNull();
+		expect(entityScope(definition('a', 'as'), 'tenant_id')).toBeNull();
 		expect(
-			entityScope(definition('a', 'as', {}, {}, { behaviors: ['timestamps'] })),
+			entityScope(definition('a', 'as', {}, {}, { behaviors: ['timestamps'] }), 'tenant_id'),
 		).toBeNull();
 	});
 
@@ -457,6 +458,7 @@ describe('entityScope', () => {
 		expect(
 			entityScope(
 				definition('a', 'as', {}, {}, { behaviors: ['timestamps', 'soft_delete'] }),
+				'tenant_id',
 			),
 		).toEqual({
 			tenantScoped: false,
@@ -465,7 +467,7 @@ describe('entityScope', () => {
 			enforcement: 'lenient',
 		});
 		expect(
-			entityScope(definition('a', 'as', {}, {}, { behaviors: ['user_tracking'] })),
+			entityScope(definition('a', 'as', {}, {}, { behaviors: ['user_tracking'] }), 'tenant_id'),
 		).toEqual({
 			tenantScoped: false,
 			softDelete: false,
@@ -478,6 +480,7 @@ describe('entityScope', () => {
 		expect(
 			entityScope(
 				definition('a', 'as', {}, {}, { behaviors: [{ name: 'soft_delete' }] }),
+				'tenant_id',
 			)?.softDelete,
 		).toBe(true);
 	});
@@ -486,10 +489,10 @@ describe('entityScope', () => {
 	// ambient boundary throws at query build rather than reading every tenant.
 	it('a tenant-scoped entity is strict; a user_tracking-only one stays lenient', () => {
 		expect(
-			entityScope(definition('a', 'as', {}, {}, { tenant_scoped: true }))?.enforcement,
+			entityScope(definition('a', 'as', {}, {}, { tenant_scoped: true }), 'tenant_id')?.enforcement,
 		).toBe('strict');
 		expect(
-			entityScope(definition('a', 'as', {}, {}, { behaviors: ['user_tracking'] }))
+			entityScope(definition('a', 'as', {}, {}, { behaviors: ['user_tracking'] }), 'tenant_id')
 				?.enforcement,
 		).toBe('lenient');
 	});
@@ -525,6 +528,7 @@ describe('every edge carries its TARGET\'s scope', () => {
 		// accounts.contacts targets CONTACTS, which is tenant-scoped.
 		expect(byTable.get('accounts')?.[0]?.targetScope).toEqual({
 			tenantScoped: true,
+			tenantColumn: 'tenantId',
 			softDelete: false,
 			userTracking: false,
 			enforcement: 'strict',
@@ -597,10 +601,11 @@ describe('the tenant column travels with the scope (#791)', () => {
 		},
 	];
 
-	it('entityScope carries tenantColumn only when it is not tenantId', () => {
+	it('entityScope always carries tenantColumn on a scoped entity', () => {
 		const [account, contact] = entries();
-		expect(entityScope(account!.def)).toEqual({
+		expect(entityScope(account!.def, 'tenant_id')).toEqual({
 			tenantScoped: true,
+			tenantColumn: 'tenantId',
 			softDelete: false,
 			userTracking: false,
 			enforcement: 'strict',
@@ -622,10 +627,10 @@ describe('the tenant column travels with the scope (#791)', () => {
 		);
 	});
 
-	it('a default project renders no tenantColumn at all', () => {
+	it('a default project renders tenantColumn too — it is never omitted', () => {
 		const out = buildRelationsManifest(buildRelationGraph(context(entries())));
 		expect(out).toContain(
-			"const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, softDelete: false, userTracking: false, enforcement: 'strict' };",
+			"const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, tenantColumn: 'tenantId', softDelete: false, userTracking: false, enforcement: 'strict' };",
 		);
 	});
 });

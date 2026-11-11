@@ -905,9 +905,8 @@ interface EmitAdaptersBaseOptions {
   /** Runtime mode (ADR-037) — selects the runtime import specifiers in every
    *  emitted adapter/module/tokens/sink/assembly file. Defaults to `package`. */
   mode?: RuntimeMode;
-  /** The project's default tenant column, `tenancy.column` (#791). Omitted ⇒
-   *  `tenant_id`. */
-  tenancyColumn?: string;
+  /** The project's default tenant column, `tenancy.column` (#791). Required. */
+  tenancyColumn: string;
 }
 
 /**
@@ -1285,7 +1284,7 @@ export function buildSinkInput(
   surface: string,
   provider: string,
   repoImportSpecifier: string,
-  tenancyColumn?: string,
+  tenancyColumn: string,
 ): SinkEmitInput {
   const fields = def.fields ?? {};
   const relationships = def.relationships ?? {};
