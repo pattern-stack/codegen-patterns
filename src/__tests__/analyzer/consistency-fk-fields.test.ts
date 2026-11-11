@@ -21,15 +21,15 @@ function issueTypes(files: Record<string, string>): string[] {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fk-fields-'));
 	dirs.push(dir);
 	for (const [name, body] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), body);
-	const { entities } = loadEntities(dir);
+	const { entities } = loadEntities(dir, { tablePrefix: '' });
 	return checkConsistency(buildDomainGraph(entities)).map((i) => `${i.entity}:${i.type}`);
 }
 
 const ACCOUNT =
-	'entity:\n  name: account\n  plural: accounts\n  table: accounts\nfields:\n  name: { type: string }\n' +
+	'entity:\n  name: account\n  plural: accounts\nfields:\n  name: { type: string }\n' +
 	'relationships:\n  contacts:\n    type: has_many\n    target: contact\n    foreign_key: account_id\n';
 const CONTACT =
-	'entity:\n  name: contact\n  plural: contacts\n  table: contacts\nfields:\n  email: { type: string }\n' +
+	'entity:\n  name: contact\n  plural: contacts\nfields:\n  email: { type: string }\n' +
 	'relationships:\n  account:\n    type: belongs_to\n    target: account\n    foreign_key: account_id\n    nullable: false\n';
 
 describe('FK columns a belongs_to emits are not reported missing', () => {
@@ -41,7 +41,7 @@ describe('FK columns a belongs_to emits are not reported missing', () => {
 
 	it('still reports a has_many whose target has neither the field nor a belongs_to', () => {
 		const lonely =
-			'entity:\n  name: contact\n  plural: contacts\n  table: contacts\nfields:\n  email: { type: string }\n';
+			'entity:\n  name: contact\n  plural: contacts\nfields:\n  email: { type: string }\n';
 		expect(issueTypes({ 'account.yaml': ACCOUNT, 'contact.yaml': lonely })).toContain(
 			'account:missing_target_fk',
 		);
