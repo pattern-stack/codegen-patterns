@@ -63,6 +63,26 @@ export function foreignKeyColumnNullable(
 }
 
 /**
+ * Whether a `belongs_to`'s FK nullability is DECLARED rather than left to the
+ * last branch of {@link foreignKeyColumnNullable} ("else the FK is nullable"):
+ * an explicit relationship `nullable:`, or `required: true` / `nullable:` on the
+ * FK's own field. `entity validate` warns when none is (`undeclared_fk_nullability`,
+ * #850).
+ *
+ * `required: false` does NOT count: `FieldDefinitionSchema` defaults `required`
+ * to `false`, so a parsed field cannot tell a written `required: false` from an
+ * absent one. Say `nullable: true` for a nullable reference.
+ */
+export function foreignKeyNullabilityDeclared(
+	relationshipNullable: boolean | null | undefined,
+	field: FieldNullabilityDeclaration | undefined,
+): boolean {
+	const declared = (v: boolean | null | undefined) => v !== undefined && v !== null;
+	if (declared(relationshipNullable)) return true;
+	return field !== undefined && (field.required === true || declared(field.nullable));
+}
+
+/**
  * True for the one declaration that cannot be generated: a NOT NULL column
  * (`nullable: false`) that is optional on create (`required` not `true`) and
  * has no `default:`. Every insert that omits it would fail at the database.

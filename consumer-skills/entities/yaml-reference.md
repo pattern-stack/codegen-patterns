@@ -193,15 +193,20 @@ relationships:
 ```
 
 - `belongs_to` adds the FK column on this entity. **Its nullability:** an explicit
-  `nullable:` on the relationship wins, else the FK's own field (`required: true` →
-  NOT NULL), else the column is **NULLABLE**. A field's default follows `required`;
-  a `belongs_to` with neither declared does not, so `entity validate` warns
-  (`undeclared_fk_nullability`). Write `nullable: false` for a NOT NULL reference.
+  `nullable:` on the relationship (or role) wins, else the FK's own field
+  (`required: true` → NOT NULL), else the column is **NULLABLE**. A reference left
+  undeclared is therefore optional, which is rarely what the author meant, so
+  `entity validate` warns (`undeclared_fk_nullability`) unless the relationship
+  says `nullable:` or the FK field says `required: true` or `nullable:`. Write
+  `nullable: false` for a NOT NULL reference and `nullable: true` for an optional
+  one (`required: false` does not count: it is also what an absent `required:`
+  parses to).
 - The include's type (`with: { account: true }`) is `optional` (`T | null`) when the
-  FK is nullable, **or** when the target soft-deletes or is user-tracked: the hop
-  filters a deleted or another user's row out, so even a NOT NULL FK can read
-  `null`. A tenant-scoped target alone does not widen it, because a NOT NULL FK
-  onto another tenant's row is a data error.
+  FK is nullable, **or** when the hop can filter the target out: the target
+  soft-deletes or is user-tracked (a deleted or another user's row reads `null`),
+  or the target is tenant-scoped and this entity is not (an unscoped row can point
+  into another tenant). When both sides are tenant-scoped, the tenant alone does
+  not widen it, because a NOT NULL FK onto another tenant's row is a data error.
 - `has_many` / `has_one` are the inverse side (no column here; drives the
   service-layer composition method on the declaring entity's service).
 - Cross-entity targets must resolve at generation time — regenerate the set with

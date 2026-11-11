@@ -132,10 +132,12 @@ Per-relationship rules — the whole of the semantics:
   column's `required:` (`true` ⇒ not optional), else `true`. This targets `processBelongsTo`'s precedence
   (`prompt-extension.js:468-482`) on the same YAML, with **one divergence forced by the schema** — see Found #1. It
   affects the include's result type only; getting it wrong is a type inaccuracy, not a wrong row.
-  *Revision 2026-11-11 (dealbrain dogfood #9):* REL-2 later put a scope `where` on the same hop, which can drop a
+  *Revision 2026-11-11 (#850):* REL-2 later put a scope `where` on the same hop, which can drop a
   soft-deleted or other-user target. So a to-one edge (a `belongs_to`, or a junction's own edge to an endpoint) is
-  also optional when the target's scope has `softDelete` or `userTracking` (`hopCanDropTarget`). Tenant scope
-  alone does not count, because a NOT NULL FK onto another tenant's row is a data error (#787).
+  also optional when the target's scope has `softDelete` or `userTracking` (`hopCanDropTarget`). A tenant-scoped
+  target counts only when the source is not tenant-scoped (a global entity, or a junction, which declares no scope):
+  that source reads every tenant's rows, so the hop drops valid ones. Between two tenant-scoped entities the tenant
+  does not count, because a NOT NULL FK onto another tenant's row is a data error (#787).
 - **Relation keys are the YAML relationship names**, camelCased (`parent_account` → `parentAccount`). This replaces
   the v1 derivation, which used the *target entity name* for non-self relations and ignored the author's key
   (`prompt-extension.js:492-505`). I1: the author named the edge; the manifest uses that name. I7: the old derivation

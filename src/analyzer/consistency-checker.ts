@@ -111,20 +111,21 @@ function checkRelationshipConsistency(
 		// A `belongs_to` whose FK nullability is undeclared emits a NULLABLE
 		// column — the opposite of a NOT NULL reference most authors expect, and
 		// the relation manifest types the include `optional` to match. Say so
-		// rather than leave the default to be discovered in the DDL (dealbrain
-		// dogfood #9). Changing the default itself would be breaking DDL.
+		// rather than leave the default to be discovered in the DDL (#850).
+		// Changing the default itself would be breaking DDL. The remedy is in the
+		// message because `entity validate` prints only the message.
 		if (rel.type === 'belongs_to' && rel.nullabilityDeclared === false) {
+			const declaredBy = rel.role ? `role "${rel.role}"` : `relationship "${relName}"`;
 			issues.push({
 				severity: 'warning',
 				type: 'undeclared_fk_nullability',
 				entity: entity.name,
 				field: relName,
 				message:
-					`Relationship "${relName}" does not declare whether "${rel.foreignKey}" may be NULL, ` +
-					`so the column is emitted NULLABLE`,
-				suggestion:
-					`Add \`nullable: false\` (NOT NULL) or \`nullable: true\` to the relationship` +
-					(rel.role ? ` (role "${rel.role}")` : ''),
+					`The ${declaredBy} does not declare whether "${rel.foreignKey}" may be NULL, ` +
+					`so the column is emitted NULLABLE. Declare \`nullable: false\` (NOT NULL) or ` +
+					`\`nullable: true\` on it`,
+				suggestion: `Add \`nullable: false\` (NOT NULL) or \`nullable: true\` to the ${declaredBy}`,
 			});
 		}
 

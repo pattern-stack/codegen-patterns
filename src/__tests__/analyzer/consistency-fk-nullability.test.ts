@@ -1,5 +1,5 @@
 /**
- * dealbrain dogfood #9 — a `belongs_to` that does not declare its FK's
+ * #850 — a `belongs_to` that does not declare its FK's
  * nullability emits a NULLABLE column. The default stays (changing it is
  * breaking DDL); `entity validate` says so, naming the relationship.
  */
@@ -45,6 +45,8 @@ describe('undeclared_fk_nullability', () => {
 		expect(issues[0]!.entity).toBe('observation');
 		expect(issues[0]!.field).toBe('artifact');
 		expect(issues[0]!.message).toContain('emitted NULLABLE');
+		// `entity validate` prints only the message, so it must carry the remedy.
+		expect(issues[0]!.message).toContain('nullable: false');
 	});
 
 	it('is silent when the relationship declares nullable: (either way)', () => {
@@ -59,5 +61,14 @@ describe('undeclared_fk_nullability', () => {
 		expect(
 			issuesFor(`fields:\n  artifact_id: { type: uuid, nullable: true }\n${rel()}`),
 		).toHaveLength(0);
+	});
+
+	it('warns on an FK field with no required: true and no nullable:', () => {
+		expect(issuesFor(`fields:\n  artifact_id: { type: uuid }\n${rel()}`)).toHaveLength(1);
+		// The schema defaults `required` to false, so a written `required: false`
+		// is indistinguishable from an absent one; `nullable: true` is the declaration.
+		expect(
+			issuesFor(`fields:\n  artifact_id: { type: uuid, required: false }\n${rel()}`),
+		).toHaveLength(1);
 	});
 });

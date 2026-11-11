@@ -163,8 +163,8 @@ describe('buildRelationGraph — belongs_to', () => {
 		).toBe(false);
 	});
 
-	describe('a NOT NULL FK onto a target whose hop scope can drop it (dealbrain dogfood #9)', () => {
-		const onto = (targetExtra: Record<string, unknown>) =>
+	describe('a NOT NULL FK onto a target whose hop scope can drop it (#850)', () => {
+		const onto = (targetExtra: Record<string, unknown>, sourceExtra: Record<string, unknown> = {}) =>
 			context([
 				{
 					entry: registryEntry('account', 'accounts'),
@@ -177,6 +177,7 @@ describe('buildRelationGraph — belongs_to', () => {
 						'contacts',
 						{ account_id: { type: 'uuid', required: true } },
 						{ account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' } },
+						sourceExtra,
 					),
 				},
 			]);
@@ -191,8 +192,44 @@ describe('buildRelationGraph — belongs_to', () => {
 			);
 		});
 
-		it('stays required when the target is only tenant-scoped (a cross-tenant FK is a data error)', () => {
-			expect(edge(onto({ tenant_scoped: true }), 'contacts', 'account').optional).toBe(false);
+		it('stays required when source and target are both tenant-scoped (a cross-tenant FK is a data error)', () => {
+			expect(
+				edge(onto({ tenant_scoped: true }, { tenant_scoped: true }), 'contacts', 'account').optional,
+			).toBe(false);
+		});
+
+		it('is optional when only the target is tenant-scoped — an unscoped source reads every tenant', () => {
+			expect(edge(onto({ tenant_scoped: true }), 'contacts', 'account').optional).toBe(true);
+		});
+	});
+
+	describe('a junction’s own edge to an endpoint (#850)', () => {
+		const endpoints = (contactExtra: Record<string, unknown>) =>
+			context(
+				[
+					{ entry: registryEntry('opportunity', 'opportunities'), def: definition('opportunity', 'opportunities') },
+					{
+						entry: registryEntry('contact', 'contacts'),
+						def: definition('contact', 'contacts', {}, {}, contactExtra),
+					},
+				],
+				[junction('opportunity', 'contact')],
+			);
+
+		it('is required onto an unscoped endpoint', () => {
+			expect(edge(endpoints({}), 'opportunityContacts', 'contact').optional).toBe(false);
+		});
+
+		it('is optional onto a soft-deleting endpoint', () => {
+			expect(
+				edge(endpoints({ behaviors: ['soft_delete'] }), 'opportunityContacts', 'contact').optional,
+			).toBe(true);
+		});
+
+		it('is optional onto a tenant-scoped endpoint — a junction declares no scope of its own', () => {
+			expect(edge(endpoints({ tenant_scoped: true }), 'opportunityContacts', 'contact').optional).toBe(
+				true,
+			);
 		});
 	});
 

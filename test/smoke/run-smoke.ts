@@ -654,7 +654,7 @@ function assertRelationshipEmission(tmpDir: string): void {
 		'generated/relations.ts account has_many opportunities',
 	);
 	// Required FK, but the target soft-deletes, so the hop can drop it and the include
-	// is nullable (dealbrain dogfood #9). Target IS scoped ⇒ hop predicate.
+	// is nullable (#850). Target IS scoped ⇒ hop predicate.
 	assertContains(
 		manifest,
 		/account: r\.one\.accounts\(\{ from: r\.contacts\.accountId, to: r\.accounts\.id, optional: true, where: \{ RAW: \(t\) => hopScope\(t, ACCOUNTS_SCOPE, 'contacts\.account'\) \} \}\)/,

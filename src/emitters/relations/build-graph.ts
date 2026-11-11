@@ -100,14 +100,25 @@ export function entityScope(
  * include can be `null` even over a NOT NULL FK.
  *
  * `softDelete` (the target row is deleted) and `userTracking` (it belongs to
- * another user) are ordinary states of valid data. The tenant axis is
- * deliberately NOT one: a NOT NULL FK onto another tenant's row is a data
- * error, not a case for the type to carry (#787 designs the constraint that
- * makes it impossible), and widening every tenant-scoped to-one to nullable
- * would push a null check onto every reader of valid data.
+ * another user) are ordinary states of valid data, so either one counts.
+ *
+ * The tenant axis counts only when the SOURCE is not tenant-scoped. A
+ * tenant-scoped source row and its target are read under the same tenant, so
+ * a NOT NULL FK onto another tenant's row is a data error, not a case for the
+ * type to carry (#787 designs the constraint that makes it impossible), and
+ * widening every tenant-scoped to-one would push a null check onto every
+ * reader of valid data. An unscoped source (a global table, or a junction —
+ * which declares no scope of its own) reads every tenant's rows, so the hop
+ * drops each one whose target is outside the requester's tenant: valid data,
+ * read as `null`.
  */
-export function hopCanDropTarget(targetScope: ScopeConfigLiteral | null): boolean {
-	return targetScope !== null && (targetScope.softDelete || targetScope.userTracking);
+export function hopCanDropTarget(
+	sourceScope: ScopeConfigLiteral | null,
+	targetScope: ScopeConfigLiteral | null,
+): boolean {
+	if (targetScope === null) return false;
+	if (targetScope.softDelete || targetScope.userTracking) return true;
+	return targetScope.tenantScoped && !(sourceScope?.tenantScoped ?? false);
 }
 
 /**
@@ -119,15 +130,19 @@ export function hopCanDropTarget(targetScope: ScopeConfigLiteral | null): boolea
  * declaration, else optional (#613). A NOT NULL FK is still optional when the
  * hop's scope can filter its target out (`hopCanDropTarget`) — REL-2's hop
  * `where` makes the include `null` at runtime, and the type must say so
- * (dealbrain dogfood #9).
+ * (#850).
  */
 function belongsToOptional(
 	def: EntityDefinition,
 	fk: string,
 	relNullable: boolean | undefined,
+	sourceScope: ScopeConfigLiteral | null,
 	targetScope: ScopeConfigLiteral | null,
 ): boolean {
-	return foreignKeyColumnNullable(relNullable, def.fields[fk]) || hopCanDropTarget(targetScope);
+	return (
+		foreignKeyColumnNullable(relNullable, def.fields[fk]) ||
+		hopCanDropTarget(sourceScope, targetScope)
+	);
 }
 
 /** Add an edge, failing loudly on a duplicate key for the same table. */
@@ -223,6 +238,7 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 						def,
 						rel.foreign_key,
 						rel.nullable,
+						scopeOf(entity.name),
 						scopeOf(rel.target),
 					),
 					targetScope: scopeOf(rel.target),
@@ -337,7 +353,9 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 			from: { table: tableVar, column: leftFk },
 			to: { table: left.plural, column: 'id' },
 			// The junction FK is NOT NULL; only the target's scope can empty the hop.
-			optional: hopCanDropTarget(scopeOf(leftName)),
+			// A junction declares no scope (source `null`), so a tenant-scoped
+			// endpoint counts too.
+			optional: hopCanDropTarget(null, scopeOf(leftName)),
 			targetScope: scopeOf(leftName),
 			origin,
 		});
@@ -349,7 +367,7 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 			from: { table: tableVar, column: rightFk },
 			to: { table: right.plural, column: 'id' },
 			// The junction FK is NOT NULL; only the target's scope can empty the hop.
-			optional: hopCanDropTarget(scopeOf(rightName)),
+			optional: hopCanDropTarget(null, scopeOf(rightName)),
 			targetScope: scopeOf(rightName),
 			origin,
 		});
