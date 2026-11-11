@@ -57,11 +57,11 @@ export const <%= entityNamePlural %> = pgTable(
     <%= tenantColumnProp %>: uuid('<%= tenantColumnName %>'),
 <%_ } _%>
 <%_ if (hasTimestamps) { _%>
-    createdAt: <%- timestampColumn('created_at') %>.notNull().defaultNow(),
-    updatedAt: <%- timestampColumn('updated_at') %>.notNull().defaultNow(),
+    createdAt: <%- timestampColumn('created_at', timestampsWithTimezone) %>.notNull().defaultNow(),
+    updatedAt: <%- timestampColumn('updated_at', timestampsWithTimezone) %>.notNull().defaultNow(),
 <%_ } _%>
 <%_ if (hasSoftDelete) { _%>
-    deletedAt: <%- timestampColumn('deleted_at') %>,
+    deletedAt: <%- timestampColumn('deleted_at', softDeleteWithTimezone) %>,
 <%_ } _%>
   },
 <%_ /* #355/#356/#511/#784: pgTable extra-config — indexes + unique constraints (uniqueIndex / unique().nullsNotDistinct()) + external_id unique */ _%>

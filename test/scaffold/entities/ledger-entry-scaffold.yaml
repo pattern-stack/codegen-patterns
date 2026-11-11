@@ -1,0 +1,27 @@
+# Ledger entry -- scaffold integration fixture (#845, #796 follow-up).
+#
+# An adopted host's table: `created_at` / `updated_at` / `deleted_at` are
+# `timestamp without time zone` holding UTC (an adopted host's convention). The
+# behaviors' `options: { timezone: false }` emits them bare. The suite
+# (`tests/behavior-timezone.test.ts`) writes a host-shaped naive value with raw
+# SQL and reads it back through the generated repository under a non-UTC
+# process: exact with the knob, skewed by the process offset without it.
+entity:
+  name: ledger_entry
+  plural: ledger_entries
+  table: ledger_entries
+  pattern: Base
+
+fields:
+  memo:
+    type: string
+    required: true
+    max_length: 120
+
+behaviors:
+  - name: timestamps
+    options:
+      timezone: false
+  - name: soft_delete
+    options:
+      timezone: false

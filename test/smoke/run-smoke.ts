@@ -28,7 +28,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { tscGateErrors } from './_consumer-errors';
-import { assertTimestampColumns, collectTimezoneOptOuts } from './_timestamp-columns';
+import { SMOKE_BEHAVIORS_TIMEZONE, assertTimestampColumns, collectTimezoneOptOuts } from './_timestamp-columns';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
@@ -921,6 +921,7 @@ async function main(): Promise<number> {
 				collectTimezoneOptOuts(
 					fixtureFiles.map((f) => path.join(FIXTURES_DIR, f)),
 					'', // the smoke config sets no tables.prefix
+					SMOKE_BEHAVIORS_TIMEZONE,
 				),
 			);
 			log(`timestamptz scan OK (${scan.calls} calls in ${scan.files} entity files)`);

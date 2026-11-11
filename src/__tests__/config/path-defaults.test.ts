@@ -113,11 +113,14 @@ describe('the defaults table', () => {
 		);
 	});
 
-	it('behaviors: is an unknown key naming the file (ARCH-1)', () => {
+	// ARCH-1 deleted the old `behaviors: { strategy }` block; `behaviors:` is now
+	// the behavior-column defaults block (`timezone`, #845), so the deleted
+	// key is an unknown key one level down.
+	it('behaviors.strategy: is an unknown key naming the file (ARCH-1)', () => {
 		expect(() =>
 			parseCodegenConfig({ behaviors: { strategy: 'inline' } }, 'apps/api/codegen.config.yaml'),
 		).toThrow(
-			/apps\/api\/codegen\.config\.yaml is not a valid codegen\.config\.yaml:\n {2}- behaviors: unknown key/,
+			/apps\/api\/codegen\.config\.yaml is not a valid codegen\.config\.yaml:\n {2}- behaviors\.strategy: unknown key/,
 		);
 	});
 

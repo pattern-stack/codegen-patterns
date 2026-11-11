@@ -563,6 +563,11 @@ tables:
                                  # `table:` (verbatim) or `table_prefix:`. Only the SQL name changes —
                                  # the Drizzle export, db.query key and module folder stay on `plural`
 
+behaviors:
+  timezone: true                 # default; `false` emits the timestamps / soft_delete columns as
+                                 # `timestamp without time zone` (a host's naive UTC columns). A behavior's
+                                 # own `options: { timezone }` in an entity's `behaviors:` overrides it
+
 # frontend:                      # inert unless generate.frontend: true
 #   ...                          # see "Frontend generation" above for the full block
 ```

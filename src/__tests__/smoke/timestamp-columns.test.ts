@@ -64,10 +64,34 @@ describe('collectTimezoneOptOuts (#796)', () => {
 			'none.yaml': 'entity:\n  name: n\n  plural: ns\nfields:\n  q:\n    type: datetime\n',
 		});
 		const p = (n: string) => path.join(dir, n);
-		expect([...collectTimezoneOptOuts([p('e.yaml'), p('r.yaml'), p('none.yaml')], '')].sort()).toEqual([
+		expect([...collectTimezoneOptOuts([p('e.yaml'), p('r.yaml'), p('none.yaml')], '', true)].sort()).toEqual([
 			'a_tbl.x',
 			'r_tbl.y',
 		]);
-		expect(() => collectTimezoneOptOuts([p('j.yaml')], '')).toThrow(/cannot be named/);
+		expect(() => collectTimezoneOptOuts([p('j.yaml')], '', true)).toThrow(/cannot be named/);
+	});
+
+	it('names the columns of a timestamp behavior switched off on the entity or the project (#845)', () => {
+		const dir = modules({
+			'off.yaml':
+				'entity:\n  name: o\n  plural: os\nfields: {}\nbehaviors:\n' +
+				'  - name: timestamps\n    options: { timezone: false }\n  - soft_delete\n',
+			'on.yaml':
+				'entity:\n  name: n\n  plural: ns\nfields: {}\nbehaviors:\n' +
+				'  - timestamps\n  - name: soft_delete\n    options: { timezone: true }\n',
+		});
+		const p = (n: string) => path.join(dir, n);
+		expect([...collectTimezoneOptOuts([p('off.yaml'), p('on.yaml')], '', true)].sort()).toEqual([
+			'os.created_at',
+			'os.updated_at',
+		]);
+		// Project default off: every timestamp behavior column is bare unless the entity turns it back on.
+		expect([...collectTimezoneOptOuts([p('off.yaml'), p('on.yaml')], '', false)].sort()).toEqual([
+			'ns.created_at',
+			'ns.updated_at',
+			'os.created_at',
+			'os.deleted_at',
+			'os.updated_at',
+		]);
 	});
 });

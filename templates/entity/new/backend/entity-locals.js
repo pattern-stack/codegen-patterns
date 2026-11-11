@@ -33,7 +33,11 @@ import {
   foreignKeyColumnNullable,
   hasColumnDefault,
 } from '../../../../src/schema/field-nullability.js';
-import { fieldWithTimezone, timestampColumn } from '../../../../src/schema/field-timestamp.js';
+import {
+  behaviorWithTimezone,
+  fieldWithTimezone,
+  timestampColumn,
+} from '../../../../src/schema/field-timestamp.js';
 import { resolveTenancy } from '../../../../src/schema/tenancy.js';
 import { sqlTableName } from '../../../../src/config/table-naming.js';
 import { rewriteSharedImport, subsystemsImport } from '../../../../src/config/runtime-mode.mjs';
@@ -1853,6 +1857,16 @@ export function buildBackendLocals(definition, baseLocals) {
   const hasUserTracking = behaviorNames.includes('user_tracking');
   const hasExternalIdTracking = behaviorNames.includes('external_id_tracking');
 
+  // #845 (#796 follow-up): whether each timestamp behavior's columns are
+  // timestamptz — the behavior's own `options: { timezone }`, else the project's
+  // `behaviors.timezone`. The rule is `behaviorWithTimezone`
+  // (src/schema/field-timestamp.ts); entity.ejs.t passes these to
+  // `timestampColumn`, the one place the column literal is written.
+  const projectBehaviorsTimezone =
+    baseLocals.behaviorsTimezone ?? DEFAULT_CODEGEN_CONFIG.behaviors.timezone;
+  const timestampsWithTimezone = behaviorWithTimezone(behaviors, 'timestamps', projectBehaviorsTimezone);
+  const softDeleteWithTimezone = behaviorWithTimezone(behaviors, 'soft_delete', projectBehaviorsTimezone);
+
   // ==========================================================================
   // Tenant scoping (ADR-042 / TEN-1). One YAML flag drives the column, the
   // index, the uniqueness prefix, the BehaviorConfig field and the repository's
@@ -2512,6 +2526,8 @@ export function buildBackendLocals(definition, baseLocals) {
     // Behavior flags (also exposed at top level for template use)
     hasTimestamps,
     hasSoftDelete,
+    timestampsWithTimezone,
+    softDeleteWithTimezone,
     hasUserTracking,
     hasExternalIdTracking,
 

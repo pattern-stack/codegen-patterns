@@ -37,6 +37,8 @@ export * from '@gen/modules/categories/category.entity';
 export * from '@gen/modules/org-leads/org-lead.entity';
 // #796: timestamptz columns, and the `timezone: false` opt-out (appointment).
 export * from '@gen/modules/appointments/appointment.entity';
+// #845: behavior columns switched to `timestamp without time zone` (ledger_entry).
+export * from '@gen/modules/ledger-entries/ledger-entry.entity';
 
 // Subsystem schemas come from `@shared/*` — i.e. `runtime/subsystems/*`, the
 // real source — NOT from a vendored copy generated into the repo root. One

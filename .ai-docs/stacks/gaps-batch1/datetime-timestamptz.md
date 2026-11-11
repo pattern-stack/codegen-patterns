@@ -81,6 +81,33 @@ Built as specified, with these differences and confirmations:
   `account.composed-base.ts` and `roles.check.ts` (type-identity errors, none mentioning timestamps); the scan itself passed in that leg.
   CI is green on this PR (`test-all` and `test-integration`), which covers the remaining legs.
 
+## Revision — 2026-11-11: a time-zone knob for behavior columns (#845)
+
+This spec made the behavior columns (`created_at`, `updated_at`, `deleted_at`) **always** timestamptz and gave only
+fields an opt-out. An adoption over an existing schema (#845) showed why that is not enough: a host whose behavior columns
+are `timestamp without time zone` holding UTC read every value 4 h late (America/New_York). Drizzle parses by the
+*declared* column type — a `timestamptz` codec runs `new Date(<text>)` on the offset-less naive text, which JS reads in
+the process zone; a naive codec appends `+0000`. (The "a JS round trip is time-zone-proof" note in *Found while
+specifying* is true for values Drizzle writes; it is false for host-written naive values read through a timestamptz
+declaration.)
+
+Built: `behaviorWithTimezone(behaviors, name, projectDefault)` in `src/schema/field-timestamp.ts` — the behavior's own
+`options: { timezone }`, else the project's `behaviors.timezone` (`codegen.config.yaml`, default `true`). The entity
+prompt passes `behaviorsTimezone`; `entity-locals.js` resolves `timestampsWithTimezone` / `softDeleteWithTimezone`;
+`entity.ejs.t` passes them to `timestampColumn`. The timestamp behaviors are derived from the registry
+(`timestampBehaviorNames()`, any behavior with a `datetime` field). The entity schema rejects `timezone` on another
+behavior or as a non-boolean, at `behaviors.<i>.options.timezone`. Default output is byte-identical.
+
+Gates: `src/__tests__/backend/behavior-timezone.test.ts` (rule, emission default/project/entity, validation, and the
+project knob through the real CLI); the smoke scan reads behavior opt-outs through the same rule
+(`collectTimezoneOptOuts(yamls, projectBehaviorsTimezone)`), with `test/smoke/fixtures/ledger_entry.yaml` compiled by
+`tsc`; `test/scaffold/tests/behavior-timezone.test.ts` against Postgres — a host-written naive value reads back exact
+through the generated repository, reads 4 h off through a timestamptz declaration of the same column, and a
+`DEFAULT now()` under a non-UTC session is stored in that session's wall time (the knob assumes UTC sessions).
+
+Still always timestamptz: the junction and relationship template time columns. A host junction with naive
+`created_at` needs the same knob there (#679 territory).
+
 ## Emitted shapes
 
 | Source | Before (`a8629dfc`) | After |

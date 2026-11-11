@@ -37,6 +37,18 @@ All notable changes to this project will be documented in this file.
   definitions — entities or junctions — resolving to one SQL table is a pre-flight error of `entity new` /
   `junction new` (and an `entity validate` error between entities). See `docs/specs/TABLE-0.md`.
 
+- **Time-zone knob for behavior columns (#845, follow-up to #796).** The `timestamps` (`created_at`,
+  `updated_at`) and `soft_delete` (`deleted_at`) columns could not opt out of `timestamp with time
+  zone`, so a host whose columns are `timestamp without time zone` holding UTC read every value
+  shifted by the process's UTC offset (Drizzle parses an offset-less value in the process zone when
+  the column is declared timestamptz; measured 4 h on an adopted schema). `codegen.config.yaml` takes
+  `behaviors: { timezone: false }` (default `true`), and an entity may write
+  `behaviors: [{ name: timestamps, options: { timezone: false } }]` (or on `soft_delete`) to override
+  it either way. Default output is byte-identical. `timezone` on any other behavior, or as a
+  non-boolean, is a validation error. With the knob off, `DEFAULT now()` stores the *session*
+  TimeZone's wall time — keep sessions at UTC. `behaviors:` in `codegen.config.yaml` is a live block
+  again; the key ARCH-1 deleted, `behaviors.strategy`, is still an unknown-key error.
+
 ### Changed
 
 - **`entity.table:` is optional, and now honoured (TABLE-0).** It was required and validated, but never reached

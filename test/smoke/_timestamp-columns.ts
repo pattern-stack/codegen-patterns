@@ -1,7 +1,8 @@
 /**
  * Smoke scan for #796: every generated `timestamp(...)` column call is a
  * timestamptz call, except the `timezone: false` opt-outs the fixture YAML
- * declares.
+ * declares — on a field, or on a timestamp behavior (`options: { timezone:
+ * false }`, or the project's `behaviors.timezone: false`; #845).
  *
  * Fails closed (CLAUDE.md gate rule (c)): an unparseable `timestamp(` occurrence,
  * an empty scan and an unseen opt-out all throw. The opt-out set comes from the
@@ -11,22 +12,64 @@ import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'yaml';
 import { sqlTableName } from '../../src/config/table-naming';
+import { getBehavior, normalizeBehaviorConfig, timestampBehaviorNames } from '../../src/behaviors/index';
+import { resolveImpliedBehaviors } from '../../src/patterns/implied-behaviors';
+import { behaviorWithTimezone } from '../../src/schema/field-timestamp';
+
+/**
+ * The `behaviors.timezone` every smoke project is generated with: none of them
+ * writes a `behaviors:` block, so it is the schema default. A smoke that sets
+ * the block must pass its own value — the scan then fails closed on any column
+ * the two disagree about.
+ */
+export const SMOKE_BEHAVIORS_TIMEZONE = true;
 
 const TZ_CALL = /^timestamp\('([a-z0-9_]+)', \{ withTimezone: true, mode: 'date' \}\)/;
 const BARE_CALL = /^timestamp\('([a-z0-9_]+)'\)/;
 
 /**
- * `<table>.<column>` for every `timezone: false` field in the fixture YAMLs. An
+ * The columns of the entity's timestamp behaviors (declared, or implied by its
+ * pattern) that are emitted without time zone — by the same rule the generator
+ * reads (`behaviorWithTimezone`), with the column names from the behavior
+ * registry.
+ */
+function behaviorOptOutColumns(doc: any, projectBehaviorsTimezone: boolean): string[] {
+	if (!doc.entity) return [];
+	const declared = (doc.behaviors ?? []) as Parameters<typeof normalizeBehaviorConfig>[0][];
+	const names = new Set([
+		...declared.map((b) => normalizeBehaviorConfig(b).name),
+		...resolveImpliedBehaviors(doc.entity),
+	]);
+	const cols: string[] = [];
+	for (const name of timestampBehaviorNames()) {
+		if (!names.has(name) || behaviorWithTimezone(declared, name, projectBehaviorsTimezone)) continue;
+		for (const f of getBehavior(name)?.fields ?? []) if (f.type === 'datetime') cols.push(f.name);
+	}
+	return cols;
+}
+
+/**
+ * `<table>.<column>` for every column the fixture YAMLs declare without time
+ * zone: a `timezone: false` field, or a timestamp behavior switched off. An
  * entity's table is its SQL name — the one rule, `sqlTableName` (TABLE-0) —
  * under the smoke project's `tables.prefix`, which the caller states.
+ * `projectBehaviorsTimezone` is the generated project's `behaviors.timezone` —
+ * required, so a caller states what its project was generated with.
  */
-export function collectTimezoneOptOuts(yamlFiles: string[], tablePrefix: string): Set<string> {
+export function collectTimezoneOptOuts(
+	yamlFiles: string[],
+	tablePrefix: string,
+	projectBehaviorsTimezone: boolean,
+): Set<string> {
 	const out = new Set<string>();
 	for (const file of yamlFiles) {
 		const doc = yaml.parse(fs.readFileSync(file, 'utf8')) ?? {};
-		const optOutFields = Object.entries(doc.fields ?? {})
-			.filter(([, f]) => (f as { timezone?: unknown } | null)?.timezone === false)
-			.map(([name]) => name);
+		const optOutFields = [
+			...Object.entries(doc.fields ?? {})
+				.filter(([, f]) => (f as { timezone?: unknown } | null)?.timezone === false)
+				.map(([name]) => name),
+			...behaviorOptOutColumns(doc, projectBehaviorsTimezone),
+		];
 		if (optOutFields.length === 0) continue;
 		const table = doc.entity
 			? sqlTableName(doc.entity, tablePrefix)

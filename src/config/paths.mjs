@@ -11,7 +11,9 @@
  * `templates/entity/new/prompt.js` locals that only the deleted `clean`
  * pipeline's templates read. ARCH-0 (#677) deleted those templates; ARCH-1
  * (#682) deletes this machinery and the config keys that fed it (`naming:`,
- * `database:`, `behaviors:`, `locations.backend*`, the entity layout keys).
+ * `database:`, `behaviors: { strategy }`, `locations.backend*`, the entity layout
+ * keys). `behaviors:` is a live block again since #845 — `timezone`, the
+ * behavior-column default — and `behaviors.strategy` stays an unknown key.
  *
  * Usage:
  *   import { BASE_PATHS, getProjectConfig } from '../config/paths.mjs';
