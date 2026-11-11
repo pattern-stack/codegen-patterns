@@ -28,6 +28,13 @@ export interface RelationGraph {
 	tables: Array<{ table: string; edges: RelationEdge[] }>;
 	/** Non-fatal problems (an unresolvable target, a junction endpoint with no YAML). */
 	warnings: string[];
+	/**
+	 * Every ENTITY table's declared scope (`null` = declares none), table-sorted —
+	 * not only hop targets: a table nothing points at still has a root, and a read
+	 * outside a repository needs its scope (READ-1 §5, #843). Junction tables are
+	 * not here; they declare no scope (REL-2 §1.5).
+	 */
+	entityScopes: Array<{ table: string; scope: ScopeConfigLiteral | null }>;
 }
 
 /**
@@ -386,5 +393,9 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 			edges: [...edges.values()].sort((a, b) => a.key.localeCompare(b.key)),
 		}));
 
-	return { tables, warnings };
+	const entityScopes = ctx.entities
+		.map((e) => ({ table: e.plural, scope: scopeOf(e.name) }))
+		.sort((a, b) => a.table.localeCompare(b.table));
+
+	return { tables, warnings, entityScopes };
 }

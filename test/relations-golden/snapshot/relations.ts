@@ -9,11 +9,25 @@
 import { defineRelations } from 'drizzle-orm';
 import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';
 
-import { hopScope, type ScopeConfig } from '@pattern-stack/codegen/runtime/base-classes/scope-filters';
+import { hopScope, UNSCOPED, type ScopeConfig } from '@pattern-stack/codegen/runtime/base-classes/scope-filters';
 import * as schema from './schema';
 
-const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, tenantColumn: 'tenantId', softDelete: true, userTracking: true, enforcement: 'strict' };
-const CONTACTS_SCOPE: ScopeConfig = { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' };
+export const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, tenantColumn: 'tenantId', softDelete: true, userTracking: true, enforcement: 'strict' };
+export const CONTACTS_SCOPE: ScopeConfig = { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' };
+
+/**
+ * Every entity table's declared root scope (READ-1 §5). The relations above scope
+ * every HOP of a `db.query.*` read; nothing scopes its ROOT unless the read goes
+ * through a generated repository. A read that cannot must AND
+ * `scopedRoot(SCOPES.<table>, owner)` into its root `where`.
+ */
+export const SCOPES = {
+	accounts: ACCOUNTS_SCOPE,
+	contacts: CONTACTS_SCOPE,
+	notes: UNSCOPED,
+	opportunities: UNSCOPED,
+	persons: UNSCOPED,
+} as const satisfies Partial<Record<keyof typeof schema, ScopeConfig>>;
 
 export const relations = defineRelations(schema, (r) => ({
 	accounts: {
@@ -54,8 +68,18 @@ export type IncludeOf<TTable extends keyof Relations> =
 		? NonNullable<DBQueryConfig<'one', Relations, Relations[TTable]>['with']>
 		: Record<string, never>;
 
-/** The row shape a given include tree resolves to, nested exactly as asked. */
+/** The root column mask of one table — `{ id?: boolean; name?: boolean; … }` (READ-1 §2.1). */
+export type ColumnsOf<TTable extends keyof Relations> = NonNullable<
+	DBQueryConfig<'many', Relations, Relations[TTable]>['columns']
+>;
+
+/**
+ * The row a read resolves to: the root narrowed by `columns` (`undefined` ⇒ every
+ * column — never `{}`, which selects none), each included relation nested exactly
+ * as asked.
+ */
 export type ResultOf<
 	TTable extends keyof Relations,
+	TColumns extends ColumnsOf<TTable> | undefined,
 	TWith extends IncludeOf<TTable>,
-> = BuildQueryResult<Relations, Relations[TTable], { with: TWith }>;
+> = BuildQueryResult<Relations, Relations[TTable], { columns: TColumns; with: TWith }>;

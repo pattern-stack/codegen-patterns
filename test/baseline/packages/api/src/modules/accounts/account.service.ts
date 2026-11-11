@@ -4,6 +4,12 @@ import { WithAnalytics } from '@shared/base-classes/with-analytics';
 import { EVENT_BUS } from '@shared/constants/tokens';
 import { BaseService } from '@shared/base-classes/base-service';
 import { AccountRepository } from './account.repository';
+import type {
+  AccountColumns,
+  AccountResult,
+} from './account.repository';
+import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
+import type { accounts } from './account.entity';
 import type { Account } from './account.entity';
 
 @Injectable()
@@ -20,6 +26,35 @@ export class AccountService extends WithAnalytics(
     protected override readonly repository: AccountRepository,
   ) {
     super(repository);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // The read surface (READ-1 §7) — pass-through, not composition
+  //
+  // DELEGATION ONLY: the repository's signatures, forwarded so a use case or the
+  // HTTP layer can carry a column mask to the
+  // one place that executes and scopes it. No join logic, no sibling-repository
+  // calls, no navigator — the navigator is REL-3's (#588).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  override findById<C extends AccountColumns | undefined = undefined>(
+    id: string,
+    opts?: ReadOptions<C, never>,
+  ): Promise<AccountResult<C> | null> {
+    return this.repository.findById<C>(id, opts);
+  }
+
+  override findByIds<C extends AccountColumns | undefined = undefined>(
+    ids: readonly string[],
+    opts?: ReadOptions<C, never>,
+  ): Promise<Array<AccountResult<C>>> {
+    return this.repository.findByIds<C>(ids, opts);
+  }
+
+  override list<C extends AccountColumns | undefined = undefined>(
+    options?: ListOptions<typeof accounts> & ReadOptions<C, never>,
+  ): Promise<Array<AccountResult<C>>> {
+    return this.repository.list<C>(options);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

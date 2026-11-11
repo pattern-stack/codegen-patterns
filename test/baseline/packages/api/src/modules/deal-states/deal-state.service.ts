@@ -5,11 +5,13 @@ import { EVENT_BUS } from '@shared/constants/tokens';
 import { BaseService } from '@shared/base-classes/base-service';
 import { DealStateRepository } from './deal-state.repository';
 import type {
+  DealStateColumns,
   DealStateInclude,
   DealStateNoInclude,
   DealStateResult,
 } from './deal-state.repository';
-import type { ListOptions } from '@shared/base-classes/base-repository';
+import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
+import type { deal_states } from './deal-state.entity';
 import type { DealState } from './deal-state.entity';
 import { OpportunityRepository } from '../opportunities/opportunity.repository';
 import type { Opportunity } from '../opportunities/opportunity.entity';
@@ -32,25 +34,32 @@ export class DealStateService extends WithAnalytics(
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Typed `with` includes (REL-2, #587) — pass-through, not composition
+  // The read surface (READ-1 §7) — pass-through, not composition
   //
-  // These two overrides exist so the HTTP layer can carry an allowlisted include
-  // from the controller to the repository. They are DELEGATION ONLY: no join
-  // logic, no sibling-repository calls, no navigator. The typed navigator and the
-  // deletion of the CGP-358b composition methods below are REL-3's (#588).
+  // DELEGATION ONLY: the repository's signatures, forwarded so a use case or the
+  // HTTP layer can carry a column mask and an allowlisted include to the
+  // one place that executes and scopes it. No join logic, no sibling-repository
+  // calls, no navigator — the navigator is REL-3's (#588).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override findById<TWith extends DealStateInclude = DealStateNoInclude>(
+  override findById<C extends DealStateColumns | undefined = undefined, W extends DealStateInclude = DealStateNoInclude>(
     id: string,
-    opts?: { with?: TWith },
-  ): Promise<DealStateResult<TWith> | null> {
-    return this.repository.findById<TWith>(id, opts);
+    opts?: ReadOptions<C, W>,
+  ): Promise<DealStateResult<C, W> | null> {
+    return this.repository.findById<C, W>(id, opts);
   }
 
-  override list<TWith extends DealStateInclude = DealStateNoInclude>(
-    options?: ListOptions & { with?: TWith },
-  ): Promise<Array<DealStateResult<TWith>>> {
-    return this.repository.list<TWith>(options);
+  override findByIds<C extends DealStateColumns | undefined = undefined, W extends DealStateInclude = DealStateNoInclude>(
+    ids: readonly string[],
+    opts?: ReadOptions<C, W>,
+  ): Promise<Array<DealStateResult<C, W>>> {
+    return this.repository.findByIds<C, W>(ids, opts);
+  }
+
+  override list<C extends DealStateColumns | undefined = undefined, W extends DealStateInclude = DealStateNoInclude>(
+    options?: ListOptions<typeof deal_states> & ReadOptions<C, W>,
+  ): Promise<Array<DealStateResult<C, W>>> {
+    return this.repository.list<C, W>(options);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

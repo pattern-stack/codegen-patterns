@@ -508,7 +508,7 @@ describe('manifest rendering', () => {
 		const empty = emptyRelationsManifest();
 		expect(empty).toContain("import * as schema from './schema';");
 		expect(empty).toContain('export const relations = defineRelations(schema, () => ({}));');
-		expect(empty).toBe(buildRelationsManifest({ tables: [], warnings: [] }));
+		expect(empty).toBe(buildRelationsManifest({ tables: [], warnings: [], entityScopes: [] }));
 	});
 
 	it('carries the @generated banner', () => {

@@ -140,12 +140,20 @@ const als = new AsyncLocalStorage<RequesterContext>();
  * Set the ambient requester context for the duration of `fn`. The context
  * propagates through `await` boundaries to all downstream calls. Nesting is
  * fine — an inner `withRequester` overrides the outer for its callback.
+ *
+ * `fn`'s value is AWAITED INSIDE the context (READ-1 §6, #842). A Drizzle query
+ * is a lazy thenable: it builds its statement — and the relations manifest's hop
+ * callbacks read this ALS — only when `.then` is called. `als.run(ctx, fn)` alone
+ * would return an un-awaited builder, the caller's `await` would build it after
+ * the context had exited, and the hops would see no requester (a throw under
+ * `strict`, an UNSCOPED read under `lenient`). Awaiting here forces the build
+ * while the context is active, for every hatch that routes through this one.
  */
 export function withRequester<T>(
   ctx: RequesterContext,
-  fn: () => Promise<T>,
+  fn: () => PromiseLike<T> | T,
 ): Promise<T> {
-  return als.run(ctx, fn);
+  return als.run(ctx, async () => await fn());
 }
 
 /**
@@ -194,7 +202,7 @@ export function requireRequesterScope(): RequesterScope {
 export function withUserScope<T>(
   userId: string,
   organizationId: string | null,
-  fn: () => Promise<T>,
+  fn: () => PromiseLike<T> | T,
 ): Promise<T> {
   return withRequester({ userId, organizationId, scope: 'user' }, fn);
 }
@@ -203,7 +211,7 @@ export function withOrgScope<T>(
   userId: string,
   organizationId: string,
   orgUserIds: readonly string[],
-  fn: () => Promise<T>,
+  fn: () => PromiseLike<T> | T,
 ): Promise<T> {
   return withRequester(
     { userId, organizationId, scope: 'org', orgUserIds },
@@ -213,7 +221,7 @@ export function withOrgScope<T>(
 
 export function withSuperuserScope<T>(
   userId: string,
-  fn: () => Promise<T>,
+  fn: () => PromiseLike<T> | T,
 ): Promise<T> {
   return withRequester(
     { userId, organizationId: null, scope: 'superuser' },
@@ -351,7 +359,7 @@ export function getTenantId(
  */
 export function withTenantScope<T>(
   tenantId: string | null,
-  fn: () => Promise<T>,
+  fn: () => PromiseLike<T> | T,
 ): Promise<T> {
   return withRequester({ ...requireRequester(), tenantId, tenantScope: 'tenant' }, fn);
 }
@@ -376,6 +384,6 @@ export function withTenantScope<T>(
  *
  * Requires an outer context, for the same reason `withTenantScope` does.
  */
-export function withAllTenants<T>(fn: () => Promise<T>): Promise<T> {
+export function withAllTenants<T>(fn: () => PromiseLike<T> | T): Promise<T> {
   return withRequester({ ...requireRequester(), tenantScope: 'all' }, fn);
 }

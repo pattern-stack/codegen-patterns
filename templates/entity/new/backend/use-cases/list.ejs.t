@@ -4,9 +4,8 @@ force: true
 ---
 <%- generatedBanner %>
 import { Injectable } from '@nestjs/common';
-import type { SQL } from 'drizzle-orm';
 import { buildPage, resolveListQuery, type ListQuery, type Page } from '<%= paginationImport %>';
-import type { SortTerm } from '<%= baseRepositoryImport %>';
+import type { RowFilter, SortTerm } from '<%= baseRepositoryImport %>';
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 import { <%= entityNamePlural %><% if (!includes) { %>, type <%= classNames.entity %><% } %> } from '../<%= entityFileStem %>.entity';
 <% if (includes) { -%>
@@ -32,7 +31,9 @@ import type {
 <% } -%>
  * reflect the (optionally filtered) set, so pagination composes with where
  * filters orthogonally — it works fully unfiltered too. `options.where` is the
- * filter seam: the entity's search use case, when its YAML declares one, ANDs
+ * filter seam — a ROW FILTER, `(t) => eq(t.name, x)`, handed whichever table
+ * handle the executing path holds (READ-1 §4); the same value reaches `list` and
+ * `count`, so the page and its total describe one set: the entity's search use case, when its YAML declares one, ANDs
  * its predicates and pages through here, so search and list share one
  * envelope (#744).
  *
@@ -61,13 +62,13 @@ export class <%= classNames.listUseCase %> {
    */
   async execute<TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
     listQuery?: ListQuery,
-    listOptions: { include?: TWith; where?: SQL } = {},
-  ): Promise<Page<<%= classNames.entity %>Result<TWith>>> {
+    listOptions: { include?: TWith; where?: RowFilter<typeof <%= entityNamePlural %>> } = {},
+  ): Promise<Page<<%= classNames.entity %>Result<undefined, TWith>>> {
     const { include: includeTree, where: whereClause } = listOptions;
 <% } else { -%>
   async execute(
     listQuery?: ListQuery,
-    listOptions: { where?: SQL } = {},
+    listOptions: { where?: RowFilter<typeof <%= entityNamePlural %>> } = {},
   ): Promise<Page<<%= classNames.entity %>>> {
     const { where: whereClause } = listOptions;
 <% } -%>
@@ -130,7 +131,7 @@ export class <%= classNames.listUseCase %> {
 <% } -%>
     const [pageRows, rowTotal] = await Promise.all([
 <% if (includes) { -%>
-      this.service.list<TWith>({
+      this.service.list<undefined, TWith>({
         where: whereClause,
         limit: resolvedQuery.pageSize,
         offset: resolvedQuery.offset,

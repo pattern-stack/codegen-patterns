@@ -9,7 +9,29 @@
 import { defineRelations } from 'drizzle-orm';
 import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';
 
+import { UNSCOPED, type ScopeConfig } from '@shared/base-classes/scope-filters';
 import * as schema from './schema';
+
+export const CONTACTS_SCOPE: ScopeConfig = { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' };
+export const DEALS_SCOPE: ScopeConfig = { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' };
+
+/**
+ * Every entity table's declared root scope (READ-1 §5). The relations above scope
+ * every HOP of a `db.query.*` read; nothing scopes its ROOT unless the read goes
+ * through a generated repository. A read that cannot must AND
+ * `scopedRoot(SCOPES.<table>, owner)` into its root `where`.
+ */
+export const SCOPES = {
+	accounts: UNSCOPED,
+	contacts: CONTACTS_SCOPE,
+	deal_states: UNSCOPED,
+	deals: DEALS_SCOPE,
+	opportunities: UNSCOPED,
+	organizations: UNSCOPED,
+	persons: UNSCOPED,
+	tenants: UNSCOPED,
+	users: UNSCOPED,
+} as const satisfies Partial<Record<keyof typeof schema, ScopeConfig>>;
 
 export const relations = defineRelations(schema, (r) => ({
 	contacts: {
@@ -49,8 +71,18 @@ export type IncludeOf<TTable extends keyof Relations> =
 		? NonNullable<DBQueryConfig<'one', Relations, Relations[TTable]>['with']>
 		: Record<string, never>;
 
-/** The row shape a given include tree resolves to, nested exactly as asked. */
+/** The root column mask of one table — `{ id?: boolean; name?: boolean; … }` (READ-1 §2.1). */
+export type ColumnsOf<TTable extends keyof Relations> = NonNullable<
+	DBQueryConfig<'many', Relations, Relations[TTable]>['columns']
+>;
+
+/**
+ * The row a read resolves to: the root narrowed by `columns` (`undefined` ⇒ every
+ * column — never `{}`, which selects none), each included relation nested exactly
+ * as asked.
+ */
 export type ResultOf<
 	TTable extends keyof Relations,
+	TColumns extends ColumnsOf<TTable> | undefined,
 	TWith extends IncludeOf<TTable>,
-> = BuildQueryResult<Relations, Relations[TTable], { with: TWith }>;
+> = BuildQueryResult<Relations, Relations[TTable], { columns: TColumns; with: TWith }>;

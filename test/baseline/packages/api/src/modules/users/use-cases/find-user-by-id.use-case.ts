@@ -21,8 +21,8 @@ export class FindUserByIdUseCase {
   async execute<TWith extends UserInclude = UserNoInclude>(
     id: string,
     include?: TWith,
-  ): Promise<UserResult<TWith>> {
-    const entity = await this.service.findById<TWith>(
+  ): Promise<UserResult<undefined, TWith>> {
+    const entity = await this.service.findById<undefined, TWith>(
       id,
       include === undefined ? undefined : { with: include },
     );

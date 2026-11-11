@@ -5,11 +5,13 @@ import { EVENT_BUS } from '@shared/constants/tokens';
 import { IntegratedEntityService } from '@shared/base-classes/integrated-entity-service';
 import { ContactRepository } from './contact.repository';
 import type {
+  ContactColumns,
   ContactInclude,
   ContactNoInclude,
   ContactResult,
 } from './contact.repository';
-import type { ListOptions } from '@shared/base-classes/base-repository';
+import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
+import type { contacts } from './contact.entity';
 import type { Contact } from './contact.entity';
 import { AccountRepository } from '../accounts/account.repository';
 import type { Account } from '../accounts/account.entity';
@@ -35,25 +37,32 @@ export class ContactService extends WithAnalytics(
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Typed `with` includes (REL-2, #587) — pass-through, not composition
+  // The read surface (READ-1 §7) — pass-through, not composition
   //
-  // These two overrides exist so the HTTP layer can carry an allowlisted include
-  // from the controller to the repository. They are DELEGATION ONLY: no join
-  // logic, no sibling-repository calls, no navigator. The typed navigator and the
-  // deletion of the CGP-358b composition methods below are REL-3's (#588).
+  // DELEGATION ONLY: the repository's signatures, forwarded so a use case or the
+  // HTTP layer can carry a column mask and an allowlisted include to the
+  // one place that executes and scopes it. No join logic, no sibling-repository
+  // calls, no navigator — the navigator is REL-3's (#588).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override findById<TWith extends ContactInclude = ContactNoInclude>(
+  override findById<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
     id: string,
-    opts?: { with?: TWith },
-  ): Promise<ContactResult<TWith> | null> {
-    return this.repository.findById<TWith>(id, opts);
+    opts?: ReadOptions<C, W>,
+  ): Promise<ContactResult<C, W> | null> {
+    return this.repository.findById<C, W>(id, opts);
   }
 
-  override list<TWith extends ContactInclude = ContactNoInclude>(
-    options?: ListOptions & { with?: TWith },
-  ): Promise<Array<ContactResult<TWith>>> {
-    return this.repository.list<TWith>(options);
+  override findByIds<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
+    ids: readonly string[],
+    opts?: ReadOptions<C, W>,
+  ): Promise<Array<ContactResult<C, W>>> {
+    return this.repository.findByIds<C, W>(ids, opts);
+  }
+
+  override list<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
+    options?: ListOptions<typeof contacts> & ReadOptions<C, W>,
+  ): Promise<Array<ContactResult<C, W>>> {
+    return this.repository.list<C, W>(options);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
@@ -69,20 +78,32 @@ export class ContactService extends WithAnalytics(
   // cross-cutting concerns (analytics, events) stay uniform.
   // ═══════════════════════════════════════════════════════════════════════
 
-  async findByUserId(userId: string): Promise<Contact[]> {
-    return this.repository.findByUserId(userId);
+  findByUserId<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
+    userId: string,
+    opts?: ReadOptions<C, W>,
+  ): Promise<Array<ContactResult<C, W>>> {
+    return this.repository.findByUserId<C, W>(userId, opts);
   }
 
-  async findByEmail(email: string): Promise<Contact | null> {
-    return this.repository.findByEmail(email);
+  findByEmail<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
+    email: string,
+    opts?: ReadOptions<C, W>,
+  ): Promise<ContactResult<C, W> | null> {
+    return this.repository.findByEmail<C, W>(email, opts);
   }
 
-  async findByAccountId(accountId: string): Promise<Contact[]> {
-    return this.repository.findByAccountId(accountId);
+  findByAccountId<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
+    accountId: string,
+    opts?: ReadOptions<C, W>,
+  ): Promise<Array<ContactResult<C, W>>> {
+    return this.repository.findByAccountId<C, W>(accountId, opts);
   }
 
-  async findByUserIdAndAccountId(userId: string, accountId: string): Promise<Contact[]> {
-    return this.repository.findByUserIdAndAccountId(userId, accountId);
+  findByUserIdAndAccountId<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
+    userId: string, accountId: string,
+    opts?: ReadOptions<C, W>,
+  ): Promise<Array<ContactResult<C, W>>> {
+    return this.repository.findByUserIdAndAccountId<C, W>(userId, accountId, opts);
   }
 
   async findByOpportunityId(opportunityId: string): Promise<Contact[]> {

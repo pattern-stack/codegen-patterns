@@ -226,3 +226,41 @@ export function scopeFilter(
 export function hopScope(table: PgTable, cfg: ScopeConfig, owner: string): SQL {
   return scopeFilter(table, cfg, owner) ?? sql`true`;
 }
+
+/**
+ * The scope of an entity that declares none — every axis off. The manifest's
+ * `SCOPES` map names it explicitly for every unscoped entity table, so an
+ * ABSENT key is never read as "unscoped" (READ-1 §5.1): a table missing from the
+ * map is a type error at `SCOPES.<table>`, not a silent no-filter.
+ */
+export const UNSCOPED: ScopeConfig = Object.freeze({
+  tenantScoped: false,
+  softDelete: false,
+  userTracking: false,
+  enforcement: 'lenient',
+});
+
+/**
+ * The ROOT half of a scoped read, for code that calls `db.query.<table>`
+ * itself rather than going through a generated repository (READ-1 §5.2, #843).
+ *
+ * The relations manifest scopes every HOP of such a read; nothing scopes its
+ * root. AND this into the root `where` with the table's constant from the
+ * manifest's exported `SCOPES`:
+ *
+ * ```ts
+ * await db.query.accounts.findMany({
+ *   where: { AND: [{ id: { in: ids } }, scopedRoot(SCOPES.accounts, 'AccountLoader')] },
+ * });
+ * ```
+ *
+ * It is `hopScope` shaped as a filter — the same `scopeFilter` a repository's
+ * root and every manifest hop use — and it renders against the handle RQBv2
+ * passes the callback, i.e. the aliased root.
+ */
+export function scopedRoot(
+  cfg: ScopeConfig,
+  owner: string,
+): { RAW: (table: PgTable) => SQL } {
+  return { RAW: (table: PgTable) => hopScope(table, cfg, owner) };
+}

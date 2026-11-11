@@ -5,11 +5,13 @@ import { EVENT_BUS } from '@shared/constants/tokens';
 import { BaseService } from '@shared/base-classes/base-service';
 import { OpportunityRepository } from './opportunity.repository';
 import type {
+  OpportunityColumns,
   OpportunityInclude,
   OpportunityNoInclude,
   OpportunityResult,
 } from './opportunity.repository';
-import type { ListOptions } from '@shared/base-classes/base-repository';
+import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
+import type { opportunities } from './opportunity.entity';
 import type { Opportunity } from './opportunity.entity';
 import { OrganizationRepository } from '../organizations/organization.repository';
 import type { Organization } from '../organizations/organization.entity';
@@ -38,25 +40,32 @@ export class OpportunityService extends WithAnalytics(
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Typed `with` includes (REL-2, #587) — pass-through, not composition
+  // The read surface (READ-1 §7) — pass-through, not composition
   //
-  // These two overrides exist so the HTTP layer can carry an allowlisted include
-  // from the controller to the repository. They are DELEGATION ONLY: no join
-  // logic, no sibling-repository calls, no navigator. The typed navigator and the
-  // deletion of the CGP-358b composition methods below are REL-3's (#588).
+  // DELEGATION ONLY: the repository's signatures, forwarded so a use case or the
+  // HTTP layer can carry a column mask and an allowlisted include to the
+  // one place that executes and scopes it. No join logic, no sibling-repository
+  // calls, no navigator — the navigator is REL-3's (#588).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override findById<TWith extends OpportunityInclude = OpportunityNoInclude>(
+  override findById<C extends OpportunityColumns | undefined = undefined, W extends OpportunityInclude = OpportunityNoInclude>(
     id: string,
-    opts?: { with?: TWith },
-  ): Promise<OpportunityResult<TWith> | null> {
-    return this.repository.findById<TWith>(id, opts);
+    opts?: ReadOptions<C, W>,
+  ): Promise<OpportunityResult<C, W> | null> {
+    return this.repository.findById<C, W>(id, opts);
   }
 
-  override list<TWith extends OpportunityInclude = OpportunityNoInclude>(
-    options?: ListOptions & { with?: TWith },
-  ): Promise<Array<OpportunityResult<TWith>>> {
-    return this.repository.list<TWith>(options);
+  override findByIds<C extends OpportunityColumns | undefined = undefined, W extends OpportunityInclude = OpportunityNoInclude>(
+    ids: readonly string[],
+    opts?: ReadOptions<C, W>,
+  ): Promise<Array<OpportunityResult<C, W>>> {
+    return this.repository.findByIds<C, W>(ids, opts);
+  }
+
+  override list<C extends OpportunityColumns | undefined = undefined, W extends OpportunityInclude = OpportunityNoInclude>(
+    options?: ListOptions<typeof opportunities> & ReadOptions<C, W>,
+  ): Promise<Array<OpportunityResult<C, W>>> {
+    return this.repository.list<C, W>(options);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

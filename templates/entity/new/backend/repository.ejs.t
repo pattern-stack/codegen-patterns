@@ -28,10 +28,21 @@ const _emittedDqNames = new Set(
     .map((q) => q.methodName),
 );
 const _skipFkMethod = (name) => _emittedDqNames.has(name);
-const _needsEq = hasDeclarativeQueries || _fkMethods.length > 0;
+// READ-1: a plain ordered finder now orders through RQBv2's `orderBy` object, so
+// `asc`/`desc` are needed only by an ordered `via:` / `select:` finder.
+const _needsOrderFns = processedQueries.some((q) => q.hasOrder && (q.hasVia || q.hasSelect));
+const E = classNames.entity;
+// READ-1 §2.3 — the generic parameters, options and result of every shaped read.
+// `with` exists only where REL-2 §2.5 allows it; `columns` everywhere.
+const _readGenerics = includes
+  ? `<C extends ${E}Columns | undefined = undefined, W extends ${E}Include = ${E}NoInclude>`
+  : `<C extends ${E}Columns | undefined = undefined>`;
+const _readOpts = includes ? 'ReadOptions<C, W>' : 'ReadOptions<C, never>';
+const _readResult = includes ? `${E}Result<C, W>` : `${E}Result<C>`;
+const _withLine = includes ? '\n      with: opts?.with,' : '';
 _%>
-<%# REL-2: `eq` is now unconditional — the typed `findById` override uses it. %>
-import { eq<%= hasMultiFieldQuery ? ', and' : '' %><%= hasOrderedQuery ? ', desc, asc' : '' %> } from 'drizzle-orm';
+<%# READ-1: `eq` / `inArray` are unconditional — `findById` / `findByIds` use them. %>
+import { eq, inArray<%= hasMultiFieldQuery ? ', and' : '' %><%= _needsOrderFns ? ', desc, asc' : '' %> } from 'drizzle-orm';
 <% if (eavValueTable) { -%>
 import { sql } from 'drizzle-orm';
 <% } -%>
@@ -41,7 +52,7 @@ import type { DrizzleClient<% if (eavValueTable || hasIntegrationSurface) { %>, 
 // third type parameter; `IncludeOf`/`ResultOf` are what make a `with` include
 // typed. Generated code reaching a generated manifest — the runtime package never
 // sees it (REL-1 §4).
-import type { IncludeOf, Relations, ResultOf } from '<%= relationsImport %>';
+import type { ColumnsOf, IncludeOf, Relations, ResultOf } from '<%= relationsImport %>';
 <%_ if (composedBaseClass) { _%>
 import { <%= composedBaseClass %> } from '<%= composedBaseImport %>';
 <%_ } else { _%>
@@ -53,7 +64,7 @@ import { <%= cap.mixin %> } from '<%= cap.importPath %>';
 <% if (hasIntegrationSurface) { -%>
 import type { IntegrationUpsertConfig } from '<%= integrationUpsertConfigImport %>';
 <% } -%>
-import type { <% if (hasTimestamps || hasSoftDelete || hasUserTracking || tenantScoped) { %>BehaviorConfig, <% } %>ListOptions } from '<%= baseRepositoryImport %>';
+import type { <% if (hasTimestamps || hasSoftDelete || hasUserTracking || tenantScoped) { %>BehaviorConfig, <% } %>ListOptions, ReadOptions } from '<%= baseRepositoryImport %>';
 <% if (eavEnabled) { -%>
 import { FieldValueService } from '<%= eavFieldValueImportDir %>/<%= eavFieldValueStem %>.service';
 <% } -%>
@@ -99,21 +110,33 @@ export interface <%= classNames.entity %>IntegrationProjection {
 <%_ } _%>
 
 /**
+ * The root column mask a <%= entityName %> read may take — `{ id?: boolean; … }`
+ * (READ-1 §2.2). Inclusion (`true`s) or exclusion (`false`s); never empty.
+ */
+export type <%= E %>Columns = ColumnsOf<'<%= entityNamePlural %>'>;
+
+/**
  * The relation keys a <%= entityName %> read may include — the `with` surface of
  * `<%= entityNamePlural %>` in this project's graph.
  *
- * `TWith` is inferred AT THE CALL SITE. Annotating an include literal with this
- * type widens it and loses the exact result shape, so hoist an include into a
- * `const` WITHOUT a type annotation (or with `as const`) if you need to reuse it.
+ * `TWith` / `TColumns` are inferred AT THE CALL SITE. Annotating an include or a
+ * mask literal with these types widens it and loses the exact result shape, so
+ * hoist one into a `const` WITHOUT a type annotation (or with `as const`).
  */
-export type <%= classNames.entity %>Include = IncludeOf<'<%= entityNamePlural %>'>;
+export type <%= E %>Include = IncludeOf<'<%= entityNamePlural %>'>;
 
-/** The row shape a given <%= entityName %> include tree resolves to, nested exactly as asked. */
-export type <%= classNames.entity %>Result<TWith extends <%= classNames.entity %>Include> =
-  ResultOf<'<%= entityNamePlural %>', TWith>;
+/** The default `TWith` — no include. */
+export type <%= E %>NoInclude = globalThis.Record<string, never>;
 
-/** The default `TWith` — no include, so the plain row. */
-export type <%= classNames.entity %>NoInclude = globalThis.Record<string, never>;
+/**
+ * The row a <%= entityName %> read resolves to: the root narrowed by `TColumns`
+ * (`undefined` ⇒ every column), each included relation nested exactly as asked.
+ * `<%= E %>Result` alone is the plain row.
+ */
+export type <%= E %>Result<
+  TColumns extends <%= E %>Columns | undefined = undefined,
+  TWith extends <%= E %>Include = <%= E %>NoInclude,
+> = ResultOf<'<%= entityNamePlural %>', TColumns, TWith>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -121,7 +144,7 @@ export type <%= classNames.entity %>NoInclude = globalThis.Record<string, never>
  * The controller merges allowlisted fragments at REQUEST time, so which relations
  * are present is not statically known — one of finitely many literals, but not a
  * single one. So the handler's result type is the widened form: every relation
- * OPTIONAL, the row's own columns required. `<%= classNames.entity %>Result<<%= classNames.entity %>Include>`
+ * OPTIONAL, the row's own columns required. `<%= classNames.entity %>Result<undefined, <%= classNames.entity %>Include>`
  * (the fully-included shape) would be wrong here — it claims every relation is
  * always present, which no single request produces.
  *
@@ -129,7 +152,7 @@ export type <%= classNames.entity %>NoInclude = globalThis.Record<string, never>
  * the call site (REL-2 §2.3/§5.2).
  */
 export type <%= classNames.entity %>ApiResult = <%= classNames.entity %> &
-  globalThis.Partial<<%= classNames.entity %>Result<<%= classNames.entity %>Include>>;
+  globalThis.Partial<<%= classNames.entity %>Result<undefined, <%= classNames.entity %>Include>>;
 
 @Injectable()
 <%_ /* ADR-041: the spine alone, the spine wrapped in one capability mixin, or
@@ -226,84 +249,75 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
   }
 <%_ } -%>
 
-<% if (includes) { -%>
   // ═══════════════════════════════════════════════════════════════════════
-  // Typed `with` includes (REL-2, #587)
+  // The read surface (READ-1, docs/specs/READ-1.md; REL-2 #587)
   //
-  // The include surface is emitted HERE, not on the base class: with
-  // `TRelations` and the relation key as naked type parameters,
-  // `DBQueryConfig<…>['with']` is a TS2536, so a generic
-  // `BaseRepository.findById<TWith>` cannot be written (REL-2 §2.1). Where both
-  // are concrete — this subclass — everything resolves.
+  // Every read takes the same shape knobs — a root `columns` mask<% if (includes) { %> and a
+  // typed `with` include<% } %> — inferred at the call site. The signatures live HERE,
+  // not on the base: with `TRelations` and the table key as naked type
+  // parameters, `DBQueryConfig<…>['with']` is a TS2536 (REL-2 §2.1).
   //
-  // Two execution paths, one scope. Without a `with` the call goes through
-  // `baseQuery()`, whose single `WHERE` carries the guards. With a `with` it
-  // goes through RQBv2 (`db.query.<%= entityNamePlural %>`), because `baseQuery()`
-  // cannot carry an include — and the root filter injects the SAME predicate via
-  // `rootScopeRawOn(t, …)`. Every HOP is scoped by the relations manifest itself,
-  // so a caller cannot reach an unscoped level (REL-2 §1.4/§3).
-  //
-  // The `t` matters: RQBv2 ALIASES the root table, so the predicate must render
-  // against the handle it hands the closure, not against the repository's own.
+  // ONE execution path: every read runs on RQBv2
+  // (`db.query.<%= entityNamePlural %>`), with or without options, and its root
+  // predicate is ONE call — `this.rootFilter(where)`, the caller's row filter AND
+  // this repository's scope, both rendered against the table RQBv2 hands the
+  // callback. RQBv2 ALIASES the root (`"<%= entityNamePlural %>" as "d0"`), so
+  // anything rendered against the real table name would not be in scope there
+  // (REL-2 §10 Found #9, #840). Every HOP is scoped by the relations manifest.
   //
   // Depth is uncapped here: charter I4 asks for ONE statement, not a shallow
   // one. The depth cap is an HTTP concern (`api.includes.max_depth`).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override async findById<TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
+  override async findById<%- _readGenerics %>(
     id: string,
-    opts?: { with?: TWith },
-  ): Promise<<%= classNames.entity %>Result<TWith> | null> {
-    if (opts?.with === undefined) {
-      const rows = await this.baseQuery(eq(this.table['id'], id)).limit(1);
-      return (rows[0] as <%= classNames.entity %>Result<TWith>) ?? null;
-    }
+    opts?: <%- _readOpts %>,
+  ): Promise<<%- _readResult %> | null> {
     const row = await this.db.query.<%= entityNamePlural %>.findFirst({
-      where: {
-        AND: [
-          { id: { eq: id } },
-          { RAW: (t) => this.rootScopeRawOn(t, { softDelete: <%= !!hasSoftDelete %> }) },
-        ],
-      },
-      with: opts.with,
+      where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
+      columns: this.checkColumns(opts?.columns),<%- _withLine %>
     });
-    return (row as <%= classNames.entity %>Result<TWith> | undefined) ?? null;
+    return (row as <%- _readResult %> | undefined) ?? null;
   }
 
-  override async list<TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
-    query?: ListOptions & { with?: TWith },
-  ): Promise<Array<<%= classNames.entity %>Result<TWith>>> {
-    if (query?.with === undefined) {
-      return (await super.list(query)) as Array<<%= classNames.entity %>Result<TWith>>;
-    }
-    if (query.orderBy !== undefined) {
-      // A pre-rendered `orderBy` names the table by its REAL name, and RQBv2
-      // aliases the root — so the fragment would reference a table that is not in
-      // scope and Postgres would reject the statement. Fail loud rather than issue
-      // it; pass `sort` instead, which both paths can render (REL-2 §2.4).
-      throw new Error(
-        '<%= classNames.repository %>.list: `orderBy` cannot be combined with `with` — ' +
-          'pass `sort: [{ column, direction }]` instead.',
-      );
-    }
-    const callerWhere = query.where;
-    const callerSort = query.sort;
+  /**
+   * One statement for many ids (READ-1 §2.4): `[]` issues none, duplicates are
+   * read once, rows come back in INPUT order, and a missing / soft-deleted /
+   * out-of-scope id is simply absent. A mask that omits `id` still orders — `id`
+   * is selected and stripped again. Not chunked: Postgres caps a statement at
+   * 65 535 parameters.
+   */
+  override async findByIds<%- _readGenerics %>(
+    ids: readonly string[],
+    opts?: <%- _readOpts %>,
+  ): Promise<Array<<%- _readResult %>>> {
+    const unique = this.uniqueIds(ids);
+    if (unique.length === 0) return [];
+    const mask = this.byIdsColumns(this.checkColumns(opts?.columns));
     const rows = await this.db.query.<%= entityNamePlural %>.findMany({
-      where: {
-        AND: [
-          ...(callerWhere === undefined ? [] : [{ RAW: callerWhere }]),
-          { RAW: (t) => this.rootScopeRawOn(t, { softDelete: <%= !!hasSoftDelete %> }) },
-        ],
-      },
-      with: query.with,
-      // The ALIASED table RQBv2 hands the callback, not this repo's own handle.
-      ...(callerSort === undefined ? {} : { orderBy: (t) => this.orderByOn(t, callerSort) ?? [] }),
-      ...(query.limit === undefined ? {} : { limit: query.limit }),
-      ...(query.offset === undefined ? {} : { offset: query.offset }),
+      where: { RAW: this.rootFilter((t) => inArray(t.id, unique)) },
+      columns: mask.columns,<%- _withLine %>
     });
-    return rows as Array<<%= classNames.entity %>Result<TWith>>;
+    return this.inInputOrder(rows, unique, mask.stripId) as Array<<%- _readResult %>>;
   }
-<% } -%>
+
+  /**
+   * `where` is a ROW FILTER — `(t) => eq(t.name, x)` — never a pre-rendered SQL:
+   * it is handed the aliased root. `sort` is column keys, rendered the same way.
+   */
+  override async list<%- _readGenerics %>(
+    query?: ListOptions<typeof <%= entityNamePlural %>> & <%- _readOpts %>,
+  ): Promise<Array<<%- _readResult %>>> {
+    const sort = query?.sort;
+    const rows = await this.db.query.<%= entityNamePlural %>.findMany({
+      where: { RAW: this.rootFilter(query?.where) },
+      columns: this.checkColumns(query?.columns),<%- includes ? '\n      with: query?.with,' : '' %>
+      orderBy: sort === undefined || sort.length === 0 ? undefined : (t) => this.orderByOn(t, sort) ?? [],
+      limit: query?.limit,
+      offset: query?.offset,
+    });
+    return rows as Array<<%- _readResult %>>;
+  }
 <% if (hasDeclarativeQueries) { -%>
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -314,13 +328,15 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
 // CGP-358: Skip declarative impl when a FK method covers this method name.
 // FK methods accept opts, making them a superset of a plain non-unique single-param query.
 const _skipClpDq = _fkMethodNames.has(q.methodName) && !q.isUnique && !q.hasVia && !q.hasSelect;
+const _pred = q.params.map(p => `eq(t.${p.camelName}, ${p.camelName})`);
+const _predExpr = q.hasMultipleParams ? `and(${_pred.join(', ')})` : _pred[0];
 _%>
 <%_ if (!_skipClpDq) { _%>
-<%_ /* REL-2: a plain by-column finder takes a typed `with` (spec §4). A `select:`
+<%_ /* A plain by-column finder takes the read options (READ-1 §2.3). A `select:`
       projection returns picked fields and a `via:` finder joins a junction with
-      its own query, so neither carries an include — §5.4: the include surface
+      its own query, so neither carries them — REL-2 §5.4: the read surface
       exposes SHAPES, not queries. */ _%>
-<%_ if (q.hasVia || q.hasSelect || !includes) { _%>
+<%_ if (q.hasVia || q.hasSelect) { _%>
 
   async <%= q.methodName %>(<%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
 <% if (q.isUnique) { -%>
@@ -334,50 +350,27 @@ _%>
   }
 <%_ } else { _%>
 
-  async <%= q.methodName %><TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
+  async <%= q.methodName %><%- _readGenerics %>(
     <%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>,
-    opts?: { with?: TWith },
-  ): Promise<<%- q.isUnique ? `${classNames.entity}Result<TWith> | null` : `Array<${classNames.entity}Result<TWith>>` %>> {
-    if (opts?.with === undefined) {
-<% if (q.isUnique) { -%>
-      const rows = await this.baseQuery(<%- q.hasMultipleParams ? 'and(' : '' %><%- q.params.map(p => `eq(this.table['${p.camelName}'], ${p.camelName})`).join(', ') %><%- q.hasMultipleParams ? ')' : '' %>)
-        .limit(1);
-      return (rows[0] as <%= classNames.entity %>Result<TWith>) ?? null;
-<% } else { -%>
-      const rows = await this.baseQuery(<%- q.hasMultipleParams ? 'and(' : '' %><%- q.params.map(p => `eq(this.table['${p.camelName}'], ${p.camelName})`).join(', ') %><%- q.hasMultipleParams ? ')' : '' %>)<%- q.hasOrder ? `.orderBy(${q.orderDirection}(this.table['${q.orderBy}']))` : '' %>;
-      return rows as Array<<%= classNames.entity %>Result<TWith>>;
-<% } -%>
-    }
+    opts?: <%- _readOpts %>,
+  ): Promise<<%- q.isUnique ? `${_readResult} | null` : `Array<${_readResult}>` %>> {
 <% if (q.isUnique) { -%>
     const row = await this.db.query.<%= entityNamePlural %>.findFirst({
-      where: {
-        AND: [
-<%- q.params.map(p => `          { ${p.camelName}: { eq: ${p.camelName} } },`).join('\n') %>
-          { RAW: (t) => this.rootScopeRawOn(t, { softDelete: <%= !!hasSoftDelete %> }) },
-        ],
-      },
-      with: opts.with,
+      where: { RAW: this.rootFilter((t) => <%- _predExpr %>) },
+      columns: this.checkColumns(opts?.columns),<%- _withLine %>
     });
-    return (row as <%= classNames.entity %>Result<TWith> | undefined) ?? null;
+    return (row as <%- _readResult %> | undefined) ?? null;
 <% } else { -%>
     const rows = await this.db.query.<%= entityNamePlural %>.findMany({
-      where: {
-        AND: [
-<%- q.params.map(p => `          { ${p.camelName}: { eq: ${p.camelName} } },`).join('\n') %>
-          { RAW: (t) => this.rootScopeRawOn(t, { softDelete: <%= !!hasSoftDelete %> }) },
-        ],
-      },
-      with: opts.with,
+      where: { RAW: this.rootFilter((t) => <%- _predExpr %>) },
+      columns: this.checkColumns(opts?.columns),<%- _withLine %>
 <%- q.hasOrder ? `      orderBy: { ${q.orderBy}: '${q.orderDirection}' },\n` : '' %>    });
-    return rows as Array<<%= classNames.entity %>Result<TWith>>;
+    return rows as Array<<%- _readResult %>>;
 <% } -%>
   }
 <%_ } _%>
 <%_ } _%>
 <%_ }) _%>
-<% } else { -%>
-
-  // TODO: Add entity-specific query methods here.
 <% } -%>
 <%_ const _emittedFkMethods = _fkMethods.filter(rel => !_skipFkMethod(`findBy${rel.camelField.charAt(0).toUpperCase() + rel.camelField.slice(1)}`)); _%>
 <%_ if (_emittedFkMethods.length > 0) { _%>
@@ -390,35 +383,17 @@ _%>
   // ═══════════════════════════════════════════════════════════════════════
 <%_ _emittedFkMethods.forEach(rel => { _%>
 
-<%_ if (!includes) { _%>
-  async findBy<%= rel.camelField.charAt(0).toUpperCase() + rel.camelField.slice(1) %>(id: string, opts?: { cursor?: string; limit?: number }): Promise<<%= classNames.entity %>[]> {
-    let q = this.baseQuery(eq(this.table['<%= rel.camelField %>'], id));
-    if (opts?.limit) q = q.limit(opts.limit) as typeof q;
-    return (await q) as <%= classNames.entity %>[];
-  }
-<%_ } else { _%>
-  async findBy<%= rel.camelField.charAt(0).toUpperCase() + rel.camelField.slice(1) %><TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
+  async findBy<%= rel.camelField.charAt(0).toUpperCase() + rel.camelField.slice(1) %><%- _readGenerics %>(
     id: string,
-    opts?: { cursor?: string; limit?: number; with?: TWith },
-  ): Promise<Array<<%= classNames.entity %>Result<TWith>>> {
-    if (opts?.with === undefined) {
-      let q = this.baseQuery(eq(this.table['<%= rel.camelField %>'], id));
-      if (opts?.limit) q = q.limit(opts.limit) as typeof q;
-      return (await q) as Array<<%= classNames.entity %>Result<TWith>>;
-    }
+    opts?: { cursor?: string; limit?: number } & <%- _readOpts %>,
+  ): Promise<Array<<%- _readResult %>>> {
     const rows = await this.db.query.<%= entityNamePlural %>.findMany({
-      where: {
-        AND: [
-          { <%= rel.camelField %>: { eq: id } },
-          { RAW: (t) => this.rootScopeRawOn(t, { softDelete: <%= !!hasSoftDelete %> }) },
-        ],
-      },
-      with: opts.with,
-      ...(opts.limit === undefined ? {} : { limit: opts.limit }),
+      where: { RAW: this.rootFilter((t) => eq(t.<%= rel.camelField %>, id)) },
+      columns: this.checkColumns(opts?.columns),<%- _withLine %>
+      limit: opts?.limit,
     });
-    return rows as Array<<%= classNames.entity %>Result<TWith>>;
+    return rows as Array<<%- _readResult %>>;
   }
-<%_ } _%>
 <%_ }) _%>
 <%_ } _%>
 <% if (eavValueTable) { -%>

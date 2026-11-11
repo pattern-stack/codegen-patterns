@@ -21,8 +21,8 @@ export class FindDealStateByIdUseCase {
   async execute<TWith extends DealStateInclude = DealStateNoInclude>(
     id: string,
     include?: TWith,
-  ): Promise<DealStateResult<TWith>> {
-    const entity = await this.service.findById<TWith>(
+  ): Promise<DealStateResult<undefined, TWith>> {
+    const entity = await this.service.findById<undefined, TWith>(
       id,
       include === undefined ? undefined : { with: include },
     );

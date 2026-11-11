@@ -5,11 +5,13 @@ import { EVENT_BUS } from '@shared/constants/tokens';
 import { IntegratedEntityService } from '@shared/base-classes/integrated-entity-service';
 import { DealRepository } from './deal.repository';
 import type {
+  DealColumns,
   DealInclude,
   DealNoInclude,
   DealResult,
 } from './deal.repository';
-import type { ListOptions } from '@shared/base-classes/base-repository';
+import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
+import type { deals } from './deal.entity';
 import type { Deal } from './deal.entity';
 import { UserRepository } from '../users/user.repository';
 import type { User } from '../users/user.entity';
@@ -35,25 +37,32 @@ export class DealService extends WithAnalytics(
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Typed `with` includes (REL-2, #587) — pass-through, not composition
+  // The read surface (READ-1 §7) — pass-through, not composition
   //
-  // These two overrides exist so the HTTP layer can carry an allowlisted include
-  // from the controller to the repository. They are DELEGATION ONLY: no join
-  // logic, no sibling-repository calls, no navigator. The typed navigator and the
-  // deletion of the CGP-358b composition methods below are REL-3's (#588).
+  // DELEGATION ONLY: the repository's signatures, forwarded so a use case or the
+  // HTTP layer can carry a column mask and an allowlisted include to the
+  // one place that executes and scopes it. No join logic, no sibling-repository
+  // calls, no navigator — the navigator is REL-3's (#588).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override findById<TWith extends DealInclude = DealNoInclude>(
+  override findById<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
     id: string,
-    opts?: { with?: TWith },
-  ): Promise<DealResult<TWith> | null> {
-    return this.repository.findById<TWith>(id, opts);
+    opts?: ReadOptions<C, W>,
+  ): Promise<DealResult<C, W> | null> {
+    return this.repository.findById<C, W>(id, opts);
   }
 
-  override list<TWith extends DealInclude = DealNoInclude>(
-    options?: ListOptions & { with?: TWith },
-  ): Promise<Array<DealResult<TWith>>> {
-    return this.repository.list<TWith>(options);
+  override findByIds<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+    ids: readonly string[],
+    opts?: ReadOptions<C, W>,
+  ): Promise<Array<DealResult<C, W>>> {
+    return this.repository.findByIds<C, W>(ids, opts);
+  }
+
+  override list<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+    options?: ListOptions<typeof deals> & ReadOptions<C, W>,
+  ): Promise<Array<DealResult<C, W>>> {
+    return this.repository.list<C, W>(options);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
@@ -69,20 +78,32 @@ export class DealService extends WithAnalytics(
   // cross-cutting concerns (analytics, events) stay uniform.
   // ═══════════════════════════════════════════════════════════════════════
 
-  async findByOwnerId(ownerId: string): Promise<Deal[]> {
-    return this.repository.findByOwnerId(ownerId);
+  findByOwnerId<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+    ownerId: string,
+    opts?: ReadOptions<C, W>,
+  ): Promise<Array<DealResult<C, W>>> {
+    return this.repository.findByOwnerId<C, W>(ownerId, opts);
   }
 
-  async findByAccountId(accountId: string): Promise<Deal[]> {
-    return this.repository.findByAccountId(accountId);
+  findByAccountId<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+    accountId: string,
+    opts?: ReadOptions<C, W>,
+  ): Promise<Array<DealResult<C, W>>> {
+    return this.repository.findByAccountId<C, W>(accountId, opts);
   }
 
-  async findByStage(stage: 'prospecting' | 'qualification' | 'proposal' | 'negotiation' | 'closed_won' | 'closed_lost'): Promise<Deal[]> {
-    return this.repository.findByStage(stage);
+  findByStage<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+    stage: 'prospecting' | 'qualification' | 'proposal' | 'negotiation' | 'closed_won' | 'closed_lost',
+    opts?: ReadOptions<C, W>,
+  ): Promise<Array<DealResult<C, W>>> {
+    return this.repository.findByStage<C, W>(stage, opts);
   }
 
-  async findByOwnerIdAndStage(ownerId: string, stage: 'prospecting' | 'qualification' | 'proposal' | 'negotiation' | 'closed_won' | 'closed_lost'): Promise<Deal[]> {
-    return this.repository.findByOwnerIdAndStage(ownerId, stage);
+  findByOwnerIdAndStage<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+    ownerId: string, stage: 'prospecting' | 'qualification' | 'proposal' | 'negotiation' | 'closed_won' | 'closed_lost',
+    opts?: ReadOptions<C, W>,
+  ): Promise<Array<DealResult<C, W>>> {
+    return this.repository.findByOwnerIdAndStage<C, W>(ownerId, stage, opts);
   }
 
   // ═══════════════════════════════════════════════════════════════════════

@@ -2,7 +2,7 @@
  * Base classes barrel export
  */
 export { BaseRepository } from './base-repository';
-export type { BehaviorConfig, ListOptions, RowsOf, SortTerm } from './base-repository';
+export type { BehaviorConfig, ListOptions, ReadOptions, RowFilter, RowsOf, SortTerm } from './base-repository';
 export { column } from './table-columns';
 
 // The scope predicate, for one table (REL-2 §3). `hopScope` is what the
@@ -14,7 +14,9 @@ export {
   hopScope,
   isUnscoped,
   scopeFilter,
+  scopedRoot,
   tenantAxisPredicate,
+  UNSCOPED,
   tenantPredicateFor,
   userScopePredicateFor,
 } from './scope-filters';

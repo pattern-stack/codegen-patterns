@@ -77,7 +77,11 @@ function renderEdge(edge: RelationEdge): string {
 }
 
 /**
- * The scope constants the graph needs, name-sorted, one per SCOPED table.
+ * The scope constants, name-sorted, one per SCOPED entity table — every table
+ * that declares a scope, whether or not anything points at it, plus any hop
+ * target (always an entity, so the same set). EXPORTED (READ-1 §5, #843): a
+ * read outside a generated repository applies its root scope from these, rather
+ * than re-deriving them from YAML (charter I1).
  *
  * Each entity's config is emitted here AND as the repository's `behaviors` —
  * both derived from the same YAML declaration, which is what I1 asks for
@@ -86,6 +90,9 @@ function renderEdge(edge: RelationEdge): string {
  */
 function scopeConstants(graph: RelationGraph): string[] {
 	const byName = new Map<string, ScopeConfigLiteral>();
+	for (const { table, scope } of graph.entityScopes) {
+		if (scope !== null) byName.set(scopeConstName(table), scope);
+	}
 	for (const { edges } of graph.tables) {
 		for (const edge of edges) {
 			if (edge.targetScope === null) continue;
@@ -94,9 +101,29 @@ function scopeConstants(graph: RelationGraph): string[] {
 	}
 	return [...byName.entries()]
 		.sort((a, b) => a[0].localeCompare(b[0]))
-		.map(([name, cfg]) => `const ${name}: ScopeConfig = ${renderScopeLiteral(cfg)};`);
+		.map(([name, cfg]) => `export const ${name}: ScopeConfig = ${renderScopeLiteral(cfg)};`);
 }
 
+/**
+ * `SCOPES` — every ENTITY table's scope, keyed by its schema export. An entity
+ * that declares none maps to the runtime's `UNSCOPED`, named explicitly: an
+ * ABSENT key must never read as "unscoped" (READ-1 §5.1). Pair it with
+ * `scopedRoot(SCOPES.<table>, owner)` to root-scope a hand-written `db.query`.
+ */
+function scopesMap(graph: RelationGraph): string {
+	const lines = graph.entityScopes.map(
+		({ table, scope }) => `\t${table}: ${scope === null ? 'UNSCOPED' : scopeConstName(table)},`,
+	);
+	return (
+		'/**\n' +
+		' * Every entity table\'s declared root scope (READ-1 §5). The relations above scope\n' +
+		' * every HOP of a `db.query.*` read; nothing scopes its ROOT unless the read goes\n' +
+		' * through a generated repository. A read that cannot must AND\n' +
+		' * `scopedRoot(SCOPES.<table>, owner)` into its root `where`.\n' +
+		' */\n' +
+		`export const SCOPES = {\n${lines.join('\n')}\n} as const satisfies Partial<Record<keyof typeof schema, ScopeConfig>>;\n`
+	);
+}
 
 /**
  * The two type helpers every generated repository hangs its typed `with` include
@@ -120,11 +147,21 @@ export type IncludeOf<TTable extends keyof Relations> =
 \t\t? NonNullable<DBQueryConfig<'one', Relations, Relations[TTable]>['with']>
 \t\t: Record<string, never>;
 
-/** The row shape a given include tree resolves to, nested exactly as asked. */
+/** The root column mask of one table — \`{ id?: boolean; name?: boolean; … }\` (READ-1 §2.1). */
+export type ColumnsOf<TTable extends keyof Relations> = NonNullable<
+\tDBQueryConfig<'many', Relations, Relations[TTable]>['columns']
+>;
+
+/**
+ * The row a read resolves to: the root narrowed by \`columns\` (\`undefined\` ⇒ every
+ * column — never \`{}\`, which selects none), each included relation nested exactly
+ * as asked.
+ */
 export type ResultOf<
 \tTTable extends keyof Relations,
+\tTColumns extends ColumnsOf<TTable> | undefined,
 \tTWith extends IncludeOf<TTable>,
-> = BuildQueryResult<Relations, Relations[TTable], { with: TWith }>;
+> = BuildQueryResult<Relations, Relations[TTable], { columns: TColumns; with: TWith }>;
 `;
 
 /**
@@ -139,18 +176,25 @@ export function buildRelationsManifest(
 	scopeFiltersImport = DEFAULT_SCOPE_FILTERS_IMPORT,
 ): string {
 	const constants = scopeConstants(graph);
-	// A graph that declares no scope anywhere emits neither the import nor the
-	// constants, so its manifest is byte-identical to what REL-1 emitted. Nothing
-	// grows for consumers who do not scope.
-	const scopeHead =
-		constants.length === 0
-			? ''
-			: `import { hopScope, type ScopeConfig } from '${scopeFiltersImport}';\n`;
+	// A graph that declares no scope anywhere emits neither the import, nor the
+	// constants, nor `SCOPES`, so its manifest does not grow for consumers who do
+	// not scope (REL-2 L8).
+	const scoped = constants.length > 0;
+	const needsUnscoped = scoped && graph.entityScopes.some((e) => e.scope === null);
+	const needsHop = graph.tables.some(({ edges }) => edges.some((e) => e.targetScope !== null));
+	const scopeImports = [
+		...(needsHop ? ['hopScope'] : []),
+		...(needsUnscoped ? ['UNSCOPED'] : []),
+		'type ScopeConfig',
+	];
+	const scopeHead = scoped
+		? `import { ${scopeImports.join(', ')} } from '${scopeFiltersImport}';\n`
+		: '';
 	const head =
 		`${BANNER}import { defineRelations } from 'drizzle-orm';\n` +
 		`import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';\n\n` +
 		`${scopeHead}import * as schema from '${schemaImport}';\n\n` +
-		(constants.length === 0 ? '' : `${constants.join('\n')}\n\n`);
+		(scoped ? `${constants.join('\n')}\n\n${scopesMap(graph)}\n` : '');
 
 	if (graph.tables.length === 0) {
 		// A project with no relations still exports a manifest: the emitted
@@ -184,5 +228,5 @@ export function buildRelationsManifestFromContext(
 
 /** The manifest a project with no entities gets (`project init`). */
 export function emptyRelationsManifest(schemaImport = './schema'): string {
-	return buildRelationsManifest({ tables: [], warnings: [] }, schemaImport);
+	return buildRelationsManifest({ tables: [], warnings: [], entityScopes: [] }, schemaImport);
 }

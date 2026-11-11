@@ -21,8 +21,8 @@ export class FindContactByIdUseCase {
   async execute<TWith extends ContactInclude = ContactNoInclude>(
     id: string,
     include?: TWith,
-  ): Promise<ContactResult<TWith>> {
-    const entity = await this.service.findById<TWith>(
+  ): Promise<ContactResult<undefined, TWith>> {
+    const entity = await this.service.findById<undefined, TWith>(
       id,
       include === undefined ? undefined : { with: include },
     );
