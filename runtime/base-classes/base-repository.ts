@@ -562,9 +562,16 @@ export abstract class BaseRepository<
    * the core builder and the manifest's `hopScope` applies at every hop — so the
    * root and the hops cannot disagree (charter I3). Renders `true` when nothing
    * applies, because a `RAW` slot takes a `SQL`.
+   *
+   * Generic in its OWN table parameter, not the class's `TTable`: `T` is
+   * inferred from the RQBv2 `RAW` slot the result is handed to (the concrete
+   * aliased table), so `(t) => eq(t.id, id)` is typed even inside a capability
+   * mixin, whose base sees `TTable` only as `PgTable` — and a class-typed
+   * `(table: TTable) => SQL` return would put `TTable` in a contravariant
+   * position and stop a concrete repository fitting `RepositoryCtor`.
    */
-  protected rootFilter(where?: RowFilter<TTable>): (table: TTable) => SQL {
-    return (table: TTable) => {
+  protected rootFilter<T extends PgTable>(where?: RowFilter<T>): (table: T) => SQL {
+    return (table: T) => {
       const scope = scopeFilter(
         table,
         this.scopeConfigFor({ softDelete: this.behaviors.softDelete }),

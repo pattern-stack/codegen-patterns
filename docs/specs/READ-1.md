@@ -219,7 +219,7 @@ root subquery pruned to the selected columns. Baselines and the golden snapshot 
 
 ```ts
 // BaseRepository — the only way a generated read builds its root predicate
-protected rootFilter(where?: RowFilter<TTable>): (t: TTable) => SQL;
+protected rootFilter<T extends PgTable>(where?: RowFilter<T>): (t: T) => SQL;  // T inferred from the RAW slot (§10 Found #6)
 ```
 
 It returns the `RAW` callback: `(t) => and(where?.(t), scopeFilter(t, scopeConfigFor({ softDelete }), owner)) ?? true`.
@@ -480,6 +480,16 @@ every plain finder (`via:` / `select:` finders keep their own shapes).
 `WithActor.memberPredicate`'s group form is an `EXISTS` correlated on the root's `id`, built against
 `this.col('id')` — the un-aliased table. It worked on `baseQuery()`; on the relational path it would have been the
 same FROM-clause error as #840. It now returns a `RowFilter`, correlated on the handle it is given.
+
+### Found #6 — `rootFilter` is generic in its own table, not the class's
+
+The first cut typed it `rootFilter(where?: RowFilter<TTable>): (table: TTable) => SQL`. Two failures, both only in a
+repository composed through a capability mixin (`test-smoke-junction`'s `ledger`, 11 errors): the mixin's
+`RepositoryCtor` sees the base as `BaseRepository<any, PgTable, …>`, so (1) a return type with `TTable` in a parameter
+position made the concrete repository unassignable to it (contravariance), and (2) inside the composed class `TTable`
+is `PgTable`, so `(t) => eq(t.id, id)` had no `id`. Now `rootFilter<T extends PgTable>(where?: RowFilter<T>):
+(table: T) => SQL`, with `T` inferred from the RQBv2 `RAW` slot it is passed to — the concrete aliased table — so the
+predicate is typed the same way in a bare spine and a composed one.
 
 ### Found #5 — smaller things fixed in passing
 
