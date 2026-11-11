@@ -32,11 +32,8 @@ const entity = (column: string, extra: Partial<ParsedEntity> = {}): ParsedEntity
 	...extra,
 });
 
-const uiIssues = (e: ParsedEntity, project?: string) =>
-	(project === undefined
-		? checkConsistency(buildDomainGraph([e]))
-		: checkConsistency(buildDomainGraph([e]), project)
-	).filter((i) => i.type === 'missing_ui_metadata');
+const uiIssues = (e: ParsedEntity, project = 'tenant_id') =>
+	checkConsistency(buildDomainGraph([e]), project).filter((i) => i.type === 'missing_ui_metadata');
 
 describe('consistency checker: the tenant column is a system field (#791)', () => {
 	it('the default tenant_id is exempt', () => {

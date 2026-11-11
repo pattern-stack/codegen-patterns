@@ -127,9 +127,8 @@ describe('resolveTenancy refuses a column the table already declares (#791 N2)',
 });
 
 describe('tenantColumnName — the name without the adoption rule (#791 N4)', () => {
-	it('is null when not tenant_scoped; entity, then project, then the default otherwise', () => {
+	it('is null when not tenant_scoped; the entity column, else the project column', () => {
 		expect(tenantColumnName(false, 'workspace_id')).toBeNull();
-		expect(tenantColumnName(true)).toBe('tenant_id');
 		expect(tenantColumnName(true, 'workspace_id')).toBe('workspace_id');
 		expect(tenantColumnName({ column: 'team_id' }, 'workspace_id')).toBe('team_id');
 	});

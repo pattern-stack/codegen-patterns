@@ -203,7 +203,7 @@ describe('#791 — the project default reaches the sink (buildSinkInput)', () =>
 		behaviors: ['timestamps', 'external_id_tracking'],
 		tenant_scoped: true,
 	};
-	const sinkFor = (tenancyColumn?: string) =>
+	const sinkFor = (tenancyColumn: string) =>
 		buildSinkInput(
 			lead as unknown as Parameters<typeof buildSinkInput>[0],
 			'crm',
@@ -218,8 +218,8 @@ describe('#791 — the project default reaches the sink (buildSinkInput)', () =>
 		expect(sink.viewCopyThroughFields.map((f) => f.camelName)).toContain('workspaceId');
 	});
 
-	it('without the project column it resolves tenant_id and copies workspace_id through', () => {
-		expect(sinkFor().copyThroughFields.map((f) => f.camelName)).toContain('workspaceId');
+	it('under the default project column (tenant_id) it copies workspace_id through', () => {
+		expect(sinkFor('tenant_id').copyThroughFields.map((f) => f.camelName)).toContain('workspaceId');
 	});
 });
 

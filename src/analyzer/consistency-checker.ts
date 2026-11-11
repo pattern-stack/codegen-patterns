@@ -14,14 +14,14 @@
 import type { ParsedEntity, DomainGraph, AnalysisIssue } from './types';
 import { findOrphanEntities, findCircularDependencies } from './graph-builder';
 import { resolveBehaviorFields } from '../behaviors/index';
-import { DEFAULT_TENANT_COLUMN, tenantColumnName } from '../schema/tenancy';
+import { tenantColumnName } from '../schema/tenancy';
 
 /**
  * Run all consistency checks on the domain graph
  */
 export function checkConsistency(
 	graph: DomainGraph,
-	tenancyColumn: string = DEFAULT_TENANT_COLUMN,
+	tenancyColumn: string,
 ): AnalysisIssue[] {
 	const issues: AnalysisIssue[] = [];
 

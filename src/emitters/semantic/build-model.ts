@@ -16,7 +16,7 @@ import pluralize from 'pluralize';
 
 import { getBehavior } from '../../behaviors/index';
 import type { ParsedEntity, ParsedField } from '../../analyzer/types';
-import { DEFAULT_TENANT_COLUMN, tenantColumnName } from '../../schema/tenancy';
+import { tenantColumnName } from '../../schema/tenancy';
 import type { JunctionDefinition } from '../../schema/junction-definition.schema';
 import type {
 	AggColType,
@@ -68,11 +68,11 @@ const OWNERSHIP_COLUMNS = ['organization_id', 'user_id'];
  * entity that is not `tenant_scoped` is still the tenant), and the column the
  * entity's own `tenant_scoped` resolves to (`src/schema/tenancy.ts`).
  */
-export function scopeColumns(entity: ParsedEntity, projectTenantColumn?: string): Set<string> {
+export function scopeColumns(entity: ParsedEntity, projectTenantColumn: string): Set<string> {
 	const resolved = tenantColumnName(entity.tenantScoped, projectTenantColumn);
 	return new Set([
 		...OWNERSHIP_COLUMNS,
-		projectTenantColumn ?? DEFAULT_TENANT_COLUMN,
+		projectTenantColumn,
 		...(resolved === null ? [] : [resolved]),
 	]);
 }

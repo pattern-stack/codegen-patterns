@@ -1153,7 +1153,7 @@ export class EntityValidateCommand extends Command {
 		const loaderIssues = patternLoadIssues(await loadAppPatternsForCli(ctx), ctx.cwd);
 
 		const quick = validateEntities(targetDir);
-		const full = await analyzeDomain(targetDir, { tenancyColumn: ctx.config?.tenancy?.column });
+		const full = await analyzeDomain(targetDir, { tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column });
 
 		const errors = [...loaderIssues, ...full.issues.filter((i) => i.severity === 'error')];
 		const warnings = full.issues.filter((i) => i.severity === 'warning');

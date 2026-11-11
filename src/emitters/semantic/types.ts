@@ -34,9 +34,9 @@ export interface SemanticEmitContext {
 	junctions: JunctionDefinition[];
 	/**
 	 * The project's `tenancy.column` — the default tenant column an entity's
-	 * `tenant_scoped` resolves to. Absent means the schema default.
+	 * `tenant_scoped` resolves to, as the config schema resolved it.
 	 */
-	tenancyColumn?: string;
+	tenancyColumn: string;
 }
 
 /** The aggregation vocabulary — mirrors the consuming package's `Agg`. */

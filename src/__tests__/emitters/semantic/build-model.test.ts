@@ -71,10 +71,10 @@ function parsedEntity(
 function context(
 	entities: ParsedEntity[],
 	junctions: JunctionDefinition[] = [],
-	tenancyColumn?: string,
+	tenancyColumn = 'tenant_id',
 ): SemanticEmitContext {
 	return {
-		...(tenancyColumn !== undefined ? { tenancyColumn } : {}),
+		tenancyColumn,
 		entities: entities.map((e) => registryEntry(e.name, e.plural)),
 		parsed: new Map(entities.map((e) => [e.name, e])),
 		junctions,

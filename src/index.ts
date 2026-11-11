@@ -17,6 +17,7 @@ import {
 	getAllPatternNames,
 } from './patterns/registry.js';
 import type { AnalysisResult, OutputFormat } from './analyzer/types';
+import { TenancyConfigSchema } from './schema/codegen-config.schema.js';
 
 /**
  * Options for `analyzeDomain`. All fields are optional and additive — omitting
@@ -35,7 +36,7 @@ export interface AnalyzeDomainOptions {
 	 * against the junction naming rule.
 	 */
 	junctionsDir?: string;
-	/** The project's `tenancy.column` — the default tenant column (#791). Absent means `tenant_id`. */
+	/** The project's `tenancy.column` (#791). Absent resolves through `TenancyConfigSchema`, the one owner of the default. */
 	tenancyColumn?: string;
 }
 
@@ -77,7 +78,7 @@ export async function analyzeDomain(
 	const graph = buildDomainGraph(entities, relationshipDefinitions);
 
 	// Check consistency
-	const consistencyIssues = checkConsistency(graph, opts.tenancyColumn);
+	const consistencyIssues = checkConsistency(graph, TenancyConfigSchema.parse({ column: opts.tenancyColumn }).column);
 
 	// PATTERN-4 — pattern composition check. Runs AFTER resolveReferences()
 	// (per ADR-031 §3) so entity fields + behaviors are known; the
