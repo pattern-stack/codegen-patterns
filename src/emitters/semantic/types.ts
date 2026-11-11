@@ -32,6 +32,11 @@ export interface SemanticEmitContext {
 	parsed: Map<string, ParsedEntity>;
 	/** Junction definitions, sorted by derived junction name. */
 	junctions: JunctionDefinition[];
+	/**
+	 * The project's `tenancy.column` — the default tenant column an entity's
+	 * `tenant_scoped` resolves to. Absent means the schema default.
+	 */
+	tenancyColumn?: string;
 }
 
 /** The aggregation vocabulary — mirrors the consuming package's `Agg`. */

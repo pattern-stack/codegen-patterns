@@ -5,8 +5,8 @@
  * or a `belongs_to` foreign key) is ADOPTED rather than emitted twice.
  *
  * The default (`tenant_id`, emitted) is pinned by `tenant-scoping-templates.test.ts`
- * and the baseline snapshots, which this change leaves byte-identical. This file
- * covers the two new shapes: a custom EMITTED column, and an ADOPTED one.
+ * and the `tenant_note` smoke fixture; no baseline snapshot is tenant_scoped. This
+ * file covers the two new shapes: a custom EMITTED column, and an ADOPTED one.
  */
 
 import { describe, expect, it } from 'bun:test';
@@ -188,12 +188,47 @@ describe('#791 — adopting a declared field', () => {
 	});
 });
 
+describe('#791 — the project default reaches the sink (buildSinkInput)', () => {
+	// `tenant_scoped: true` names no column: the project's `tenancy.column` does,
+	// and the sink must keep that column off the upsert write surface. The
+	// argument is the entity.ts threading — drop it and the sink resolves
+	// `tenant_id`, finds no such field, and copies `workspace_id` through.
+	const lead = {
+		entity: { name: 'lead', plural: 'leads', table: 'leads', pattern: 'Integrated' },
+		fields: {
+			name: { type: 'string', required: true },
+			workspace_id: { type: 'uuid', required: true },
+		},
+		relationships: {},
+		behaviors: ['timestamps', 'external_id_tracking'],
+		tenant_scoped: true,
+	};
+	const sinkFor = (tenancyColumn?: string) =>
+		buildSinkInput(
+			lead as unknown as Parameters<typeof buildSinkInput>[0],
+			'crm',
+			'hubspot',
+			'../repo',
+			tenancyColumn,
+		);
+
+	it('keeps the project-default adopted column off the write surface', () => {
+		const sink = sinkFor('workspace_id');
+		expect(sink.copyThroughFields.map((f) => f.camelName)).not.toContain('workspaceId');
+		expect(sink.viewCopyThroughFields.map((f) => f.camelName)).toContain('workspaceId');
+	});
+
+	it('without the project column it resolves tenant_id and copies workspace_id through', () => {
+		expect(sinkFor().copyThroughFields.map((f) => f.camelName)).toContain('workspaceId');
+	});
+});
+
 describe('#791 — adopting a belongs_to foreign key', () => {
 	const member = () => ({
 		entity: { name: 'contact', plural: 'contacts', table: 'contacts', pattern: 'Base' },
 		fields: { email: { type: 'string', required: true } },
 		relationships: {
-			account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id', required: true },
+			account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' },
 		},
 		behaviors: [],
 		tenant_scoped: { column: 'account_id' },
@@ -214,6 +249,18 @@ describe('#791 — adopting a belongs_to foreign key', () => {
 		expect(renderRepository(locals)).toContain("tenantColumn: 'accountId',");
 	});
 
+	it('folds the belongs_to `index: true` into the tenant index — one index, not two', () => {
+		const def = member();
+		const out = renderEntity(
+			localsFor({
+				...def,
+				fields: { ...def.fields, account_id: { type: 'uuid', index: true } },
+			}),
+		);
+		expect(out.match(/contacts_account_id_idx/g)).toHaveLength(1);
+		expect(out).toContain("index('contacts_account_id_idx').on(t.accountId)");
+	});
+
 	it('refuses to adopt a non-uuid field', () => {
 		expect(() =>
 			localsFor(
@@ -223,5 +270,34 @@ describe('#791 — adopting a belongs_to foreign key', () => {
 				}),
 			),
 		).toThrow(/tenant_scoped adopts the field 'org_slug', but it is type: string/);
+	});
+});
+
+// ============================================================================
+// `unique: true` on the tenant column (N5)
+// ============================================================================
+
+describe('#791 — unique: true on an adopted tenant column', () => {
+	const oneRowPerTenant = (indexed = false) =>
+		deal({
+			tenant_scoped: { column: 'organization_id' },
+			fields: {
+				name: { type: 'string', required: true },
+				organization_id: { type: 'uuid', required: true, unique: true, ...(indexed ? { index: true } : {}) },
+			},
+		});
+
+	it('lowers to unique(<tenant column>) — one row per tenant', () => {
+		const out = renderEntity(localsFor(oneRowPerTenant()));
+		expect(out).toContain(
+			"unique('deals_organization_id_uniq').on(t.organizationId).nullsNotDistinct()",
+		);
+		expect(out.match(/organizationId:/g)).toHaveLength(1);
+	});
+
+	it('with index: true as well, the tenant index is still the only plain index', () => {
+		const out = renderEntity(localsFor(oneRowPerTenant(true)));
+		expect(out.match(/index\('deals_organization_id_idx'\)/g)).toHaveLength(1);
+		expect(out).toContain("unique('deals_organization_id_uniq')");
 	});
 });

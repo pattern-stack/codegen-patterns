@@ -6,7 +6,7 @@ import { describe, expect, it } from 'bun:test';
 
 import { CodegenConfigSchema } from '../../schema/codegen-config.schema';
 import { EntityDefinitionSchema } from '../../schema/entity-definition.schema';
-import { resolveTenancy } from '../../schema/tenancy';
+import { resolveTenancy, tenantColumnName } from '../../schema/tenancy';
 
 describe('resolveTenancy (#791)', () => {
 	it('is null when the entity is not tenant_scoped', () => {
@@ -74,6 +74,71 @@ describe('resolveTenancy (#791)', () => {
 				'tenant_id',
 			),
 		).toThrow(/'deal': tenant_scoped adopts the field 'org_slug', but it is type: string/);
+	});
+});
+
+describe('resolveTenancy refuses a column the table already declares (#791 N2)', () => {
+	it("refuses 'id', naming the entity and the column", () => {
+		expect(() => resolveTenancy('deal', { tenant_scoped: { column: 'id' } })).toThrow(
+			/'deal': the tenant column 'id' collides with the primary key 'id'/,
+		);
+	});
+
+	it('refuses a column the timestamps behavior emits', () => {
+		for (const column of ['created_at', 'updated_at']) {
+			expect(() =>
+				resolveTenancy('deal', { tenant_scoped: { column }, behaviors: ['timestamps'] }),
+			).toThrow(new RegExp(`'deal': the tenant column '${column}' collides with the '${column}' column of the 'timestamps' behavior`));
+		}
+	});
+
+	it('reads a behavior declared with options, and every behavior the registry has', () => {
+		expect(() =>
+			resolveTenancy('deal', {
+				tenant_scoped: { column: 'deleted_at' },
+				behaviors: [{ name: 'soft_delete', options: {} }],
+			}),
+		).toThrow(/'deleted_at' column of the 'soft_delete' behavior/);
+		expect(() =>
+			resolveTenancy('deal', { tenant_scoped: { column: 'created_by' }, behaviors: ['user_tracking'] }),
+		).toThrow(/'created_by' column of the 'user_tracking' behavior/);
+	});
+
+	it('refuses the external-id columns, explicit or implied by pattern: Integrated', () => {
+		for (const column of ['provider', 'external_id', 'provider_metadata']) {
+			expect(() =>
+				resolveTenancy('lead', {
+					tenant_scoped: { column },
+					behaviors: ['external_id_tracking'],
+				}),
+			).toThrow(new RegExp(`'${column}' column of the 'external_id_tracking' behavior`));
+		}
+		expect(() =>
+			resolveTenancy('lead', {
+				entity: { pattern: 'Integrated' },
+				tenant_scoped: { column: 'provider' },
+			}),
+		).toThrow(/'provider' column of the 'external_id_tracking' behavior \(implied by pattern: Integrated\)/);
+	});
+
+	it('allows the same column when no behavior emits it', () => {
+		expect(resolveTenancy('deal', { tenant_scoped: { column: 'created_at' } })?.column).toBe('created_at');
+	});
+});
+
+describe('tenantColumnName — the name without the adoption rule (#791 N4)', () => {
+	it('is null when not tenant_scoped; entity, then project, then the default otherwise', () => {
+		expect(tenantColumnName(false, 'workspace_id')).toBeNull();
+		expect(tenantColumnName(true)).toBe('tenant_id');
+		expect(tenantColumnName(true, 'workspace_id')).toBe('workspace_id');
+		expect(tenantColumnName({ column: 'team_id' }, 'workspace_id')).toBe('team_id');
+	});
+
+	it('agrees with resolveTenancy', () => {
+		const decl = { column: 'team_id' };
+		expect(resolveTenancy('x', { tenant_scoped: decl }, 'workspace_id')?.column).toBe(
+			tenantColumnName(decl, 'workspace_id'),
+		);
 	});
 });
 

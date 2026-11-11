@@ -14,11 +14,15 @@
 import type { ParsedEntity, DomainGraph, AnalysisIssue } from './types';
 import { findOrphanEntities, findCircularDependencies } from './graph-builder';
 import { resolveBehaviorFields } from '../behaviors/index';
+import { DEFAULT_TENANT_COLUMN, tenantColumnName } from '../schema/tenancy';
 
 /**
  * Run all consistency checks on the domain graph
  */
-export function checkConsistency(graph: DomainGraph): AnalysisIssue[] {
+export function checkConsistency(
+	graph: DomainGraph,
+	tenancyColumn: string = DEFAULT_TENANT_COLUMN,
+): AnalysisIssue[] {
 	const issues: AnalysisIssue[] = [];
 
 	// Check each entity
@@ -27,7 +31,7 @@ export function checkConsistency(graph: DomainGraph): AnalysisIssue[] {
 		issues.push(...checkRelationshipConsistency(entity, graph));
 		issues.push(...checkNamingConventions(entity));
 		issues.push(...checkMissingIndexes(entity));
-		issues.push(...checkUiMetadata(entity));
+		issues.push(...checkUiMetadata(entity, tenancyColumn));
 		if (entity.queries !== undefined) {
 			issues.push(...checkQueryFieldReferences(entity));
 		}
@@ -212,11 +216,14 @@ function checkMissingIndexes(entity: ParsedEntity): AnalysisIssue[] {
 /**
  * Check for missing UI metadata
  */
-function checkUiMetadata(entity: ParsedEntity): AnalysisIssue[] {
+function checkUiMetadata(entity: ParsedEntity, tenancyColumn: string): AnalysisIssue[] {
 	const issues: AnalysisIssue[] = [];
 
-	// System fields that don't need UI metadata
-	const systemFields = new Set(['id', 'created_at', 'updated_at', 'deleted_at', 'tenant_id']);
+	// System fields that don't need UI metadata. The tenant column is whatever
+	// the entity's `tenant_scoped` resolves to, not a literal.
+	const systemFields = new Set(['id', 'created_at', 'updated_at', 'deleted_at', tenancyColumn]);
+	const tenantColumn = tenantColumnName(entity.tenantScoped, tenancyColumn);
+	if (tenantColumn !== null) systemFields.add(tenantColumn);
 
 	for (const [fieldName, field] of entity.fields) {
 		if (systemFields.has(fieldName)) continue;

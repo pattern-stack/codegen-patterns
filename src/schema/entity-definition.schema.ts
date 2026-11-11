@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TENANT_COLUMN_PATTERN } from "./tenancy.js";
 import { reservedGlobalFor, reservedNameMessage } from "./reserved-entity-names.js";
 import { roleForeignKey } from "../roles/derive.js";
 import { NOT_NULL_WITHOUT_DEFAULT_MESSAGE, notNullWithoutDefault } from "./field-nullability.js";
@@ -1263,7 +1264,7 @@ export const EntityDefinitionSchema = z
           .object({
             column: z
               .string()
-              .regex(/^[a-z][a-z0-9_]*$/, 'tenant_scoped.column must be a snake_case column name'),
+              .regex(TENANT_COLUMN_PATTERN, 'tenant_scoped.column must be a snake_case column name'),
           })
           .strict(),
       ])

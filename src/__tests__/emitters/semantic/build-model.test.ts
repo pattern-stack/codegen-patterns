@@ -71,8 +71,10 @@ function parsedEntity(
 function context(
 	entities: ParsedEntity[],
 	junctions: JunctionDefinition[] = [],
+	tenancyColumn?: string,
 ): SemanticEmitContext {
 	return {
+		...(tenancyColumn !== undefined ? { tenancyColumn } : {}),
 		entities: entities.map((e) => registryEntry(e.name, e.plural)),
 		parsed: new Map(entities.map((e) => [e.name, e])),
 		junctions,
@@ -191,6 +193,24 @@ describe('analytics tags', () => {
 		for (const key of ['tenant_id', 'organization_id', 'user_id']) {
 			expect(model.entities[0]!.fields[key]!.role).toBe('dimension');
 		}
+	});
+
+	it('gives an adopted tenant column (entity override or project default) the dimension role (#791)', () => {
+		const adopted = { ...parsedEntity('deal', 'deals', [field('team_id', 'uuid')]), tenantScoped: { column: 'team_id' } };
+		const viaProject = {
+			...parsedEntity('lead', 'leads', [field('workspace_id', 'uuid')]),
+			tenantScoped: true as const,
+		};
+		const model = buildSemanticModel(context([adopted, viaProject], [], 'workspace_id'));
+		expect(model.entities.find((e) => e.name === 'deal')!.fields.team_id!.role).toBe('dimension');
+		expect(model.entities.find((e) => e.name === 'lead')!.fields.workspace_id!.role).toBe('dimension');
+	});
+
+	it('a column that is neither the tenant column nor ownership stays untagged', () => {
+		const model = buildSemanticModel(
+			context([parsedEntity('deal', 'deals', [field('team_id', 'uuid')])]),
+		);
+		expect(model.entities[0]!.fields.team_id!.role).toBeUndefined();
 	});
 
 	it('leaves an explicit role on a scope column alone', () => {

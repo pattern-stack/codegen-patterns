@@ -20,6 +20,7 @@ export type {
 	DerivedExpr,
 	MetricDefinition,
 } from '../schema/entity-definition.schema';
+import type { TenantScopedDeclaration } from '../schema/tenancy';
 import type { RelationshipDefinition, TypeDirection } from '../schema/relationship-definition.schema';
 
 // ============================================================================
@@ -212,6 +213,8 @@ export interface ParsedEntity {
 	 */
 	roles?: Map<string, ParsedRole>;
 	behaviors: string[];
+	/** The entity's `tenant_scoped:` declaration (`true`, `{ column }`, absent). Read via `tenantColumnName`. */
+	tenantScoped?: TenantScopedDeclaration;
 	queries?: ParsedQuery[];
 	integration?: ParsedIntegration;
 	events?: ParsedEvent[];

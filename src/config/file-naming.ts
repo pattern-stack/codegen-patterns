@@ -51,6 +51,11 @@ function splitWords(input: string): string[] {
 		.map((word) => word.toLowerCase());
 }
 
+/** The one camelCase primitive for a snake_case name. `organization_id` → `organizationId`. */
+export function camelCase(snake: string): string {
+	return snake.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+
 /** The one kebab-case primitive. `deal_state` → `deal-state`. */
 export function kebab(input: string): string {
 	return splitWords(input).join('-');

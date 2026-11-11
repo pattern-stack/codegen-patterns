@@ -40,6 +40,8 @@ export interface SemanticConfigInput {
 		generated?: string;
 		[key: string]: unknown;
 	};
+	/** #791 — the project's default tenant column; its role is dimension. */
+	tenancy?: { column?: string };
 	generate?: {
 		semantic?: unknown;
 		[key: string]: unknown;
@@ -105,7 +107,12 @@ export function loadSemanticEmitContext(
 
 	return {
 		skip: undefined,
-		ctx: { entities, parsed, junctions: loadJunctionDefinitions(junctionsDir) },
+		ctx: {
+			entities,
+			parsed,
+			junctions: loadJunctionDefinitions(junctionsDir),
+			tenancyColumn: config?.tenancy?.column,
+		},
 		outDir,
 	};
 }

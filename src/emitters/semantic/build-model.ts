@@ -16,6 +16,7 @@ import pluralize from 'pluralize';
 
 import { getBehavior } from '../../behaviors/index';
 import type { ParsedEntity, ParsedField } from '../../analyzer/types';
+import { DEFAULT_TENANT_COLUMN, tenantColumnName } from '../../schema/tenancy';
 import type { JunctionDefinition } from '../../schema/junction-definition.schema';
 import type {
 	AggColType,
@@ -50,13 +51,31 @@ const AGG_COL_TYPE: Record<string, AggColType> = {
 };
 
 /**
- * Columns that carry tenancy or ownership. Always dimensions, never measures.
+ * Ownership columns that are always dimensions, never measures. The TENANT
+ * column is not in this list: it is whatever `tenant_scoped` resolves to for
+ * the entity (`scopeColumns`), so an adopted `workspace_id` / `team_id` gets
+ * the role too.
  *
  * "Never a measure" holds by construction — a measure is only ever a field the
  * YAML tags `role: measure` — but the explicit dimension role is what makes
  * them group-able without the author restating it on every entity.
  */
-const SCOPE_COLUMNS = new Set(['tenant_id', 'organization_id', 'user_id']);
+const OWNERSHIP_COLUMNS = ['organization_id', 'user_id'];
+
+/**
+ * The columns of one entity that carry tenancy or ownership: the ownership
+ * columns, the project's default tenant column (a plain `tenant_id` field on an
+ * entity that is not `tenant_scoped` is still the tenant), and the column the
+ * entity's own `tenant_scoped` resolves to (`src/schema/tenancy.ts`).
+ */
+export function scopeColumns(entity: ParsedEntity, projectTenantColumn?: string): Set<string> {
+	const resolved = tenantColumnName(entity.tenantScoped, projectTenantColumn);
+	return new Set([
+		...OWNERSHIP_COLUMNS,
+		projectTenantColumn ?? DEFAULT_TENANT_COLUMN,
+		...(resolved === null ? [] : [resolved]),
+	]);
+}
 
 /**
  * A junction payload field's YAML `type:` → `AggColType`, mirroring what
@@ -207,7 +226,10 @@ export function junctionIdentity(def: JunctionDefinition): {
  * A field declared explicitly in `fields:` always wins: the author's tags are
  * authoritative over the behavior default.
  */
-function buildBehaviorFields(entity: ParsedEntity): Record<string, SemanticField> {
+function buildBehaviorFields(
+	entity: ParsedEntity,
+	scope: ReadonlySet<string>,
+): Record<string, SemanticField> {
 	const out: Record<string, SemanticField> = {};
 	for (const behaviorName of entity.behaviors) {
 		const behavior = getBehavior(behaviorName);
@@ -218,7 +240,7 @@ function buildBehaviorFields(entity: ParsedEntity): Record<string, SemanticField
 			if (type === undefined) continue;
 			const meta: SemanticField = { key: field.name, type, column: field.name };
 			if (BEHAVIOR_DIMENSION_COLUMNS.has(field.name)) meta.role = 'dimension';
-			else if (SCOPE_COLUMNS.has(field.name)) meta.role = 'dimension';
+			else if (scope.has(field.name)) meta.role = 'dimension';
 			out[field.name] = meta;
 		}
 	}
@@ -259,7 +281,11 @@ function deriveSearchableColumns(entity: ParsedEntity): string[] {
 }
 
 /** One field's `AggFieldMeta`, or null when the type has no analytics mapping. */
-function buildField(name: string, field: ParsedField): SemanticField | null {
+function buildField(
+	name: string,
+	field: ParsedField,
+	scope: ReadonlySet<string>,
+): SemanticField | null {
 	const type = AGG_COL_TYPE[field.type];
 	if (type === undefined) return null;
 
@@ -267,7 +293,7 @@ function buildField(name: string, field: ParsedField): SemanticField | null {
 	const out: SemanticField = { key: name, type, column: name };
 
 	if (tags.role !== undefined) out.role = tags.role;
-	else if (SCOPE_COLUMNS.has(name)) out.role = 'dimension';
+	else if (scope.has(name)) out.role = 'dimension';
 
 	if (tags.agg !== undefined) out.agg = tags.agg;
 	if (tags.aggs !== undefined) out.aggs = [...tags.aggs];
@@ -389,9 +415,10 @@ export function buildSemanticModel(context: SemanticEmitContext): SemanticModel 
 		}
 
 		// Behavior columns first so an explicitly declared field always wins.
-		const fields: Record<string, SemanticField> = buildBehaviorFields(parsed);
+		const scope = scopeColumns(parsed, context.tenancyColumn);
+		const fields: Record<string, SemanticField> = buildBehaviorFields(parsed, scope);
 		for (const [name, field] of parsed.fields) {
-			const built = buildField(name, field);
+			const built = buildField(name, field, scope);
 			if (built) fields[name] = built;
 		}
 

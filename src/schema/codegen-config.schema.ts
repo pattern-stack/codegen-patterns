@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_TENANT_COLUMN, TENANT_COLUMN_PATTERN } from "./tenancy.js";
 import { poolOverrideIssues } from "../../runtime/subsystems/jobs/pool-config.js";
 
 /**
@@ -415,8 +416,8 @@ export const TenancyConfigSchema = z
   .object({
     column: z
       .string()
-      .regex(/^[a-z][a-z0-9_]*$/, 'tenancy.column must be a snake_case column name')
-      .default('tenant_id'),
+      .regex(TENANT_COLUMN_PATTERN, 'tenancy.column must be a snake_case column name')
+      .default(DEFAULT_TENANT_COLUMN),
   })
   .strict()
   .default({});

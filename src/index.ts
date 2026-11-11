@@ -35,6 +35,8 @@ export interface AnalyzeDomainOptions {
 	 * against the junction naming rule.
 	 */
 	junctionsDir?: string;
+	/** The project's `tenancy.column` — the default tenant column (#791). Absent means `tenant_id`. */
+	tenancyColumn?: string;
 }
 
 /**
@@ -75,7 +77,7 @@ export async function analyzeDomain(
 	const graph = buildDomainGraph(entities, relationshipDefinitions);
 
 	// Check consistency
-	const consistencyIssues = checkConsistency(graph);
+	const consistencyIssues = checkConsistency(graph, opts.tenancyColumn);
 
 	// PATTERN-4 — pattern composition check. Runs AFTER resolveReferences()
 	// (per ADR-031 §3) so entity fields + behaviors are known; the

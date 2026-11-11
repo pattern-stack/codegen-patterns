@@ -119,6 +119,7 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 		fields: new Map(),
 		relationships: new Map(),
 		behaviors: definition.behaviors.map((b) => (typeof b === 'string' ? b : b.name)),
+		tenantScoped: definition.tenant_scoped,
 		queries,
 		sourcePath: filePath,
 	};
