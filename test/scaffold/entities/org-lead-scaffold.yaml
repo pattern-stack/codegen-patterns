@@ -1,0 +1,27 @@
+# OrgLead — scaffold integration fixture (#791).
+#
+# `pattern: Integrated` + a tenant column the entity ADOPTS (`organization_id`,
+# named by `tenant_scoped: { column }`), so Postgres runs the emitted
+# `unique(organization_id, provider, external_id) NULLS NOT DISTINCT` and the
+# `ON CONFLICT (organization_id, provider, external_id)` the generated
+# `integrationConfig.conflictTarget` names. `tenancy-column.test.ts` drives it.
+entity:
+  name: org_lead
+  plural: org_leads
+  table: org_leads
+  pattern: Integrated
+
+tenant_scoped:
+  column: organization_id
+
+fields:
+  organization_id:
+    type: uuid
+
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+behaviors:
+  - timestamps

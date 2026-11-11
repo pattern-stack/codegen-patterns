@@ -523,6 +523,21 @@ function assertTenancyColumnEmission(tmpDir: string): void {
 		/organizationId/,
 		'CreateOrgTaskDto leaves the tenant column to the repository',
 	);
+	// pattern: Integrated + an adopted column (org_lead.yaml): the external-id
+	// unique and the generated conflict target both lead with the adopted column.
+	const lead = reads('modules/org-leads/org-lead.entity.ts');
+	assertContains(lead, /organizationId: uuid\('organization_id'\)\.notNull\(\),/, 'org_lead adopts its organization_id field');
+	assertNotContains(lead, /tenant_id|tenantId/, 'org_lead emits no tenant_id column');
+	assertContains(
+		lead,
+		/unique\('uq_org_leads_tenant_provider_external_id'\)\.on\(t\.organizationId, t\.provider, t\.externalId\)\.nullsNotDistinct\(\)/,
+		'org_lead external-id unique is per organization',
+	);
+	assertContains(
+		reads('modules/org-leads/org-lead.repository.ts'),
+		/conflictTarget: \['organizationId', 'provider', 'externalId'\]/,
+		'org_lead conflict target names the adopted column',
+	);
 	assertContains(
 		reads('modules/tenant-notes/tenant-note.entity.ts'),
 		/tenantId: uuid\('tenant_id'\),/,
