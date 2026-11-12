@@ -126,8 +126,8 @@ export function hopCanDropTarget(
  *
  * The FK column's nullability, by the one rule the entity template emits the
  * column with (`foreignKeyColumnNullable`, `field-nullability.ts`): an explicit
- * relationship `nullable:` wins, else the FK column's own `fields:`
- * declaration, else optional (#613). A NOT NULL FK is still optional when the
+ * relationship `nullable:` wins, else the FK field's own `nullable:`, else NOT
+ * NULL — not optional (#613, #850). A NOT NULL FK is still optional when the
  * hop's scope can filter its target out (`hopCanDropTarget`) — REL-2's hop
  * `where` makes the include `null` at runtime, and the type must say so
  * (#850).

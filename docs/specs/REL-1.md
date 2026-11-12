@@ -138,6 +138,12 @@ Per-relationship rules — the whole of the semantics:
   target counts only when the source is not tenant-scoped (a global entity, or a junction, which declares no scope):
   that source reads every tenant's rows, so the hop drops valid ones. Between two tenant-scoped entities the tenant
   does not count, because a NOT NULL FK onto another tenant's row is a data error (#787).
+  *Revision 2026-11-12 (#850):* the FK precedence itself changed. A `belongs_to` FK is NOT NULL unless it says so:
+  an explicit relationship (or role) `nullable:` wins, else the FK field's own `nullable:`, else **not optional**.
+  `required:` no longer takes part, and a written `required: false` on an FK field without `nullable:` is a schema
+  error. The rule is still the one `foreignKeyColumnNullable` the column is emitted by, so `optional` cannot disagree
+  with the DDL. #850 first proposed an `entity validate` warning on an undeclared FK (`undeclared_fk_nullability`);
+  deciding the default made it unnecessary, and it was removed before release.
 - **Relation keys are the YAML relationship names**, camelCased (`parent_account` → `parentAccount`). This replaces
   the v1 derivation, which used the *target entity name* for non-self relations and ignored the author's key
   (`prompt-extension.js:492-505`). I1: the author named the edge; the manifest uses that name. I7: the old derivation

@@ -183,7 +183,7 @@ export interface RelationshipOptions {
 	inverse?: string;
 	/** Junction / relationship definition name for `many_to_many`. */
 	through?: string;
-	/** Whether the foreign key is required. `belongs_to` only. */
+	/** Whether the foreign key is NOT NULL (`false` writes `nullable: true`; absent: NOT NULL, #850). `belongs_to` only. */
 	required?: boolean;
 	/** FK cascade action. `belongs_to` only; spelled as `OnDeleteSchema`. */
 	onDelete?: 'restrict' | 'cascade' | 'set_null' | 'no_action';

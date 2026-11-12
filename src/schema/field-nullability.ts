@@ -11,6 +11,9 @@
  *                                       omits it fails. Say `required: true`.
  *   neither declared                  → NULL allowed; optional on create.
  *
+ * A `belongs_to` FK column is the exception: it is NOT NULL unless `nullable:
+ * true` says otherwise ({@link foreignKeyColumnNullable}, #850).
+ *
  * `required: true, nullable: true` is rejected by `FieldDefinitionSchema`.
  *
  * "Neither declared" and "declared `nullable: false`" differ, so the schema
@@ -47,10 +50,24 @@ export function fieldColumnNullable(field: FieldNullabilityDeclaration): boolean
 }
 
 /**
- * Whether a `belongs_to`'s FK column allows NULL. An explicit `nullable:` on
- * the relationship (or the role that derives it) wins; else the FK column's own
- * `fields:` declaration decides, by {@link fieldColumnNullable}; else the FK is
- * nullable.
+ * Whether a `belongs_to`'s FK column allows NULL — THE foreign-key nullability
+ * rule. A reference is NOT NULL unless something says it is optional (#850;
+ * Rails 5's `belongs_to` precedent):
+ *
+ *   1. an explicit `nullable:` on the relationship (or the `cardinality: one`
+ *      role that derives it) wins;
+ *   2. else an explicit `nullable:` on the FK's own `fields:` entry;
+ *   3. else NOT NULL.
+ *
+ * `required:` on the FK field does not decide it. `required: true` agrees with
+ * the default; a written `required: false` without `nullable:` is rejected by
+ * `EntityDefinitionSchema` ({@link FK_REQUIRED_FALSE_MESSAGE}), because before
+ * #850 it meant "nullable" and would now silently mean NOT NULL.
+ *
+ * Readers: the entity template (column `.notNull()`, create/update DTO keys,
+ * the integration sink's strict resolver), the parser (`ParsedField.nullable`,
+ * which the semantic model reads), REL-1's `belongsToOptional` (the relations
+ * manifest and the frontend graph that projects it) and the adapter view.
  */
 export function foreignKeyColumnNullable(
 	relationshipNullable: boolean | null | undefined,
@@ -59,28 +76,27 @@ export function foreignKeyColumnNullable(
 	if (relationshipNullable !== undefined && relationshipNullable !== null) {
 		return relationshipNullable;
 	}
-	return field ? fieldColumnNullable(field) : true;
+	if (field?.nullable !== undefined && field.nullable !== null) return field.nullable;
+	return false;
 }
 
 /**
- * Whether a `belongs_to`'s FK nullability is DECLARED rather than left to the
- * last branch of {@link foreignKeyColumnNullable} ("else the FK is nullable"):
- * an explicit relationship `nullable:`, or `required: true` / `nullable:` on the
- * FK's own field. `entity validate` warns when none is (`undeclared_fk_nullability`,
- * #850).
- *
- * `required: false` does NOT count: `FieldDefinitionSchema` defaults `required`
- * to `false`, so a parsed field cannot tell a written `required: false` from an
- * absent one. Say `nullable: true` for a nullable reference.
+ * True when an FK field writes `required: false` without `nullable:` — the
+ * pre-#850 spelling of an optional reference, which the NOT NULL default would
+ * otherwise turn into a NOT NULL column without a word. Needs the field as
+ * WRITTEN: `FieldDefinitionSchema` leaves `required` undefined when absent.
  */
-export function foreignKeyNullabilityDeclared(
-	relationshipNullable: boolean | null | undefined,
+export function foreignKeyRequiredFalseWithoutNullable(
 	field: FieldNullabilityDeclaration | undefined,
 ): boolean {
-	const declared = (v: boolean | null | undefined) => v !== undefined && v !== null;
-	if (declared(relationshipNullable)) return true;
-	return field !== undefined && (field.required === true || declared(field.nullable));
+	return field?.required === false && (field.nullable === undefined || field.nullable === null);
 }
+
+/** The message for {@link foreignKeyRequiredFalseWithoutNullable}. */
+export const FK_REQUIRED_FALSE_MESSAGE =
+	"'required: false' does not make a belongs_to foreign key nullable: a reference is NOT NULL unless it " +
+	"says otherwise. Write 'nullable: true' (on the field or the relationship) for an optional reference, " +
+	"or drop 'required: false' for a NOT NULL one.";
 
 /**
  * True for the one declaration that cannot be generated: a NOT NULL column

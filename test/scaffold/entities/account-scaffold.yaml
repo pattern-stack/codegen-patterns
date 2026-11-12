@@ -17,7 +17,7 @@ fields:
 
   parent_account_id:
     type: uuid
-    required: false
+    nullable: true
     index: true
     foreign_key: accounts.id
 

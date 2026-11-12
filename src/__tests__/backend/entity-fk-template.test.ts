@@ -454,7 +454,7 @@ describe('belongs_to FK inherits field required + index (#34 follow-on)', () => 
       entity: { name: 'message', plural: 'messages', pattern: 'Base' },
       fields: {
         body: { type: 'string', required: true },
-        conversation_id: { type: 'uuid', index: true },
+        conversation_id: { type: 'uuid', index: true, nullable: true },
       },
       relationships: {
         conversation: {
@@ -499,6 +499,49 @@ describe('belongs_to FK inherits field required + index (#34 follow-on)', () => 
     expect(output).toContain("conversationId: uuid('conversation_id').notNull().references(");
     expect(output).not.toContain('_idx');
     expect(locals.drizzleImports).not.toContain('index');
+  });
+});
+
+// #850 — a reference is NOT NULL unless it says otherwise (Rails 5 `belongs_to`).
+describe('belongs_to FK nullability default (#850)', () => {
+  const undeclared = (fields: Record<string, unknown> = {}) => ({
+    entity: { name: 'message', plural: 'messages', pattern: 'Base' },
+    fields: { body: { type: 'string', required: true }, ...fields },
+    relationships: {
+      conversation: { type: 'belongs_to', target: 'conversation', foreign_key: 'conversation_id' },
+    },
+    behaviors: [],
+  });
+
+  it('an undeclared FK is NOT NULL and its key is required on create', () => {
+    const locals = buildBackendLocals(undeclared(), EMPTY_BASE_LOCALS);
+    expect(render(locals as Record<string, unknown>)).toContain(
+      "conversationId: uuid('conversation_id').notNull().references(",
+    );
+    const fk = (locals.createFkFields as any[]).find((f) => f.camelName === 'conversationId');
+    expect(fk.zodChainCreate).toBe('z.string().uuid()');
+  });
+
+  it('an FK field declared without nullable: is still NOT NULL', () => {
+    const locals = buildBackendLocals(
+      undeclared({ conversation_id: { type: 'uuid', index: true } }),
+      EMPTY_BASE_LOCALS,
+    );
+    expect(render(locals as Record<string, unknown>)).toContain(
+      "conversationId: uuid('conversation_id').notNull().references(",
+    );
+  });
+
+  it('nullable: true on the FK field opts out: nullable column, optional create key', () => {
+    const locals = buildBackendLocals(
+      undeclared({ conversation_id: { type: 'uuid', nullable: true } }),
+      EMPTY_BASE_LOCALS,
+    );
+    expect(render(locals as Record<string, unknown>)).toContain(
+      "conversationId: uuid('conversation_id').references(",
+    );
+    const fk = (locals.createFkFields as any[]).find((f) => f.camelName === 'conversationId');
+    expect(fk.zodChainCreate).toBe('z.string().uuid().nullable().optional()');
   });
 });
 

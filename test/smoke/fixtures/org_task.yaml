@@ -44,8 +44,11 @@ fields:
     max_length: 200
     unique: true
 
+  # A self-reference: a root task has no parent, so the FK says it may be NULL
+  # (a belongs_to FK is NOT NULL unless it says otherwise, #850).
   parent_task_id:
     type: uuid
+    nullable: true
 
 relationships:
   parent_task:

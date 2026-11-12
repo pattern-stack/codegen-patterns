@@ -3,7 +3,12 @@ import { TENANT_COLUMN_PATTERN } from "./tenancy.js";
 import { TABLE_NAME_IS_NOT_A_KEY, TABLE_NAME_PATTERN, TABLE_PREFIX_PATTERN } from "../config/table-naming.js";
 import { reservedGlobalFor, reservedNameMessage } from "./reserved-entity-names.js";
 import { roleForeignKey } from "../roles/derive.js";
-import { NOT_NULL_WITHOUT_DEFAULT_MESSAGE, notNullWithoutDefault } from "./field-nullability.js";
+import {
+  FK_REQUIRED_FALSE_MESSAGE,
+  foreignKeyRequiredFalseWithoutNullable,
+  NOT_NULL_WITHOUT_DEFAULT_MESSAGE,
+  notNullWithoutDefault,
+} from "./field-nullability.js";
 import {
   TIMEZONE_ON_NON_DATETIME_MESSAGE,
   behaviorTimezoneOptionError,
@@ -176,7 +181,7 @@ const UiMetadataSchema = z.object({
  *
  * Semantics — `required` is the create contract, `nullable` the column:
  * - `required: true` → must be provided on CREATE; the column is NOT NULL
- * - `required: false` (default) → optional on CREATE
+ * - `required: false` (or undeclared) → optional on CREATE
  * - `nullable: true` → the column allows NULL; reads are `T | null`
  * - `nullable: false` → the column is NOT NULL
  * - `nullable` undeclared → NOT NULL when `required: true`, else NULL allowed.
@@ -191,13 +196,19 @@ const UiMetadataSchema = z.object({
  * - `required: false, nullable: false` with NO `default:` → INVALID: an insert
  *   that omits it would fail. Say `required: true` instead.
  * - `required: true, nullable: true` → INVALID (a required field cannot be null)
+ *
+ * A `belongs_to` FK field is the exception: it is NOT NULL unless `nullable:
+ * true` (on it or on the relationship), and `required: false` without
+ * `nullable:` is INVALID on it (#850, `foreignKeyColumnNullable`).
  */
 /**
  * Base Field Schema - Core database/type properties
  */
 const BaseFieldSchema = z.object({
   type: FieldTypeSchema,
-  required: z.boolean().optional().default(false),
+  // No `.default(false)`: a written `required: false` must survive parsing, so
+  // the FK rule can reject it (`foreignKeyRequiredFalseWithoutNullable`, #850).
+  required: z.boolean().optional(),
   nullable: z.boolean().optional(),
   // `type: datetime` only (#796): `false` keeps a wall-clock `timestamp without time zone` column;
   // the default is `timestamp with time zone`. The rule lives in `field-timestamp.ts`.
@@ -507,7 +518,7 @@ const RoleSchema = z
     column: z.string().optional(),
     /** `many` only — the junction between this entity and the target. */
     via: z.string().optional(),
-    /** `one` only — FK nullability; default `true`. */
+    /** `one` only — FK nullability; default NOT NULL (#850). */
     nullable: z.boolean().optional(),
     /** `one` only — FK cascade action; default `restrict` (ADR-021). */
     on_delete: OnDeleteSchema.optional(),
@@ -1436,6 +1447,27 @@ export const EntityDefinitionSchema = z
           code: 'custom',
           path: ['integration', 'sink', 'exclude_fields', i],
           message: `exclude_fields: 'user_id' cannot be excluded. It is used for user-scoping and EAV dual-write; excluding it would break those mechanisms.`,
+        });
+      }
+    }
+  })
+  .superRefine((entity, ctx) => {
+    // #850: a belongs_to FK is NOT NULL unless `nullable: true` says otherwise.
+    // `required: false` was the old spelling of an optional reference; left
+    // alone it would now emit NOT NULL without a word, so it is refused.
+    const fkColumns = new Set<string>();
+    for (const rel of Object.values(entity.relationships ?? {})) {
+      if (rel.type === 'belongs_to') fkColumns.add(rel.foreign_key);
+    }
+    for (const [role, def] of Object.entries(entity.roles ?? {})) {
+      if (def.cardinality === 'one') fkColumns.add(roleForeignKey(role, def.target, def.column));
+    }
+    for (const fk of fkColumns) {
+      if (foreignKeyRequiredFalseWithoutNullable(entity.fields?.[fk])) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['fields', fk, 'required'],
+          message: FK_REQUIRED_FALSE_MESSAGE,
         });
       }
     }

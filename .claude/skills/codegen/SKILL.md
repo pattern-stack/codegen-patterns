@@ -121,8 +121,16 @@ column name in a template or emitter. Runtime reads `BehaviorConfig.tenantColumn
 never write the literal `'tenantId'` against a table. The ambient context field stays `tenantId` — it names the value,
 not a column. A wrong `tenantColumn` throws on writes (`stampTenant` / `guardTenantOnUpdate` resolve it on the table)
 as well as reads. **An adopted `required: true` column takes the entity out of the null-tenant partition:** a requester
-with no tenant makes `create()` stamp `null` into a NOT NULL column, and Postgres raises 23502 (a 500). Declare the
-adopted column nullable if null-tenant writes must work.
+with no tenant makes `create()` stamp `null` into a NOT NULL column, and Postgres raises 23502 (a 500). So does an
+adopted `belongs_to` FK without `nullable: true` (#850). Declare the adopted column nullable if null-tenant writes
+must work.
+
+**A `belongs_to` FK is NOT NULL unless it says `nullable: true`** (#850; Rails 5's `belongs_to`) — on the
+relationship / `cardinality: one` role (outranks) or on the FK's `fields:` entry. `required:` does not decide it, and
+a written `required: false` on an FK field without `nullable:` is a schema error. One rule,
+`foreignKeyColumnNullable` in `src/schema/field-nullability.ts`, read by the column, the create/update DTO keys, the
+integration sink's strict FK resolution, REL-1's `optional` (and the frontend graph projecting it) and the parser's
+`ParsedField.nullable` (semantic model). Never re-derive it.
 
 **Every generated FK callback is `.references((): AnyPgColumn => <table>.id)`** (NAME-1, #631) — backend
 belongs_to + field `foreign_key:`, junction and relationship endpoints. Two tables with FKs to each other (or any
@@ -235,7 +243,7 @@ fields:
   status: { type: enum, choices: [active, inactive] }
 
 relationships:
-  account: { type: belongs_to, target: account, foreign_key: account_id }
+  account: { type: belongs_to, target: account, foreign_key: account_id }   # FK NOT NULL unless `nullable: true` (#850)
 
 roles:                          # needs `Communication` in patterns:; every target needs `Actor`.
                                 #   Communication → repo findByRole(role, actorId) + participants(id), forwarded on the service

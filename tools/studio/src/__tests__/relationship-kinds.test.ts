@@ -54,13 +54,14 @@ describe('pruneOptions', () => {
 
   test('drops values left at their default', () => {
     expect(pruneOptions('many_to_many', { temporal: true, sourced: true })).toBeUndefined();
-    expect(pruneOptions('belongs_to', { onDelete: 'restrict', required: false })).toBeUndefined();
+    // `required` defaults on: a belongs_to FK is NOT NULL unless it says otherwise (#850).
+    expect(pruneOptions('belongs_to', { onDelete: 'restrict', required: true })).toBeUndefined();
   });
 
   test('keeps values moved off their default', () => {
     expect(pruneOptions('many_to_many', { temporal: false })).toEqual({ temporal: false });
-    expect(pruneOptions('belongs_to', { required: true, onDelete: 'cascade' })).toEqual({
-      required: true,
+    expect(pruneOptions('belongs_to', { required: false, onDelete: 'cascade' })).toEqual({
+      required: false,
       onDelete: 'cascade',
     });
   });

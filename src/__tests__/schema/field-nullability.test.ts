@@ -5,6 +5,7 @@
 
 import { describe, it, expect } from 'bun:test';
 import {
+	FK_REQUIRED_FALSE_MESSAGE,
 	NOT_NULL_WITHOUT_DEFAULT_MESSAGE,
 	fieldColumnNullable,
 	foreignKeyColumnNullable,
@@ -43,21 +44,65 @@ describe('fieldColumnNullable', () => {
 	});
 });
 
-describe('foreignKeyColumnNullable', () => {
+describe('foreignKeyColumnNullable — a reference is NOT NULL unless it says otherwise (#850)', () => {
 	it('an explicit relationship nullable wins over the field, both ways', () => {
 		expect(foreignKeyColumnNullable(true, { required: true })).toBe(true);
 		expect(foreignKeyColumnNullable(false, { nullable: true })).toBe(false);
 	});
 
-	it('no relationship nullable → the field decides', () => {
-		expect(foreignKeyColumnNullable(undefined, { required: true })).toBe(false);
+	it("no relationship nullable → the field's nullable decides", () => {
+		expect(foreignKeyColumnNullable(undefined, { nullable: true })).toBe(true);
 		expect(foreignKeyColumnNullable(undefined, { nullable: false, default: 'x' })).toBe(false);
-		expect(foreignKeyColumnNullable(undefined, {})).toBe(true);
-		expect(foreignKeyColumnNullable(null, { required: true })).toBe(false);
+		expect(foreignKeyColumnNullable(null, { nullable: true })).toBe(true);
 	});
 
-	it('no relationship nullable and no field declaration → nullable', () => {
-		expect(foreignKeyColumnNullable(undefined, undefined)).toBe(true);
+	it('required: does not decide it — undeclared, the FK is NOT NULL', () => {
+		expect(foreignKeyColumnNullable(undefined, {})).toBe(false);
+		expect(foreignKeyColumnNullable(undefined, { required: true })).toBe(false);
+		expect(foreignKeyColumnNullable(undefined, { required: false })).toBe(false);
+		expect(foreignKeyColumnNullable(undefined, undefined)).toBe(false);
+	});
+});
+
+describe('EntityDefinitionSchema — `required: false` on a belongs_to FK (#850)', () => {
+	const entity = (fk: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+		entity: { name: 'deal', plural: 'deals' },
+		fields: { account_id: { type: 'uuid', ...fk } },
+		relationships: { account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' } },
+		...extra,
+	});
+	const fkIssue = (data: unknown) =>
+		EntityDefinitionSchema.safeParse(data).error?.issues.find(
+			(i) => i.message === FK_REQUIRED_FALSE_MESSAGE,
+		);
+
+	it('rejects a written required: false without nullable:, pointing at nullable: true', () => {
+		expect(fkIssue(entity({ required: false }))?.path).toEqual(['fields', 'account_id', 'required']);
+		expect(FK_REQUIRED_FALSE_MESSAGE).toContain("'nullable: true'");
+	});
+
+	it('rejects it on a cardinality: one role FK too', () => {
+		const data = {
+			entity: { name: 'meeting', plural: 'meetings' },
+			capabilities: ['Communication'],
+			fields: { host_contact_id: { type: 'uuid', required: false } },
+			roles: { host: { target: 'contact', cardinality: 'one' } },
+		};
+		expect(fkIssue(data)?.path).toEqual(['fields', 'host_contact_id', 'required']);
+	});
+
+	it('accepts required: false with nullable:, an undeclared required:, and a non-FK field', () => {
+		expect(fkIssue(entity({ required: false, nullable: true }))).toBeUndefined();
+		expect(fkIssue(entity({}))).toBeUndefined();
+		expect(fkIssue(entity({ nullable: true }))).toBeUndefined();
+		expect(
+			fkIssue({ entity: { name: 'deal', plural: 'deals' }, fields: { note: { type: 'string', required: false } } }),
+		).toBeUndefined();
+	});
+
+	it('an absent required: stays undefined after parsing, so the two are distinguishable', () => {
+		const parsed = EntityDefinitionSchema.parse(entity({}));
+		expect(parsed.fields.account_id.required).toBeUndefined();
 	});
 });
 

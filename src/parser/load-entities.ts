@@ -38,11 +38,7 @@ import {
 } from '../schema/relationship-definition.schema';
 import type { FieldDefinition } from '../schema/entity-definition.schema';
 import { deriveRoleRelationships, roleForeignKey } from '../roles/derive';
-import {
-	fieldColumnNullable,
-	foreignKeyColumnNullable,
-	foreignKeyNullabilityDeclared,
-} from '../schema/field-nullability';
+import { fieldColumnNullable, foreignKeyColumnNullable } from '../schema/field-nullability';
 
 /**
  * Map the YAML `ui_*` keys onto `ParsedField.ui`. Shared by the entity and
@@ -231,13 +227,6 @@ function transformToEntity(result: LoadResult, tablePrefix: string): ParsedEntit
 	for (const [fk, relNullable] of fkNullable) {
 		const field = entity.fields.get(fk);
 		if (field) field.nullable = foreignKeyColumnNullable(relNullable, definition.fields[fk]);
-	}
-	for (const rel of entity.relationships.values()) {
-		if (rel.type !== 'belongs_to') continue;
-		rel.nullabilityDeclared = foreignKeyNullabilityDeclared(
-			fkNullable.get(rel.foreignKey),
-			definition.fields[rel.foreignKey],
-		);
 	}
 
 	// Parse integration configuration

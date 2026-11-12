@@ -131,8 +131,12 @@ describe('buildRelationGraph — belongs_to', () => {
 		expect(edge(withFk({ required: true }), 'contacts', 'account').optional).toBe(false);
 	});
 
-	it('a non-required FK column is optional', () => {
-		expect(edge(withFk({ required: false }), 'contacts', 'account').optional).toBe(true);
+	it('a written `required: false` on the FK is refused, pointing at `nullable: true` (#850)', () => {
+		expect(() => withFk({ required: false })).toThrow(/'nullable: true'/);
+	});
+
+	it('an FK field declared without `nullable:` is NOT NULL, so not optional (#850)', () => {
+		expect(edge(withFk({ index: true }), 'contacts', 'account').optional).toBe(false);
 	});
 
 	it('an explicitly nullable FK column is optional', () => {
@@ -159,7 +163,7 @@ describe('buildRelationGraph — belongs_to', () => {
 			edge(withFk({ required: true }, { nullable: true }), 'contacts', 'account').optional,
 		).toBe(true);
 		expect(
-			edge(withFk({ required: false }, { nullable: false }), 'contacts', 'account').optional,
+			edge(withFk({ nullable: true }, { nullable: false }), 'contacts', 'account').optional,
 		).toBe(false);
 	});
 
@@ -233,7 +237,7 @@ describe('buildRelationGraph — belongs_to', () => {
 		});
 	});
 
-	it('an undeclared FK column is optional', () => {
+	it('an undeclared FK column is NOT NULL, so not optional (#850)', () => {
 		const ctx = context([
 			account,
 			{
@@ -246,7 +250,7 @@ describe('buildRelationGraph — belongs_to', () => {
 				),
 			},
 		]);
-		expect(edge(ctx, 'contacts', 'account').optional).toBe(true);
+		expect(edge(ctx, 'contacts', 'account').optional).toBe(false);
 	});
 });
 

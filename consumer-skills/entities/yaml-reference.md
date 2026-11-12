@@ -43,7 +43,8 @@ tenant_scoped: { column: organization_id } # scope on this column instead
 
 - **Adoption.** If the entity already declares that column, as a `fields:` entry or as the foreign key of a
   `belongs_to`, codegen uses it instead of emitting a second one. It keeps the declaration's own type and
-  nullability (`required: true` makes it NOT NULL); a `belongs_to` keeps its `.references()`. A `fields:` entry
+  nullability (`required: true` makes a field NOT NULL; a `belongs_to` FK is NOT NULL unless it says
+  `nullable: true`); a `belongs_to` keeps its `.references()`. A `fields:` entry
   must be `type: uuid`: the ambient tenant is a uuid, so a string column is a generation error naming the entity.
 - **Otherwise** the tenant block emits a nullable `uuid` column with that name and no foreign key.
 - Either way the column gets one `<table>_<column>_idx` index (an adopted column's own `index: true` folds into it),
@@ -54,7 +55,8 @@ tenant_scoped: { column: organization_id } # scope on this column instead
   `updated_at`, `deleted_at`, `created_by`, `updated_by`, `provider`, `external_id`, `provider_metadata`, including
   the ones `pattern: Integrated` implies). The error names the entity, the column and what owns it.
 - **Not listed in `fields:` of a unique entry.** The tenant column is prefixed automatically; listing it is an error.
-- A `required: true` adopted column leaves the NULL-tenant partition: a request with no tenant writes NULL into it
+- A NOT NULL adopted column (a `required: true` field, or a `belongs_to` FK without `nullable: true`) leaves the
+  NULL-tenant partition: a request with no tenant writes NULL into it
   and Postgres rejects the insert.
 - `tenant_scoped` is not supported with `eav_value_table: true`.
 
@@ -94,8 +96,11 @@ Nullability — `required` is the create contract, `nullable` the column:
 | `nullable: false` without `default:` | — | generation error: say `required: true` | — |
 | `required: true` + `nullable: true` | — | generation error | — |
 
-A `belongs_to`'s FK column follows the same rule from its `fields:` entry; a
-`nullable:` on the relationship itself outranks it.
+A `belongs_to`'s FK column is the exception: it is **NOT NULL unless it says
+`nullable: true`**, on the relationship (or role) or on its `fields:` entry, and
+the relationship's `nullable:` outranks the field's. `required:` does not decide
+it; `required: false` on an FK field without `nullable:` is a generation error.
+See `relationships:` below.
 
 Uniqueness — a field's `unique: true` emits `uniqueIndex('<table>_<col>_uniq')`
 (#511). Under `tenant_scoped: true` it is per tenant: the constraint
@@ -192,15 +197,20 @@ relationships:
     foreign_key: account_id
 ```
 
-- `belongs_to` adds the FK column on this entity. **Its nullability:** an explicit
-  `nullable:` on the relationship (or role) wins, else the FK's own field
-  (`required: true` → NOT NULL), else the column is **NULLABLE**. A reference left
-  undeclared is therefore optional, which is rarely what the author meant, so
-  `entity validate` warns (`undeclared_fk_nullability`) unless the relationship
-  says `nullable:` or the FK field says `required: true` or `nullable:`. Write
-  `nullable: false` for a NOT NULL reference and `nullable: true` for an optional
-  one (`required: false` does not count: it is also what an absent `required:`
-  parses to).
+- `belongs_to` adds the FK column on this entity. **It is NOT NULL unless it says
+  otherwise** (Rails 5's `belongs_to`): `nullable: true` on the relationship (or
+  `cardinality: one` role), or on the FK's own `fields:` entry, makes it optional;
+  the relationship's `nullable:` outranks the field's. A NOT NULL FK is a required
+  key on the create DTO; a nullable one is optional and accepts `null`.
+  `required:` on the FK field does not decide it, and a written `required: false`
+  without `nullable:` is a generation error pointing at `nullable: true` (it used
+  to mean nullable). `on_delete: set_null` needs `nullable: true`, and so does a
+  self-reference whose root has no parent:
+
+  ```yaml
+  relationships:
+    parent_account: { type: belongs_to, target: account, foreign_key: parent_account_id, nullable: true }
+  ```
 - The include's type (`with: { account: true }`) is `optional` (`T | null`) when the
   FK is nullable, **or** when the hop can filter the target out: the target
   soft-deletes or is user-tracked (a deleted or another user's row reads `null`),

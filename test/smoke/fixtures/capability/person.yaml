@@ -24,10 +24,13 @@ behaviors:
   - timestamps
 
 relationships:
+  # `nullable: true` breaks the FK cycle with `crew.lead` (NOT NULL by default,
+  # #850): two NOT NULL FKs onto each other could never take a first row.
   crew:
     type: belongs_to
     target: crew
     foreign_key: crew_id
+    nullable: true
   squad:
     type: belongs_to
     target: squad

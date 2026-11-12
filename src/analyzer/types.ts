@@ -105,13 +105,6 @@ export interface ParsedRelationship {
 	 * model's dimension label, CAP-3's role vocabulary) read this.
 	 */
 	role?: string;
-	/**
-	 * `belongs_to` only: whether the YAML says if the FK column may be NULL —
-	 * `foreignKeyNullabilityDeclared` (`field-nullability.ts`). Undeclared, the
-	 * column is NULLABLE (`foreignKeyColumnNullable`), which `entity validate`
-	 * warns about (`undeclared_fk_nullability`, #850).
-	 */
-	nullabilityDeclared?: boolean;
 }
 
 interface ParsedRoleBase {
