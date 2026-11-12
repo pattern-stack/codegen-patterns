@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, ilike, type SQL } from 'drizzle-orm';
 import type { ListQuery, Page } from '@shared/http/page';
 import { ListDealsUseCase } from './list-deals.use-case';
-import { deals, type Deal } from '../deal.entity';
+import type { deals, Deal } from '../deal.entity';
 
 /** The list query (paging + sort) plus the declared search filters. */
 export interface SearchDealsInput extends ListQuery {
@@ -24,11 +24,18 @@ export class SearchDealsUseCase {
   constructor(private readonly listUseCase: ListDealsUseCase) {}
 
   async execute(searchInput: SearchDealsInput): Promise<Page<Deal>> {
-    const whereTerms: SQL[] = [];
-    if (searchInput.stage) whereTerms.push(eq(deals.stage, searchInput.stage));
-    if (searchInput.ownerId) whereTerms.push(eq(deals.ownerId, searchInput.ownerId));
-    if (searchInput.search) whereTerms.push(ilike(deals.name, `%${searchInput.search}%`));
+    // A ROW FILTER, not a rendered SQL: the list renders it against the table
+    // handle its executing path holds — the aliased root on the relational path
+    // (READ-1 §4). Built from `t`, never from the imported table.
+    const rowFilter = (t: typeof deals): SQL | undefined => {
+      const whereTerms: SQL[] = [];
+      if (searchInput.stage) whereTerms.push(eq(t.stage, searchInput.stage));
+      if (searchInput.ownerId) whereTerms.push(eq(t.ownerId, searchInput.ownerId));
+      if (searchInput.search) whereTerms.push(ilike(t.name, `%${searchInput.search}%`));
 
-    return this.listUseCase.execute(searchInput, { where: and(...whereTerms) });
+      return and(...whereTerms);
+    };
+
+    return this.listUseCase.execute(searchInput, { where: rowFilter });
   }
 }

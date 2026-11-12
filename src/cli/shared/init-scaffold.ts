@@ -170,6 +170,8 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	{ runtime: 'base-classes/scope-filters.ts', target: 'base-classes/scope-filters.ts' },
 	{ runtime: 'base-classes/table-columns.ts', target: 'base-classes/table-columns.ts' },
 	{ runtime: 'base-classes/base-service.ts', target: 'base-classes/base-service.ts' },
+	// The generated read surface's ownership check — imported by base-repository.ts and base-service.ts (READ-1 §3.4)
+	{ runtime: 'base-classes/read-surface.ts', target: 'base-classes/read-surface.ts' },
 	{ runtime: 'base-classes/integrated-entity-repository.ts', target: 'base-classes/integrated-entity-repository.ts' },
 	{ runtime: 'base-classes/integrated-entity-service.ts', target: 'base-classes/integrated-entity-service.ts' },
 	// Inbound-integration write surface (#374) — deps of integrated/junction repos

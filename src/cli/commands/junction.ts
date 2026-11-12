@@ -330,10 +330,10 @@ export class JunctionNewCommand extends Command {
 		// NOT warn-but-don't-fail: the emitted `database.module.ts` imports the
 		// manifest, so continuing past a failure ships a project that does not
 		// compile (docs/specs/REL-1.md §3).
-		let relationsResult: ReturnType<typeof regenerateRelationsManifest> | null = null;
+		let relationsResult: Awaited<ReturnType<typeof regenerateRelationsManifest>> | null = null;
 		let relationsFailed = false;
 		try {
-			relationsResult = regenerateRelationsManifest({
+			relationsResult = await regenerateRelationsManifest({
 				ctx,
 				entitiesDir,
 				junctionsDir,

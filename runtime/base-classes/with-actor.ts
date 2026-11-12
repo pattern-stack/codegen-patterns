@@ -51,7 +51,7 @@ export interface ActorCapability {
 	/** Filled by the generated repository from `config: { Actor: {...} }`. */
 	readonly actorConfig?: ActorConfig;
 	/** "This row is, or contains, actor `actorId`" — over this table. */
-	memberPredicate(actorId: string): SQL;
+	memberPredicate(actorId: string): (table: PgTable) => SQL;
 }
 
 export function WithActor<TBase extends RepositoryCtor>(
@@ -60,8 +60,14 @@ export function WithActor<TBase extends RepositoryCtor>(
 	abstract class ActorMixin extends Base implements ActorCapability {
 		readonly actorConfig?: ActorConfig;
 
-		/** "This row is, or contains, actor `actorId`" — over this table. */
-		memberPredicate(actorId: string): SQL {
+		/**
+		 * "This row is, or contains, actor `actorId`" — a {@link RowFilter}, so it
+		 * renders against whichever handle the read holds. The group form
+		 * correlates on the ROOT's `id`, which on a generated read is the aliased
+		 * `"d0"` — built against this repository's own table it would name a
+		 * FROM-clause entry that is not in scope (READ-1 §4.1).
+		 */
+		memberPredicate(actorId: string): (table: PgTable) => SQL {
 			const config = this.actorConfig;
 			if (!config) {
 				throw new Error(
@@ -69,20 +75,24 @@ export function WithActor<TBase extends RepositoryCtor>(
 						"declare `config: { Actor: { kind: individual | group } }` on the entity YAML.",
 				);
 			}
-			if (config.kind === 'individual') return eq(this.col('id'), actorId);
+			const self = this.constructor.name;
+			if (config.kind === 'individual') {
+				return (root) => eq(column(root, 'id', self), actorId);
+			}
 			const { table, foreignKey } = config.members;
-			const owner = `${this.constructor.name} (members)`;
-			return exists(
-				this.db
-					.select({ one: sql`1` })
-					.from(table)
-					.where(
-						and(
-							eq(column(table, foreignKey, owner), this.col('id')),
-							eq(column(table, 'id', owner), actorId),
+			const owner = `${self} (members)`;
+			return (root) =>
+				exists(
+					this.db
+						.select({ one: sql`1` })
+						.from(table)
+						.where(
+							and(
+								eq(column(table, foreignKey, owner), column(root, 'id', self)),
+								eq(column(table, 'id', owner), actorId),
+							),
 						),
-					),
-			);
+				);
 		}
 	}
 	return ActorMixin;

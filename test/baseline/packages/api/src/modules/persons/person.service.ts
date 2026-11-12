@@ -4,7 +4,13 @@ import { WithAnalytics } from '@shared/base-classes/with-analytics';
 import { EVENT_BUS } from '@shared/constants/tokens';
 import { BaseService } from '@shared/base-classes/base-service';
 import { PersonRepository } from './person.repository';
-import type { Person } from './person.entity';
+import type {
+  PersonColumns,
+  PersonNoInclude,
+  PersonResult,
+} from './person.repository';
+import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
+import type { persons, Person } from './person.entity';
 
 @Injectable()
 export class PersonService extends WithAnalytics(
@@ -20,6 +26,38 @@ export class PersonService extends WithAnalytics(
     protected override readonly repository: PersonRepository,
   ) {
     super(repository);
+    // findById / findByIds / list are forwarded below — an override of one on a
+    // pattern's service base would never run, so construction throws, naming it.
+    this.claimGeneratedReads(PersonService);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // The read surface (READ-1 §7) — pass-through, not composition
+  //
+  // DELEGATION ONLY: the repository's signatures, forwarded so a use case or the
+  // HTTP layer can carry a column mask to the
+  // one place that executes and scopes it. No join logic, no sibling-repository
+  // calls, no navigator — the navigator is REL-3's (#588).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  override findById<C extends PersonColumns | undefined = undefined>(
+    id: string,
+    opts?: ReadOptions<never, C>,
+  ): Promise<PersonResult<PersonNoInclude, C> | null> {
+    return this.repository.findById<C>(id, opts);
+  }
+
+  override findByIds<C extends PersonColumns | undefined = undefined>(
+    ids: readonly string[],
+    opts?: ReadOptions<never, C>,
+  ): Promise<Array<PersonResult<PersonNoInclude, C>>> {
+    return this.repository.findByIds<C>(ids, opts);
+  }
+
+  override list<C extends PersonColumns | undefined = undefined>(
+    listOptions?: ListOptions<typeof persons> & ReadOptions<never, C>,
+  ): Promise<Array<PersonResult<PersonNoInclude, C>>> {
+    return this.repository.list<C>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

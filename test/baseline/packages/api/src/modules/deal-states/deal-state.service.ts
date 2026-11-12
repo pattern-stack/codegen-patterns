@@ -5,12 +5,13 @@ import { EVENT_BUS } from '@shared/constants/tokens';
 import { BaseService } from '@shared/base-classes/base-service';
 import { DealStateRepository } from './deal-state.repository';
 import type {
+  DealStateColumns,
   DealStateInclude,
   DealStateNoInclude,
   DealStateResult,
 } from './deal-state.repository';
-import type { ListOptions } from '@shared/base-classes/base-repository';
-import type { DealState } from './deal-state.entity';
+import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
+import type { deal_states, DealState } from './deal-state.entity';
 import { OpportunityRepository } from '../opportunities/opportunity.repository';
 import type { Opportunity } from '../opportunities/opportunity.entity';
 
@@ -29,28 +30,38 @@ export class DealStateService extends WithAnalytics(
     private readonly opportunityRepo: OpportunityRepository,
   ) {
     super(repository);
+    // findById / findByIds / list are forwarded below — an override of one on a
+    // pattern's service base would never run, so construction throws, naming it.
+    this.claimGeneratedReads(DealStateService);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Typed `with` includes (REL-2, #587) — pass-through, not composition
+  // The read surface (READ-1 §7) — pass-through, not composition
   //
-  // These two overrides exist so the HTTP layer can carry an allowlisted include
-  // from the controller to the repository. They are DELEGATION ONLY: no join
-  // logic, no sibling-repository calls, no navigator. The typed navigator and the
-  // deletion of the CGP-358b composition methods below are REL-3's (#588).
+  // DELEGATION ONLY: the repository's signatures, forwarded so a use case or the
+  // HTTP layer can carry a column mask and an allowlisted include to the
+  // one place that executes and scopes it. No join logic, no sibling-repository
+  // calls, no navigator — the navigator is REL-3's (#588).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override findById<TWith extends DealStateInclude = DealStateNoInclude>(
+  override findById<W extends DealStateInclude = DealStateNoInclude, C extends DealStateColumns | undefined = undefined>(
     id: string,
-    opts?: { with?: TWith },
-  ): Promise<DealStateResult<TWith> | null> {
-    return this.repository.findById<TWith>(id, opts);
+    opts?: ReadOptions<W, C>,
+  ): Promise<DealStateResult<W, C> | null> {
+    return this.repository.findById<W, C>(id, opts);
   }
 
-  override list<TWith extends DealStateInclude = DealStateNoInclude>(
-    options?: ListOptions & { with?: TWith },
-  ): Promise<Array<DealStateResult<TWith>>> {
-    return this.repository.list<TWith>(options);
+  override findByIds<W extends DealStateInclude = DealStateNoInclude, C extends DealStateColumns | undefined = undefined>(
+    ids: readonly string[],
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<DealStateResult<W, C>>> {
+    return this.repository.findByIds<W, C>(ids, opts);
+  }
+
+  override list<W extends DealStateInclude = DealStateNoInclude, C extends DealStateColumns | undefined = undefined>(
+    listOptions?: ListOptions<typeof deal_states> & ReadOptions<W, C>,
+  ): Promise<Array<DealStateResult<W, C>>> {
+    return this.repository.list<W, C>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
@@ -66,9 +77,9 @@ export class DealStateService extends WithAnalytics(
 
   /**
    * Fetch opportunities for this DealState by FK traversal.
-   * Single repo call with optional cursor/limit pagination.
+   * Single repo call; `limit` caps it (ordered by `id`, so the subset is stable).
    */
-  async opportunities(dealStateId: string, opts?: { cursor?: string; limit?: number }): Promise<Opportunity[]> {
+  async opportunities(dealStateId: string, opts?: { limit?: number }): Promise<Opportunity[]> {
     return this.opportunityRepo.findByStateId(dealStateId, opts);
   }
 }

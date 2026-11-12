@@ -5,12 +5,13 @@ import { EVENT_BUS } from '@shared/constants/tokens';
 import { BaseService } from '@shared/base-classes/base-service';
 import { UserRepository } from './user.repository';
 import type {
+  UserColumns,
   UserInclude,
   UserNoInclude,
   UserResult,
 } from './user.repository';
-import type { ListOptions } from '@shared/base-classes/base-repository';
-import type { User } from './user.entity';
+import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
+import type { users, User } from './user.entity';
 import { PersonRepository } from '../persons/person.repository';
 import type { Person } from '../persons/person.entity';
 import { OpportunityRepository } from '../opportunities/opportunity.repository';
@@ -32,28 +33,38 @@ export class UserService extends WithAnalytics(
     private readonly opportunityRepo: OpportunityRepository,
   ) {
     super(repository);
+    // findById / findByIds / list are forwarded below — an override of one on a
+    // pattern's service base would never run, so construction throws, naming it.
+    this.claimGeneratedReads(UserService);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Typed `with` includes (REL-2, #587) — pass-through, not composition
+  // The read surface (READ-1 §7) — pass-through, not composition
   //
-  // These two overrides exist so the HTTP layer can carry an allowlisted include
-  // from the controller to the repository. They are DELEGATION ONLY: no join
-  // logic, no sibling-repository calls, no navigator. The typed navigator and the
-  // deletion of the CGP-358b composition methods below are REL-3's (#588).
+  // DELEGATION ONLY: the repository's signatures, forwarded so a use case or the
+  // HTTP layer can carry a column mask and an allowlisted include to the
+  // one place that executes and scopes it. No join logic, no sibling-repository
+  // calls, no navigator — the navigator is REL-3's (#588).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override findById<TWith extends UserInclude = UserNoInclude>(
+  override findById<W extends UserInclude = UserNoInclude, C extends UserColumns | undefined = undefined>(
     id: string,
-    opts?: { with?: TWith },
-  ): Promise<UserResult<TWith> | null> {
-    return this.repository.findById<TWith>(id, opts);
+    opts?: ReadOptions<W, C>,
+  ): Promise<UserResult<W, C> | null> {
+    return this.repository.findById<W, C>(id, opts);
   }
 
-  override list<TWith extends UserInclude = UserNoInclude>(
-    options?: ListOptions & { with?: TWith },
-  ): Promise<Array<UserResult<TWith>>> {
-    return this.repository.list<TWith>(options);
+  override findByIds<W extends UserInclude = UserNoInclude, C extends UserColumns | undefined = undefined>(
+    ids: readonly string[],
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<UserResult<W, C>>> {
+    return this.repository.findByIds<W, C>(ids, opts);
+  }
+
+  override list<W extends UserInclude = UserNoInclude, C extends UserColumns | undefined = undefined>(
+    listOptions?: ListOptions<typeof users> & ReadOptions<W, C>,
+  ): Promise<Array<UserResult<W, C>>> {
+    return this.repository.list<W, C>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
@@ -79,9 +90,9 @@ export class UserService extends WithAnalytics(
 
   /**
    * Fetch owned_opportunities for this User by FK traversal.
-   * Single repo call with optional cursor/limit pagination.
+   * Single repo call; `limit` caps it (ordered by `id`, so the subset is stable).
    */
-  async owned_opportunities(userId: string, opts?: { cursor?: string; limit?: number }): Promise<Opportunity[]> {
+  async owned_opportunities(userId: string, opts?: { limit?: number }): Promise<Opportunity[]> {
     return this.opportunityRepo.findByOwnerId(userId, opts);
   }
 }

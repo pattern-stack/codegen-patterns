@@ -10,9 +10,9 @@
  *
  *  1. `BaseRepository.scopePredicate()` — the root of the core
  *     `select().from()` builder, folded into the single `WHERE` by `scopeAnd()`.
- *  2. The generated repository's RQBv2 root filter — `{ RAW: (t) => … }` on
- *     `db.query.<table>.findFirst/findMany`, which is the path a `with` include
- *     takes (`baseQuery()` cannot carry a `with`). Note the `t`: the relational
+ *  2. The generated repository's RQBv2 root filter —
+ *     `{ RAW: this.rootFilter(pred) }` on `db.query.<table>.findFirst/findMany`,
+ *     which is the path EVERY generated read takes (READ-1 §3). Note the `t`: the relational
  *     query builder ALIASES the root, so the predicate must render against the
  *     handle it passes the callback, never against the repository's own.
  *  3. The emitted relations manifest — `where: { RAW: (t) => hopScope(t, …) }`
@@ -225,4 +225,59 @@ export function scopeFilter(
  */
 export function hopScope(table: PgTable, cfg: ScopeConfig, owner: string): SQL {
   return scopeFilter(table, cfg, owner) ?? sql`true`;
+}
+
+/**
+ * The scope of an entity that declares none — every axis off. The manifest's
+ * `SCOPES` map names it explicitly for every unscoped entity table, so an
+ * ABSENT key is never read as "unscoped" (READ-1 §5.1): a table missing from the
+ * map is a type error at `SCOPES.<table>`, not a silent no-filter.
+ */
+export const UNSCOPED: ScopeConfig = Object.freeze({
+  tenantScoped: false,
+  softDelete: false,
+  userTracking: false,
+  enforcement: 'lenient',
+});
+
+/**
+ * A {@link ScopeConfig} bound to the table it describes. The manifest emits every
+ * entity table's scope as one (`SCOPES.<table>`, `<TABLE>_SCOPE`), so the table
+ * a scope belongs to travels with it in the TYPE: {@link scopedRoot} infers its
+ * table from it, and handing one table's scope to another table's query is a
+ * compile error rather than a wrong posture (READ-1 §5.2).
+ */
+export type TableScope<T extends PgTable> = ScopeConfig & { readonly table: T };
+
+/** Bind a scope to its table — what the manifest emits for every entity table. */
+export function tableScope<T extends PgTable>(table: T, cfg: ScopeConfig): TableScope<T> {
+  return Object.freeze({ ...cfg, table });
+}
+
+/**
+ * The ROOT half of a scoped read, for code that calls `db.query.<table>`
+ * itself rather than going through a generated repository (READ-1 §5.2, #843).
+ *
+ * The relations manifest scopes every HOP of such a read; nothing scopes its
+ * root. AND this into the root `where` — through the manifest's
+ * `rootScope.<table>(owner)`, which is this over `SCOPES.<table>`:
+ *
+ * ```ts
+ * await db.query.accounts.findMany({
+ *   where: { AND: [{ id: { in: ids } }, rootScope.accounts('AccountLoader')] },
+ * });
+ * ```
+ *
+ * It takes a {@link TableScope}, never a bare `ScopeConfig`: `T` is the scope's
+ * own table, so the `RAW` callback only fits that table's query.
+ *
+ * It is `hopScope` shaped as a filter — the same `scopeFilter` a repository's
+ * root and every manifest hop use — and it renders against the handle RQBv2
+ * passes the callback, i.e. the aliased root.
+ */
+export function scopedRoot<T extends PgTable>(
+  scope: TableScope<T>,
+  owner: string,
+): { RAW: (table: T) => SQL } {
+  return { RAW: (table: T) => hopScope(table, scope, owner) };
 }

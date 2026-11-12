@@ -8,15 +8,27 @@ import { WithAnalytics } from '<%= withAnalyticsImport %>';
 import { EVENT_BUS } from '<%= drizzleTokenImport %>';
 import { <%= serviceBaseClass %> } from '<%= serviceBaseImport %>';
 import { <%= classNames.repository %> } from './<%= entityFileStem %>.repository';
-<% if (includes) { -%>
+<%_
+// READ-1 §7 — the service forwards the repository's read surface verbatim:
+// the same generics, the same options, the same result.
+const E = classNames.entity;
+const _readGenerics = includes
+  ? `<W extends ${E}Include = ${E}NoInclude, C extends ${E}Columns | undefined = undefined>`
+  : `<C extends ${E}Columns | undefined = undefined>`;
+const _readArgs = includes ? '<W, C>' : '<C>';
+const _readOpts = includes ? 'ReadOptions<W, C>' : 'ReadOptions<never, C>';
+const _readResult = includes ? `${E}Result<W, C>` : `${E}Result<${E}NoInclude, C>`;
+_%>
 import type {
-  <%= classNames.entity %>Include,
-  <%= classNames.entity %>NoInclude,
-  <%= classNames.entity %>Result,
-} from './<%= entityFileStem %>.repository';
-import type { ListOptions } from '<%= baseRepositoryImport %>';
+  <%= E %>Columns,
+<% if (includes) { -%>
+  <%= E %>Include,
 <% } -%>
-import type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
+  <%= E %>NoInclude,
+  <%= E %>Result,
+} from './<%= entityFileStem %>.repository';
+import type { ListOptions, ReadOptions } from '<%= baseRepositoryImport %>';
+import type { <%= entityNamePlural %>, <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 <% if (eavEnabled) { -%>
 import { FieldValueService } from '<%= eavFieldValueImportDir %>/<%= eavFieldValueStem %>.service';
 <% } -%>
@@ -65,31 +77,39 @@ export class <%= classNames.service %> extends WithAnalytics(
 <%_ }) _%>
   ) {
     super(repository);
+    // findById / findByIds / list are forwarded below — an override of one on a
+    // pattern's service base would never run, so construction throws, naming it.
+    this.claimGeneratedReads(<%= classNames.service %>);
   }
-<% if (includes) { -%>
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Typed `with` includes (REL-2, #587) — pass-through, not composition
+  // The read surface (READ-1 §7) — pass-through, not composition
   //
-  // These two overrides exist so the HTTP layer can carry an allowlisted include
-  // from the controller to the repository. They are DELEGATION ONLY: no join
-  // logic, no sibling-repository calls, no navigator. The typed navigator and the
-  // deletion of the CGP-358b composition methods below are REL-3's (#588).
+  // DELEGATION ONLY: the repository's signatures, forwarded so a use case or the
+  // HTTP layer can carry a column mask<% if (includes) { %> and an allowlisted include<% } %> to the
+  // one place that executes and scopes it. No join logic, no sibling-repository
+  // calls, no navigator — the navigator is REL-3's (#588).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override findById<TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
+  override findById<%- _readGenerics %>(
     id: string,
-    opts?: { with?: TWith },
-  ): Promise<<%= classNames.entity %>Result<TWith> | null> {
-    return this.repository.findById<TWith>(id, opts);
+    opts?: <%- _readOpts %>,
+  ): Promise<<%- _readResult %> | null> {
+    return this.repository.findById<%- _readArgs %>(id, opts);
   }
 
-  override list<TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
-    options?: ListOptions & { with?: TWith },
-  ): Promise<Array<<%= classNames.entity %>Result<TWith>>> {
-    return this.repository.list<TWith>(options);
+  override findByIds<%- _readGenerics %>(
+    ids: readonly string[],
+    opts?: <%- _readOpts %>,
+  ): Promise<Array<<%- _readResult %>>> {
+    return this.repository.findByIds<%- _readArgs %>(ids, opts);
   }
-<% } -%>
+
+  override list<%- _readGenerics %>(
+    listOptions?: ListOptions<typeof <%= entityNamePlural %>> & <%- _readOpts %>,
+  ): Promise<Array<<%- _readResult %>>> {
+    return this.repository.list<%- _readArgs %>(listOptions);
+  }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
   // automatically by BaseService when the events subsystem is installed.
@@ -105,10 +125,20 @@ export class <%= classNames.service %> extends WithAnalytics(
   // cross-cutting concerns (analytics, events) stay uniform.
   // ═══════════════════════════════════════════════════════════════════════
 <%_ processedQueries.forEach((q) => { _%>
+<%_ if (q.hasVia || q.hasSelect) { _%>
 
   async <%= q.methodName %>(<%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
     return this.repository.<%= q.methodName %>(<%= q.params.map(p => p.camelName).join(', ') %>);
   }
+<%_ } else { _%>
+
+  <%= q.methodName %><%- _readGenerics %>(
+    <%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>,
+    opts?: <%- _readOpts %>,
+  ): Promise<<%- q.isUnique ? `${_readResult} | null` : `Array<${_readResult}>` %>> {
+    return this.repository.<%= q.methodName %><%- _readArgs %>(<%= q.params.map(p => p.camelName).join(', ') %>, opts);
+  }
+<%_ } _%>
 <%_ }) _%>
 <% } %>
 <%_ /* ADR-041 — capability forwarders. A capability's methods live on the
@@ -169,9 +199,9 @@ export class <%= classNames.service %> extends WithAnalytics(
 
   /**
    * Fetch <%= rel.name %> for this <%= entityNamePascal %> by FK traversal.
-   * Single repo call with optional cursor/limit pagination.
+   * Single repo call; `limit` caps it (ordered by `id`, so the subset is stable).
    */
-  async <%= rel.name %>(<%- entityCamel %>Id: string, opts?: { cursor?: string; limit?: number }): Promise<<%= rel.targetClass %>[]> {
+  async <%= rel.name %>(<%- entityCamel %>Id: string, opts?: { limit?: number }): Promise<<%= rel.targetClass %>[]> {
 <%_ if (rel.isSelfRef) { _%>
     return this.repository.findBy<%= fkPascal %>(<%- entityCamel %>Id, opts);
 <%_ } else { _%>

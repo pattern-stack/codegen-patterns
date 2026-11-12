@@ -180,7 +180,7 @@ describe('has_many', () => {
 		expect(JSON.stringify(locals.repositoryDeps)).toContain('PersonRepository');
 		const service = render('service.ejs.t', locals);
 		expect(service).toContain(
-			'async members(crewId: string, opts?: { cursor?: string; limit?: number }): Promise<Person[]> {',
+			'async members(crewId: string, opts?: { limit?: number }): Promise<Person[]> {',
 		);
 		expect(service).toContain("import { PersonRepository } from '../../persons/person.repository';");
 		expect(render('module.ejs.t', locals)).toContain(

@@ -150,6 +150,12 @@ export function WithCommunication<TBase extends RepositoryCtor>(
 
 ### 4. `WithActor`
 
+> **Revised 2026-11-11 (READ-1, `docs/specs/READ-1.md` §4.1, Found #4).** `memberPredicate(actorId)` now returns a
+> row filter, `(table: PgTable) => SQL`, not an `SQL`: generated reads run on the relational query builder, which aliases
+> the root, and the group form's `EXISTS` must correlate on the handle it is given. Every `baseQuery` below now reads
+> "the repository's read path" (`list({ where })`); the reasoning — a predicate over THIS table composes into the
+> repository's own scoped read — is unchanged.
+
 `memberPredicate(actorId): SQL` — a predicate over **this** table: "this row is, or contains, actor `actorId`".
 
 - `individual` → `eq(this.id, actorId)` — the identity predicate.

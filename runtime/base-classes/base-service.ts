@@ -25,6 +25,7 @@ import {
   buildChangeEvents,
   emitSafely,
 } from './lifecycle-events';
+import { assertGeneratedReadsOwned } from './read-surface';
 
 // ============================================================================
 // IBaseRepository interface
@@ -39,6 +40,14 @@ export interface IBaseRepository<TEntity> {
   findById(id: string): Promise<TEntity | null>;
   findByIds(ids: string[]): Promise<TEntity[]>;
   list(options?: unknown): Promise<TEntity[]>;
+  /**
+   * `unknown` here is the structural CONSTRAINT only — a concrete repository's
+   * `count(where?: RowFilter<typeof table>)` must satisfy it, and a narrower
+   * function type fails under strict variance. Callers never see it:
+   * `BaseService.count` / `list` take `Parameters<TRepo['count' | 'list']>[0]`,
+   * the concrete repository's own types, so a stale `service.count(eq(…))` is a
+   * compile error (READ-1 review #3).
+   */
   count(where?: unknown): Promise<number>;
   exists(id: string): Promise<boolean>;
   create(input: Partial<TEntity>, tx?: unknown): Promise<TEntity>;
@@ -73,6 +82,23 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
   constructor(protected readonly repository: TRepo) {}
 
   /**
+   * Fail at CONSTRUCTION when a class between this base and the generated
+   * service `owner` — a pattern's service base, a mixin — overrides `findById` /
+   * `findByIds` / `list`. The generated service forwards those three straight to
+   * the repository with their typed options, so such an override would never
+   * run; this makes that loud instead of silent (READ-1 §3.4). Called by the
+   * generated constructor with its own class.
+   */
+  protected claimGeneratedReads(owner: abstract new (...args: never[]) => unknown): void {
+    assertGeneratedReadsOwned(
+      owner,
+      BaseService,
+      'To wrap a read, give the wrapper its own name or override it on a subclass of the generated service; ' +
+        "to narrow which rows it returns, do it on the repository's `scopeAndOn`.",
+    );
+  }
+
+  /**
    * Find a single entity by its primary key.
    * Returns null if not found.
    */
@@ -97,7 +123,7 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
   /**
    * Count entities matching an optional filter.
    */
-  count(where?: unknown): Promise<number> {
+  count(where?: Parameters<TRepo['count']>[0]): Promise<number> {
     return this.repository.count(where);
   }
 

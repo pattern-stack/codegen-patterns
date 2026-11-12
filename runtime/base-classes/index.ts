@@ -2,8 +2,8 @@
  * Base classes barrel export
  */
 export { BaseRepository } from './base-repository';
-export type { BehaviorConfig, ListOptions, RowsOf, SortTerm } from './base-repository';
-export { column } from './table-columns';
+export type { BehaviorConfig, ListOptions, ReadOptions, RowFilter, RowsOf, SortTerm } from './base-repository';
+export { column, hasColumn } from './table-columns';
 
 // The scope predicate, for one table (REL-2 §3). `hopScope` is what the
 // generated relations manifest calls on every traversed relation, so an include
@@ -14,11 +14,14 @@ export {
   hopScope,
   isUnscoped,
   scopeFilter,
+  scopedRoot,
+  tableScope,
   tenantAxisPredicate,
+  UNSCOPED,
   tenantPredicateFor,
   userScopePredicateFor,
 } from './scope-filters';
-export type { ScopeConfig, TenantAxis } from './scope-filters';
+export type { ScopeConfig, TableScope, TenantAxis } from './scope-filters';
 
 // Ambient tenant scope (AsyncLocalStorage) — read by BaseRepository.scopePredicate,
 // set at request/worker boundaries via withRequester/withUserScope/etc.

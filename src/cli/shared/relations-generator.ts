@@ -20,6 +20,7 @@ import {
 	type EmitRelationsResult,
 	type RelationsConfigInput,
 } from '../../emitters/relations/index.js';
+import { loadAppPatternsForCli } from './pattern-globs.js';
 import { projectLayout } from './project-layout.js';
 import type { Context } from './context.js';
 
@@ -38,16 +39,32 @@ export interface RelationsGeneratorOptions {
 /**
  * Regenerate the manifest.
  *
+ * Loads the project's app patterns into this process's registry FIRST, and fails
+ * on any loader error. The manifest's per-hop and root scope fold in the
+ * behaviors an entity's patterns imply (`requireImpliedBehaviors`), so a manifest
+ * built against a registry without the app patterns would carry a narrower scope
+ * than the repositories apply — and would depend on which command ran last
+ * (`relationship new` did not load them; `entity new` / `junction new` did).
+ * Owning the load here makes every caller derive the same manifest.
+ *
  * Propagates `RelationKeyCollisionError` — the caller must surface it as an
  * ERROR and fail the command, not warn. The manifest is load-bearing for
  * compilation (the emitted `database.module.ts` imports it), so continuing past
  * a collision ships a project that does not build (docs/specs/REL-1.md §3).
  */
-export function regenerateRelationsManifest(
+export async function regenerateRelationsManifest(
 	opts: RelationsGeneratorOptions,
-): EmitRelationsResult {
+): Promise<EmitRelationsResult> {
 	const { ctx, dryRun = false } = opts;
 	const generatedDir = opts.generatedDir ?? projectLayout(ctx.cwd, ctx.config).generated;
+
+	const loadErrors = await loadAppPatternsForCli(ctx);
+	if (loadErrors.length > 0) {
+		throw new Error(
+			'app patterns could not be loaded, so the scope their implied behaviors add cannot be derived:\n' +
+				loadErrors.map((e) => `  ${e.file}: ${e.message}`).join('\n'),
+		);
+	}
 
 	const { ctx: emitCtx } = loadRelationsEmitContext(
 		ctx.cwd,

@@ -9,11 +9,34 @@
 import { defineRelations } from 'drizzle-orm';
 import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';
 
-import { hopScope, type ScopeConfig } from '@pattern-stack/codegen/runtime/base-classes/scope-filters';
+import { hopScope, scopedRoot, tableScope, UNSCOPED, type ScopeConfig } from '@pattern-stack/codegen/runtime/base-classes/scope-filters';
 import * as schema from './schema';
 
-const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, tenantColumn: 'tenantId', softDelete: true, userTracking: true, enforcement: 'strict' };
-const CONTACTS_SCOPE: ScopeConfig = { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' };
+export const ACCOUNTS_SCOPE = tableScope(schema.accounts, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: true, userTracking: true, enforcement: 'strict' });
+export const CONTACTS_SCOPE = tableScope(schema.contacts, { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' });
+
+/**
+ * Every entity table's declared root scope (READ-1 §5), each bound to its table. The
+ * relations below scope every HOP of a `db.query.*` read; nothing scopes its ROOT
+ * unless the read goes through a generated repository. A read that cannot must AND
+ * `rootScope.<table>(owner)` into its root `where`.
+ */
+export const SCOPES = {
+	accounts: ACCOUNTS_SCOPE,
+	contacts: CONTACTS_SCOPE,
+	notes: tableScope(schema.notes, UNSCOPED),
+	opportunities: tableScope(schema.opportunities, UNSCOPED),
+	persons: tableScope(schema.persons, UNSCOPED),
+} as const satisfies Partial<Record<keyof typeof schema, ScopeConfig>>;
+
+/** The ROOT scope of one table, typed to it: AND it into a hand-written `db.query.<table>` root `where`. */
+export const rootScope = {
+	accounts: (owner: string) => scopedRoot(SCOPES.accounts, owner),
+	contacts: (owner: string) => scopedRoot(SCOPES.contacts, owner),
+	notes: (owner: string) => scopedRoot(SCOPES.notes, owner),
+	opportunities: (owner: string) => scopedRoot(SCOPES.opportunities, owner),
+	persons: (owner: string) => scopedRoot(SCOPES.persons, owner),
+};
 
 export const relations = defineRelations(schema, (r) => ({
 	accounts: {
@@ -54,8 +77,19 @@ export type IncludeOf<TTable extends keyof Relations> =
 		? NonNullable<DBQueryConfig<'one', Relations, Relations[TTable]>['with']>
 		: Record<string, never>;
 
-/** The row shape a given include tree resolves to, nested exactly as asked. */
+/** The root column mask of one table — `{ id?: boolean; name?: boolean; … }` (READ-1 §2.1). */
+export type ColumnsOf<TTable extends keyof Relations> = NonNullable<
+	DBQueryConfig<'many', Relations, Relations[TTable]>['columns']
+>;
+
+/**
+ * The row a read resolves to: each included relation nested exactly as asked, the
+ * root narrowed by `columns` (`undefined` ⇒ every column — never `{}`, which
+ * selects none). The mask is the OPTIONAL last parameter, so REL-2's
+ * `ResultOf<T, TWith>` keeps its meaning.
+ */
 export type ResultOf<
 	TTable extends keyof Relations,
 	TWith extends IncludeOf<TTable>,
-> = BuildQueryResult<Relations, Relations[TTable], { with: TWith }>;
+	TColumns extends ColumnsOf<TTable> | undefined = undefined,
+> = BuildQueryResult<Relations, Relations[TTable], { columns: TColumns; with: TWith }>;

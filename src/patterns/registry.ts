@@ -456,6 +456,11 @@ export function _resetRegistryForTests(
 	}
 }
 
+/** Remove ONE library pattern a test registered — `_resetRegistryForTests` clears them all. */
+export function _unregisterLibraryPatternForTests(name: string): void {
+	LIBRARY_PATTERNS.delete(name);
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================

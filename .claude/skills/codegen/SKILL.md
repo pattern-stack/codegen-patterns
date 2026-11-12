@@ -365,6 +365,42 @@ before them (#566, #612).
 All families get `findById`, `findByIds`, `list`, `count`, `exists`, `create`,
 `update`, `delete`, `upsertMany`. Writes take an optional `tx`.
 
+**The read surface (READ-1, `docs/specs/READ-1.md`).** Every generated read —
+`findById`, `findByIds`, `list`, each plain `queries:` and `belongs_to` finder — takes
+`{ columns?, with? }` (`with` only when the entity declares a relationship), typed by
+per-call generics `<W, C>` (include first, mask second — the order `<Entity>Result` takes) emitted on the generated subclass (REL-2 §2.1's TS2536 keeps
+them off the base). ONE execution path for that read surface: each of those reads runs on
+RQBv2 with `where: { RAW: this.rootFilter(pred) }` — the caller's predicate AND the scope,
+both rendered on the alias. NOT on it, still on the core builder via `scopeAnd`: `count`,
+`via:` / `select:` finders, junction and `relationship new` repositories, and the base /
+family bases' own reads (READ-1 §3.1). `rootFilter` and `scopeAnd` share one assembly,
+`scopeAndOn(table, extra, opts)`. `ListOptions<TTable>.where` / `count(where)` are a
+`RowFilter<TTable>` (`(t) => SQL`); a pre-rendered `SQL` and `orderBy` do not exist
+(`no-untethered-raw-callback.test.ts` bans a non-callback `RAW:`). `findByIds`: no
+statement for `[]` (but the `strict` boundary check still runs), de-duplicated by the
+key's SQL type (`uuid`, integer), input order, absent ids dropped, an unclaimed row
+throws. A `belongs_to` finder takes `limit` (ordered by `id`), no `cursor`. The manifest
+exports every scoped table's `<TABLE>_SCOPE`, and ALWAYS a `SCOPES` map (unscoped tables
+as `tableScope(schema.<t>, UNSCOPED)`) and `rootScope.<table>(owner)` — the typed root
+scope of a hand-written `db.query`. Every entry is a `TableScope<T>`, so `scopedRoot`
+infers its table and another table's scope is a compile error. `entityScope` folds
+pattern-implied behaviors via `requireImpliedBehaviors` (throws on an unregistered
+pattern); `regenerateRelationsManifest` loads the app patterns itself, so every command
+derives the same manifest. A caller column key goes through `hasColumn` (own keys only). Gates: `no-unscoped-db-query.test.ts` (every emitted
+`db.query.*.find*` carries `rootFilter`), `no-untethered-raw-callback.test.ts` (the
+alias shapes), and `just test-baseline`'s second typecheck against Drizzle rc.5 via the
+`drizzle-orm-rc5` alias. A generated repository's constructor calls
+`requireRelationalQuery('<plural>')` and `claimGeneratedReads(<Class>)`; the generated
+service's calls `claimGeneratedReads(<Class>)` too (`runtime/base-classes/read-surface.ts`).
+The generated class defines `findById` / `findByIds` / `list` itself, so an override of
+one on a class between it and the base (a pattern base class, a capability mixin) could
+never run: construction THROWS, naming the method and the class (READ-1 §3.4). `count`
+is exempt (the generated one calls `super`); a subclass of the generated class is not
+checked. To narrow every read, override `scopeAndOn`.
+`withRequester` awaits its callback inside the ALS, so a lazy thenable builds in
+context. `<Entity>Result<TWith, TColumns>` (both defaulted — REL-2's
+`<Entity>Result<W>` keeps its meaning); `ResultOf<T, W, C?>`.
+
 | Family | Adds |
 |---|---|
 | Integrated | `findByExternalId`, `findManyByExternalIds`, `integrationUpsert` — no user-ownership finders: the pattern declares no `user_id` (#746) |

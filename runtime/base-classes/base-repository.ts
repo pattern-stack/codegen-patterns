@@ -19,6 +19,7 @@ import type {
 import type { AnyRelations, InferSelectModel, SQL } from 'drizzle-orm';
 import type { DrizzleClient, DrizzleTx } from '../types/drizzle';
 import { column } from './table-columns';
+import { assertGeneratedReadsOwned } from './read-surface';
 import {
   scopeFilter,
   tenantAxisPredicate,
@@ -40,7 +41,7 @@ import {
 // otherwise). Re-exported here because that is where every existing caller
 // reaches for them, and one definition with two import paths is not two
 // definitions.
-export { column } from './table-columns';
+export { column, hasColumn } from './table-columns';
 export { tenantPredicateFor } from './scope-filters';
 
 /**
@@ -53,6 +54,16 @@ function describeTenant(value: unknown): string {
   if (value === undefined) return 'no tenant';
   return `'${String(value)}'`;
 }
+
+/** The Postgres integer types an `id` may have — `idKey` compares them as integers. */
+const INTEGER_KEY_TYPES: ReadonlySet<string> = new Set([
+  'smallint',
+  'integer',
+  'bigint',
+  'smallserial',
+  'serial',
+  'bigserial',
+]);
 
 // ============================================================================
 // Typed reads
@@ -111,38 +122,60 @@ export interface SortTerm {
   direction: 'asc' | 'desc';
 }
 
-/** One ordering term, as a COLUMN KEY rather than a rendered expression. */
-export interface SortTerm {
-  /** camelCase column key on this entity's table. */
-  column: string;
-  direction: 'asc' | 'desc';
+/**
+ * A row predicate as a FUNCTION of the table handle (READ-1 §4, #840).
+ *
+ * Never a pre-rendered `SQL`: a generated read executes on the relational query
+ * builder, which ALIASES the root (`"accounts" as "d0"`), so an expression built
+ * against the real table names a FROM-clause entry that is not in scope and
+ * Postgres rejects the statement. A function is handed whichever handle the
+ * executing path holds — the alias there, this repository's own table on the
+ * core builder — so one value is right on both.
+ *
+ * `undefined` means "no predicate".
+ */
+export type RowFilter<TTable extends PgTable> = (table: TTable) => SQL | undefined;
+
+/**
+ * Options for `list()` — the many-row read. Generic over the table, with no
+ * default: a `where` written against the wrong table must not compile.
+ *
+ * There is deliberately no pre-rendered `where: SQL` and no `orderBy: SQL`
+ * (READ-1 §4, charter I7): both rendered against the real table name and failed
+ * on the aliased path (REL-2 §10 Found #2 / #9, #840).
+ */
+export interface ListOptions<TTable extends PgTable> {
+  where?: RowFilter<TTable>;
+  /**
+   * The ordering as column KEYS + directions, rendered against whichever table
+   * handle the executing path holds. One description, two renderings.
+   */
+  sort?: readonly SortTerm[];
+  limit?: number;
+  offset?: number;
 }
 
 /**
- * Options for the list() method.
+ * Rejects an EMPTY column mask at compile time (READ-1 §2.4). `columns: {}`
+ * selects nothing at runtime and types as an empty row, which is never what a
+ * caller meant; the runtime throws too (`BaseRepository.checkColumns`).
  */
-export interface ListOptions {
-  where?: SQL;
-  limit?: number;
-  offset?: number;
-  /**
-   * A pre-rendered ordering expression. Usable only on the core
-   * `select().from()` path: it names the table by its REAL name, and the
-   * relational query builder aliases the root (`"accounts" as "d0"`), so the same
-   * fragment references a table that is not in scope there. A generated
-   * repository therefore REJECTS it when combined with a `with` include rather
-   * than issuing SQL that cannot run (measured — REL-2 §2.4).
-   *
-   * Prefer {@link ListOptions.sort}, which both paths can render.
-   */
-  orderBy?: PgColumn | SQL;
-  /**
-   * The ordering as column KEYS + directions, renderable against whichever table
-   * handle the executing path holds — this repo's own table for `baseQuery()`, or
-   * the aliased one RQBv2 hands an `orderBy` callback. One description, two
-   * renderings; the generated list use-case emits this.
-   */
-  sort?: readonly SortTerm[];
+export type NonEmptyMask<C> = C extends undefined
+  ? unknown
+  : keyof C extends never
+    ? { readonly 'a columns mask must name at least one column': never }
+    : unknown;
+
+/**
+ * The shape knobs every generated read takes (READ-1 §2.3): a `with` include
+ * tree and a root `columns` mask. Both are inferred AT THE CALL SITE by the
+ * generated method's own type parameters — the base cannot type them (REL-2
+ * §2.1, TS2536) and only names the slots. `W` first, `C` second: the order
+ * `<Entity>Result<W, C>` takes, everywhere.
+ */
+export interface ReadOptions<W, C> {
+  columns?: C & NonEmptyMask<C>;
+  with?: W;
 }
 
 // ============================================================================
@@ -240,6 +273,43 @@ export abstract class BaseRepository<
   }
 
   /**
+   * Fail at CONSTRUCTION when the injected client was built without this
+   * project's relations manifest (READ-1 review #8a). Every generated read runs
+   * on `db.query.<key>`, which exists only on a client built with
+   * `drizzle({ client, relations })`; without it, every read — not only an
+   * include — would fail later as `undefined is not an object`. Called by the
+   * generated constructor with its table's manifest key.
+   */
+  protected requireRelationalQuery(key: string): void {
+    const query = (this.db as { query?: Record<string, unknown> }).query;
+    if (query?.[key] === undefined) {
+      throw new Error(
+        `${this.constructor.name}: the injected Drizzle client has no relational query for '${key}'. ` +
+          'Generated reads run on db.query.<table>, so the client bound to DRIZZLE must be built with ' +
+          "this project's manifest: drizzle({ client, relations }) with `relations` from the generated relations.ts.",
+      );
+    }
+  }
+
+  /**
+   * Fail at CONSTRUCTION when a class between this base and the generated
+   * repository `owner` — a pattern base class, a capability mixin — overrides
+   * `findById` / `findByIds` / `list`. The generated class defines those itself
+   * (its typed `columns` / `with` signatures cannot live here, REL-2 §2.1), so
+   * such an override would never run; this makes that loud instead of silent
+   * (READ-1 §3.4). Called by the generated constructor with its own class. A
+   * subclass of `owner` is not checked — its override runs.
+   */
+  protected claimGeneratedReads(owner: abstract new (...args: never[]) => unknown): void {
+    assertGeneratedReadsOwned(
+      owner,
+      BaseRepository,
+      'To narrow which rows EVERY read sees, override `scopeAndOn` (the one root-predicate assembly every read and ' +
+        '`count` use); to wrap a read, give the wrapper its own name or override it on a subclass of the generated class.',
+    );
+  }
+
+  /**
    * Pick the runner for a write: the caller-supplied transaction handle
    * if present, otherwise the repository's own client. Keeps the `tx`
    * parameter purely additive — callers without a transaction call as
@@ -272,26 +342,40 @@ export abstract class BaseRepository<
   }
 
   /**
-   * Find multiple entities by their primary keys.
-   * Returns empty array immediately for empty input (avoids DB errors).
+   * Find entities by their primary keys — READ-1 §2.4's semantics, which the
+   * generated override keeps on its relational path:
+   *
+   *   - `[]` returns `[]` and issues no statement — after the scope's boundary
+   *     checks, so under `strict` a missing context throws on `[]` too;
+   *   - duplicate ids are read once and returned once;
+   *   - rows come back in INPUT order (first occurrence) — `in (…)` does not
+   *     preserve it, so the rows are re-sorted here;
+   *   - a missing, soft-deleted or out-of-scope id is simply absent (no
+   *     existence oracle; no `null` placeholders).
+   *
+   * One `in ($1…$n)`: Postgres caps a statement at 65 535 parameters, and the
+   * list is not chunked — chunking would silently become several statements.
    */
-  async findByIds(ids: string[]): Promise<TEntity[]> {
-    if (ids.length === 0) return [];
-    const rows = await this.baseQuery(inArray(this.col('id'), ids));
-    return rows as TEntity[];
+  async findByIds(ids: readonly string[]): Promise<TEntity[]> {
+    const unique = this.uniqueIds(ids);
+    if (unique.length === 0) {
+      this.assertReadScope();
+      return [];
+    }
+    const rows = await this.baseQuery(inArray(this.col('id'), unique));
+    return this.inInputOrder(rows, unique, false) as TEntity[];
   }
 
   /**
    * List entities with optional filtering, pagination, and ordering.
+   * `where` is a {@link RowFilter} — handed this repository's own table here.
    */
-  async list(options?: ListOptions): Promise<TEntity[]> {
-    let query = this.baseQuery(options?.where);
+  async list(options?: ListOptions<TTable>): Promise<TEntity[]> {
+    let query = this.baseQuery(options?.where?.(this.table));
 
     const sorted = this.orderByOn(this.tableRef, options?.sort);
     if (sorted) {
       query = query.orderBy(...sorted) as typeof query;
-    } else if (options?.orderBy) {
-      query = query.orderBy(options.orderBy as SQL) as typeof query;
     }
     if (options?.limit !== undefined) {
       query = query.limit(options.limit) as typeof query;
@@ -305,21 +389,23 @@ export abstract class BaseRepository<
   }
 
   /**
-   * Count entities matching an optional WHERE clause.
+   * Count entities matching an optional {@link RowFilter} — the same value a
+   * caller hands `list()`, so a page's rows and its total describe one set.
    * Soft-deleted rows are always excluded when softDelete=true.
    *
    * Routes the caller predicate through `scopeAnd()` — the SAME assembly
-   * `baseQuery()` uses — rather than re-listing the guards here. It used to
-   * hand-assemble them, which is how it silently drifted out of the choke
-   * point (SCOPE-0, #616); there is now exactly one place a guard is added.
+   * (`scopeAndOn`) `baseQuery()` and every generated read's `rootFilter` use —
+   * rather than re-listing the guards here. It used to hand-assemble them, which
+   * is how it silently drifted out of the choke point (SCOPE-0, #616); there is
+   * now exactly one place a guard is added.
    */
-  async count(where?: SQL): Promise<number> {
+  async count(where?: RowFilter<TTable>): Promise<number> {
     const query = this.db
       .select({ count: sql<number>`cast(count(*) as integer)` })
       .from(this.tableRef)
       .$dynamic();
 
-    const scoped = this.scopeAnd(where, {
+    const scoped = this.scopeAnd(where?.(this.table), {
       softDelete: this.behaviors.softDelete,
     });
 
@@ -513,30 +599,194 @@ export abstract class BaseRepository<
   }
 
   /**
-   * The root scope predicate shaped for the RQBv2 relational query builder — the
-   * path a `with` include takes, because `baseQuery()` cannot carry one.
+   * The ROOT filter of every generated read (READ-1 §3.2) — the caller's
+   * {@link RowFilter} AND this repository's scope, as one `RAW` callback for the
+   * relational query builder:
    *
-   * Generated repositories fold it into the root filter as
-   * `where: { AND: [ …caller…, { RAW: (t) => this.rootScopeRawOn(t, …) } ] }`, so
-   * the RQBv2 root and the `select().from()` root are guarded by the SAME
-   * function (REL-2 §2.4). Returns `sql`true`` when nothing applies, because a
-   * `RAW` slot takes a `SQL`, not `SQL | undefined`.
+   *   `where: { RAW: this.rootFilter((t) => inArray(t.id, ids)) }` — a keyed read
+   *   `where: { RAW: this.rootFilter(query?.where) }`             — `list()`
    *
-   * **`table` is the handle RQBv2 passes the closure, and it is not
-   * `this.tableRef`.** The relational query builder ALIASES the root
+   * It is the read's WHOLE root `where`: one predicate, rendered on the alias.
+   *
+   * **Both halves render against the table RQBv2 hands the callback, never
+   * `this.tableRef`.** The relational builder ALIASES the root
    * (`from "regions" as "d0"`), so a predicate built against this repository's
-   * own handle renders `where "regions"."deleted_at" is null` — an invalid
-   * reference to a FROM-clause entry, and every include on a scoped entity fails
-   * to execute. Same trap as `orderByOn` below, and as the hop predicates in the
-   * manifest: in all three, the table to render against is the one the callback
-   * is handed, never the one the caller happens to hold. There is deliberately no
-   * un-threaded overload — its only call site is this one, and it is always
-   * wrong here.
+   * own handle — or a caller's pre-rendered SQL — renders
+   * `"regions"."deleted_at"`: an invalid reference to a FROM-clause entry, and
+   * the read fails (REL-2 §10 Found #9; #840 for the caller's `where`).
+   *
+   * The assembly is `scopeAndOn(table, …)` — the SAME one `scopeAnd()` uses on the
+   * core builder — and its scope half is `scopeFilter`, which the manifest's
+   * `hopScope` applies at every hop, so the root and the hops cannot disagree
+   * (charter I3). Renders `true` when nothing applies, because a `RAW` slot
+   * takes a `SQL`.
+   *
+   * Generic in its OWN table parameter, not the class's `TTable`: `T` is
+   * inferred from the RQBv2 `RAW` slot the result is handed to (the concrete
+   * aliased table), so `(t) => eq(t.id, id)` is typed even inside a capability
+   * mixin, whose base sees `TTable` only as `PgTable` — and a class-typed
+   * `(table: TTable) => SQL` return would put `TTable` in a contravariant
+   * position and stop a concrete repository fitting `RepositoryCtor`.
    */
-  protected rootScopeRawOn(table: PgTable, opts?: { softDelete?: boolean }): SQL {
-    return (
-      scopeFilter(table, this.scopeConfigFor(opts), this.constructor.name) ?? sql`true`
+  protected rootFilter<T extends PgTable>(where?: RowFilter<T>): (table: T) => SQL {
+    return (table: T) =>
+      this.scopeAndOn(table, where?.(table), { softDelete: this.behaviors.softDelete }) ?? sql`true`;
+  }
+
+  /**
+   * Refuse an EMPTY column mask (READ-1 §2.4). It selects no columns at runtime
+   * and types as an empty row — never what a caller meant. `NonEmptyMask`
+   * rejects the literal `{}` at compile time; this catches a mask built at
+   * runtime.
+   *
+   * "Empty" is judged AFTER dropping `undefined`-valued keys: Drizzle ignores
+   * them, so `{ name: undefined }` selects exactly what `{}` does — nothing at
+   * the root, and with a `with` a row of relations only. Those keys are dropped
+   * from the mask that is sent, and a mask left with no key throws.
+   *
+   * Returns the mask typed as plain `C` — WITHOUT the `NonEmptyMask` brand — so
+   * the query config Drizzle infers its result from carries `columns: C`, the
+   * same `C` the generated `<Entity>Result<W, C>` names. With the brand still on
+   * it the two results are distinct deferred types, and on 1.0.0-rc.5 the
+   * generated `rows as <Entity>Result<W, C>` is a TS2352 (measured).
+   */
+  protected checkColumns<C>(columns: (C & NonEmptyMask<C>) | undefined): C | undefined {
+    if (columns === undefined || columns === null || typeof columns !== 'object') {
+      return columns as C | undefined;
+    }
+    const defined = Object.entries(columns as Record<string, unknown>).filter(
+      ([, v]) => v !== undefined,
     );
+    if (defined.length === 0) {
+      throw new Error(
+        `${this.constructor.name}: an empty \`columns\` mask selects nothing — ` +
+          'name at least one column (a key set to `undefined` names none), or omit `columns` for the whole row.',
+      );
+    }
+    return Object.fromEntries(defined) as C;
+  }
+
+  /**
+   * The key an id is compared by — the database's spelling, not the caller's.
+   *
+   * Postgres PARSES an `in (…)` operand into the key's type, so several caller
+   * spellings name one row, and the row comes back in the canonical one.
+   * Comparing the caller's raw string against that would silently drop the row
+   * (READ-1 review #2, R-2). So both sides are canonicalised by the key's type:
+   *   - `uuid` — `'A0EEBC99-…'`, `'{a0eebc99-…}'` and the unhyphenated form all
+   *     become the lowercase hyphenated form;
+   *   - an integer type — `'7'`, `'07'` and the driver's `7` all become `'7'`;
+   *   - anything else (`text`, `varchar`, …) — its text, case kept, as Postgres
+   *     compares it.
+   * A spelling this does not canonicalise makes `inInputOrder` THROW, never drop.
+   */
+  protected idKey(id: unknown): unknown {
+    if (id === null || id === undefined) return id;
+    const type = this.col('id').getSQLType();
+    if (type === 'uuid') {
+      if (typeof id !== 'string') return id;
+      const hex = id.replace(/[{}-]/g, '').toLowerCase();
+      if (!/^[0-9a-f]{32}$/.test(hex)) return id;
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
+    if (INTEGER_KEY_TYPES.has(type)) {
+      const text = String(id).trim();
+      return /^[+-]?\d+$/.test(text) ? BigInt(text).toString() : text;
+    }
+    return String(id);
+  }
+
+  /**
+   * De-duplicate an id list by {@link idKey}, keeping first-occurrence order —
+   * so `'A0EE…'` and `'a0ee…'` are one id, read once.
+   */
+  protected uniqueIds(ids: readonly string[]): string[] {
+    const seen = new Set<unknown>();
+    const unique: string[] = [];
+    for (const id of ids) {
+      const key = this.idKey(id);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(id);
+    }
+    return unique;
+  }
+
+  /**
+   * The column mask a by-ids read sends: the caller's, with `id` guaranteed
+   * selected so the rows can be put back in input order. `stripId` says whether
+   * the caller's mask omitted `id`, in which case `inInputOrder` removes it again
+   * and the result is exactly what the caller's mask types it as.
+   *
+   *   - no mask, or a mask that already selects `id` → unchanged;
+   *   - an INCLUSION mask (any `true`) without `id` → `id: true` added;
+   *   - an EXCLUSION mask (only `false`s) that excludes `id` → that key dropped
+   *     (adding `id: true` would turn it into a one-column inclusion mask) — and
+   *     if `id` was the ONLY exclusion, no mask at all: an empty `{}` selects no
+   *     root column, so Drizzle throws without a `with` and, with one, returns
+   *     rows with no `id` to order by (READ-1 review #1).
+   */
+  protected byIdsColumns<C>(columns: C): { columns: C | undefined; stripId: boolean } {
+    if (columns === undefined || columns === null || typeof columns !== 'object') {
+      return { columns, stripId: false };
+    }
+    const mask = columns as Record<string, boolean | undefined>;
+    if (mask['id'] === true) return { columns, stripId: false };
+    const inclusion = Object.values(mask).some((v) => v === true);
+    if (inclusion) {
+      return { columns: { ...mask, id: true } as C, stripId: true };
+    }
+    if (mask['id'] === false) {
+      const { id: _excluded, ...rest } = mask;
+      return { columns: Object.keys(rest).length === 0 ? undefined : (rest as C), stripId: true };
+    }
+    return { columns, stripId: false };
+  }
+
+  /**
+   * Put by-id rows back in the caller's order (first occurrence), dropping
+   * nothing and inventing nothing: an id with no row is absent. With `stripId`,
+   * removes the `id` key a mask that omitted it was given by `byIdsColumns`.
+   *
+   * A row WITHOUT an `id`, or one no input id claims, is a defect in the read,
+   * not a missing row, so it THROWS rather than being silently dropped.
+   */
+  protected inInputOrder<TRow extends object>(
+    rows: readonly TRow[],
+    ids: readonly string[],
+    stripId: boolean,
+  ): TRow[] {
+    const byId = new Map<unknown, TRow>();
+    for (const row of rows) {
+      const id = (row as Record<string, unknown>)['id'];
+      if (id === undefined || id === null) {
+        throw new Error(
+          `${this.constructor.name}.findByIds: a row came back without an \`id\` — ` +
+            'the statement must select it to order by it. This is a bug in the read, not a missing row.',
+        );
+      }
+      byId.set(this.idKey(id), row);
+    }
+    const ordered: TRow[] = [];
+    for (const id of ids) {
+      const key = this.idKey(id);
+      const row = byId.get(key);
+      if (row === undefined) continue;
+      byId.delete(key);
+      if (stripId) delete (row as Record<string, unknown>)['id'];
+      ordered.push(row);
+    }
+    // A row the database returned for this `in (…)` that no input id claims means
+    // `idKey` spells this key differently from Postgres — the row was matched in
+    // SQL and would be silently dropped here. Loud, not lossy.
+    if (byId.size > 0) {
+      throw new Error(
+        `${this.constructor.name}.findByIds: ${byId.size} row(s) matched in SQL but no input id ` +
+          `claims them (key type '${this.col('id').getSQLType()}') — idKey does not canonicalise ` +
+          'this key the way Postgres does. This is a bug in the read, not a missing row.',
+      );
+    }
+    return ordered;
   }
 
   /**
@@ -700,26 +950,42 @@ export abstract class BaseRepository<
 
   /**
    * Combine every ambient guard — soft-delete, the user-axis scope, the
-   * tenant-axis scope — with a caller `extra` predicate into one `SQL`.
-   * Returns `undefined` when nothing applies. Used by read + by-id write paths
-   * so a single `.where(...)` carries all of them.
+   * tenant-axis scope — with a caller `extra` predicate into one `SQL`, rendered
+   * against `table`. Returns `undefined` when nothing applies.
    *
-   * This is the ONLY place a guard is added. `baseQuery()`, `count()`,
-   * `update()` and `delete()` all route through here, which is why one line
-   * above covers every generated read and every by-id write.
+   * This is the ONLY place a guard is added. Its two callers differ only in the
+   * handle: {@link scopeAnd} passes this repository's own table (the core
+   * builder — `baseQuery()`, `count()`, `update()`, `delete()`), and
+   * {@link rootFilter} passes the aliased root RQBv2 hands its `RAW` callback
+   * (every generated read).
    */
+  protected scopeAndOn(
+    table: PgTable,
+    extra: SQL | undefined,
+    opts?: { softDelete?: boolean },
+  ): SQL | undefined {
+    const scope = scopeFilter(table, this.scopeConfigFor(opts), this.constructor.name);
+    if (!scope) return extra;
+    if (!extra) return scope;
+    return and(scope, extra);
+  }
+
+  /** {@link scopeAndOn} on this repository's own table — the core builder's form. */
   protected scopeAnd(
     extra?: SQL,
     opts?: { softDelete?: boolean },
   ): SQL | undefined {
-    const scope = scopeFilter(
-      this.tableRef,
-      this.scopeConfigFor(opts),
-      this.constructor.name,
-    );
-    if (!scope) return extra;
-    if (!extra) return scope;
-    return and(scope, extra);
+    return this.scopeAndOn(this.tableRef, extra, opts);
+  }
+
+  /**
+   * Run the scope's boundary checks without building a statement: under
+   * `strict`, a missing requester / tenant throws here exactly as it would on a
+   * read. For a read that short-circuits before issuing one (`findByIds([])`), so
+   * a forgotten boundary fails the same way whatever the input.
+   */
+  protected assertReadScope(): void {
+    this.scopeAnd(undefined, { softDelete: this.behaviors.softDelete });
   }
 
   /**
@@ -742,8 +1008,8 @@ export abstract class BaseRepository<
   }
 
   /**
-   * Build a WHERE clause fragment that restricts results to rows whose
-   * parent (identified by a belongs_to FK) is not soft-deleted.
+   * A {@link RowFilter}: "this row's parent (by a `belongs_to` FK) is not
+   * soft-deleted".
    *
    * Use this in custom repository methods when you need "rows reachable
    * from an active parent". The default findAll / findById behavior is
@@ -753,23 +1019,26 @@ export abstract class BaseRepository<
    * `on_delete` FK rules do not fire for soft-deletes; use this helper
    * instead of expecting cascade semantics on the DB level.
    *
+   * The `EXISTS` correlates on the FK of the handle it is GIVEN — the aliased
+   * root on a generated read — never on this repository's own table, which the
+   * relational builder aliased away (READ-1 §4; the FROM-clause class of #840).
+   *
    * Example:
    *   async listActiveMessages(): Promise<Message[]> {
-   *     return this.list({
-   *       where: this.activeParentFilter(conversations, this.col('conversationId')),
-   *     });
+   *     return this.list({ where: this.activeParentFilter(conversations, 'conversationId') });
    *   }
    *
    * @param parentTable  The Drizzle table object for the parent entity.
-   * @param parentFkColumn  The FK column on this (child) table that references parent.id.
+   * @param fkKey  camelCase key of the FK column on this (child) table that references parent.id.
    */
   protected activeParentFilter(
     parentTable: PgTable,
-    parentFkColumn: PgColumn,
-  ): SQL {
-    return sql`EXISTS (
+    fkKey: string,
+  ): (table: PgTable) => SQL {
+    const owner = this.constructor.name;
+    return (table: PgTable) => sql`EXISTS (
       SELECT 1 FROM ${parentTable} p
-      WHERE p.id = ${parentFkColumn}
+      WHERE p.id = ${column(table, fkKey, owner)}
         AND p.deleted_at IS NULL
     )`;
   }

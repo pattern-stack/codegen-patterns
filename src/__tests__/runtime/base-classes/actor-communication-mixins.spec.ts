@@ -73,7 +73,7 @@ class IndividualContactRepository extends WithActor(BaseRepository<typeof contac
 }
 
 const whereSql = (table: typeof accounts | typeof contacts, predicate: ReturnType<GroupAccountRepository['memberPredicate']>) =>
-	db.select().from(table).where(predicate).toSQL();
+	db.select().from(table).where(predicate(table)).toSQL();
 
 describe('WithCommunication', () => {
 	it('findByRole on an undeclared role rejects, naming the declared roles', async () => {

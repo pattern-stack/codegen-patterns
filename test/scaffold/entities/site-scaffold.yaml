@@ -39,3 +39,8 @@ relationships:
     type: belongs_to
     target: region
     foreign_key: region_id
+
+# READ-1 (#841): one plain declarative finder, so `read-api.test.ts` drives a
+# `queries:` finder's read options against Postgres, not only findById / list.
+queries:
+  - by: [name]

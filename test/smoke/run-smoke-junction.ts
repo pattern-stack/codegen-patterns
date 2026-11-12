@@ -642,6 +642,16 @@ async function main(): Promise<number> {
       log,
     });
 
+    // 7.9. READ-1 review R-1 — the composed (WithAudited) ledger's read filters
+    // are typed over ITS table: cross-table negatives, compiled by step 8.
+    if (layoutArg === 'custom') {
+      const { entity, plural } = CUSTOM_LAYOUT_APP_PATTERN;
+      const dest = path.join(result.projectDir, P.modules, plural, `${entity}-read-api.type-test.ts`);
+      if (!fs.existsSync(path.dirname(dest))) throw new Error(`R-1 type test: no ${plural} module at ${path.dirname(dest)}`);
+      fs.copyFileSync(path.join(import.meta.dir, 'fixtures-junction', 'usage', 'ledger-read-api.type-test.ts'), dest);
+      log(`copied the composed-repository type test → ${path.relative(result.projectDir, dest)}`);
+    }
+
     // 8. bunx tsc --noEmit --skipLibCheck
     log('running bunx tsc --noEmit --skipLibCheck');
     const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', result.projectDir);
