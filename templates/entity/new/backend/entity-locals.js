@@ -873,7 +873,7 @@ function processFieldFeatures(renderedFields, fields, naming, ownedTables, suppr
   // TABLE-0: a `foreign_key: <table>.<column>` names a SQL TABLE, and index
   // names are SQL identifiers — both read `entityTableName`. The `.references()`
   // callback and the import name the target's Drizzle EXPORT (its `plural`),
-  // which differs from the table once `table_name` / a prefix is in play.
+  // which differs from the table once `table` / a prefix is in play.
   const entityNamePlural = naming.ownNaming.plural;
   const entityTableName = naming.entityTableName;
   const owned = ownedTables === undefined

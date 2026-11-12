@@ -66,11 +66,11 @@ describe('createEntityLookup', () => {
 		expect(lookup.byTable('people')).toBeNull();
 	});
 
-	it('a table_name, not the plural, is the key a foreign_key: resolves through (TABLE-0)', () => {
+	it('a `table:`, not the plural, is the key a foreign_key: resolves through (TABLE-0)', () => {
 		const dir = tmp();
 		fs.writeFileSync(
 			path.join(dir, 'ticket.yaml'),
-			'entity:\n  name: ticket\n  plural: tickets\n  table_name: issues\n',
+			'entity:\n  name: ticket\n  plural: tickets\n  table: issues\n',
 		);
 		const lookup = createEntityLookup(dir, { tablePrefix: 'app_' });
 		expect(lookup.byTable('issues')?.name).toBe('ticket');
@@ -138,7 +138,7 @@ describe('createEntityLookup — the CLI walk and its guards', () => {
 		fs.writeFileSync(path.join(dir, 'artifact.yaml'), 'entity:\n  name: artifact\n  plural: artifacts\n');
 		fs.writeFileSync(
 			path.join(dir, 'slack_message.yaml'),
-			'entity:\n  name: slack_message\n  plural: slack_messages\n  table_name: artifacts\n',
+			'entity:\n  name: slack_message\n  plural: slack_messages\n  table: artifacts\n',
 		);
 		const lookup = createEntityLookup(dir, { tablePrefix: '' });
 		expect(() => lookup('artifact')).toThrow(
@@ -154,7 +154,7 @@ describe('createEntityLookup — the CLI walk and its guards', () => {
 			`no YAML under ${dir} declares \`entity: { name: ghost }\` (expected e.g. ${path.join(dir, 'ghost.yaml')})`,
 		);
 		expect(lookup.missingTable('ghosts')).toBe(
-			`no YAML under ${dir} resolves to the SQL table 'ghosts' — a \`table_name: ghosts\`, ` +
+			`no YAML under ${dir} resolves to the SQL table 'ghosts' — a \`table: ghosts\`, ` +
 				"or a `plural:` that is 'ghosts' under the table prefix ''",
 		);
 		const none = createEntityLookup(null, { candidates: ['/p/defs', '/p/entities'], tablePrefix: '' });

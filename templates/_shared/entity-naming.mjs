@@ -67,7 +67,7 @@ function makeLookup(load, where) {
   /** Why a table named by `foreign_key:` did not resolve. */
   lookup.missingTable = (table) =>
     where.dir
-      ? `no YAML under ${where.dir} resolves to the SQL table '${table}' — a \`table_name: ${table}\`, ` +
+      ? `no YAML under ${where.dir} resolves to the SQL table '${table}' — a \`table: ${table}\`, ` +
         `or a \`plural:\` that is '${table}' under the table prefix '${where.tablePrefix}'`
       : `no entities directory exists (looked for ${where.candidates.join(', ')})`;
   return lookup;

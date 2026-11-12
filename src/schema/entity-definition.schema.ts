@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TENANT_COLUMN_PATTERN } from "./tenancy.js";
-import { TABLE_NAME_PATTERN, TABLE_PREFIX_PATTERN } from "../config/table-naming.js";
+import { TABLE_NAME_IS_NOT_A_KEY, TABLE_NAME_PATTERN, TABLE_PREFIX_PATTERN } from "../config/table-naming.js";
 import { reservedGlobalFor, reservedNameMessage } from "./reserved-entity-names.js";
 import { roleForeignKey } from "../roles/derive.js";
 import { NOT_NULL_WITHOUT_DEFAULT_MESSAGE, notNullWithoutDefault } from "./field-nullability.js";
@@ -652,19 +652,22 @@ const EntityConfigSchema = z
     // The SQL table name (TABLE-0) — `src/config/table-naming.ts`
     // is the one rule. Both keys are optional; with neither, the table is
     // `<tables.prefix><plural>` and the output is what it was before the split.
-    //   table_name    the literal SQL name, used VERBATIM (no prefix) — adopt a
+    //   table         the literal SQL name, used VERBATIM (no prefix) — adopt a
     //                 host table whose name differs from the code vocabulary
-    //                 (`name: ticket, plural: tickets, table_name: issues`).
+    //                 (`name: ticket, plural: tickets, table: issues`).
+    //                 `table: <plural>` is byte-identical to omitting it.
     //   table_prefix  overrides the project's `tables.prefix` for this table;
-    //                 `''` opts out. Composes with `plural`, never with `table_name`.
+    //                 `''` opts out. Composes with `plural`, never with `table`.
     // Only SQL-facing names follow it (pgTable, index/constraint names, Electric
     // shapes, the semantic model's tableName, `foreign_key:` targets). The
     // export, `db.query` key, folder and classes stay on `plural`/`name`.
-    // The old `table:` key never reached pgTable; it is gone.
-    table_name: z
+    table: z
       .string()
-      .regex(TABLE_NAME_PATTERN, "table_name must be a lowercase snake_case SQL table name")
+      .regex(TABLE_NAME_PATTERN, "table must be a lowercase snake_case SQL table name")
       .optional(),
+    // Not a key. Declared so writing it fails naming `table:` — `.strict()`
+    // alone reports an unrecognized key with no pointer (as `generate.analytics`).
+    table_name: z.never({ invalid_type_error: TABLE_NAME_IS_NOT_A_KEY }).optional(),
     table_prefix: z
       .string()
       .regex(TABLE_PREFIX_PATTERN, "table_prefix must be empty or lowercase snake_case (e.g. 'crm__')")
@@ -740,10 +743,10 @@ const EntityConfigSchema = z
   .refine((d) => !(d.pattern && d.patterns), {
     message: "'pattern' and 'patterns' are mutually exclusive",
   })
-  .refine((d) => !(d.table_name !== undefined && d.table_prefix !== undefined), {
+  .refine((d) => !(d.table !== undefined && d.table_prefix !== undefined), {
     message:
-      "'table_name' and 'table_prefix' are mutually exclusive — table_name is the literal SQL name " +
-      "and takes no prefix; fold the prefix into it, or drop table_name and let plural carry the name",
+      "'table' and 'table_prefix' are mutually exclusive — table is the literal SQL name " +
+      "and takes no prefix; fold the prefix into it, or drop table and let plural carry the name",
     path: ["table_prefix"],
   });
 

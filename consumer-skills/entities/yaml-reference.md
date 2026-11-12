@@ -10,19 +10,19 @@ Every block of an `entities/<name>.yaml` file and what it generates.
 entity:
   name: contact            # REQUIRED. singular snake_case. Drives class names.
   plural: contacts         # REQUIRED. snake_case; the Drizzle table export, db.query key, module folder
-  table_name: crm_contacts # optional. the literal SQL table name, used verbatim (no prefix)
+  table: crm_contacts      # optional. the literal SQL table name, used verbatim (no prefix)
   table_prefix: crm__      # optional. overrides codegen.config.yaml `tables.prefix`; '' opts out.
-                           #   Exclusive with table_name.
+                           #   Exclusive with table.
   pattern: Synced          # the family — Base | Synced | Activity | Metadata | Knowledge
                            #   (or an app-defined pattern). See families-and-queries.md.
 ```
 
-**The SQL table name** (TABLE-0) is `table_name` if set, else `<table_prefix ?? tables.prefix><plural>`. With neither
+**The SQL table name** (TABLE-0) is `table:` if set, else `<table_prefix ?? tables.prefix><plural>`. With neither
 key and no project prefix it is `plural`. Only SQL-facing names follow it: `pgTable('…')`, index / constraint names
 (`<table>_…`), the Electric shape's `table`, and a field's `foreign_key: <table>.<column>`, which names the **SQL** table.
-The export, `db.query` key, folder, classes and REST route stay on `plural`. There is no `table:` key. Two definitions
+The export, `db.query` key, folder, classes and REST route stay on `plural`. `table:` equal to `plural` is the same as leaving it out. Two definitions
 (entities or junctions) resolving to one SQL table is a generation error. Junction YAMLs take the same
-`table_name:` / `table_prefix:`.
+`table:` / `table_prefix:`.
 
 **Reserved names.** `promise`, `array` and `date` are rejected (also as relationship names): the generated type
 would shadow the `Promise`, `Array` or `Date` global, which generated code uses in nearly every signature. No other

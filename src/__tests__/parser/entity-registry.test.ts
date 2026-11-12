@@ -188,7 +188,7 @@ describe('loadEntityRegistry — the SQL table name (TABLE-0)', () => {
 			`entity:
   name: ticket
   plural: tickets
-  table_name: issues
+  table: issues
 fields:
   name: { type: string, required: true }
 `,
@@ -204,7 +204,7 @@ fields:
 		);
 	});
 
-	it('table_name is the table; the plural and casings are untouched', () => {
+	it('`table:` is the SQL table; the plural and casings are untouched', () => {
 		const { registry } = loadEntityRegistry(dir, { tablePrefix: 'app_' });
 		const ticket = registry.get('ticket')!;
 		expect(ticket.table).toBe('issues');
@@ -212,7 +212,7 @@ fields:
 		expect(ticket.pluralCamelName).toBe('tickets');
 	});
 
-	it('the project prefix reaches an entity without table_name', () => {
+	it('the project prefix reaches an entity without `table:`', () => {
 		const { registry } = loadEntityRegistry(dir, { tablePrefix: 'app_' });
 		expect(registry.get('deal')!.table).toBe('app_deals');
 		expect(loadEntityRegistry(dir, { tablePrefix: '' }).registry.get('deal')!.table).toBe('deals');

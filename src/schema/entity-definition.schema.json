@@ -15,12 +15,12 @@
           "type": "string",
           "description": "Plural form in snake_case (e.g., 'opportunities')"
         },
-        "table_name": {
+        "table": {
           "description": "Literal SQL table name, used verbatim (default: <tables.prefix><plural>)",
           "type": "string"
         },
         "table_prefix": {
-          "description": "Overrides the project's tables.prefix for this table; '' opts out. Exclusive with table_name",
+          "description": "Overrides the project's tables.prefix for this table; '' opts out. Exclusive with table",
           "type": "string"
         },
         "expose": {

@@ -22,7 +22,7 @@ mise install                      # pin bun + node versions (optional, recommend
 entity:
   name: contact
   plural: contacts                  # the Drizzle export, db.query key, module folder — and the SQL table by default
-  # table_name: crm_contacts        # optional: the literal SQL table name, used verbatim
+  # table: crm_contacts            # optional: the literal SQL table name, used verbatim
   # table_prefix: crm__             # optional: overrides tables.prefix for this table ('' opts out)
   pattern: Integrated               # Integrated | Activity | Metadata | Knowledge | Base (or app-defined)
 
@@ -560,7 +560,7 @@ tenancy:
 
 tables:
   prefix: ''                     # default; prepended to every entity / junction SQL table without its own
-                                 # `table_name:` (verbatim) or `table_prefix:`. Only the SQL name changes —
+                                 # `table:` (verbatim) or `table_prefix:`. Only the SQL name changes —
                                  # the Drizzle export, db.query key and module folder stay on `plural`
 
 # frontend:                      # inert unless generate.frontend: true

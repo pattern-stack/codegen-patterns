@@ -99,7 +99,7 @@ export interface JunctionCollectionEntry {
 	/**
 	 * The SQL table name (TABLE-0, `junctionTableName`) — what the Electric
 	 * shape's `table` param names. `plural` unless `tables.prefix` /
-	 * `table_prefix:` / `table_name:` say otherwise.
+	 * `table_prefix:` / `table:` say otherwise.
 	 */
 	table: string;
 	/** `opportunityContacts` — REL-1's `tableVar`, and the client graph key. */

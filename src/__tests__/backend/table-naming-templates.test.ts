@@ -3,7 +3,7 @@
  *
  * `pgTable('…')` and every index / constraint name read the SQL table name
  * (`sqlTableName`, `src/config/table-naming.ts`); the Drizzle export, folder and
- * classes stay on `plural`. The default (no `table_name`, no prefix) is pinned
+ * classes stay on `plural`. The default (no `table:`, no prefix) is pinned
  * byte-for-byte by `just test-baseline`; this file pins the four new shapes and
  * the `foreign_key:` resolution across a renamed table.
  */
@@ -14,7 +14,7 @@ import { resolve } from 'node:path';
 import ejs from 'ejs';
 import { buildBackendLocals } from '../../../templates/entity/new/backend/entity-locals.js';
 import { entityLookupFrom } from '../../../templates/_shared/entity-naming.mjs';
-import { sqlTableCollisions, sqlTableName } from '../../config/table-naming';
+import { sqlTableCollisions, sqlTableName, TABLE_NAME_IS_NOT_A_KEY } from '../../config/table-naming';
 import { EntityDefinitionSchema } from '../../schema/entity-definition.schema';
 import { JunctionDefinitionSchema } from '../../schema/junction-definition.schema';
 import { CodegenConfigSchema } from '../../schema/codegen-config.schema';
@@ -49,8 +49,8 @@ describe('sqlTableName — the one rule', () => {
 	it('defaults to the plural: byte-identical to the output before the split', () => {
 		expect(sqlTableName({ name: 'deal', plural: 'deals' }, '')).toBe('deals');
 	});
-	it('table_name is taken verbatim; no prefix reaches it', () => {
-		expect(sqlTableName({ name: 'ticket', plural: 'tickets', table_name: 'issues' }, 'app_')).toBe('issues');
+	it('`table:` is taken verbatim; no prefix reaches it', () => {
+		expect(sqlTableName({ name: 'ticket', plural: 'tickets', table: 'issues' }, 'app_')).toBe('issues');
 	});
 	it('the project prefix composes with the plural', () => {
 		expect(sqlTableName({ name: 'deal', plural: 'deals' }, 'crm__')).toBe('crm__deals');
@@ -66,7 +66,7 @@ describe('sqlTableName — the one rule', () => {
 	it('junctions use the same rule over their derived plural', () => {
 		expect(junctionTableName({ between: ['opportunity', 'contact'] }, '')).toBe('opportunity_contacts');
 		expect(junctionTableName({ between: ['opportunity', 'contact'] }, 'crm__')).toBe('crm__opportunity_contacts');
-		expect(junctionTableName({ between: ['opportunity', 'contact'], table_name: 'deal_people' }, 'crm__')).toBe(
+		expect(junctionTableName({ between: ['opportunity', 'contact'], table: 'deal_people' }, 'crm__')).toBe(
 			'deal_people',
 		);
 		expect(junctionTableName({ between: ['opportunity', 'contact'], table_prefix: '' }, 'crm__')).toBe(
@@ -75,8 +75,31 @@ describe('sqlTableName — the one rule', () => {
 	});
 });
 
-describe('entity.ejs.t — table_name', () => {
-	const out = renderEntity(localsFor(ticket({ table_name: 'issues' })));
+describe('entity.ejs.t — `table:` equal to the plural is byte-identical to omitting it', () => {
+	// Every entity YAML written before TABLE-0 carried a (then-ignored) `table:`
+	// equal to its plural. Honouring the key must not move a byte of their output.
+	const strip = (locals: Record<string, unknown>) =>
+		JSON.stringify({ ...locals, definition: undefined, entity: undefined }, (_k, v) =>
+			typeof v === 'function' ? '[fn]' : v,
+		);
+
+	it('the rendered entity file is identical', () => {
+		const omitted = renderEntity(localsFor(ticket()));
+		const explicit = renderEntity(localsFor(ticket({ table: 'tickets' })));
+		expect(explicit).toBe(omitted);
+		expect(explicit).toContain("export const tickets = pgTable(\n  'tickets',");
+	});
+
+	it('every backend local is identical', () => {
+		const omitted = localsFor(ticket()) as Record<string, unknown>;
+		const explicit = localsFor(ticket({ table: 'tickets' })) as Record<string, unknown>;
+		expect(explicit.entityTableName).toBe('tickets');
+		expect(strip(explicit)).toBe(strip(omitted));
+	});
+});
+
+describe('entity.ejs.t — `table:` differs from plural', () => {
+	const out = renderEntity(localsFor(ticket({ table: 'issues' })));
 
 	it('the export is the plural; the pgTable argument is the SQL table', () => {
 		expect(out).toContain("export const tickets = pgTable(\n  'issues',");
@@ -91,7 +114,7 @@ describe('entity.ejs.t — table_name', () => {
 	});
 
 	it('the module folder and class names stay on the code vocabulary', () => {
-		const locals = localsFor(ticket({ table_name: 'issues' })) as Record<string, any>;
+		const locals = localsFor(ticket({ table: 'issues' })) as Record<string, any>;
 		expect(locals.entityTableName).toBe('issues');
 		expect(locals.entityNamePlural).toBe('tickets');
 		expect(locals.outputPaths.entity).toContain('/tickets/ticket.entity.ts');
@@ -120,8 +143,8 @@ describe('entity.ejs.t — table_prefix', () => {
 		expect(out).not.toContain('support__');
 	});
 
-	it('table_name ignores the project prefix', () => {
-		const out = renderEntity(localsFor(ticket({ table_name: 'issues' }), { tablePrefix: 'support__' }));
+	it('`table:` ignores the project prefix', () => {
+		const out = renderEntity(localsFor(ticket({ table: 'issues' }), { tablePrefix: 'support__' }));
 		expect(out).toContain("pgTable(\n  'issues',");
 		expect(out).not.toContain('support__');
 	});
@@ -129,7 +152,7 @@ describe('entity.ejs.t — table_prefix', () => {
 
 describe('field-level foreign_key: names the SQL table, imports the export', () => {
 	const match = {
-		entity: { name: 'ticket_link', plural: 'ticket_links', table_name: 'issue_links', pattern: 'Base' },
+		entity: { name: 'ticket_link', plural: 'ticket_links', table: 'issue_links', pattern: 'Base' },
 		fields: {
 			ticket_id: { type: 'uuid', required: true, foreign_key: 'issues.id' },
 			parent_id: { type: 'uuid', foreign_key: 'issue_links.id' },
@@ -137,7 +160,7 @@ describe('field-level foreign_key: names the SQL table, imports the export', () 
 		relationships: {},
 		behaviors: [],
 	};
-	const targets = [{ name: 'ticket', plural: 'tickets', table_name: 'issues' }];
+	const targets = [{ name: 'ticket', plural: 'tickets', table: 'issues' }];
 	const locals = (prefix = '') => ({
 		...withEntities({ tablePrefix: prefix, ownedTableNames: ['issues', 'issue_links'] }),
 		entityLookup: entityLookupFrom(targets, { tablePrefix: prefix }),
@@ -166,41 +189,51 @@ describe('field-level foreign_key: names the SQL table, imports the export', () 
 	});
 });
 
-describe('schema — table_name / table_prefix', () => {
+describe('schema — table / table_prefix', () => {
 	const base = { fields: { id: { type: 'uuid', required: true } } };
 	const parse = (entity: Record<string, unknown>) =>
 		EntityDefinitionSchema.safeParse({ ...base, entity: { name: 'ticket', plural: 'tickets', ...entity } });
 
 	it('both are optional', () => {
 		expect(parse({}).success).toBe(true);
-		expect(parse({ table_name: 'issues' }).success).toBe(true);
+		expect(parse({ table: 'issues' }).success).toBe(true);
 		expect(parse({ table_prefix: 'support__' }).success).toBe(true);
 		expect(parse({ table_prefix: '' }).success).toBe(true);
 	});
 
-	it('they are mutually exclusive — table_name takes no prefix', () => {
-		const r = parse({ table_name: 'issues', table_prefix: 'support__' });
+	it('they are mutually exclusive — `table:` takes no prefix', () => {
+		const r = parse({ table: 'issues', table_prefix: 'support__' });
 		expect(r.success).toBe(false);
 		expect(JSON.stringify(r.error?.issues)).toContain('mutually exclusive');
 	});
 
 	it('both must be lowercase snake_case', () => {
-		expect(parse({ table_name: 'Issues' }).success).toBe(false);
+		expect(parse({ table: 'Issues' }).success).toBe(false);
 		expect(parse({ table_prefix: 'Agentic__' }).success).toBe(false);
 	});
 
-	it('the old `table:` key is an unrecognized key — it never reached pgTable', () => {
-		const r = parse({ table: 'issues' });
+	it('`table_name:` is not a key — it fails naming `table:` (entity and junction)', () => {
+		const r = parse({ table_name: 'issues' });
 		expect(r.success).toBe(false);
-		expect(r.error?.issues[0]?.code).toBe('unrecognized_keys');
+		expect(r.error?.issues.map((i) => [i.path.join('.'), i.message])).toEqual([
+			['entity.table_name', TABLE_NAME_IS_NOT_A_KEY],
+		]);
+		expect(TABLE_NAME_IS_NOT_A_KEY).toContain("'table:'");
+		const j = JunctionDefinitionSchema.safeParse({
+			pattern: 'Junction',
+			between: ['opportunity', 'contact'],
+			table_name: 'deal_people',
+		});
+		expect(j.success).toBe(false);
+		expect(j.error?.issues.map((i) => i.message)).toEqual([TABLE_NAME_IS_NOT_A_KEY]);
 	});
 
 	it('a junction accepts the same two keys, exclusively', () => {
 		const j = (extra: Record<string, unknown>) =>
 			JunctionDefinitionSchema.safeParse({ pattern: 'Junction', between: ['opportunity', 'contact'], ...extra });
-		expect(j({ table_name: 'deal_people' }).success).toBe(true);
+		expect(j({ table: 'deal_people' }).success).toBe(true);
 		expect(j({ table_prefix: 'crm__' }).success).toBe(true);
-		expect(j({ table_name: 'deal_people', table_prefix: 'crm__' }).success).toBe(false);
+		expect(j({ table: 'deal_people', table_prefix: 'crm__' }).success).toBe(false);
 	});
 
 	it('codegen.config.yaml: tables.prefix defaults to empty and is validated', () => {

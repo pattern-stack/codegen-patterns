@@ -1,7 +1,7 @@
 /**
  * TABLE-0 end to end: the real CLI (`entity new --all` +
  * `junction new --all`) over a project with `tables.prefix`, an entity with
- * `table_name:`, an entity opting out with `table_prefix: ''`, and a junction —
+ * `table:`, an entity opting out with `table_prefix: ''`, and a junction —
  * then a relation include through the GENERATED relations manifest, compiled to
  * SQL by Drizzle. The SQL names the real tables; the code names the entities.
  *
@@ -52,7 +52,7 @@ beforeAll(() => {
 			'entity:',
 			'  name: ticket',
 			'  plural: tickets',
-			'  table_name: issues',
+			'  table: issues',
 			'  pattern: Base',
 			'  expose: [repository]',
 			'api: false',
@@ -112,7 +112,7 @@ afterAll(() => {
 });
 
 describe('TABLE-0 — generated tables', () => {
-	it('table_name: the export is the plural, the SQL table is the table_name (no prefix)', () => {
+	it('table: the export is the plural, the SQL table is `table:` (no prefix)', () => {
 		const out = read('src/modules/tickets/ticket.entity.ts');
 		expect(out).toContain("export const tickets = pgTable(\n  'issues',");
 		expect(out).toContain("index('issues_tenant_id_idx')");

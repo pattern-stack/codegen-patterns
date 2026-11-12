@@ -44,9 +44,9 @@ describe('loadOwnedTableNames (#636)', () => {
     expect([...loadOwnedTableNames(root, { tablePrefix: '', entitiesDir: 'entities' })]).toEqual(['notes']);
   });
 
-  it('a table_name is the owned table, not the plural (TABLE-0)', () => {
+  it('a `table:` is the owned table, not the plural (TABLE-0)', () => {
     const root = project({
-      'entities/ticket.yaml': 'entity:\n  name: ticket\n  plural: tickets\n  table_name: issues\n',
+      'entities/ticket.yaml': 'entity:\n  name: ticket\n  plural: tickets\n  table: issues\n',
     });
     expect([...loadOwnedTableNames(root, { tablePrefix: 'db_', entitiesDir: 'entities' })]).toEqual(['issues']);
   });

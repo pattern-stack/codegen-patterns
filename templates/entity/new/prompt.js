@@ -161,7 +161,7 @@ const behaviorRegistry = {
  * produces a module that cannot resolve.
  *
  * Each entry is the entity's SQL table name — the table rule
- * (`src/config/table-naming.ts`, TABLE-0) over the YAML's `table_name` /
+ * (`src/config/table-naming.ts`, TABLE-0) over the YAML's `table` /
  * `table_prefix` / `plural` and the project's `tables.prefix` — read straight
  * from the YAML, never from generated output: a two-pass run must give the
  * same answer on both passes, and introspecting emitted files would make
@@ -406,7 +406,7 @@ export default {
       // own `tenant_scoped: { column }` overrides it inside the extension.
       tenancyColumn: getProjectConfig().tenancy.column,
       // TABLE-0: the project's SQL table prefix (`tables.prefix`). The entity's
-      // own `table_name` / `table_prefix` are read inside the extension, through
+      // own `table` / `table_prefix` are read inside the extension, through
       // the one rule (`src/config/table-naming.ts`).
       tablePrefix,
       // REL-2 (#587): the extension computes the relation-manifest and

@@ -58,7 +58,7 @@ describe('assertTimestampColumns (#796)', () => {
 describe('collectTimezoneOptOuts (#796)', () => {
 	it('names table.column from the YAML, and refuses an opt-out it cannot place', () => {
 		const dir = modules({
-			'e.yaml': 'entity:\n  name: a\n  plural: as\n  table_name: a_tbl\nfields:\n  x:\n    type: datetime\n    timezone: false\n',
+			'e.yaml': 'entity:\n  name: a\n  plural: as\n  table: a_tbl\nfields:\n  x:\n    type: datetime\n    timezone: false\n',
 			'r.yaml': 'relationship:\n  name: r\n  table: r_tbl\nfields:\n  y:\n    type: datetime\n    timezone: false\n',
 			'j.yaml': 'pattern: Junction\nfields:\n  z:\n    type: datetime\n    timezone: false\n',
 			'none.yaml': 'entity:\n  name: n\n  plural: ns\nfields:\n  q:\n    type: datetime\n',

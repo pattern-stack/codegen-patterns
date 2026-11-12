@@ -302,7 +302,7 @@ queries:
   'by-id')`, not a template literal with typed hyphens (NAME-2, #695/#684).
 - **The SQL table name is not the export** (TABLE-0). `pgTable('…')`, index / constraint names, Electric
   shapes, the semantic `tableName` and `foreign_key:` targets read `sqlTableName` / `junctionTableName`
-  (`src/config/table-naming.ts`): the YAML's `table_name:` verbatim, else `<table_prefix ?? tables.prefix><plural>`.
+  (`src/config/table-naming.ts`): the YAML's `table:` verbatim, else `<table_prefix ?? tables.prefix><plural>`.
   The export, `db.query` key, folder and classes stay on `plural`. Every reader that emits a name takes the prefix
   as a required argument (`sqlTableName` throws on a missing one) — never default it to `''` at such a call site.
 

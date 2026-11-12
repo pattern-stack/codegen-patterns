@@ -220,7 +220,7 @@ export default {
     const junctionName = deriveJunctionName(config.between);
     const junction = junctionNaming(junctionName, modulesDir);
     // TABLE-0: the SQL table name (`pgTable('…')`) — `junctionTableName`, the
-    // one rule over the junction YAML's `table_name` / `table_prefix` and the
+    // one rule over the junction YAML's `table` / `table_prefix` and the
     // project's `tables.prefix`. The export, folder and classes stay on the
     // plural derived from `between:`.
     const tableName = junctionTableName(config, config_.tables.prefix);

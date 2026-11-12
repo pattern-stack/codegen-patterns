@@ -5,7 +5,7 @@
  * its plural (export / module folder) is `pluralize(name)`. Neither has a YAML
  * override: `JunctionDefinitionSchema` is `.strict()` and declares no `name`
  * (GATE-1, #599). Its SQL table name is the shared table rule over that plural
- * (`junctionTableName`, TABLE-0): `table_name:` / `table_prefix:` reach the
+ * (`junctionTableName`, TABLE-0): `table:` / `table_prefix:` reach the
  * database name only.
  *
  * Readers: the schema's `deriveJunctionName`, the roles validator
@@ -31,7 +31,7 @@ export function junctionPlural(name: string): string {
 /** The junction-YAML keys the SQL table name reads. */
 export interface JunctionTableSource {
 	between: readonly [string, string];
-	table_name?: string | null;
+	table?: string | null;
 	table_prefix?: string | null;
 }
 
@@ -42,7 +42,7 @@ export interface JunctionTableSource {
 export function junctionTableName(def: JunctionTableSource, projectPrefix: string): string {
 	const name = junctionName(def.between);
 	return sqlTableName(
-		{ name, plural: junctionPlural(name), table_name: def.table_name, table_prefix: def.table_prefix },
+		{ name, plural: junctionPlural(name), table: def.table, table_prefix: def.table_prefix },
 		projectPrefix,
 	);
 }

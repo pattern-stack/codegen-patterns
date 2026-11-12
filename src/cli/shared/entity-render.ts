@@ -211,7 +211,7 @@ export async function preflightEntityTargets(
 	);
 
 	// TABLE-0: one SQL table, one owning definition — entities and junctions
-	// share the database's namespace. `table_name:` / prefixes let two
+	// share the database's namespace. `table:` / prefixes let two
 	// definitions meet on a table without sharing a plural, which no other
 	// check sees; emitting both would be two `pgTable('…')` over one table.
 	const tableCollisions = sqlTableCollisions([

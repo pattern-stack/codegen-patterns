@@ -17,11 +17,11 @@ Two names, one rule — `sqlTableName(source, projectPrefix)` in `src/config/tab
 
 | Key | Where | Meaning |
 |---|---|---|
-| `table_name:` | entity block, junction YAML | The literal SQL table name, used **verbatim** — no prefix reaches it. |
-| `table_prefix:` | entity block, junction YAML | Overrides the project prefix for this table; `''` opts out. Exclusive with `table_name`. |
+| `table:` | entity block, junction YAML | The literal SQL table name, used **verbatim** — no prefix reaches it. |
+| `table_prefix:` | entity block, junction YAML | Overrides the project prefix for this table; `''` opts out. Exclusive with `table`. |
 | `tables.prefix` | `codegen.config.yaml` | Project default prefix, default `''`. |
 
-Resolution: `table_name` → else `<table_prefix ?? tables.prefix><plural>`. With neither key and no project prefix the
+Resolution: `table` → else `<table_prefix ?? tables.prefix><plural>`. With neither key and no project prefix the
 SQL name is `plural`, so existing output is byte-identical (`just test-baseline` is unchanged).
 
 ### What follows the SQL name
@@ -45,13 +45,19 @@ RQBv2 includes and the runtime base classes need nothing: an include through `db
 the real table (pinned by `src/__tests__/cli/table-naming-generation.test.ts`, which generates a project and compiles
 an include to SQL).
 
-### `entity.table:` is deleted
+### `entity.table:` is the SQL name — it is not deleted, and there is no `table_name:`
 
-Every in-repo YAML (87 files) and every known consumer YAML wrote `table:` equal to `plural`, and it never reached
-`pgTable`. Honouring it would have been byte-identical too, but it would have kept a required key whose only content is
-a duplicate of `plural`, under a name that does not say "SQL". It is now an unrecognized key (the ARCH-1 treatment).
-Migration: delete the line — `sed -i '' '/^  table: /d' entities/**/*.yaml` — or, where it differed from `plural` and
-you meant it, rename it to `table_name:`.
+`table:` was already the key an author reaches for, and it already said "the table". It is kept, made optional, and
+finally honoured: it is the literal SQL table name. Every in-repo YAML and every known consumer YAML wrote `table:`
+equal to `plural`, so honouring it is byte-identical for all of them (`src/__tests__/backend/table-naming-templates.test.ts`
+pins that), and the fixtures simply omit it. A YAML whose `table:` differs from `plural` now renames its table — the
+behaviour the key always promised; the CHANGELOG calls it out. There is no second key: `table_name:` is declared only
+so that writing it fails validation naming `table:` (a `.strict()` unknown-key error alone would not point anywhere).
+
+Decided by Doug on #855 (2026-11-12): reuse `table:` over adding `table_name:`. The first draft of this PR deleted
+`table:` (an unknown-key error) and added `table_name:`, which made every existing entity YAML fail validation for a
+rename that bought nothing — the standing rule allows a break only when it is how the design would be drawn from
+scratch, and from scratch the key is `table:`.
 
 ### The prefix is a required argument
 
@@ -70,13 +76,13 @@ ADR-0004 (a consumer's data-layer naming decision) chose "bounded context as a t
 (`<context>__<table>`), a Postgres schema later (`pgSchema('<context>').table('<table>')`)". `table_prefix` is the
 mechanism that decision needs: a context prefix is the value `'<context>__'`. The deferred knob that derives the prefix
 from `entity.context` — and later swaps prefix for `pgSchema` — replaces step 2's prefix source inside `sqlTableName`;
-the prefix/base split it needs is already step 2's shape. An explicit `table_name` stays outside both, because it names
+the prefix/base split it needs is already step 2's shape. An explicit `table` stays outside both, because it names
 a table the host owns.
 
 ## Two entities over one table (#800)
 
 One SQL table has one owning definition. `sqlTableCollisions` (`src/config/table-naming.ts`) is the check, over
-entities **and** junctions in one namespace — `table_name:` and prefixes let two definitions meet on a table without
+entities **and** junctions in one namespace — `table:` and prefixes let two definitions meet on a table without
 sharing a plural, so the plural check alone cannot see it. It runs in `entity new` / `junction new`'s shared
 pre-flight (`preflightEntityTargets`, a run-level rejection before anything is written) and in `analyzeDomain`
 (`entity validate`, entities only — it is not given the junction definitions). The hygen entity lookup also refuses

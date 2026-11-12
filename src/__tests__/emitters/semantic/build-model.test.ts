@@ -391,13 +391,13 @@ describe('junctions', () => {
 		});
 	});
 
-	it('the SQL table follows tables.prefix and the junction table_name; the names do not (TABLE-0)', () => {
+	it('the SQL table follows tables.prefix and the junction `table:`; the names do not (TABLE-0)', () => {
 		expect(junctionIdentity(junction('opportunity', 'contact'), 'app_')).toMatchObject({
 			plural: 'opportunity_contacts',
 			table: 'app_opportunity_contacts',
 			tableVar: 'opportunityContacts',
 		});
-		const named = { ...junction('opportunity', 'contact'), table_name: 'deal_people' } as JunctionDefinition;
+		const named = { ...junction('opportunity', 'contact'), table: 'deal_people' } as JunctionDefinition;
 		expect(junctionIdentity(named, 'app_')).toMatchObject({
 			plural: 'opportunity_contacts',
 			table: 'deal_people',

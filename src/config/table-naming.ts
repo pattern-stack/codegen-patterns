@@ -13,7 +13,7 @@
  *
  * Resolution, first match wins:
  *
- *  1. `table_name:` on the entity (or junction) — the literal SQL name, used
+ *  1. `table:` on the entity (or junction) — the literal SQL name, used
  *     VERBATIM. No prefix is applied: an explicit name is the host's physical
  *     table, adopted as it is (a renamed `ticket` concept over a legacy `issues` table).
  *  2. `<prefix><plural>`, where the prefix is the entity's own `table_prefix:`
@@ -30,7 +30,7 @@
  * The deferred knob that derives it from `entity.context` (and later swaps the
  * prefix for a `pgSchema`) belongs HERE — it replaces step 2's prefix source,
  * and the `prefix`/`base` split it needs is already the shape of step 2. An
- * explicit `table_name` stays outside both: it names a table the host owns.
+ * explicit `table` stays outside both: it names a table the host owns.
  *
  * Ships in the package's `files` (the templates import it, `.ts` resolved by
  * bun), so it may import only node built-ins, runtime dependencies and other
@@ -45,7 +45,7 @@ export interface TableNamingSource {
 	/** The declared plural; `pluralize(name)` for raw YAML that bypassed the schema (which requires it). */
 	plural?: string;
 	/** The literal SQL table name. */
-	table_name?: string | null;
+	table?: string | null;
 	/** Overrides the project's `tables.prefix` for this one table; `''` opts out. */
 	table_prefix?: string | null;
 }
@@ -62,14 +62,21 @@ export function sqlTableName(source: TableNamingSource, projectPrefix: string): 
 				'thread the resolved `tables.prefix` through; an absent one must not become an unprefixed (or "undefined…") table',
 		);
 	}
-	if (source.table_name) return source.table_name;
+	if (source.table) return source.table;
 	const prefix = source.table_prefix ?? projectPrefix;
 	const plural = source.plural || pluralize.plural(source.name);
 	return `${prefix}${plural}`;
 }
 
-/** Lowercase snake_case: what `table_name` and the resolved name must be. */
+/** Lowercase snake_case: what `table` and the resolved name must be. */
 export const TABLE_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
+
+/**
+ * The error for `table_name:` — not a key. The SQL table name is `table:`; this
+ * points an author who reaches for the other spelling at it.
+ */
+export const TABLE_NAME_IS_NOT_A_KEY =
+	"'table_name' is not a key — the literal SQL table name is 'table:' (TABLE-0)";
 
 /** A prefix: empty, or lowercase snake_case (trailing `_` / `__` allowed — `crm__`). */
 export const TABLE_PREFIX_PATTERN = /^([a-z][a-z0-9_]*)?$/;
@@ -93,7 +100,7 @@ export interface SqlTableCollision {
 /**
  * Every SQL table more than one definition resolves to — entities AND junctions
  * in one namespace, because they are tables in one database (TABLE-0). With
- * `table_name:` and prefixes, two definitions can land on one table without
+ * `table:` and prefixes, two definitions can land on one table without
  * sharing a plural, so the plural check alone does not catch it. A collision is
  * a generation error, never last-write-wins: two `pgTable('…')` over one name
  * is two schemas fighting for one table. (Two entities deliberately over one
@@ -116,7 +123,7 @@ export function sqlTableCollisions(owners: readonly SqlTableOwner[]): SqlTableCo
 export function sqlTableCollisionMessage(c: SqlTableCollision): string {
 	return (
 		`${c.owners.map((o) => o.owner).join(' and ')} resolve to the same SQL table '${c.table}' — ` +
-		'a table has one owning definition; change a `table_name:` / `table_prefix:` / `plural:` ' +
+		'a table has one owning definition; change a `table:` / `table_prefix:` / `plural:` ' +
 		'(two entities over one table is #800)'
 	);
 }

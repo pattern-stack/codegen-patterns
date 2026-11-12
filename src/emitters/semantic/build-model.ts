@@ -214,7 +214,7 @@ export function junctionIdentity(
 } {
 	const name = junctionName(def.between);
 	const plural = junctionPlural(name);
-	// `table` is the SQL name (TABLE-0): `table_name:` / `table_prefix:` reach it,
+	// `table` is the SQL name (TABLE-0): `table:` / `table_prefix:` reach it,
 	// the export (`tableVar`) and the registry key (`plural`) never.
 	return { name, plural, table: junctionTableName(def, tablePrefix), tableVar: camelCase(plural) };
 }

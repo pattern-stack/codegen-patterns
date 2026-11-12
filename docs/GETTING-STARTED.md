@@ -28,7 +28,7 @@ entity:
   plural: tasks
 ```
 
-This is the minimum — a named entity mapping to a database table (`tasks`, its plural; set `table_name:` when the
+This is the minimum — a named entity mapping to a database table (`tasks`, its plural; set `table:` when the
 SQL table is named differently). Now add fields:
 
 ```yaml

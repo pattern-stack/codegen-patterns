@@ -433,7 +433,7 @@ export type TenancyConfig = z.infer<typeof TenancyConfigSchema>;
  * The `tables:` block — project defaults for SQL table names.
  *
  * - `prefix` — prepended to every generated entity and junction table whose
- *   YAML does not set `table_name:` (taken verbatim) or its own
+ *   YAML does not set `table:` (taken verbatim) or its own
  *   `table_prefix:` (`''` opts out). Default `''`. Only the SQL name changes:
  *   the Drizzle export, `db.query` key and module folder stay on `plural`.
  *   ADR-0004's `<context>__` convention is a prefix value; the deferred knob

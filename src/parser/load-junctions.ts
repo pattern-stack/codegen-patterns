@@ -69,7 +69,7 @@ export function loadJunctionSet(dir: string): JunctionSet {
 			between: result.definition.between,
 			tableSource: {
 				between: result.definition.between,
-				table_name: result.definition.table_name,
+				table: result.definition.table,
 				table_prefix: result.definition.table_prefix,
 			},
 		});

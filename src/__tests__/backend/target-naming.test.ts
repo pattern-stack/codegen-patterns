@@ -235,7 +235,7 @@ describe('field-level foreign_key: <table>.<column>', () => {
 			),
 		).toThrow(
 			"the table 'people' is not owned by any entity YAML (no YAML under <in-memory> resolves to the SQL table " +
-				"'people' — a `table_name: people`, or a `plural:` that is 'people' under the table prefix ''). " +
+				"'people' — a `table: people`, or a `plural:` that is 'people' under the table prefix ''). " +
 				"Either declare that entity (a YAML whose SQL table is 'people'), or drop the column-level `foreign_key:`",
 		);
 	});
