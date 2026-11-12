@@ -10,7 +10,6 @@
 entity:
   name: field_value
   plural: field_values
-  table: field_values
   pattern: Metadata
 
 fields:

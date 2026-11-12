@@ -38,7 +38,7 @@ const localsFor = (def: Record<string, unknown>, base: Record<string, unknown> =
 	buildBackendLocals(def, withEntities(base));
 
 const deal = (extra: Record<string, unknown> = {}) => ({
-	entity: { name: 'deal', plural: 'deals', table: 'deals', pattern: 'Base' },
+	entity: { name: 'deal', plural: 'deals', pattern: 'Base' },
 	fields: {
 		name: { type: 'string', required: true },
 		slug: { type: 'string', required: true, unique: true },
@@ -94,7 +94,7 @@ describe('#791 — a custom emitted tenant column', () => {
 
 	it('external_id_tracking: the per-tenant constraint and the conflict target use the column', () => {
 		const def = deal({
-			entity: { name: 'lead', plural: 'leads', table: 'leads', pattern: 'Integrated' },
+			entity: { name: 'lead', plural: 'leads', pattern: 'Integrated' },
 			fields: { name: { type: 'string', required: true } },
 			behaviors: ['timestamps', 'external_id_tracking'],
 		});
@@ -164,7 +164,7 @@ describe('#791 — adopting a declared field', () => {
 
 	it('an Integrated entity keeps the adopted column off its upsert write surface', () => {
 		const def = adopted({
-			entity: { name: 'lead', plural: 'leads', table: 'leads', pattern: 'Integrated' },
+			entity: { name: 'lead', plural: 'leads', pattern: 'Integrated' },
 			behaviors: ['timestamps', 'external_id_tracking'],
 		});
 		const locals = localsFor(def) as {
@@ -194,7 +194,7 @@ describe('#791 — the project default reaches the sink (buildSinkInput)', () =>
 	// argument is the entity.ts threading — drop it and the sink resolves
 	// `tenant_id`, finds no such field, and copies `workspace_id` through.
 	const lead = {
-		entity: { name: 'lead', plural: 'leads', table: 'leads', pattern: 'Integrated' },
+		entity: { name: 'lead', plural: 'leads', pattern: 'Integrated' },
 		fields: {
 			name: { type: 'string', required: true },
 			workspace_id: { type: 'uuid', required: true },
@@ -225,7 +225,7 @@ describe('#791 — the project default reaches the sink (buildSinkInput)', () =>
 
 describe('#791 — adopting a belongs_to foreign key', () => {
 	const member = () => ({
-		entity: { name: 'contact', plural: 'contacts', table: 'contacts', pattern: 'Base' },
+		entity: { name: 'contact', plural: 'contacts', pattern: 'Base' },
 		fields: { email: { type: 'string', required: true } },
 		relationships: {
 			account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' },

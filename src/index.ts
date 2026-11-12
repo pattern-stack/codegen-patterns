@@ -16,8 +16,9 @@ import {
 	getAllOrchestrationPatterns,
 	getAllPatternNames,
 } from './patterns/registry.js';
-import type { AnalysisResult, OutputFormat } from './analyzer/types';
-import { TenancyConfigSchema } from './schema/codegen-config.schema.js';
+import type { AnalysisIssue, AnalysisResult, OutputFormat } from './analyzer/types';
+import { TablesConfigSchema, TenancyConfigSchema } from './schema/codegen-config.schema.js';
+import { sqlTableCollisionMessage, sqlTableCollisions } from './config/table-naming.js';
 
 /**
  * Options for `analyzeDomain`. All fields are optional and additive — omitting
@@ -38,6 +39,8 @@ export interface AnalyzeDomainOptions {
 	junctionsDir?: string;
 	/** The project's `tenancy.column` (#791). Absent resolves through `TenancyConfigSchema`, the one owner of the default. */
 	tenancyColumn?: string;
+	/** The project's `tables.prefix` (TABLE-0). Absent resolves through `TablesConfigSchema`, the one owner of the default. */
+	tablePrefix?: string;
 }
 
 /**
@@ -57,7 +60,9 @@ export async function analyzeDomain(
 	const relationshipsDir = opts.relationshipsDir;
 
 	// Load and parse all entity files
-	const { entities, issues: loadIssues } = loadEntities(entitiesDir);
+	const { entities, issues: loadIssues } = loadEntities(entitiesDir, {
+		tablePrefix: TablesConfigSchema.parse({ prefix: opts.tablePrefix }).prefix,
+	});
 
 	// Load relationship definitions (optional — directory may not exist)
 	const { relationships: relationshipDefinitions, issues: relLoadIssues } =
@@ -109,6 +114,17 @@ export async function analyzeDomain(
 			: undefined,
 	});
 
+	// TABLE-0 — two entities resolving to one SQL table (`entity new`'s
+	// pre-flight also checks junctions against them).
+	const tableCollisionIssues: AnalysisIssue[] = sqlTableCollisions(
+		entities.map((e) => ({ table: e.table, owner: `entity '${e.name}'`, file: e.sourcePath })),
+	).map((c) => ({
+		severity: 'error',
+		type: 'sql_table_collision',
+		message: sqlTableCollisionMessage(c),
+		path: c.owners[0]!.file,
+	}));
+
 	// Compute statistics
 	const statistics = computeStatistics(graph);
 
@@ -123,6 +139,7 @@ export async function analyzeDomain(
 		...orchestrationProjectIssues,
 		...semanticIssues,
 		...rolesProjectIssues,
+		...tableCollisionIssues,
 	];
 
 	// Determine validity (only errors make it invalid)
@@ -146,7 +163,11 @@ export function validateEntities(entitiesDir: string): {
 	valid: boolean;
 	errors: string[];
 } {
-	const { entities, issues } = loadEntities(entitiesDir);
+	// Only the load errors are read; no table name leaves this function, so the
+	// prefix is the schema default rather than a parameter every caller threads.
+	const { entities, issues } = loadEntities(entitiesDir, {
+		tablePrefix: TablesConfigSchema.parse({}).prefix,
+	});
 	const errors = issues
 		.filter((i) => i.severity === 'error')
 		.map((i) => i.message);

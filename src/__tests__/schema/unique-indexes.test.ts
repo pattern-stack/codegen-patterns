@@ -11,7 +11,7 @@ import { describe, it, expect } from 'bun:test';
 import { EntityDefinitionSchema } from '../../schema/entity-definition.schema';
 
 const base = {
-  entity: { name: 'message', plural: 'messages', table: 'messages' },
+  entity: { name: 'message', plural: 'messages' },
   fields: {
     conversation_id: { type: 'uuid', required: true },
     sequence: { type: 'integer', required: true },

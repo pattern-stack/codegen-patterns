@@ -23,7 +23,6 @@ function localsFor(entityExtra: Record<string, unknown>) {
 		entity: {
 			name: 'transcript',
 			plural: 'transcripts',
-			table: 'transcripts',
 			// #403: `context:` lives inside the `entity:` block (0.12.2).
 			...entityExtra,
 		},

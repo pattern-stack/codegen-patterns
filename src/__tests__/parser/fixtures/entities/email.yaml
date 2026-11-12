@@ -1,7 +1,6 @@
 entity:
   name: email
   plural: emails
-  table: emails
   surface: mail
 fields:
   subject:

@@ -4,7 +4,6 @@
 entity:
   name: squad
   plural: squads
-  table: squads
 
 fields:
   name:

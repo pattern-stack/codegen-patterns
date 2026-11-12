@@ -69,7 +69,7 @@ function eventType(op: string) {
  */
 function base(opts: BaseOpts = {}): Record<string, unknown> {
   const definition: any = {
-    entity: { name: 'contact', plural: 'contacts', table: 'contacts' },
+    entity: { name: 'contact', plural: 'contacts' },
     fields: { name: { type: 'string', required: true } },
     behaviors: ['timestamps'],
   };

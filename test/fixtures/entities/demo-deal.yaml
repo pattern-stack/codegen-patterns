@@ -2,7 +2,6 @@
 entity:
   name: deal
   plural: deals
-  table: deals
   pattern: Integrated
 
 fields:

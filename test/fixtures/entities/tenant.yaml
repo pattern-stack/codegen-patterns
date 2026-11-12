@@ -5,7 +5,6 @@
 entity:
   name: tenant
   plural: tenants
-  table: tenants
 
 fields:
   name:

@@ -6,7 +6,6 @@
 entity:
   name: tag
   plural: tags
-  table: tags
   sync: electric
 
 fields:

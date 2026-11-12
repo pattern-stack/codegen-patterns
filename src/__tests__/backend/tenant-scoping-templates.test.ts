@@ -48,7 +48,7 @@ const renderRepository = (locals: Record<string, unknown>): string =>
 
 /** A minimal tenant-scoped entity; `extra` layers on the case under test. */
 const noteDefinition = (extra: Record<string, unknown> = {}) => ({
-  entity: { name: 'note', plural: 'notes', table: 'notes', pattern: 'Base' },
+  entity: { name: 'note', plural: 'notes', pattern: 'Base' },
   fields: { title: { type: 'string', required: true } },
   relationships: {},
   behaviors: ['timestamps'],
@@ -256,7 +256,7 @@ describe('tenant_scoped — uniqueness is per tenant', () => {
 
 describe('tenant_scoped + external_id_tracking', () => {
   const integratedDef = (tenantScoped: boolean) => ({
-    entity: { name: 'lead', plural: 'leads', table: 'leads', pattern: 'Integrated' },
+    entity: { name: 'lead', plural: 'leads', pattern: 'Integrated' },
     fields: { name: { type: 'string', required: true } },
     relationships: {},
     behaviors: ['timestamps', 'external_id_tracking'],

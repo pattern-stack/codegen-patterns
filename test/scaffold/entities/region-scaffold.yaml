@@ -12,7 +12,6 @@
 entity:
   name: region
   plural: regions
-  table: regions
   pattern: Base
 
 tenant_scoped: true

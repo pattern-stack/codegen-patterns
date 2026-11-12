@@ -41,7 +41,7 @@ function render(rel: string, locals: Record<string, unknown>): string {
 }
 
 const definition = {
-	entity: { name: 'note', plural: 'notes', table: 'notes' },
+	entity: { name: 'note', plural: 'notes' },
 	fields: { title: { type: 'string', required: true } },
 	relationships: { account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' } },
 	behaviors: ['timestamps'],

@@ -7,7 +7,6 @@
 entity:
   name: collider
   plural: colliders
-  table: colliders
   patterns: [Colliding]
 
 fields:

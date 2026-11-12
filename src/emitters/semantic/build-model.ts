@@ -12,7 +12,7 @@
  * be written down in YAML.
  */
 
-import pluralize from 'pluralize';
+import { junctionName, junctionPlural, junctionTableName } from '../../config/junction-naming.js';
 
 import { getBehavior } from '../../behaviors/index';
 import type { ParsedEntity, ParsedField } from '../../analyzer/types';
@@ -203,15 +203,20 @@ function camelCase(value: string): string {
  * REL-1 (#614) and SEM-2 are sibling PRs on one base, neither in the other's
  * tree. Consolidating is a follow-up for after both land.
  */
-export function junctionIdentity(def: JunctionDefinition): {
+export function junctionIdentity(
+	def: JunctionDefinition,
+	tablePrefix: string,
+): {
 	name: string;
 	plural: string;
 	table: string;
 	tableVar: string;
 } {
-	const name = `${def.between[0]}_${def.between[1]}`;
-	const plural = pluralize(name);
-	return { name, plural, table: plural, tableVar: camelCase(plural) };
+	const name = junctionName(def.between);
+	const plural = junctionPlural(name);
+	// `table` is the SQL name (TABLE-0): `table:` / `table_prefix:` reach it,
+	// the export (`tableVar`) and the registry key (`plural`) never.
+	return { name, plural, table: junctionTableName(def, tablePrefix), tableVar: camelCase(plural) };
 }
 
 /**
@@ -441,7 +446,7 @@ export function buildSemanticModel(context: SemanticEmitContext): SemanticModel 
 	const byName = new Map(entities.map((e) => [e.name, e]));
 
 	for (const def of context.junctions) {
-		const identity = junctionIdentity(def);
+		const identity = junctionIdentity(def, context.tablePrefix);
 		const [left, right] = def.between;
 
 		const missing = [left, right].filter((endpoint) => !byName.has(endpoint));

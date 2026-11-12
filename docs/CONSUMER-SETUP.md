@@ -555,6 +555,7 @@ blocks are:
 | `runtime` | `package` (default) \| `vendored` — where generated code imports the runtime from (ADR-037) |
 | `paths` | `backend_src`, `frontend_src`, `entities`, `events_dir`, `jobs_dir`, `providers`, `modules_dir`, `orchestration_src`, `generated` |
 | `generate` | `frontend`, `semantic` |
+| `tables` | `prefix` — prepended to the SQL table name of every entity and junction that does not set `table:` (the literal name, used verbatim) or its own `table_prefix:` (`''` opts out); default `''`. Only SQL-facing names follow it — `pgTable('…')`, index / constraint names, Electric shapes, the semantic model's `tableName`, `foreign_key:` targets. The Drizzle export, `db.query` key, module folder and classes stay on `plural` (`src/config/table-naming.ts`) |
 | `tenancy` | `column` — the column `tenant_scoped` entities scope on; snake_case, default `tenant_id`. An entity's `tenant_scoped: { column }` overrides it, and a column the entity already declares (a field, or a `belongs_to` foreign key) is adopted rather than emitted twice (`src/schema/tenancy.ts`) |
 | `patterns` | glob list for app-defined patterns (below); default `<backend_src>/patterns/*.pattern.ts` |
 | `locations` | `path` / `import` overrides for the frontend emitter's three named locations (`dbEntities`, `frontendGenerated`, `frontendCollectionsAuth`) |

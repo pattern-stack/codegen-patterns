@@ -4,7 +4,6 @@
 entity:
   name: person
   plural: persons
-  table: persons
 
 fields:
   tenant_id:

@@ -64,10 +64,10 @@ describe('collectTimezoneOptOuts (#796)', () => {
 			'none.yaml': 'entity:\n  name: n\n  plural: ns\nfields:\n  q:\n    type: datetime\n',
 		});
 		const p = (n: string) => path.join(dir, n);
-		expect([...collectTimezoneOptOuts([p('e.yaml'), p('r.yaml'), p('none.yaml')])].sort()).toEqual([
+		expect([...collectTimezoneOptOuts([p('e.yaml'), p('r.yaml'), p('none.yaml')], '')].sort()).toEqual([
 			'a_tbl.x',
 			'r_tbl.y',
 		]);
-		expect(() => collectTimezoneOptOuts([p('j.yaml')])).toThrow(/cannot be named/);
+		expect(() => collectTimezoneOptOuts([p('j.yaml')], '')).toThrow(/cannot be named/);
 	});
 });

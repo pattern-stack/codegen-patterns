@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 const VALID_ENTITY =
-	'entity:\n  name: note\n  plural: notes\n  table: notes\nfields:\n  body:\n    type: string\n';
+	'entity:\n  name: note\n  plural: notes\nfields:\n  body:\n    type: string\n';
 
 /** A project with one valid entity and a pattern file that throws at import. */
 function mkProject(): { root: string; broken: string } {

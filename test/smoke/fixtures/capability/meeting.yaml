@@ -10,7 +10,6 @@
 entity:
   name: meeting
   plural: meetings
-  table: meetings
   patterns: [Activity, Communication]
 
 fields:

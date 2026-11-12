@@ -22,7 +22,6 @@ const YAML = `
 entity:
   name: opportunity
   plural: opportunities
-  table: opportunities
 
 fields:
   amount:
@@ -72,7 +71,7 @@ analytics:
 beforeAll(() => {
 	dir = mkdtempSync(join(tmpdir(), 'sem1-'));
 	writeFileSync(join(dir, 'opportunity.yaml'), YAML);
-	const { entities, issues } = loadEntities(dir);
+	const { entities, issues } = loadEntities(dir, { tablePrefix: '' });
 	expect(issues.filter((i) => i.severity === 'error')).toEqual([]);
 	opportunity = entities[0]!;
 });
@@ -143,9 +142,9 @@ describe('ParsedEntity.analytics', () => {
 		const bare = mkdtempSync(join(tmpdir(), 'sem1-bare-'));
 		writeFileSync(
 			join(bare, 'contact.yaml'),
-			'entity:\n  name: contact\n  plural: contacts\n  table: contacts\nfields:\n  email:\n    type: string\n',
+			'entity:\n  name: contact\n  plural: contacts\nfields:\n  email:\n    type: string\n',
 		);
-		const { entities } = loadEntities(bare);
+		const { entities } = loadEntities(bare, { tablePrefix: '' });
 		expect(entities[0]!.analytics).toBeUndefined();
 		rmSync(bare, { recursive: true, force: true });
 	});

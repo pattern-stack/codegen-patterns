@@ -5,7 +5,6 @@
 entity:
   name: briefing
   plural: briefings
-  table: briefings
   patterns: [Communication]
 
 fields:

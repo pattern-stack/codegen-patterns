@@ -70,7 +70,8 @@ const BehaviorSchema = z.union([
 const EntityConfigSchema = z.object({
   name: z.string().describe("Entity name in snake_case (e.g., 'opportunity')"),
   plural: z.string().describe("Plural form in snake_case (e.g., 'opportunities')"),
-  table: z.string().describe("Database table name"),
+  table: z.string().optional().describe("Literal SQL table name, used verbatim (default: <tables.prefix><plural>)"),
+  table_prefix: z.string().optional().describe("Overrides the project's tables.prefix for this table; '' opts out. Exclusive with table"),
   expose: z.array(z.enum(["repository", "rest", "trpc"])).optional().describe(
     "Which layers to generate"
   ),

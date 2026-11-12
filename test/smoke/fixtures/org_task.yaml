@@ -23,7 +23,6 @@
 entity:
   name: org_task
   plural: org_tasks
-  table: org_tasks
   pattern: Base
 
 tenant_scoped: true

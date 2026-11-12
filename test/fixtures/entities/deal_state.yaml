@@ -4,7 +4,6 @@
 entity:
   name: deal_state
   plural: deal_states
-  table: deal_states
 
 fields:
   tenant_id:

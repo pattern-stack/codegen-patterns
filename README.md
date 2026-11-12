@@ -21,8 +21,9 @@ mise install                      # pin bun + node versions (optional, recommend
 # entities/contact.yaml
 entity:
   name: contact
-  plural: contacts
-  table: contacts
+  plural: contacts                  # the Drizzle export, db.query key, module folder — and the SQL table by default
+  # table: crm_contacts            # optional: the literal SQL table name, used verbatim
+  # table_prefix: crm__             # optional: overrides tables.prefix for this table ('' opts out)
   pattern: Integrated               # Integrated | Activity | Metadata | Knowledge | Base (or app-defined)
 
 fields:
@@ -281,7 +282,6 @@ block (sibling to `surface:`/`context:`):
 entity:
   name: contact
   plural: contacts
-  table: contacts
   sync: api        # api | electric — overrides frontend.sync.mode for this entity
 ```
 
@@ -557,6 +557,11 @@ tenancy:
   column: tenant_id              # default; the column `tenant_scoped` entities scope on. An entity's own
                                  # `tenant_scoped: { column: organization_id }` overrides it; a column the entity
                                  # already declares (field or belongs_to FK) is adopted, not emitted twice
+
+tables:
+  prefix: ''                     # default; prepended to every entity / junction SQL table without its own
+                                 # `table:` (verbatim) or `table_prefix:`. Only the SQL name changes —
+                                 # the Drizzle export, db.query key and module folder stay on `plural`
 
 # frontend:                      # inert unless generate.frontend: true
 #   ...                          # see "Frontend generation" above for the full block

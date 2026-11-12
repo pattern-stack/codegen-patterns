@@ -4,7 +4,6 @@
 entity:
   name: sensor
   plural: sensors
-  table: sensors
   pattern: Base
 
 tenant_scoped: true

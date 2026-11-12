@@ -1174,7 +1174,6 @@ describe('collectEntityEvents', () => {
 			`entity:
   name: contact
   plural: contacts
-  table: contacts
 fields:
   id:
     type: uuid
@@ -1207,7 +1206,6 @@ events:
 			`entity:
   name: contact
   plural: contacts
-  table: contacts
 fields:
   id:
     type: uuid
@@ -1266,7 +1264,6 @@ payload:
 			`entity:
   name: contact
   plural: contacts
-  table: contacts
 fields:
   id:
     type: uuid
@@ -1377,7 +1374,6 @@ payload:
 			`entity:
   name: contact
   plural: contacts
-  table: contacts
 fields:
   id:
     type: uuid
@@ -1466,7 +1462,6 @@ describe('collectMergedEvents (EVT-7)', () => {
 			`entity:
   name: contact
   plural: contacts
-  table: contacts
 fields:
   id:
     type: uuid

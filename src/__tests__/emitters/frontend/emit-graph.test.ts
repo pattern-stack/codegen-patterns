@@ -55,7 +55,7 @@ function definition(
 	relationships: Record<string, unknown> = {},
 ): EntityDefinition {
 	return EntityDefinitionSchema.parse({
-		entity: { name, plural, table: plural },
+		entity: { name, plural },
 		fields,
 		relationships,
 	});
@@ -235,15 +235,23 @@ describe('junction collections exist only where junction rows can sync', () => {
 	});
 
 	it('derive their naming from REL-1 identity, with the composite key columns', () => {
-		const j = junctionCollectionEntry(junction('opportunity', 'contact'));
+		const j = junctionCollectionEntry(junction('opportunity', 'contact'), '');
 		expect(j).toEqual({
 			name: 'opportunity_contact',
 			plural: 'opportunity_contacts',
+			table: 'opportunity_contacts',
 			collectionKey: 'opportunityContacts',
 			camelName: 'opportunityContact',
 			className: 'OpportunityContact',
 			keyColumns: ['opportunityId', 'contactId'],
 		});
+	});
+
+	it('name their SQL table through tables.prefix; the collection key stays on the plural (TABLE-0)', () => {
+		const j = junctionCollectionEntry(junction('opportunity', 'contact'), 'app_');
+		expect(j.table).toBe('app_opportunity_contacts');
+		expect(j.plural).toBe('opportunity_contacts');
+		expect(j.collectionKey).toBe('opportunityContacts');
 	});
 
 	it('are not navigator roots — their own edges are reported, not emitted', () => {

@@ -29,6 +29,9 @@ import {
 	collectEntitySurfaces,
 } from './provider-module-generator.js';
 import { loadEntities } from '../../parser/load-entities.js';
+import { TablesConfigSchema } from '../../schema/codegen-config.schema.js';
+import { sqlTableCollisionMessage, sqlTableCollisions } from '../../config/table-naming.js';
+import { junctionTableName } from '../../config/junction-naming.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import type { AnalysisIssue } from '../../analyzer/types.js';
 import { projectLayout } from './project-layout.js';
@@ -100,7 +103,9 @@ export async function preflightEntityTargets(
 
 	const entitiesDirForEmits = projectLayout(ctx.cwd, ctx.config).entities;
 	const eventsDirForEmits = projectLayout(ctx.cwd, ctx.config).eventsDir;
+	const tablePrefix = TablesConfigSchema.parse(ctx.config?.tables ?? {}).prefix;
 	const allEntitiesForEmits = loadEntities(entitiesDirForEmits, {
+		tablePrefix,
 		excludeDirs: [projectLayout(ctx.cwd, ctx.config).providers],
 	}).entities;
 	const validatedNames = new Set(validated.map((v) => v.name));
@@ -204,6 +209,26 @@ export async function preflightEntityTargets(
 	runRejections.push(
 		...junctionSetIssues(junctionSet, new Set(allEntitiesForEmits.map((e) => e.name))),
 	);
+
+	// TABLE-0: one SQL table, one owning definition — entities and junctions
+	// share the database's namespace. `table:` / prefixes let two
+	// definitions meet on a table without sharing a plural, which no other
+	// check sees; emitting both would be two `pgTable('…')` over one table.
+	const tableCollisions = sqlTableCollisions([
+		...allEntitiesForEmits.map((e) => ({ table: e.table, owner: `entity '${e.name}'`, file: e.sourcePath })),
+		...junctionSet.junctions.map((j) => ({
+			table: junctionTableName(j.tableSource, tablePrefix),
+			owner: `junction '${j.name}'`,
+			file: j.file,
+		})),
+	]);
+	for (const c of tableCollisions) {
+		runRejections.push({
+			file: c.owners[0]!.file,
+			message: sqlTableCollisionMessage(c),
+			details: c.owners.map((o) => `${o.owner}: ${o.file}`),
+		});
+	}
 
 	// Reuses the entity set the emits pre-flight already loaded. A bad role is
 	// a generation-time error (the ADR-041 §4 posture).

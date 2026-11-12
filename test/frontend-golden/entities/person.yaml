@@ -10,7 +10,6 @@
 entity:
   name: person
   plural: persons
-  table: persons
   sync: electric
 
 fields:

@@ -9,7 +9,7 @@ import { describe, test, expect } from 'bun:test';
 import { EntityDefinitionSchema } from '../../schema/entity-definition.schema.ts';
 
 const base = {
-	entity: { name: 'meeting', plural: 'meetings', table: 'meetings' },
+	entity: { name: 'meeting', plural: 'meetings' },
 	fields: { title: { type: 'string', required: true } },
 };
 

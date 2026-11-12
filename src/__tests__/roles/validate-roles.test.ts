@@ -156,14 +156,14 @@ describe('parser — roles reach ParsedEntity', () => {
 		fs.writeFileSync(
 			path.join(dir, 'meeting.yaml'),
 			[
-				'entity: { name: meeting, plural: meetings, table: meetings }',
+				'entity: { name: meeting, plural: meetings }',
 				'fields: { title: { type: string, required: true } }',
 				'roles:',
 				'  host: { target: contact, cardinality: one }',
 				'  attendees: { target: contact, cardinality: many, via: meeting_contact }',
 			].join('\n'),
 		);
-		const { entities, issues } = loadEntities(dir);
+		const { entities, issues } = loadEntities(dir, { tablePrefix: '' });
 		expect(issues.filter((i) => i.severity === 'error')).toEqual([]);
 		const meeting = entities[0]!;
 

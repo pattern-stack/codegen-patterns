@@ -2,7 +2,6 @@
 entity:
   name: note
   plural: notes
-  table: notes
 
 fields:
   opportunity_id:

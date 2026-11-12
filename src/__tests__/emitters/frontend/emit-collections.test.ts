@@ -56,6 +56,16 @@ describe('emit-collections — electric (default) branch', () => {
 		expect(out).toContain("table: 'contacts',");
 	});
 
+	it('the shape table param names the SQL table; the URL path stays on the plural (TABLE-0)', () => {
+		const ticket = { ...entry('ticket', 'tickets'), table: 'issues' };
+		const withParam = buildCollectionFile(ticket, ctx([ticket], { useTableParam: true }));
+		expect(withParam).toContain("table: 'issues',");
+		expect(withParam).not.toContain("table: 'tickets'");
+		const pathForm = buildCollectionFile(ticket, ctx([ticket]));
+		expect(pathForm).toContain('/v1/shape/tickets');
+		expect(pathForm).toContain('export const ticketCollection');
+	});
+
 	it('emits columnMapper with a call when columnMapperNeedsCall', () => {
 		const c = ctx([entry('contact', 'contacts')], {
 			columnMapper: 'snakeCamelMapper',

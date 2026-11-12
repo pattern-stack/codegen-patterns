@@ -27,7 +27,7 @@ function mkProject(name: string): string {
 	fs.mkdirSync(path.join(root, 'entities'));
 	fs.writeFileSync(
 		path.join(root, 'entities', `${name}.yaml`),
-		`entity:\n  name: ${name}\n  plural: ${name}s\n  table: ${name}s\nfields:\n  body:\n    type: string\n`,
+		`entity:\n  name: ${name}\n  plural: ${name}s\nfields:\n  body:\n    type: string\n`,
 	);
 	return root;
 }

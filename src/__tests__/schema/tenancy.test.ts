@@ -152,7 +152,7 @@ describe('the tenancy YAML surface (#791)', () => {
 	});
 
 	it('entity `tenant_scoped:` takes true or { column }', () => {
-		const base = { entity: { name: 'deal', plural: 'deals', table: 'deals' }, fields: {} };
+		const base = { entity: { name: 'deal', plural: 'deals' }, fields: {} };
 		expect(EntityDefinitionSchema.safeParse({ ...base, tenant_scoped: true }).success).toBe(true);
 		expect(
 			EntityDefinitionSchema.safeParse({ ...base, tenant_scoped: { column: 'organization_id' } })

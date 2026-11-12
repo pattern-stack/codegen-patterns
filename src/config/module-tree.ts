@@ -28,11 +28,12 @@ export interface ModuleTreeEntity {
 
 export interface EntityModuleNaming {
 	/**
-	 * The Drizzle table export and the `pgTable('…')` argument — a DATABASE
-	 * identifier, so it stays snake_case (NAME-2). The module folder is
-	 * `emittedDir(plural)` and is kebab-case; the two are deliberately not the
-	 * same string. A user-chosen layout may move the folder; it must not touch
-	 * this.
+	 * The Drizzle table export (and `db.query` / relations-manifest key) — it
+	 * stays snake_case (NAME-2). The module folder is `emittedDir(plural)` and is
+	 * kebab-case; the two are deliberately not the same string. A user-chosen
+	 * layout may move the folder; it must not touch this. The `pgTable('…')`
+	 * argument is NOT this: it is the SQL table name, `sqlTableName`
+	 * (`./table-naming.ts`, TABLE-0), which equals `plural` only by default.
 	 */
 	plural: string;
 	/** `<modules_dir>[/<context>]/<plural>`, kebab-cased — the folder holding the entity's files. */

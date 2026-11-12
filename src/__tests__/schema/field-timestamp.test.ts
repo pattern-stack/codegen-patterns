@@ -32,7 +32,7 @@ describe('field-timestamp rule (#796)', () => {
 	});
 
 	const entityWith = (field: Record<string, unknown>) => ({
-		entity: { name: 'appointment', plural: 'appointments', table: 'appointments', pattern: 'Base' },
+		entity: { name: 'appointment', plural: 'appointments', pattern: 'Base' },
 		fields: { f: field },
 	});
 

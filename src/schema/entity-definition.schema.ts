@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { TENANT_COLUMN_PATTERN } from "./tenancy.js";
+import { TABLE_NAME_IS_NOT_A_KEY, TABLE_NAME_PATTERN, TABLE_PREFIX_PATTERN } from "../config/table-naming.js";
 import { reservedGlobalFor, reservedNameMessage } from "./reserved-entity-names.js";
 import { roleForeignKey } from "../roles/derive.js";
 import { NOT_NULL_WITHOUT_DEFAULT_MESSAGE, notNullWithoutDefault } from "./field-nullability.js";
@@ -648,7 +649,29 @@ const EntityConfigSchema = z
         }
       }),
     plural: z.string().regex(/^[a-z][a-z0-9_]*$/, "Plural must be lowercase"),
-    table: z.string().regex(/^[a-z][a-z0-9_]*$/, "Table must be lowercase"),
+    // The SQL table name (TABLE-0) — `src/config/table-naming.ts`
+    // is the one rule. Both keys are optional; with neither, the table is
+    // `<tables.prefix><plural>` and the output is what it was before the split.
+    //   table         the literal SQL name, used VERBATIM (no prefix) — adopt a
+    //                 host table whose name differs from the code vocabulary
+    //                 (`name: ticket, plural: tickets, table: issues`).
+    //                 `table: <plural>` is byte-identical to omitting it.
+    //   table_prefix  overrides the project's `tables.prefix` for this table;
+    //                 `''` opts out. Composes with `plural`, never with `table`.
+    // Only SQL-facing names follow it (pgTable, index/constraint names, Electric
+    // shapes, the semantic model's tableName, `foreign_key:` targets). The
+    // export, `db.query` key, folder and classes stay on `plural`/`name`.
+    table: z
+      .string()
+      .regex(TABLE_NAME_PATTERN, "table must be a lowercase snake_case SQL table name")
+      .optional(),
+    // Not a key. Declared so writing it fails naming `table:` — `.strict()`
+    // alone reports an unrecognized key with no pointer (as `generate.analytics`).
+    table_name: z.never({ invalid_type_error: TABLE_NAME_IS_NOT_A_KEY }).optional(),
+    table_prefix: z
+      .string()
+      .regex(TABLE_PREFIX_PATTERN, "table_prefix must be empty or lowercase snake_case (e.g. 'crm__')")
+      .optional(),
 
     // Which layers to generate (default: all)
     expose: z
@@ -680,7 +703,7 @@ const EntityConfigSchema = z
     // src/parser/validate-providers.ts). Optional: entities without an
     // integration surface omit it. The surface-package *emission* convention
     // is Track C (#329); this field is only the declarative input both tracks
-    // read. Lives inside the `entity:` block (next to `pattern:`/`name:`/`table:`).
+    // read. Lives inside the `entity:` block (next to `pattern:`/`name:`/`plural:`).
     surface: z.string().optional(),
 
     // Bounded-context declaration (ADR-0004) — "which bounded context this
@@ -691,14 +714,15 @@ const EntityConfigSchema = z
     //     module output folder. backend nests the entity's module under
     //     `<modules>/<context>/<entity>/` so same-context entities group
     //     together; untagged entities stay flat (`<modules>/<entity>/`).
-    //   - ADR-0004 (deferred): a later `naming: prefix | schema` knob reads
-    //     this SAME field to drive the Postgres physical layout —
-    //     `prefix` → `pgTable('<context>__<table>')`, then the flip to
-    //     `schema` → `pgSchema('<context>').table('<table>')`. NOT wired here.
+    //   - ADR-0004 (deferred): a later knob reads this SAME field to drive the
+    //     Postgres physical layout — `prefix` → `pgTable('<context>__<table>')`
+    //     (a derived `table_prefix: '<context>__'`, TABLE-0), then the flip to
+    //     `schema` → `pgSchema('<context>').table('<table>')`. NOT wired here;
+    //     its seam is `src/config/table-naming.ts`.
     //
     // Sibling to `surface:` and orthogonal to it (ADR-0006): context = model
     // cohesion (which domain), surface = vendor composition (which integration).
-    // Lives inside the `entity:` block (next to `pattern:`/`name:`/`table:`).
+    // Lives inside the `entity:` block (next to `pattern:`/`name:`/`plural:`).
     context: z
       .string()
       .regex(
@@ -718,6 +742,12 @@ const EntityConfigSchema = z
   .strict()
   .refine((d) => !(d.pattern && d.patterns), {
     message: "'pattern' and 'patterns' are mutually exclusive",
+  })
+  .refine((d) => !(d.table !== undefined && d.table_prefix !== undefined), {
+    message:
+      "'table' and 'table_prefix' are mutually exclusive — table is the literal SQL name " +
+      "and takes no prefix; fold the prefix into it, or drop table and let plural carry the name",
+    path: ["table_prefix"],
   });
 
 export type EntityConfig = z.infer<typeof EntityConfigSchema>;
@@ -1195,7 +1225,7 @@ export const EntityDefinitionSchema = z
 
     // NOTE: `surface:` and `context:` moved INTO EntityConfigSchema (the
     // `entity:` block) in 0.12.2 — consumers write them next to
-    // `pattern:`/`name:`/`table:`, which is the natural place. They are
+    // `pattern:`/`name:`/`plural:`, which is the natural place. They are
     // read via `entity.surface` / `entity.context`. Clean break: no
     // root-level placement is accepted.
 

@@ -2,7 +2,6 @@
 entity:
   name: site
   plural: sites
-  table: sites
   pattern: Base
 
 tenant_scoped: true

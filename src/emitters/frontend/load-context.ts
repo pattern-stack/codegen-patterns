@@ -34,6 +34,7 @@ import {
 import type { ParsedEntity } from '../../analyzer/types';
 import {
 	FrontendConfigSchema,
+	TablesConfigSchema,
 	TenancyConfigSchema,
 	ResolvedPathsSchema,
 } from '../../schema/codegen-config.schema';
@@ -127,6 +128,7 @@ function resolveLocation(
 export function mapFrontendEmitConfig(config: FrontendConfigInput): FrontendEmitConfig {
 	const fe = FrontendConfigSchema.parse(config.frontend ?? {});
 	const tenancy = TenancyConfigSchema.parse(config.tenancy ?? {});
+	const tables = TablesConfigSchema.parse(config.tables ?? {});
 
 	const dbEntities = resolveLocation(config, 'dbEntities', DEFAULT_DB_ENTITIES);
 	const collectionsAuth = resolveLocation(
@@ -152,6 +154,7 @@ export function mapFrontendEmitConfig(config: FrontendConfigInput): FrontendEmit
 		catalogCategories: fe.catalog.categories,
 		textareaThreshold: fe.fields.textareaThreshold,
 		tenancyColumn: tenancy.column,
+		tablePrefix: tables.prefix,
 	};
 }
 
@@ -209,7 +212,9 @@ export function loadFrontendEmitContext(
 	const { entitiesDir } = opts;
 	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, JUNCTIONS_DIR);
 
-	const { registry } = loadEntityRegistry(entitiesDir);
+	const emitConfig = mapFrontendEmitConfig(config);
+	const { tablePrefix } = emitConfig;
+	const { registry } = loadEntityRegistry(entitiesDir, { tablePrefix });
 	const entities: EntityRegistryEntry[] = sortEntities([...registry.values()]);
 
 	if (entities.length === 0) {
@@ -218,12 +223,11 @@ export function loadFrontendEmitContext(
 		};
 	}
 
-	const parsedList = loadEntities(entitiesDir).entities;
+	const parsedList = loadEntities(entitiesDir, { tablePrefix }).entities;
 	const parsed: Map<string, ParsedEntity> = new Map(
 		parsedList.map((p) => [p.name, p]),
 	);
 
-	const emitConfig = mapFrontendEmitConfig(config);
 	const providers = loadProviderCatalogInputs(cwd, config);
 	const generated = resolveLocation(
 		config,

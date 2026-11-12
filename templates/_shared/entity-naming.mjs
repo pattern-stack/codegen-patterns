@@ -28,6 +28,7 @@ import { entitiesDirPath, resolveEntitiesDir } from '../../src/config/entities-d
 import { configOrDefaults, loadProjectConfig } from '../../src/config/project-config.js';
 import { findYamlFiles } from '../../src/utils/find-yaml-files.js';
 import { entityModuleNaming } from '../../src/config/module-tree.js';
+import { sqlTableName } from '../../src/config/table-naming.js';
 
 /**
  * An entity's module naming — `plural`, `moduleDir`,
@@ -57,41 +58,55 @@ function makeLookup(load, where) {
   let maps = null;
   const get = () => (maps ??= load());
   const lookup = (name) => get().byName.get(name) ?? null;
-  lookup.byPlural = (plural) => get().byPlural.get(plural) ?? null;
+  lookup.byTable = (table) => get().byTable.get(table) ?? null;
   /** Why `name` did not resolve: the directory searched and the file expected. */
   lookup.missingEntity = (name) =>
     where.dir
       ? `no YAML under ${where.dir} declares \`entity: { name: ${name} }\` (expected e.g. ${path.join(where.dir, `${name}.yaml`)})`
       : `no entities directory exists (looked for ${where.candidates.join(', ')}; expected e.g. <entities>/${name}.yaml)`;
   /** Why a table named by `foreign_key:` did not resolve. */
-  lookup.missingPlural = (plural) =>
+  lookup.missingTable = (table) =>
     where.dir
-      ? `no YAML under ${where.dir} declares \`plural: ${plural}\``
+      ? `no YAML under ${where.dir} resolves to the SQL table '${table}' — a \`table: ${table}\`, ` +
+        `or a \`plural:\` that is '${table}' under the table prefix '${where.tablePrefix}'`
       : `no entities directory exists (looked for ${where.candidates.join(', ')})`;
   return lookup;
 }
 
 /**
- * Index blocks by name and by plural. Two entities declaring the same plural
- * own the same table: a load error naming both, never last-write-wins.
+ * Index blocks by name and by SQL table name (TABLE-0). Two entities sharing a
+ * plural share a Drizzle export; two sharing a SQL table share a table. Either
+ * is a load error naming both files, never last-write-wins. (Two entities over
+ * one table — a filtered entity over a base table — is #800's design, not an
+ * accident this lookup should accept.)
  */
-function indexBlocks(entries) {
+function indexBlocks(entries, tablePrefix) {
   const byName = new Map();
-  const byPlural = new Map();
+  const byTable = new Map();
   const pluralSource = new Map();
+  const tableSource = new Map();
   for (const { block, source } of entries) {
     byName.set(block.name, block);
     const plural = entityModuleNaming(block, '').plural;
     if (pluralSource.has(plural)) {
       throw new Error(
-        `[codegen] two entity YAMLs declare the table '${plural}': ` +
-          `${pluralSource.get(plural)} and ${source}. A table has one owning entity.`,
+        `[codegen] two entity YAMLs declare the plural '${plural}': ` +
+          `${pluralSource.get(plural)} and ${source}. The plural is the Drizzle table export; it has one owning entity.`,
       );
     }
     pluralSource.set(plural, source);
-    byPlural.set(plural, block);
+    const table = sqlTableName(block, tablePrefix);
+    if (tableSource.has(table)) {
+      throw new Error(
+        `[codegen] two entity YAMLs resolve to the SQL table '${table}': ` +
+          `${tableSource.get(table)} and ${source}. A table has one owning entity ` +
+          `(two entities over one table is #800).`,
+      );
+    }
+    tableSource.set(table, source);
+    byTable.set(table, block);
   }
-  return { byName, byPlural };
+  return { byName, byTable };
 }
 
 /**
@@ -101,11 +116,16 @@ function indexBlocks(entries) {
  * null (no directory exists) resolves nothing. `candidates` names what was
  * tried, for the error messages.
  *
- * Returns a function `(name) => entityBlock | null`, with `.byPlural(plural)`
- * for a field-level `foreign_key: <table>.<column>` (which names the table),
- * and `.missingEntity(name)` / `.missingPlural(plural)` message fragments.
+ * Returns a function `(name) => entityBlock | null`, with `.byTable(table)`
+ * for a field-level `foreign_key: <table>.<column>` (which names the SQL
+ * table), and `.missingEntity(name)` / `.missingTable(table)` message
+ * fragments. `tablePrefix` is the resolved `tables.prefix` — required, since
+ * every SQL table name depends on it.
  */
-export function createEntityLookup(entitiesDir, candidates = []) {
+export function createEntityLookup(entitiesDir, { candidates = [], tablePrefix }) {
+  if (typeof tablePrefix !== 'string') {
+    throw new Error('[codegen] createEntityLookup: `tablePrefix` (the resolved tables.prefix) is required');
+  }
   return makeLookup(
     () => {
       const entries = [];
@@ -124,9 +144,9 @@ export function createEntityLookup(entitiesDir, candidates = []) {
           }
         }
       }
-      return indexBlocks(entries);
+      return indexBlocks(entries, tablePrefix);
     },
-    { dir: entitiesDir, candidates },
+    { dir: entitiesDir, candidates, tablePrefix },
   );
 }
 
@@ -140,21 +160,24 @@ const projectLookups = new Map();
  * (Each `entity new` runs hygen in its own process — see NAME-0 Found.)
  */
 export function projectEntityLookup(cwd) {
-  const paths = configOrDefaults(loadProjectConfig(cwd)).paths;
+  const config = configOrDefaults(loadProjectConfig(cwd));
+  const paths = config.paths;
+  const tablePrefix = config.tables.prefix;
   const dir = resolveEntitiesDir(cwd, paths);
   const candidates = [entitiesDirPath(cwd, paths)];
-  const key = dir ?? `<none>:${candidates.join('|')}`;
-  if (!projectLookups.has(key)) projectLookups.set(key, createEntityLookup(dir, candidates));
+  const key = `${dir ?? `<none>:${candidates.join('|')}`}\0${tablePrefix}`;
+  if (!projectLookups.has(key)) projectLookups.set(key, createEntityLookup(dir, { candidates, tablePrefix }));
   return projectLookups.get(key);
 }
 
 /**
  * A lookup over entity blocks already in hand — for callers that build locals
- * without an entities directory (unit tests).
+ * without an entities directory (unit tests). `tablePrefix` defaults to the
+ * schema default `''`, the same default hand-built locals get.
  */
-export function entityLookupFrom(entityBlocks) {
+export function entityLookupFrom(entityBlocks, { tablePrefix = '' } = {}) {
   return makeLookup(
-    () => indexBlocks(entityBlocks.map((block) => ({ block, source: `<${block.name}>` }))),
-    { dir: '<in-memory>', candidates: [] },
+    () => indexBlocks(entityBlocks.map((block) => ({ block, source: `<${block.name}>` })), tablePrefix),
+    { dir: '<in-memory>', candidates: [], tablePrefix },
   );
 }

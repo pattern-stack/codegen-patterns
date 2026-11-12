@@ -25,6 +25,7 @@
  *    fetch loop — see {@link CrossSyncModeHopError}.
  */
 
+import { junctionTableName } from '../../config/junction-naming.js';
 import type { EntityDefinition } from '../../schema/entity-definition.schema';
 import type { JunctionDefinition } from '../../schema/junction-definition.schema';
 import { buildRelationGraph, junctionIdentity } from '../relations/build-graph';
@@ -93,8 +94,14 @@ export class CrossSyncModeHopError extends Error {
 export interface JunctionCollectionEntry {
 	/** `opportunity_contact` — REL-1's junction name. */
 	name: string;
-	/** `opportunity_contacts` — the table, and the graph key's source. */
+	/** `opportunity_contacts` — the plural, and the graph key's source. */
 	plural: string;
+	/**
+	 * The SQL table name (TABLE-0, `junctionTableName`) — what the Electric
+	 * shape's `table` param names. `plural` unless `tables.prefix` /
+	 * `table_prefix:` / `table:` say otherwise.
+	 */
+	table: string;
 	/** `opportunityContacts` — REL-1's `tableVar`, and the client graph key. */
 	collectionKey: string;
 	/** `opportunityContact` — the emitted `<camelName>Collection` export. */
@@ -113,11 +120,13 @@ const pascalCase = (s: string): string => {
 /** Build a junction's client naming record from its definition. */
 export function junctionCollectionEntry(
 	def: JunctionDefinition,
+	tablePrefix: string,
 ): JunctionCollectionEntry {
 	const { name, plural, tableVar } = junctionIdentity(def);
 	return {
 		name,
 		plural,
+		table: junctionTableName(def, tablePrefix),
 		collectionKey: tableVar,
 		camelName: camelCase(name),
 		className: pascalCase(name),
@@ -197,7 +206,7 @@ export function buildClientGraph(ctx: FrontendEmitContext): ClientGraph {
 	const entities = sortEntities(ctx.entities);
 
 	const junctions = junctionDefs
-		.map(junctionCollectionEntry)
+		.map((def) => junctionCollectionEntry(def, ctx.config.tablePrefix))
 		.sort((a, b) => a.name.localeCompare(b.name));
 	const junctionByKey = new Map(junctions.map((j) => [j.collectionKey, j]));
 	const junctionKeys = new Set(junctionByKey.keys());

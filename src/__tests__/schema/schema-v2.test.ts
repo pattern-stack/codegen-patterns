@@ -25,7 +25,7 @@ import { resolve } from 'path';
 
 describe('pattern / patterns / config', () => {
 	const base = {
-		entity: { name: 'test', plural: 'tests', table: 'tests' },
+		entity: { name: 'test', plural: 'tests' },
 		fields: { id: { type: 'uuid', required: true } },
 	};
 
@@ -165,7 +165,7 @@ describe('pattern / patterns / config', () => {
 
 describe('queries block', () => {
 	const base = {
-		entity: { name: 'contact', plural: 'contacts', table: 'contacts' },
+		entity: { name: 'contact', plural: 'contacts' },
 		fields: { email: { type: 'string', required: true } },
 	};
 
@@ -211,7 +211,7 @@ describe('queries block', () => {
 
 describe('integration block', () => {
 	const base = {
-		entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities' },
+		entity: { name: 'opportunity', plural: 'opportunities' },
 		fields: { name: { type: 'string', required: true } },
 	};
 
@@ -275,7 +275,7 @@ describe('integration block', () => {
 
 describe('events block', () => {
 	const base = {
-		entity: { name: 'contact', plural: 'contacts', table: 'contacts' },
+		entity: { name: 'contact', plural: 'contacts' },
 		fields: { email: { type: 'string', required: true } },
 	};
 
@@ -337,7 +337,7 @@ describe('external_id_tracking behavior', () => {
 
 describe('entity.sync — per-entity frontend sync mode', () => {
 	const base = {
-		entity: { name: 'deal', plural: 'deals', table: 'deals' },
+		entity: { name: 'deal', plural: 'deals' },
 		fields: { id: { type: 'uuid', required: true } },
 	};
 
@@ -385,7 +385,7 @@ describe('entity layout keys — deleted by ARCH-1 (#682)', () => {
 	// folder per entity and always extends a base class, so each is now an
 	// unrecognized key rather than an accepted no-op.
 	const base = {
-		entity: { name: 'test', plural: 'tests', table: 'tests' },
+		entity: { name: 'test', plural: 'tests' },
 		fields: { id: { type: 'uuid', required: true } },
 	};
 
@@ -479,7 +479,7 @@ describe('generate config', () => {
 
 describe('on_delete field on belongs_to relationships', () => {
 	const base = {
-		entity: { name: 'message', plural: 'messages', table: 'messages' },
+		entity: { name: 'message', plural: 'messages' },
 		fields: { body: { type: 'string', required: true } },
 	};
 
@@ -555,7 +555,7 @@ describe('on_delete field on belongs_to relationships', () => {
 
 describe('scopeable flag', () => {
 	const base = {
-		entity: { name: 'account', plural: 'accounts', table: 'accounts' },
+		entity: { name: 'account', plural: 'accounts' },
 		fields: { id: { type: 'uuid', required: true } },
 	};
 
@@ -594,7 +594,7 @@ describe('scopeable flag', () => {
 
 describe('context flag (#403) — inside entity: block (0.12.2)', () => {
 	const base = {
-		entity: { name: 'transcript', plural: 'transcripts', table: 'transcripts' },
+		entity: { name: 'transcript', plural: 'transcripts' },
 		fields: { id: { type: 'uuid', required: true } },
 	};
 
@@ -639,7 +639,7 @@ describe('context flag (#403) — inside entity: block (0.12.2)', () => {
 
 describe('surface flag (RFC-0001) — inside entity: block (0.12.2)', () => {
 	const base = {
-		entity: { name: 'transcript', plural: 'transcripts', table: 'transcripts' },
+		entity: { name: 'transcript', plural: 'transcripts' },
 		fields: { id: { type: 'uuid', required: true } },
 	};
 
@@ -671,7 +671,7 @@ describe('surface flag (RFC-0001) — inside entity: block (0.12.2)', () => {
 describe('strict mode preserved', () => {
 	it('rejects unknown top-level key on entity definition', () => {
 		const result = EntityDefinitionSchema.safeParse({
-			entity: { name: 'x', plural: 'xs', table: 'xs' },
+			entity: { name: 'x', plural: 'xs' },
 			fields: { a: { type: 'string' } },
 			bogus: true,
 		});
@@ -680,7 +680,7 @@ describe('strict mode preserved', () => {
 
 	it('rejects unknown key in entity config', () => {
 		const result = EntityDefinitionSchema.safeParse({
-			entity: { name: 'x', plural: 'xs', table: 'xs', random_key: 'foo' },
+			entity: { name: 'x', plural: 'xs', random_key: 'foo' },
 			fields: { a: { type: 'string' } },
 		});
 		expect(result.success).toBe(false);
@@ -704,7 +704,7 @@ describe('contact-v2.yaml integration', () => {
 	});
 
 	it('maps through parser with correct types', () => {
-		const result = loadEntities(resolve('test/fixtures/entities'));
+		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '' });
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		expect(contact.pattern).toBe('Integrated');
@@ -717,7 +717,7 @@ describe('contact-v2.yaml integration', () => {
 	});
 
 	it('passes consistency checks', () => {
-		const result = loadEntities(resolve('test/fixtures/entities'));
+		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '' });
 		const graph = buildDomainGraph(result.entities);
 		const issues = checkConsistency(graph, 'tenant_id');
 
@@ -734,7 +734,7 @@ describe('contact-v2.yaml integration', () => {
 
 describe('cross-block validation', () => {
 	it('catches query referencing unknown field', () => {
-		const result = loadEntities(resolve('test/fixtures/entities'));
+		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '' });
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		// Inject a bad query
@@ -748,7 +748,7 @@ describe('cross-block validation', () => {
 	});
 
 	it('skips by-field validation for via queries', () => {
-		const result = loadEntities(resolve('test/fixtures/entities'));
+		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '' });
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		// Via query with cross-entity field should not error
@@ -763,7 +763,7 @@ describe('cross-block validation', () => {
 	// dogfood #9: belongs_to FK fields (not separately declared under `fields:`)
 	// must still count as available fields for query validation.
 	it('accepts query on belongs_to FK field even when not declared in fields', () => {
-		const result = loadEntities(resolve('test/fixtures/entities'));
+		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '' });
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		// Simulate the buggy scenario: author relies on the belongs_to relationship
@@ -778,7 +778,7 @@ describe('cross-block validation', () => {
 	});
 
 	it('still rejects query on truly nonexistent field when belongs_to is present', () => {
-		const result = loadEntities(resolve('test/fixtures/entities'));
+		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '' });
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		contact.fields.delete('account_id');
@@ -792,7 +792,7 @@ describe('cross-block validation', () => {
 	});
 
 	it('accepts composite query mixing declared field and belongs_to FK', () => {
-		const result = loadEntities(resolve('test/fixtures/entities'));
+		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '' });
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		// Drop the declared account_id so only the belongs_to relationship provides it.
@@ -813,7 +813,7 @@ describe('cross-block validation', () => {
 
 describe('emits block (EVT-7)', () => {
 	const base = {
-		entity: { name: 'contact', plural: 'contacts', table: 'contacts' },
+		entity: { name: 'contact', plural: 'contacts' },
 		fields: { email: { type: 'string', required: true } },
 	};
 

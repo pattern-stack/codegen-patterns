@@ -43,7 +43,6 @@ function mkProject(opts: {
 				'entity:',
 				`  name: ${ent.name}`,
 				`  plural: ${ent.plural}`,
-				`  table: ${ent.plural}`,
 				// #403: `entity.context:` nests the module folder.
 				...(ent.context ? [`  context: ${ent.context}`] : []),
 				'fields:',

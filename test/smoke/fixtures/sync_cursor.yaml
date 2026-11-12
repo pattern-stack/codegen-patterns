@@ -5,7 +5,6 @@
 entity:
   name: sync_cursor
   plural: sync_cursors
-  table: sync_cursors
   pattern: Base
 
 api:

@@ -17,7 +17,6 @@
 entity:
   name: deal_state
   plural: deal_states
-  table: deal_states
   sync: api
 
 fields:

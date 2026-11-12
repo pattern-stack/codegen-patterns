@@ -1,7 +1,6 @@
 entity:
   name: meeting
   plural: meetings
-  table: meetings
   surface: transcript
 fields:
   title:

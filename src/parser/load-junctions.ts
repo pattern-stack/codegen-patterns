@@ -16,6 +16,7 @@
 import fs from 'node:fs';
 import { deriveJunctionName } from '../schema/junction-definition.schema';
 import type { JunctionSummary } from '../roles/validate-roles';
+import type { JunctionTableSource } from '../config/junction-naming.js';
 import { findYamlFiles } from '../utils/find-yaml-files';
 import { detectYamlType, loadJunctionFromYaml } from '../utils/yaml-loader';
 
@@ -27,8 +28,11 @@ export interface JunctionLoadIssue {
 }
 
 export interface JunctionSet {
-	/** Every valid junction, sorted by name, with the file that declares it. */
-	junctions: Array<JunctionSummary & { file: string }>;
+	/**
+	 * Every valid junction, sorted by name, with the file that declares it and
+	 * the keys its SQL table name reads (`junctionTableName`, TABLE-0).
+	 */
+	junctions: Array<JunctionSummary & { file: string; tableSource: JunctionTableSource }>;
 	/** Every file under the directory that is not a valid junction. */
 	issues: JunctionLoadIssue[];
 }
@@ -63,6 +67,11 @@ export function loadJunctionSet(dir: string): JunctionSet {
 			file,
 			name: deriveJunctionName(result.definition),
 			between: result.definition.between,
+			tableSource: {
+				between: result.definition.between,
+				table: result.definition.table,
+				table_prefix: result.definition.table_prefix,
+			},
 		});
 	}
 	return { junctions: junctions.sort((a, b) => a.name.localeCompare(b.name)), issues };

@@ -918,7 +918,10 @@ async function main(): Promise<number> {
 		{
 			const scan = assertTimestampColumns(
 				path.join(tmpDir, 'src/modules'),
-				collectTimezoneOptOuts(fixtureFiles.map((f) => path.join(FIXTURES_DIR, f))),
+				collectTimezoneOptOuts(
+					fixtureFiles.map((f) => path.join(FIXTURES_DIR, f)),
+					'', // the smoke config sets no tables.prefix
+				),
 			);
 			log(`timestamptz scan OK (${scan.calls} calls in ${scan.files} entity files)`);
 		}

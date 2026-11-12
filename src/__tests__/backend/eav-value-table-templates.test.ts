@@ -63,7 +63,6 @@ const valueEntity = {
   entity: {
     name: 'field_value',
     plural: 'field_values',
-    table: 'field_values',
     pattern: 'Metadata',
   },
   eav_value_table: true,
@@ -252,7 +251,7 @@ describe('backend eav_value_table — composition with eav on owning entities', 
     // opportunity is an eav-enabled owner.
     const valueLocals = buildBackendLocals(valueEntity, withEntities());
     const opportunityEntity = {
-      entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities', pattern: 'Integrated' },
+      entity: { name: 'opportunity', plural: 'opportunities', pattern: 'Integrated' },
       eav: true,
       fields: { name: { type: 'string', required: true }, user_id: { type: 'uuid', required: true } },
       relationships: {},

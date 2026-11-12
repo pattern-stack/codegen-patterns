@@ -50,7 +50,7 @@ function render(relPath: string, locals: Record<string, unknown>): string {
 }
 
 const baseEntity = {
-  entity: { name: 'contact', plural: 'contacts', table: 'contacts', pattern: 'Integrated' },
+  entity: { name: 'contact', plural: 'contacts', pattern: 'Integrated' },
   fields: {
     email: { type: 'string', required: true },
   },

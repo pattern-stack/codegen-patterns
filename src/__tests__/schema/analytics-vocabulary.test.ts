@@ -12,7 +12,7 @@ import { describe, it, expect } from 'bun:test';
 import { EntityDefinitionSchema } from '../../schema/entity-definition.schema';
 
 const entityBlock = {
-  entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities' },
+  entity: { name: 'opportunity', plural: 'opportunities' },
 };
 
 /** An entity with one field, whose analytics tags the test supplies. */

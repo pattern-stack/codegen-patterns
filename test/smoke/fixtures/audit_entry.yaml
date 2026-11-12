@@ -6,7 +6,6 @@
 entity:
   name: audit_entry
   plural: audit_entries
-  table: audit_entries
   pattern: Base
 
 api: false

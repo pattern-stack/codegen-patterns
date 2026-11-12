@@ -4,7 +4,6 @@
 entity:
   name: account
   plural: accounts
-  table: accounts
   pattern: Integrated
 
 fields:

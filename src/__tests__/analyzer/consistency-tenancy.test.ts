@@ -23,7 +23,6 @@ const field = (name: string): ParsedField => ({
 const entity = (column: string, extra: Partial<ParsedEntity> = {}): ParsedEntity => ({
 	name: 'deal',
 	plural: 'deals',
-	table: 'deals',
 	expose: ['repository'],
 	fields: new Map([[column, field(column)]]),
 	relationships: new Map(),

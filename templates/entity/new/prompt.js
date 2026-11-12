@@ -24,11 +24,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import yaml from "yaml";
-import pluralizePkg from "pluralize";
 import { BASE_PATHS, getGeneratedDir, getProjectConfig } from "../../../src/config/paths.mjs";
 import { deriveRoleRelationships } from "../../../src/roles/derive.js";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 import { projectEntityLookup } from "../../_shared/entity-naming.mjs";
+import { sqlTableName } from "../../../src/config/table-naming.js";
 import { loadJunctionDefinitions } from "../../_shared/junction-fan-out.mjs";
 import {
   loadRuntimeMode,
@@ -160,18 +160,28 @@ const behaviorRegistry = {
  * `import { tenants } from '../tenants/tenant.entity'` for such a table
  * produces a module that cannot resolve.
  *
- * Read straight from the YAML `entity.table` (falling back to `entity.plural`,
- * then the pluralized name), never from generated output: a two-pass run must
- * give the same answer on both passes, and introspecting emitted files would
- * make pass 1 disagree with pass 2 (charter I1).
+ * Each entry is the entity's SQL table name — the table rule
+ * (`src/config/table-naming.ts`, TABLE-0) over the YAML's `table` /
+ * `table_prefix` / `plural` and the project's `tables.prefix` — read straight
+ * from the YAML, never from generated output: a two-pass run must give the
+ * same answer on both passes, and introspecting emitted files would make
+ * pass 1 disagree with pass 2 (charter I1). A `foreign_key: <table>.<column>`
+ * names a SQL table, so this is the set it is checked against.
+ *
+ * `tablePrefix` is required: an absent prefix would silently compare against
+ * unprefixed names and turn every owned target host-owned.
  *
  * Cached per process — `entity new` runs one entity per process, but the
  * cross-entity emitters call in repeatedly.
  */
 const __ownedTablesCache = new Map();
-export function loadOwnedTableNames(cwd, entitiesDir = BASE_PATHS.entitiesDir) {
+export function loadOwnedTableNames(cwd, { tablePrefix, entitiesDir = BASE_PATHS.entitiesDir }) {
+  if (typeof tablePrefix !== "string") {
+    throw new Error("[codegen] loadOwnedTableNames: `tablePrefix` (the resolved tables.prefix) is required");
+  }
   const dir = path.resolve(cwd, entitiesDir);
-  const cached = __ownedTablesCache.get(dir);
+  const cacheKey = `${dir}\0${tablePrefix}`;
+  const cached = __ownedTablesCache.get(cacheKey);
   if (cached) return cached;
   const owned = new Set();
   const walk = (d) => {
@@ -196,11 +206,11 @@ export function loadOwnedTableNames(cwd, entitiesDir = BASE_PATHS.entitiesDir) {
       }
       const ent = parsed?.entity;
       if (!ent?.name) continue;
-      owned.add(ent.table || ent.plural || pluralizePkg.plural(ent.name));
+      owned.add(sqlTableName(ent, tablePrefix));
     }
   };
   walk(dir);
-  __ownedTablesCache.set(dir, owned);
+  __ownedTablesCache.set(cacheKey, owned);
   return owned;
 }
 
@@ -384,7 +394,8 @@ export default {
     // host-owned `foreign_key:` became a hard error instead of a plain column.
     // Computed once here and reused in the returned locals below;
     // `loadOwnedTableNames` caches per directory, so the second read is free.
-    const ownedTableNames = Array.from(loadOwnedTableNames(process.cwd()));
+    const tablePrefix = getProjectConfig().tables.prefix;
+    const ownedTableNames = Array.from(loadOwnedTableNames(process.cwd(), { tablePrefix }));
 
     const backendLocals = buildBackendLocals(definition, {
       // The backend module tree (PATH-1, #645).
@@ -394,6 +405,10 @@ export default {
       // #791: the project's default tenant column (`tenancy.column`). An entity's
       // own `tenant_scoped: { column }` overrides it inside the extension.
       tenancyColumn: getProjectConfig().tenancy.column,
+      // TABLE-0: the project's SQL table prefix (`tables.prefix`). The entity's
+      // own `table` / `table_prefix` are read inside the extension, through
+      // the one rule (`src/config/table-naming.ts`).
+      tablePrefix,
       // REL-2 (#587): the extension computes the relation-manifest and
       // api-includes specifiers RELATIVE to each module folder, so it needs the
       // same generated dir the emitters write into. Passed explicitly because

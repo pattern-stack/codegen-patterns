@@ -15,7 +15,6 @@
 entity:
   name: account
   plural: accounts
-  table: accounts
   sync: electric
 
 fields:

@@ -1,7 +1,6 @@
 entity:
   name: deal
   plural: deals
-  table: deals
   surface: crm
 fields:
   name:

@@ -54,7 +54,7 @@ function render(relPath: string, definition: unknown): string {
 // ---------------------------------------------------------------------------
 
 const withoutTimestamps = {
-  entity: { name: 'account', plural: 'accounts', table: 'accounts', pattern: 'Base' },
+  entity: { name: 'account', plural: 'accounts', pattern: 'Base' },
   fields: {
     name: { type: 'string', required: true },
   },

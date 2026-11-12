@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 const VALID_ENTITY =
-	'entity:\n  name: note\n  plural: notes\n  table: notes\nfields:\n  body:\n    type: string\n';
+	'entity:\n  name: note\n  plural: notes\nfields:\n  body:\n    type: string\n';
 
 const VALID_JOB = [
 	'type: note_poll',
@@ -271,7 +271,7 @@ function mkSurfaceProject(): string {
 	const root = mkProject();
 	fs.writeFileSync(
 		path.join(root, 'entities', 'note.yaml'),
-		VALID_ENTITY.replace('  table: notes\n', '  table: notes\n  surface: crm\n'),
+		VALID_ENTITY.replace('  plural: notes\n', '  plural: notes\n  surface: crm\n'),
 	);
 	return root;
 }

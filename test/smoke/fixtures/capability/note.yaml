@@ -6,7 +6,6 @@
 entity:
   name: note
   plural: notes
-  table: notes
 
 fields:
   body:

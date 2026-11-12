@@ -11,7 +11,6 @@ function makeEntity(partial: Partial<ParsedEntity>): ParsedEntity {
 	return {
 		name: 'contact',
 		plural: 'contacts',
-		table: 'contacts',
 		expose: ['repository', 'rest', 'trpc'],
 		fields: new Map(),
 		relationships: new Map(),

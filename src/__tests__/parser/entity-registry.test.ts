@@ -13,6 +13,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadEntityRegistry } from '../../parser/entity-registry';
+import { loadEntities } from '../../parser/load-entities';
 
 let dir: string;
 
@@ -41,7 +42,6 @@ describe('loadEntityRegistry — two cross-referencing entities', () => {
 			`entity:
   name: deal
   plural: deals
-  table: deals
 fields:
   name: { type: string, required: true }
 relationships:
@@ -56,7 +56,6 @@ relationships:
 			`entity:
   name: deal_state
   plural: deal_states
-  table: deal_states
 fields:
   label: { type: string, required: true }
 `,
@@ -64,18 +63,17 @@ fields:
 	});
 
 	it('keys the registry by entity name with zero issues', () => {
-		const { registry, issues } = loadEntityRegistry(dir);
+		const { registry, issues } = loadEntityRegistry(dir, { tablePrefix: '' });
 		expect(issues).toEqual([]);
 		expect([...registry.keys()].sort()).toEqual(['deal', 'deal_state']);
 	});
 
 	it('derives pascal/camel casings for a multi-word name', () => {
-		const { registry } = loadEntityRegistry(dir);
+		const { registry } = loadEntityRegistry(dir, { tablePrefix: '' });
 		const dealState = registry.get('deal_state');
 		expect(dealState).toMatchObject({
 			name: 'deal_state',
 			plural: 'deal_states',
-			table: 'deal_states',
 			className: 'DealState',
 			classNamePlural: 'DealStates',
 			camelName: 'dealState',
@@ -95,13 +93,12 @@ describe('loadEntityRegistry — irregular plural is read from YAML, never deriv
 			`entity:
   name: person
   plural: people
-  table: people
 fields:
   name: { type: string, required: true }
 `,
 		);
 
-		const { registry } = loadEntityRegistry(dir);
+		const { registry } = loadEntityRegistry(dir, { tablePrefix: '' });
 		const person = registry.get('person');
 		expect(person?.plural).toBe('people');
 		expect(person?.pluralCamelName).toBe('people');
@@ -120,7 +117,6 @@ describe('loadEntityRegistry — sync mode round-trip', () => {
 			`entity:
   name: order
   plural: orders
-  table: orders
   sync: api
 fields:
   total: { type: decimal, required: true }
@@ -131,13 +127,12 @@ fields:
 			`entity:
   name: invoice
   plural: invoices
-  table: invoices
 fields:
   total: { type: decimal, required: true }
 `,
 		);
 
-		const { registry } = loadEntityRegistry(dir);
+		const { registry } = loadEntityRegistry(dir, { tablePrefix: '' });
 		expect(registry.get('order')?.sync).toBe('api');
 		expect(registry.get('invoice')?.sync).toBeNull();
 	});
@@ -154,23 +149,21 @@ describe('loadEntityRegistry — tolerant of invalid files', () => {
 			`entity:
   name: good
   plural: goods
-  table: goods
 fields:
   name: { type: string, required: true }
 `,
 		);
-		// Missing required `table` → schema validation failure.
+		// Missing required `plural` → schema validation failure.
 		writeEntity(
 			'broken.yaml',
 			`entity:
   name: broken
-  plural: brokens
 fields:
   name: { type: string, required: true }
 `,
 		);
 
-		const { registry, issues } = loadEntityRegistry(dir);
+		const { registry, issues } = loadEntityRegistry(dir, { tablePrefix: '' });
 		expect(registry.has('good')).toBe(true);
 		expect(registry.has('broken')).toBe(false);
 		expect(issues.some((i) => i.severity === 'error')).toBe(true);
@@ -178,8 +171,58 @@ fields:
 	});
 
 	it('reports a missing directory as an error, returns an empty registry', () => {
-		const { registry, issues } = loadEntityRegistry(join(dir, 'does-not-exist'));
+		const { registry, issues } = loadEntityRegistry(join(dir, 'does-not-exist'), { tablePrefix: '' });
 		expect(registry.size).toBe(0);
 		expect(issues.some((i) => i.severity === 'error')).toBe(true);
+	});
+});
+
+// ----------------------------------------------------------------------------
+// TABLE-0 — `table` is the SQL name; `plural` stays the code name
+// ----------------------------------------------------------------------------
+
+describe('loadEntityRegistry — the SQL table name (TABLE-0)', () => {
+	beforeEach(() => {
+		writeEntity(
+			'ticket.yaml',
+			`entity:
+  name: ticket
+  plural: tickets
+  table: issues
+fields:
+  name: { type: string, required: true }
+`,
+		);
+		writeEntity(
+			'deal.yaml',
+			`entity:
+  name: deal
+  plural: deals
+fields:
+  name: { type: string, required: true }
+`,
+		);
+	});
+
+	it('`table:` is the SQL table; the plural and casings are untouched', () => {
+		const { registry } = loadEntityRegistry(dir, { tablePrefix: 'app_' });
+		const ticket = registry.get('ticket')!;
+		expect(ticket.table).toBe('issues');
+		expect(ticket.plural).toBe('tickets');
+		expect(ticket.pluralCamelName).toBe('tickets');
+	});
+
+	it('the project prefix reaches an entity without `table:`', () => {
+		const { registry } = loadEntityRegistry(dir, { tablePrefix: 'app_' });
+		expect(registry.get('deal')!.table).toBe('app_deals');
+		expect(loadEntityRegistry(dir, { tablePrefix: '' }).registry.get('deal')!.table).toBe('deals');
+	});
+
+	it('the parser agrees: ParsedEntity.table (semantic tableName, analyzer, foreign_key checks) is the SQL name', () => {
+		const { entities } = loadEntities(dir, { tablePrefix: 'app_' });
+		const byName = new Map(entities.map((e) => [e.name, e]));
+		expect(byName.get('ticket')!.table).toBe('issues');
+		expect(byName.get('ticket')!.plural).toBe('tickets');
+		expect(byName.get('deal')!.table).toBe('app_deals');
 	});
 });

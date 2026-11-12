@@ -2,9 +2,11 @@
  * The junction naming rule — the ONE statement of it (JUNC-0, #678; charter I1).
  *
  * A junction's name is its endpoints in `between:` order, `<left>_<right>`, and
- * its table / module folder is `pluralize(name)`. Neither has a YAML override:
- * `JunctionDefinitionSchema` is `.strict()` and declares no `name` / `table`
- * (GATE-1, #599).
+ * its plural (export / module folder) is `pluralize(name)`. Neither has a YAML
+ * override: `JunctionDefinitionSchema` is `.strict()` and declares no `name`
+ * (GATE-1, #599). Its SQL table name is the shared table rule over that plural
+ * (`junctionTableName`, TABLE-0): `table:` / `table_prefix:` reach the
+ * database name only.
  *
  * Readers: the schema's `deriveJunctionName`, the roles validator
  * (`junctionNamesFor`), the barrel generator, and the hygen prompts through
@@ -16,6 +18,7 @@
  */
 
 import pluralize from 'pluralize';
+import { sqlTableName } from './table-naming.js';
 
 export function junctionName(between: readonly [string, string]): string {
 	return `${between[0]}_${between[1]}`;
@@ -23,4 +26,23 @@ export function junctionName(between: readonly [string, string]): string {
 
 export function junctionPlural(name: string): string {
 	return pluralize(name);
+}
+
+/** The junction-YAML keys the SQL table name reads. */
+export interface JunctionTableSource {
+	between: readonly [string, string];
+	table?: string | null;
+	table_prefix?: string | null;
+}
+
+/**
+ * A junction's SQL table name — `sqlTableName` over the derived name/plural
+ * (TABLE-0). `projectPrefix` is the resolved `tables.prefix`, required.
+ */
+export function junctionTableName(def: JunctionTableSource, projectPrefix: string): string {
+	const name = junctionName(def.between);
+	return sqlTableName(
+		{ name, plural: junctionPlural(name), table: def.table, table_prefix: def.table_prefix },
+		projectPrefix,
+	);
 }

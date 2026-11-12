@@ -54,7 +54,7 @@ import {
 } from '../../emitters/frontend/index.js';
 import { configuredSubsystemNames } from '../shared/subsystem-detect.js';
 import { projectLayout } from '../shared/project-layout.js';
-import { TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
+import { TablesConfigSchema, TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
 import {
 	buildJobBridgeTriggers,
 	buildJobScheduledEvents,
@@ -1153,7 +1153,10 @@ export class EntityValidateCommand extends Command {
 		const loaderIssues = patternLoadIssues(await loadAppPatternsForCli(ctx), ctx.cwd);
 
 		const quick = validateEntities(targetDir);
-		const full = await analyzeDomain(targetDir, { tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column });
+		const full = await analyzeDomain(targetDir, {
+			tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
+			tablePrefix: TablesConfigSchema.parse(ctx.config?.tables ?? {}).prefix,
+		});
 
 		const errors = [...loaderIssues, ...full.issues.filter((i) => i.severity === 'error')];
 		const warnings = full.issues.filter((i) => i.severity === 'warning');

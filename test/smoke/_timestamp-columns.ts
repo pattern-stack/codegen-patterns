@@ -10,12 +10,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'yaml';
+import { sqlTableName } from '../../src/config/table-naming';
 
 const TZ_CALL = /^timestamp\('([a-z0-9_]+)', \{ withTimezone: true, mode: 'date' \}\)/;
 const BARE_CALL = /^timestamp\('([a-z0-9_]+)'\)/;
 
-/** `<table>.<column>` for every `timezone: false` field in the fixture YAMLs. */
-export function collectTimezoneOptOuts(yamlFiles: string[]): Set<string> {
+/**
+ * `<table>.<column>` for every `timezone: false` field in the fixture YAMLs. An
+ * entity's table is its SQL name — the one rule, `sqlTableName` (TABLE-0) —
+ * under the smoke project's `tables.prefix`, which the caller states.
+ */
+export function collectTimezoneOptOuts(yamlFiles: string[], tablePrefix: string): Set<string> {
 	const out = new Set<string>();
 	for (const file of yamlFiles) {
 		const doc = yaml.parse(fs.readFileSync(file, 'utf8')) ?? {};
@@ -24,7 +29,7 @@ export function collectTimezoneOptOuts(yamlFiles: string[]): Set<string> {
 			.map(([name]) => name);
 		if (optOutFields.length === 0) continue;
 		const table = doc.entity
-			? (doc.entity.table ?? doc.entity.plural)
+			? sqlTableName(doc.entity, tablePrefix)
 			: doc.relationship
 				? doc.relationship.table
 				: undefined;

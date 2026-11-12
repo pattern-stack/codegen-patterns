@@ -168,7 +168,7 @@ function assertJunctionEmission(
     .flatMap((d) => ['entities', 'junctions'].map((k) => path.join(import.meta.dirname, d, k)))
     .filter((d) => fs.existsSync(d))
     .flatMap((d) => fs.readdirSync(d).filter((f) => f.endsWith('.yaml')).map((f) => path.join(d, f)));
-  const tsScan = assertTimestampColumns(path.join(generatedSrc, P.modules), collectTimezoneOptOuts(fixtureYamls));
+  const tsScan = assertTimestampColumns(path.join(generatedSrc, P.modules), collectTimezoneOptOuts(fixtureYamls, ''));
   log(`timestamptz scan OK (${tsScan.calls} calls in ${tsScan.files} entity files)`);
 
   const reads = (p: string): string => {

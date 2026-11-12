@@ -33,7 +33,6 @@
 entity:
   name: tenant_note
   plural: tenant_notes
-  table: tenant_notes
   pattern: Base
 
 # #791: the smoke's default scenario sets the project default to

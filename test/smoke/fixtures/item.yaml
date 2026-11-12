@@ -6,7 +6,6 @@
 entity:
   name: item
   plural: items
-  table: items
   pattern: Base
 
 fields:

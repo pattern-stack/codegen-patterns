@@ -37,6 +37,8 @@ export interface SemanticEmitContext {
 	 * `tenant_scoped` resolves to, as the config schema resolved it.
 	 */
 	tenancyColumn: string;
+	/** The project's `tables.prefix` (TABLE-0) — a junction's `tableName` is its resolved SQL name. */
+	tablePrefix: string;
 }
 
 /** The aggregation vocabulary — mirrors the consuming package's `Agg`. */

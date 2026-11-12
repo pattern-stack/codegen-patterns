@@ -8,7 +8,6 @@
 entity:
   name: appointment
   plural: appointments
-  table: appointments
   pattern: Base
 
 fields:

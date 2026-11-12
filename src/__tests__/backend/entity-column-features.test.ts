@@ -61,7 +61,7 @@ function render(
 
 describe('column defaults (#345)', () => {
   const definition = {
-    entity: { name: 'conversation', plural: 'conversations', table: 'conversations', pattern: 'Base' },
+    entity: { name: 'conversation', plural: 'conversations', pattern: 'Base' },
     fields: {
       state: { type: 'enum', choices: ['created', 'active', 'completed'], required: true, default: 'created' },
       exchange_count: { type: 'integer', required: true, default: 0 },
@@ -111,7 +111,7 @@ describe('column defaults (#345)', () => {
 
   it('emits no default suffix when no default is declared', () => {
     const { output } = render({
-      entity: { name: 'widget', plural: 'widgets', table: 'widgets', pattern: 'Base' },
+      entity: { name: 'widget', plural: 'widgets', pattern: 'Base' },
       fields: { label: { type: 'string', required: true } },
       relationships: {},
       behaviors: [],
@@ -127,7 +127,7 @@ describe('column defaults (#345)', () => {
 
 describe('field-level foreign_key (#354)', () => {
   const definition = {
-    entity: { name: 'tool_call', plural: 'tool_calls', table: 'tool_calls', pattern: 'Base' },
+    entity: { name: 'tool_call', plural: 'tool_calls', pattern: 'Base' },
     fields: {
       conversation_id: { type: 'uuid', required: true, foreign_key: 'conversations.id' },
       name: { type: 'string', required: true },
@@ -150,7 +150,7 @@ describe('field-level foreign_key (#354)', () => {
 
   it('omits .notNull() but still references on a nullable FK column', () => {
     const { output } = render({
-      entity: { name: 'tool_call', plural: 'tool_calls', table: 'tool_calls', pattern: 'Base' },
+      entity: { name: 'tool_call', plural: 'tool_calls', pattern: 'Base' },
       fields: {
         conversation_id: { type: 'uuid', foreign_key: 'conversations.id' },
       },
@@ -163,7 +163,7 @@ describe('field-level foreign_key (#354)', () => {
 
   it('uses the AnyPgColumn annotation + no self-import for a self-referential FK', () => {
     const { output, locals } = render({
-      entity: { name: 'conversation', plural: 'conversations', table: 'conversations', pattern: 'Base' },
+      entity: { name: 'conversation', plural: 'conversations', pattern: 'Base' },
       fields: {
         branched_from_id: { type: 'uuid', foreign_key: 'conversations.id' },
       },
@@ -186,7 +186,7 @@ describe('field-level foreign_key (#354)', () => {
 
 describe('single-column index (#355)', () => {
   const definition = {
-    entity: { name: 'conversation', plural: 'conversations', table: 'conversations', pattern: 'Base' },
+    entity: { name: 'conversation', plural: 'conversations', pattern: 'Base' },
     fields: {
       role_name: { type: 'string', required: true, index: true },
       state: { type: 'enum', choices: ['created', 'active'], required: true },
@@ -209,7 +209,7 @@ describe('single-column index (#355)', () => {
 
   it('indexes a field-level FK column that is also marked index: true', () => {
     const { output } = render({
-      entity: { name: 'tool_call', plural: 'tool_calls', table: 'tool_calls', pattern: 'Base' },
+      entity: { name: 'tool_call', plural: 'tool_calls', pattern: 'Base' },
       fields: {
         conversation_id: { type: 'uuid', required: true, foreign_key: 'conversations.id', index: true },
       },
@@ -223,7 +223,7 @@ describe('single-column index (#355)', () => {
 
   it('emits no callback or index import when no field declares index', () => {
     const { output, locals } = render({
-      entity: { name: 'widget', plural: 'widgets', table: 'widgets', pattern: 'Base' },
+      entity: { name: 'widget', plural: 'widgets', pattern: 'Base' },
       fields: { label: { type: 'string', required: true } },
       relationships: {},
       behaviors: [],
@@ -239,7 +239,7 @@ describe('single-column index (#355)', () => {
 
 describe('composite unique_indexes (#356)', () => {
   const definition = {
-    entity: { name: 'message', plural: 'messages', table: 'messages', pattern: 'Base' },
+    entity: { name: 'message', plural: 'messages', pattern: 'Base' },
     fields: {
       conversation_id: { type: 'uuid', required: true },
       sequence: { type: 'integer', required: true },
@@ -301,14 +301,14 @@ describe('composite unique_indexes (#356)', () => {
 
 describe('field-level unique (#511)', () => {
   const seasonDef = (fields: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
-    entity: { name: 'season', plural: 'seasons', table: 'seasons', pattern: 'Base' },
+    entity: { name: 'season', plural: 'seasons', pattern: 'Base' },
     fields,
     relationships: {},
     behaviors: [],
     ...extra,
   });
   const fkDef = (fieldExtra: Record<string, unknown>) => ({
-    entity: { name: 'season', plural: 'seasons', table: 'seasons', pattern: 'Base' },
+    entity: { name: 'season', plural: 'seasons', pattern: 'Base' },
     fields: { account_id: { type: 'uuid', required: true, ...fieldExtra } },
     relationships: {
       account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' },
@@ -406,7 +406,7 @@ describe('field-level unique (#511)', () => {
  */
 describe('field-level foreign_key to a host-owned table (#636)', () => {
   const definition = {
-    entity: { name: 'note', plural: 'notes', table: 'notes', pattern: 'Base' },
+    entity: { name: 'note', plural: 'notes', pattern: 'Base' },
     fields: {
       tenant_id: { type: 'uuid', required: true, foreign_key: 'tenants.id', index: true },
       conversation_id: { type: 'uuid', required: true, foreign_key: 'conversations.id' },
@@ -470,7 +470,7 @@ describe('field-level foreign_key to a host-owned table (#636)', () => {
 
 describe('column nullability (#736, #613)', () => {
   const definition = {
-    entity: { name: 'stat_line', plural: 'stat_lines', table: 'stat_lines', pattern: 'Base' },
+    entity: { name: 'stat_line', plural: 'stat_lines', pattern: 'Base' },
     fields: {
       // The #736 repro: NOT NULL with a DB default, optional on create.
       pts: { type: 'integer', required: false, nullable: false, default: 0 },
@@ -513,7 +513,7 @@ describe('column nullability (#736, #613)', () => {
 
   it('a belongs_to FK declared nullable: false with a default is NOT NULL', () => {
     const { output } = render({
-      entity: { name: 'note', plural: 'notes', table: 'notes', pattern: 'Base' },
+      entity: { name: 'note', plural: 'notes', pattern: 'Base' },
       fields: {
         conversation_id: {
           type: 'uuid',
@@ -537,7 +537,7 @@ describe('column nullability (#736, #613)', () => {
 
 describe('unique_indexes shapes (#784)', () => {
   const msgDef = (unique_indexes: unknown[], extra: Record<string, unknown> = {}) => ({
-    entity: { name: 'message', plural: 'messages', table: 'messages', pattern: 'Base' },
+    entity: { name: 'message', plural: 'messages', pattern: 'Base' },
     fields: {
       conversation_id: { type: 'uuid', required: true },
       sequence: { type: 'integer', required: true },
@@ -676,7 +676,7 @@ describe('unique_indexes shapes (#784)', () => {
 
   it('tableColumns equals the rendered pgTable column block', () => {
     const def = {
-      entity: { name: 'lead', plural: 'leads', table: 'leads', pattern: 'Integrated' },
+      entity: { name: 'lead', plural: 'leads', pattern: 'Integrated' },
       fields: {
         account_id: { type: 'uuid', required: true },
         owner_ref: { type: 'uuid', foreign_key: 'accounts.id' },
@@ -704,7 +704,7 @@ describe('unique_indexes shapes (#784)', () => {
 describe('timestamptz columns (#796)', () => {
   const TZ = "{ withTimezone: true, mode: 'date' }";
   const definition = {
-    entity: { name: 'appointment', plural: 'appointments', table: 'appointments', pattern: 'Base' },
+    entity: { name: 'appointment', plural: 'appointments', pattern: 'Base' },
     fields: {
       starts_at: { type: 'datetime', required: true },
       reminded_at: { type: 'datetime', default: 'now' },
