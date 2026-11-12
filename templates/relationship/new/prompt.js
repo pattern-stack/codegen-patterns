@@ -36,7 +36,12 @@ import {
   timezoneNotBoolean,
   timezoneOnNonDatetime,
 } from "../../../src/schema/field-timestamp.js";
-import { renderColumnDefault } from "../../entity/new/backend/entity-locals.js";
+import {
+  renderColumnDefault,
+  stringLengthBounds,
+  varcharColumn,
+  zodLengthChecks,
+} from "../../entity/new/backend/entity-locals.js";
 
 // ============================================================================
 // Naming Helpers (inlined to avoid import issues with Hygen)
@@ -149,6 +154,7 @@ const DRIZZLE_IMPORT_MAP = {
   date: "date",
   timestamp: "timestamp",
   jsonb: "jsonb",
+  varchar: "varchar",
 };
 
 const ZOD_TYPE_MAP = {
@@ -177,11 +183,14 @@ const TS_TYPE_MAP = {
 // Field Processing
 // ============================================================================
 
-function buildDrizzleChain(fieldName, field, drizzleType) {
-  // `datetime` is timestamptz unless `timezone: false` (#796).
+function buildDrizzleChain(fieldName, field, drizzleType, maxLength) {
+  // `datetime` is timestamptz unless `timezone: false` (#796); `max_length` is
+  // `varchar(n)` (#772) — the entity pipeline's rules.
   let chain = field.type === "datetime"
     ? timestampColumn(fieldName, fieldWithTimezone(field))
-    : `${drizzleType}('${fieldName}')`;
+    : drizzleType === "varchar"
+      ? varcharColumn(fieldName, maxLength)
+      : `${drizzleType}('${fieldName}')`;
   if (isArrayType(field.type)) chain += ".array()";
   // The entity pipeline's rule and default rendering (#736): a NOT NULL column
   // with a DB default must carry that default, or every insert omitting it fails.
@@ -215,16 +224,24 @@ function processFields(fields) {
     const choices = field.choices;
     const hasChoices = Array.isArray(choices) && choices.length > 0;
 
+    // Relationship `fields:` are not parsed by FieldDefinitionSchema, so its
+    // string-only refusal for the length keys is repeated here (#772).
+    for (const key of ["min_length", "max_length"]) {
+      if (field[key] !== undefined && type !== "string") {
+        throw new Error(`[codegen] relationship field '${fieldName}': '${key}' can only be used with type 'string'`);
+      }
+    }
     const elementType = ARRAY_ELEMENT_TYPE[type] ?? type;
     const isArray = isArrayType(type);
-    const drizzleType = DRIZZLE_TYPE_MAP[elementType] || "text";
+    const { minLength, maxLength } = stringLengthBounds(field, type, hasChoices);
+    const drizzleType = maxLength !== null ? "varchar" : DRIZZLE_TYPE_MAP[elementType] || "text";
     const elementTsType = hasChoices
       ? choices.map((c) => `'${c}'`).join(" | ")
       : TS_TYPE_MAP[elementType] || "unknown";
     const tsType = !isArray ? elementTsType : hasChoices ? `(${elementTsType})[]` : `${elementTsType}[]`;
     const zodType = zodValueFor({ type, hasChoices, choices });
 
-    const drizzleChain = buildDrizzleChain(fieldName, field, drizzleType);
+    const drizzleChain = buildDrizzleChain(fieldName, field, drizzleType, maxLength);
     const enumName = hasChoices ? camelCase(fieldName) + "Enum" : null;
 
     processed.push({
@@ -243,6 +260,8 @@ function processFields(fields) {
       hasChoices,
       enumName,
       isArray,
+      minLength,
+      maxLength,
       foreignKey: field.foreign_key,
     });
   }
@@ -261,6 +280,7 @@ function zodChainForCreate(field) {
   // this function for the rationale (nullable-and-optional fields must get both
   // `.nullable()` and `.optional()`, not just `.nullable()`).
   let base = zodValueFor({ type, hasChoices, choices });
+  base += zodLengthChecks(field);
   if (type === "boolean" && hasDefault) {
     base += `.default(${field.default ?? false})`;
     return base;

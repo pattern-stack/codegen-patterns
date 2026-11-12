@@ -293,6 +293,16 @@ export const FieldDefinitionSchema = BaseFieldSchema.merge(UiMetadataSchema)
     },
   )
   .refine(
+    (data) =>
+      data.min_length === undefined ||
+      data.max_length === undefined ||
+      data.min_length <= data.max_length,
+    {
+      message: "'min_length' cannot exceed 'max_length': no value could satisfy both",
+      path: ["min_length"],
+    },
+  )
+  .refine(
     (data) => {
       if (
         data.min !== undefined &&

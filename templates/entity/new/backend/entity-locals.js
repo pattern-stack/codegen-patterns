@@ -436,9 +436,35 @@ const EXTERNAL_ID_TRACKING_FIELDS = new Set([
 // ============================================================================
 
 /**
+ * A `string` field's length bounds (#772) — the one rule every pipeline that
+ * renders a field column reads (entity, junction payload via `processFields`,
+ * relationship `fields:`). `maxLength` makes the column `varchar(n)` instead of
+ * `text`; both bounds check the create DTO (and the update DTO, its
+ * `.partial()`). The schema accepts the keys on `type: string` only; an enum's
+ * values bound it already, so `choices:` leaves both null.
+ */
+export function stringLengthBounds(field, type, hasChoices) {
+  if (type !== 'string' || hasChoices) return { minLength: null, maxLength: null };
+  return {
+    minLength: Number.isInteger(field.min_length) ? field.min_length : null,
+    maxLength: Number.isInteger(field.max_length) ? field.max_length : null,
+  };
+}
+
+/** The `varchar(n)` column a `max_length` string field is (#772). */
+export function varcharColumn(fieldName, maxLength) {
+  return `varchar('${fieldName}', { length: ${maxLength} })`;
+}
+
+/** The Zod checks a field's length bounds add to its write-DTO value (#772). */
+export function zodLengthChecks({ minLength, maxLength }) {
+  return (minLength != null ? `.min(${minLength})` : '') + (maxLength != null ? `.max(${maxLength})` : '');
+}
+
+/**
  * Build a Drizzle column chain for a field
  */
-function buildDrizzleChain(fieldName, field, drizzleType, enumName) {
+function buildDrizzleChain(fieldName, field, drizzleType, enumName, maxLength) {
   const hasDefault = hasColumnDefault(field);
 
   // Drizzle's `date('x')` returns the PgDateString builder by default
@@ -452,9 +478,7 @@ function buildDrizzleChain(fieldName, field, drizzleType, enumName) {
     // The column name argument keeps the snake_case YAML field name.
     chain = `${enumName}('${fieldName}')`;
   } else if (drizzleType === 'varchar') {
-    // `max_length` on a string field (#772): `varchar(n)`, the DB half of the
-    // constraint the create DTO's `.max(n)` enforces.
-    chain = `varchar('${fieldName}', { length: ${field.max_length} })`;
+    chain = varcharColumn(fieldName, maxLength);
   } else if (drizzleType === 'date') {
     chain = `${drizzleType}('${fieldName}', { mode: 'date' })`;
   } else if (field.type === 'datetime') {
@@ -555,10 +579,7 @@ export function processFields(fields, entityName = '') {
     // generated `InferSelectModel` type narrows to the literal union
     // instead of falling back to `string`.
     const elementType = ARRAY_ELEMENT_TYPE[type] ?? type;
-    // `max_length` (schema: `type: string` only) bounds the column and the
-    // create/update DTOs (#772). An enum's values bound it already.
-    const maxLength =
-      type === 'string' && !hasChoices && Number.isInteger(field.max_length) ? field.max_length : null;
+    const { minLength, maxLength } = stringLengthBounds(field, type, hasChoices);
     const drizzleType = hasChoices
       ? 'enum'
       : maxLength !== null
@@ -580,7 +601,7 @@ export function processFields(fields, entityName = '') {
       : (hasChoices ? `(${elementTsType})[]` : `${elementTsType}[]`);
     const zodType = zodValueFor({ type, hasChoices, choices });
 
-    const drizzleChain = buildDrizzleChain(fieldName, field, drizzleType, enumName);
+    const drizzleChain = buildDrizzleChain(fieldName, field, drizzleType, enumName, maxLength);
 
     processed.push({
       name: fieldName,
@@ -598,6 +619,7 @@ export function processFields(fields, entityName = '') {
       hasChoices,
       enumName,
       enumDbName,
+      minLength,
       maxLength,
     });
   }
@@ -1193,9 +1215,10 @@ function zodChainForCreate(field) {
   // to send an explicit `null` for every optional column (e.g. POST /accounts
   // rejecting a body that omits `domain`/`industry`).
   let base = zodValueFor({ type, hasChoices, choices });
-  // #772: the write contract carries the column's bound (the update DTO is the
-  // create schema's `.partial()`, so it inherits it). Reads are not re-checked.
-  if (field.maxLength != null) base += `.max(${field.maxLength})`;
+  // #772: the write contract carries the field's length bounds (the update DTO
+  // is the create schema's `.partial()`, so it inherits them). Reads are not
+  // re-checked.
+  base += zodLengthChecks(field);
 
   if (type === 'boolean' && hasDefault) {
     // `.default()` already makes the input optional in Zod.
