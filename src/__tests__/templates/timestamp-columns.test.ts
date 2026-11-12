@@ -30,13 +30,13 @@ afterEach(() => {
 	for (const d of tmpDirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
 
-function project(): string {
+function project(config = ''): string {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'timestamp-cols-'));
 	tmpDirs.push(dir);
 	fs.mkdirSync(path.join(dir, 'entities'));
 	fs.writeFileSync(path.join(dir, 'entities', 'player.yaml'), 'entity:\n  name: player\n  plural: players\n');
 	fs.writeFileSync(path.join(dir, 'entities', 'team.yaml'), 'entity:\n  name: team\n  plural: teams\n');
-	fs.writeFileSync(path.join(dir, 'codegen.config.yaml'), '');
+	fs.writeFileSync(path.join(dir, 'codegen.config.yaml'), config);
 	return dir;
 }
 
@@ -50,8 +50,8 @@ async function inProject<T>(dir: string, fn: () => Promise<T>): Promise<T> {
 	}
 }
 
-async function junctionLocals(fieldsYaml: string): Promise<Record<string, any>> {
-	const dir = project();
+async function junctionLocals(fieldsYaml: string, config = ''): Promise<Record<string, any>> {
+	const dir = project(config);
 	const file = path.join(dir, 'junction.yaml');
 	fs.writeFileSync(
 		file,
@@ -60,8 +60,8 @@ async function junctionLocals(fieldsYaml: string): Promise<Record<string, any>> 
 	return inProject(dir, async () => (await junctionPrompt.prompt({ args: { yaml: file } })) as Record<string, any>);
 }
 
-async function relationshipLocals(fieldsYaml: string): Promise<Record<string, any>> {
-	const dir = project();
+async function relationshipLocals(fieldsYaml: string, config = ''): Promise<Record<string, any>> {
+	const dir = project(config);
 	const file = path.join(dir, 'def.yaml');
 	fs.writeFileSync(
 		file,
@@ -127,4 +127,36 @@ describe('non-boolean timezone: is refused (#796)', () => {
 			);
 		});
 	}
+});
+
+describe('generated time columns follow the project behaviors.timezone (#845)', () => {
+	const NAIVE = 'behaviors:\n  timezone: false\n';
+	const FIELD = '  opens_at:\n    type: datetime\n';
+
+	it('junction: created_at / updated_at and started_at / ended_at / matched_at go naive; a declared field keeps its own', async () => {
+		const out = render('junction', await junctionLocals(FIELD, NAIVE));
+		for (const col of ['created_at', 'updated_at', 'started_at', 'ended_at', 'matched_at']) {
+			expect(out).toContain(`timestamp('${col}')`);
+		}
+		expect(out).toContain(`opensAt: timestamp('opens_at', ${TZ}),`);
+	});
+
+	it('relationship: created_at / updated_at go naive; a declared field keeps its own', async () => {
+		const out = render('relationship', await relationshipLocals(FIELD, NAIVE));
+		expect(out).toContain("timestamp('created_at').notNull().defaultNow()");
+		expect(out).toContain("timestamp('updated_at').notNull().defaultNow()");
+		expect(out).toContain(`opensAt: timestamp('opens_at', ${TZ}),`);
+	});
+
+	it('the default stays timestamptz', async () => {
+		const junction = render('junction', await junctionLocals(FIELD));
+		for (const col of ['created_at', 'updated_at', 'started_at', 'ended_at', 'matched_at']) {
+			expect(junction).toContain(`timestamp('${col}', ${TZ})`);
+		}
+		const relationship = render('relationship', await relationshipLocals(FIELD));
+		for (const col of ['created_at', 'updated_at']) {
+			expect(relationship).toContain(`timestamp('${col}', ${TZ})`);
+		}
+		expect(`${junction}\n${relationship}`).not.toMatch(/timestamp\('[a-z_]+'\)/);
+	});
 });

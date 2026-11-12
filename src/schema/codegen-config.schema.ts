@@ -466,7 +466,8 @@ export type TablesConfig = z.infer<typeof TablesConfigSchema>;
  *   (`created_at`, `updated_at`, `deleted_at`) are `timestamp with time zone`.
  *   `false` makes them `timestamp without time zone`, for a host whose columns
  *   are naive and hold UTC. A behavior's own `options: { timezone }` in an
- *   entity's `behaviors:` list overrides it. The rule lives in one place,
+ *   entity's `behaviors:` list overrides it. Junction and relationship tables
+ *   follow it too, for every time column they emit themselves. The rule lives in one place,
  *   `behaviorWithTimezone` in `src/schema/field-timestamp.ts`.
  *
  * `.strict()` — an unknown key under `behaviors:` is an error naming it.

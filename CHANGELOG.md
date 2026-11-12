@@ -49,6 +49,13 @@ All notable changes to this project will be documented in this file.
   TimeZone's wall time — keep sessions at UTC; the generated repositories never rely on it (the
   integration upserts now stamp `createdAt` on insert, as `create` already did). `behaviors:` in `codegen.config.yaml` is a live block
   again; the key ARCH-1 deleted, `behaviors.strategy`, is still an unknown-key error.
+- **Junction and relationship time columns follow `behaviors.timezone`.** The project setting now
+  also decides the time columns those templates emit on their own: `created_at` / `updated_at` on
+  both, and a junction's `started_at` / `ended_at` / `matched_at`. It uses the same rule,
+  `behaviorWithTimezone`, with no `behaviors:` list, so a host with naive junction timestamps no
+  longer gets the skew there. Declared `datetime` payload fields keep their own `timezone:`. Default
+  output is byte-identical. `timestampColumn` no longer defaults `withTimezone` to `true`: every
+  caller passes it, and a template call that drops it throws instead of silently emitting timestamptz.
 
 ### Changed
 

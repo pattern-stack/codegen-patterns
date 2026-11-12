@@ -20,7 +20,13 @@
  * declared naive; declared `withTimezone` it parses the offset-less string in
  * the PROCESS zone (a 4 h skew measured in America/New_York).
  *
- * The junction / relationship template time columns are always timestamptz.
+ * The time columns a junction or relationship template emits on its own
+ * (`created_at` / `updated_at`; a junction's `started_at` / `ended_at` /
+ * `matched_at`) follow the same rule with no `behaviors:` list — i.e. the
+ * project's `behaviors.timezone`. The setting means "this host's generated
+ * timestamps are naive UTC", so it holds for every time column codegen emits
+ * that the author did not declare as a field (a declared `datetime` field keeps
+ * its own `timezone:`).
  *
  * Readers: the entity schema (option validation), and the entity, junction and
  * relationship hygen prompts (imported as `src/schema/field-timestamp.js`).
@@ -103,8 +109,22 @@ export function behaviorTimezoneOptionError(
 	return null;
 }
 
-/** The Drizzle builder call for a timestamp column. The only place the options literal is written. */
-export function timestampColumn(column: string, withTimezone = true): string {
+/**
+ * The Drizzle builder call for a timestamp column. The only place the options literal is written.
+ *
+ * `withTimezone` is required and must be a boolean: every caller decides it
+ * (`fieldWithTimezone` / `behaviorWithTimezone`). The callers are EJS templates
+ * and untyped prompts, so a call that drops the argument would otherwise
+ * silently emit timestamptz whatever the project's `behaviors.timezone` says
+ * (CLAUDE.md gate rule (c)) — it throws instead.
+ */
+export function timestampColumn(column: string, withTimezone: boolean): string {
+	if (typeof withTimezone !== 'boolean') {
+		throw new Error(
+			`timestampColumn('${column}'): withTimezone must be true or false, got ${String(withTimezone)} — ` +
+				'the caller decides it (fieldWithTimezone / behaviorWithTimezone).',
+		);
+	}
 	return withTimezone
 		? `timestamp('${column}', { withTimezone: true, mode: 'date' })`
 		: `timestamp('${column}')`;

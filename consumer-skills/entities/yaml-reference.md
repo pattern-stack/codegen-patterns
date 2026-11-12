@@ -125,7 +125,8 @@ Type notes:
   your own code.
 - `datetime` vs `date` — timestamp vs date-only column. `datetime` is `timestamp with time zone`
   (#796), as are the `timestamps` / `soft_delete` columns (unless switched off — see `behaviors:`
-  below) and a junction or relationship's time columns. `timezone: false` (datetime only) keeps a wall-clock `timestamp without time zone`
+  below) and the time columns a junction or relationship emits itself (which follow the project's
+  `behaviors.timezone`). `timezone: false` (datetime only) keeps a wall-clock `timestamp without time zone`
   column, read through the `Date`'s UTC fields. With Electric sync, a `timezone: false` column
   arrives as a string unless `frontend.parsers.timestamp` is set, for example
   `(s) => new Date(s.replace(' ', 'T') + 'Z')`. Upgrading with `drizzle-kit push`: set the database's default
@@ -174,6 +175,12 @@ keep sessions at UTC. With Electric sync, a switched-off behavior column is a `t
 like a `timezone: false` field, so it arrives as a string unless `frontend.parsers.timestamp` is set
 (see `datetime` above). `timezone` is accepted only on `timestamps` and
 `soft_delete`, and only as `true` / `false`.
+
+The project setting means "this host's generated timestamps are naive UTC", so it also covers every
+time column a junction or relationship table emits on its own: `created_at` / `updated_at`, and a
+junction's `started_at` / `ended_at` / `matched_at`. Those tables have no `behaviors:` list, so the
+project value decides; there is no per-junction knob. A `datetime` field you declare keeps its own
+`timezone:`.
 
 ## `relationships:` — foreign keys + typed accessors
 

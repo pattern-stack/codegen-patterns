@@ -85,6 +85,7 @@ function localsFor({ hasRole }: { hasRole: boolean }): Record<string, unknown> {
     hasCustomFields: false,
     processedCustomFields: [],
     timestampColumn,
+    generatedTimeWithTimezone: true,
     drizzleImports,
     classNames: { entity: 'OpportunityContact' },
   };

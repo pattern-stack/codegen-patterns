@@ -25,10 +25,13 @@ describe('field-timestamp rule (#796)', () => {
 	});
 
 	it('timestampColumn', () => {
-		expect(timestampColumn('created_at')).toBe(
+		expect(timestampColumn('created_at', true)).toBe(
 			"timestamp('created_at', { withTimezone: true, mode: 'date' })",
 		);
 		expect(timestampColumn('opens_at', false)).toBe("timestamp('opens_at')");
+		// No silent timestamptz default: a template call that drops the argument fails loudly (#845).
+		expect(() => (timestampColumn as (c: string, tz?: unknown) => string)('created_at')).toThrow(/withTimezone/);
+		expect(() => (timestampColumn as (c: string, tz?: unknown) => string)('created_at', 'yes')).toThrow(/withTimezone/);
 	});
 
 	const entityWith = (field: Record<string, unknown>) => ({
