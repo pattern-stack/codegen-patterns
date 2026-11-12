@@ -12,6 +12,9 @@ export const DealStateOutputSchema = z.object({
   color: z.string().nullable(),
   weight: z.number().int(),
   description: z.string().nullable(),
+  metadata: z.unknown().nullable(),
 });
 
-export type DealStateOutputDto = z.infer<typeof DealStateOutputSchema>;
+// `Required<…>`: Zod 3 infers a `json` (`z.unknown()`) key as optional; the row
+// has it required. Every other key here is required already.
+export type DealStateOutputDto = globalThis.Required<z.infer<typeof DealStateOutputSchema>>;

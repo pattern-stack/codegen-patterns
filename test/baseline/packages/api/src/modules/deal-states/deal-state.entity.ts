@@ -2,6 +2,7 @@
 import {
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -26,6 +27,7 @@ export const deal_states = pgTable(
     color: text('color'),
     weight: integer('weight').notNull().default(0),
     description: text('description'),
+    metadata: jsonb('metadata'),
   },
   (t) => [
     index('deal_states_tenant_id_idx').on(t.tenantId),

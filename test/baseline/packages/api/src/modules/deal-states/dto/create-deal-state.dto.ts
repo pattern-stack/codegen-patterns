@@ -11,6 +11,7 @@ export const CreateDealStateSchema = z.object({
   color: z.string().nullable().optional(),
   weight: z.number().int().optional(),
   description: z.string().nullable().optional(),
+  metadata: z.unknown().nullable().optional(),
 });
 
 export type CreateDealStateDto = z.infer<typeof CreateDealStateSchema>;

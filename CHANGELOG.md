@@ -89,6 +89,15 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **`<Entity>OutputDto` has a `json` column's key required, as on the row (#851).**
+  Zod 3 infers an object key whose type admits `undefined` as optional, and `z.unknown()` does, so
+  the DTO had `data?: unknown` while every Drizzle read has `data: unknown`. No Zod 3 schema of type
+  `unknown` infers a required key, so the exported type is now `Required<z.infer<…>>`. That is
+  exact, because every output key is required by construction. It's emitted only for an entity
+  with a `json` output field, so other DTOs are byte-identical. The schema itself is unchanged; a
+  `.pick()` of it still infers the key optional. The baseline gate now asserts
+  `OutputDto ≡ Pick<Row, keyof OutputDto>`, with no key the row lacks, for every baseline entity
+  (`test/baseline-type-assertions.ts`).
 - **A to-one include onto a soft-deleted or user-tracked target is typed nullable (#850).** REL-1 set `optional: false` for a NOT NULL FK, but REL-2's hop `where` drops a deleted (or
   another user's) target, so the include was `null` at runtime while the type said `T`. The
   relations manifest and the frontend graph descriptor now emit `optional: true` for such an edge
