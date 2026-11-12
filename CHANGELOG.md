@@ -89,6 +89,12 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **`entity validate` no longer reports an FK column the generator emits as missing (#743).**
+  `missing_fk_field` is gone. A `belongs_to` (or `cardinality: one` role) writes its own column,
+  so a matching field is optional; declaring one is how you set `required` / `index`.
+  `missing_target_fk` (on a `has_many` / `has_one`) now also counts the target's own `belongs_to`
+  FK (custom `foreign_key:` and role-derived ones included) and its tenant column as present.
+  `entity validate --strict` passes on projects that declare cardinality-one roles.
 - **`<Entity>OutputDto` has a `json` column's key required, as on the row (#851).**
   Zod 3 infers an object key whose type admits `undefined` as optional, and `z.unknown()` does, so
   the DTO had `data?: unknown` while every Drizzle read has `data: unknown`. No Zod 3 schema of type

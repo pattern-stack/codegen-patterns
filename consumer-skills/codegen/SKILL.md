@@ -161,6 +161,19 @@ codegen skills install             # (re)vendor these consumer skills into .clau
 codegen skills list
 ```
 
+**Junctions need their own command.** `entity new --all` renders each parent's junction fan-out
+(`attach…` / `…List` on the parent service), but it does **not** write the junction modules
+themselves (entity, repository, service, module; `between: [deal, contact]` lands in
+`<modules_dir>/deal-contacts/`). Run `codegen junction new --all` as well, in either order. It
+writes the junction modules, re-renders both parents and regenerates the barrels and relations
+manifest, so the two commands together are idempotent. Each refuses to run over uncommitted
+generated output without `--force`, and the first command's output is exactly that, so a
+regenerate script passes `--force` to both:
+
+```bash
+codegen entity new --all --force && codegen junction new --all --force
+```
+
 ## Non-obvious rules
 
 - **`codegen.config.yaml` is validated strictly.** An unknown or removed key (a

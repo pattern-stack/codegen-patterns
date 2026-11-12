@@ -81,7 +81,9 @@ out). The parent's **own** backend `service.ejs.t` / `module.ejs.t` render it fr
 `junctionFanOut`); nothing injects into a parent. `junction new` writes the junction's own files and then re-renders
 both endpoints through `entity new`'s per-target path (`src/cli/shared/entity-render.ts`: `preflightEntityTargets` +
 `renderEntityTargets`, no post-steps). So `entity new` ↔ `junction new` in any order, any number of times, give the
-same bytes; deleting a junction YAML drops its fan-out on the next `entity new`. The junctions directory is
+same bytes; deleting a junction YAML drops its fan-out on the next `entity new`. `entity new` does **not** write
+the junction's own modules — only `junction new` does — so a consumer regenerating everything runs both (the
+consumer skill says so). The junctions directory is
 `<cwd>/junctions` (`src/config/junctions-dir.ts`, shipped — no config key); `junction new` rejects a target outside it
 (the parents would never see it). The name + plural rule is `src/config/junction-naming.ts` (shipped; schema, roles,
 barrels and the template helper all read it). There are no `_inject-` templates left.
