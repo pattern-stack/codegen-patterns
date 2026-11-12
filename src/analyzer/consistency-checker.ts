@@ -28,7 +28,7 @@ export function checkConsistency(
 	// Check each entity
 	for (const [name, entity] of graph.entities) {
 		issues.push(...checkEntityConsistency(entity));
-		issues.push(...checkRelationshipConsistency(entity, graph));
+		issues.push(...checkRelationshipConsistency(entity, graph, tenancyColumn));
 		issues.push(...checkNamingConventions(entity));
 		issues.push(...checkMissingIndexes(entity));
 		issues.push(...checkUiMetadata(entity, tenancyColumn));
@@ -84,11 +84,32 @@ function checkEntityConsistency(entity: ParsedEntity): AnalysisIssue[] {
 }
 
 /**
+ * Whether the target's table carries `column` for an inverse `has_many` /
+ * `has_one` to point at (#743). The generator emits it from any of three
+ * owners, each read here through the value that owner produced, not
+ * re-derived:
+ *   - a declared field;
+ *   - the FK of one of the target's `belongs_to` edges — including the ones a
+ *     `cardinality: one` role derives, whose `foreignKey` the parser took from
+ *     `roleForeignKey` (so a custom `column:` / `foreign_key:` is honoured);
+ *   - the target's tenant column (`tenantColumnName`, #791), which the tenant
+ *     block emits when no field or belongs_to adopts it.
+ */
+function emitsFkColumn(target: ParsedEntity, column: string, tenancyColumn: string): boolean {
+	if (target.fields.has(column)) return true;
+	for (const r of target.relationships.values()) {
+		if (r.type === 'belongs_to' && r.foreignKey === column) return true;
+	}
+	return tenantColumnName(target.tenantScoped, tenancyColumn) === column;
+}
+
+/**
  * Check relationship consistency
  */
 function checkRelationshipConsistency(
 	entity: ParsedEntity,
-	graph: DomainGraph
+	graph: DomainGraph,
+	tenancyColumn: string,
 ): AnalysisIssue[] {
 	const issues: AnalysisIssue[] = [];
 
@@ -96,20 +117,13 @@ function checkRelationshipConsistency(
 		// No "missing FK field" check on a belongs_to: the relationship (or the
 		// role deriving it) EMITS its FK column, so a matching field is optional
 		// — declaring one is how an author sets `required` / `index` on it
-		// (#743; dealbrain dogfood #13).
+		// (#743).
 
 		// Check for has_many relationships - target should have the FK field
 		if (rel.type === 'has_many' || rel.type === 'has_one') {
 			const targetEntity = graph.entities.get(rel.target);
 			if (targetEntity) {
-				// The target's column exists if it is a field OR the FK of one of
-				// the target's own belongs_to edges (which emit it).
-				const targetHasFk =
-					targetEntity.fields.has(rel.foreignKey) ||
-					[...targetEntity.relationships.values()].some(
-						(r) => r.type === 'belongs_to' && r.foreignKey === rel.foreignKey,
-					);
-				if (!targetHasFk) {
+				if (!emitsFkColumn(targetEntity, rel.foreignKey, tenancyColumn)) {
 					issues.push({
 						severity: 'warning',
 						type: 'missing_target_fk',

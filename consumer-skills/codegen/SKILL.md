@@ -163,10 +163,12 @@ codegen skills list
 
 **Junctions need their own command.** `entity new --all` renders each parent's junction fan-out
 (`attach…` / `…List` on the parent service), but it does **not** write the junction modules
-themselves (entity, repository, service, module under `<modules_dir>/<a>-<bs>/`). Run
-`codegen junction new --all` as well, in either order. It writes the junction modules and
-re-renders both parents, so the two commands together are idempotent. A regenerate script runs
-both:
+themselves (entity, repository, service, module; `between: [deal, contact]` lands in
+`<modules_dir>/deal-contacts/`). Run `codegen junction new --all` as well, in either order. It
+writes the junction modules, re-renders both parents and regenerates the barrels and relations
+manifest, so the two commands together are idempotent. Each refuses to run over uncommitted
+generated output without `--force`, and the first command's output is exactly that, so a
+regenerate script passes `--force` to both:
 
 ```bash
 codegen entity new --all --force && codegen junction new --all --force
