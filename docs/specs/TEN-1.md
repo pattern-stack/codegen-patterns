@@ -143,6 +143,9 @@ Recorded here and folded into a dated ADR revision note in the implementing PR (
 
 ### 1. The ALS — `runtime/base-classes/tenant-context.ts`
 
+*Revision 2026-11-11 (#853):* `userId` and `organizationId` are now optional; a tenant-only boundary writes
+`withRequester({ tenantId }, fn)`. See the ADR-042 revision note and `MissingUserIdError`.
+
 ```ts
 export interface RequesterContext {
   readonly userId: string;

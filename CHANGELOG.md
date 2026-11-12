@@ -98,6 +98,8 @@ All notable changes to this project will be documented in this file.
   Only the user axis reads `userId`. A `user_tracking` repository in `'user'` scope throws the new
   `MissingUserIdError` under `strict` when it is absent, and applies no user filter under `lenient`.
   Type change: code that reads `requester.userId` now sees `string | undefined`.
+  `AuthenticatedGuard` passes a route only when the ambient context carries a `userId`, so a
+  tenant-only context does not authenticate an HTTP request.
 - **`entity validate` no longer reports an FK column the generator emits as missing (#743).**
   `missing_fk_field` is gone. A `belongs_to` (or `cardinality: one` role) writes its own column,
   so a matching field is optional; declaring one is how you set `required` / `index`.

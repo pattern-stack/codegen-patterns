@@ -76,6 +76,8 @@ export class AuthenticatedGuard implements CanActivate {
 }
 ```
 
+*Revision 2026-11-11 (#853):* `RequesterContext.userId` became optional so a tenant-only boundary (a job, a webhook) need not invent a user. "A context exists" therefore no longer implies "a principal was resolved", so the guard now passes only when the ambient context carries a `userId` (`tryGetRequester()?.userId`). The boundary middleware already discarded a resolved context without one; a tenant-only context set anywhere else does not authenticate a route.
+
 ```ts
 // runtime/subsystems/auth/guards/public.decorator.ts  (new)
 import { SetMetadata } from '@nestjs/common';

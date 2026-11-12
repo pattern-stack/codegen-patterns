@@ -46,8 +46,10 @@ export class AuthenticatedGuard implements CanActivate {
     ]);
     if (isPublic) return true;
     // The boundary middleware ran withRequester(...) iff IUserContext resolved
-    // a verified principal. No ambient context here == no authenticated caller.
-    if (tryGetRequester()) return true;
+    // a verified principal, and it never establishes one without a userId. A
+    // context with no userId is a tenant-only boundary (#853), not a caller:
+    // it does not authenticate the route.
+    if (tryGetRequester()?.userId) return true;
     throw new UnauthorizedException();
   }
 }
