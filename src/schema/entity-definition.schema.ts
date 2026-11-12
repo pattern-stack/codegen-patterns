@@ -4,7 +4,12 @@ import { TABLE_NAME_IS_NOT_A_KEY, TABLE_NAME_PATTERN, TABLE_PREFIX_PATTERN } fro
 import { reservedGlobalFor, reservedNameMessage } from "./reserved-entity-names.js";
 import { roleForeignKey } from "../roles/derive.js";
 import { NOT_NULL_WITHOUT_DEFAULT_MESSAGE, notNullWithoutDefault } from "./field-nullability.js";
-import { TIMEZONE_ON_NON_DATETIME_MESSAGE, timezoneOnNonDatetime } from "./field-timestamp.js";
+import {
+  TIMEZONE_ON_NON_DATETIME_MESSAGE,
+  behaviorTimezoneOptionError,
+  timezoneOnNonDatetime,
+} from "./field-timestamp.js";
+import { timestampBehaviorNames } from "../behaviors/index.js";
 import { DetectionConfigSchema } from "../../runtime/subsystems/integration";
 
 /**
@@ -604,14 +609,26 @@ export type RolesBlock = z.infer<typeof RolesSchema>;
  * - user_tracking: Adds created_by, updated_by fields
  * - temporal_validity: Adds valid_from, valid_to, is_active fields
  *   with deactivate() method and validity-aware query filtering
+ *
+ * `options: { timezone: false }` on a behavior that emits a timestamp column
+ * (`timestamps`, `soft_delete`) makes its columns `timestamp without time zone`
+ * for this entity, overriding the project's `behaviors.timezone`. The rule is
+ * `behaviorWithTimezone` in `src/schema/field-timestamp.ts`.
  */
-const BehaviorConfigSchema = z.union([
-  z.string(),
-  z.object({
-    name: z.string(),
-    options: z.record(z.unknown()).optional(),
-  }),
-]);
+const BehaviorConfigSchema = z
+  .union([
+    z.string(),
+    z.object({
+      name: z.string(),
+      options: z.record(z.unknown()).optional(),
+    }),
+  ])
+  .superRefine((declaration, ctx) => {
+    const message = behaviorTimezoneOptionError(declaration, timestampBehaviorNames());
+    if (message !== null) {
+      ctx.addIssue({ code: "custom", path: ["options", "timezone"], message });
+    }
+  });
 
 export type BehaviorConfig = z.infer<typeof BehaviorConfigSchema>;
 

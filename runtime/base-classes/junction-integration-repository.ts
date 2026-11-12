@@ -79,7 +79,9 @@ export abstract class JunctionIntegrationRepository<
         [cfg.left.column]: leftId,
         [cfg.right.column]: rightId,
         ...(cfg.roleColumn ? { [cfg.roleColumn]: role } : {}),
-        ...(this.behaviors.timestamps ? { updatedAt: now } : {}),
+        // Stamped, not left to `DEFAULT now()` (session-zone wall time on a naive
+        // column, #845); not in `set`, so a conflicting row keeps its value.
+        ...(this.behaviors.timestamps ? { createdAt: now, updatedAt: now } : {}),
       };
       const target = cfg.roleColumn
         ? [this.col(cfg.left.column), this.col(cfg.right.column), this.col(cfg.roleColumn)]

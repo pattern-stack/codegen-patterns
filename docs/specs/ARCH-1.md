@@ -103,3 +103,10 @@ and the two-pass generation still typechecks with only the named #680 expectatio
 - **#696** (filed): `src/schema/generate-json-schema.ts` cannot run. It calls `z.toJSONSchema`, a zod 4 API, and the
   repo pins zod 3, so `src/schema/entity-definition.schema.json` cannot be regenerated from its source of truth and
   nothing in CI notices the drift. The three deleted entity keys were removed from the committed JSON by hand.
+
+## Revision — 2026-11-11 (#845, #796 follow-up)
+
+`behaviors:` is a live `codegen.config.yaml` block again, with a different shape: `behaviors: { timezone }`, the
+project default for whether the `timestamps` / `soft_delete` columns are `timestamp with time zone`. The deleted
+`behaviors.strategy` is still an unknown-key error, now one level down (`behaviors.strategy: unknown key`), and the
+`path-defaults.test.ts` case asserts that instead. Nothing of the deleted `behaviorStrategy` machinery came back.

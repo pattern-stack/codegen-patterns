@@ -455,6 +455,32 @@ export const TablesConfigSchema = z
 export type TablesConfig = z.infer<typeof TablesConfigSchema>;
 
 // ============================================================================
+// Behaviors (#845, #796 follow-up)
+// ============================================================================
+
+/**
+ * The `behaviors:` block — project defaults for the columns entity behaviors
+ * emit.
+ *
+ * - `timezone` — default `true`: the `timestamps` / `soft_delete` columns
+ *   (`created_at`, `updated_at`, `deleted_at`) are `timestamp with time zone`.
+ *   `false` makes them `timestamp without time zone`, for a host whose columns
+ *   are naive and hold UTC. A behavior's own `options: { timezone }` in an
+ *   entity's `behaviors:` list overrides it. The rule lives in one place,
+ *   `behaviorWithTimezone` in `src/schema/field-timestamp.ts`.
+ *
+ * `.strict()` — an unknown key under `behaviors:` is an error naming it.
+ */
+export const BehaviorsConfigSchema = z
+  .object({
+    timezone: z.boolean().default(true),
+  })
+  .strict()
+  .default({});
+
+export type BehaviorsConfig = z.infer<typeof BehaviorsConfigSchema>;
+
+// ============================================================================
 // Locations (path + import pairs — the frontend emitter's roots)
 // ============================================================================
 
@@ -780,6 +806,7 @@ export const CodegenConfigObjectSchema = z
     auth: AuthConfigSchema,
     tenancy: TenancyConfigSchema,
     tables: TablesConfigSchema,
+    behaviors: BehaviorsConfigSchema,
     dev: DevConfigSchema.optional(),
     subsystems: SubsystemsConfigSchema.optional(),
     events: EventsConfigSchema.optional(),

@@ -16,6 +16,7 @@
  */
 import { entityLookupFrom } from '../../../templates/_shared/entity-naming.mjs';
 import { runtimeImportLocals } from '../../../src/config/runtime-mode.mjs';
+import { DEFAULT_CODEGEN_CONFIG } from '../../../src/config/project-config';
 
 const TARGETS = [
 	{ name: 'account', plural: 'accounts' },
@@ -27,6 +28,15 @@ const TARGETS = [
 	{ name: 'post', plural: 'posts' },
 	{ name: 'user', plural: 'users' },
 ];
+
+/**
+ * The locals prompt.js reads from the project's parsed `codegen.config.yaml`
+ * that `buildBackendLocals` requires. A test project has no file, so they are
+ * the schema's defaults (`DEFAULT_CODEGEN_CONFIG`) — no test spells a literal.
+ */
+export const PROJECT_CONFIG_LOCALS = Object.freeze({
+	behaviorsTimezone: DEFAULT_CODEGEN_CONFIG.behaviors.timezone,
+});
 
 /** The prompt-owned locals, then `base`, then the test entity lookup. */
 export function withEntities<T extends Record<string, unknown>>(
@@ -45,6 +55,7 @@ export function withEntities<T extends Record<string, unknown>>(
 		createEventType: null,
 		updateEventType: null,
 		deleteEventType: null,
+		...PROJECT_CONFIG_LOCALS,
 		...base,
 		entityLookup: entityLookupFrom(TARGETS),
 	};

@@ -409,6 +409,10 @@ export default {
       // own `table` / `table_prefix` are read inside the extension, through
       // the one rule (`src/config/table-naming.ts`).
       tablePrefix,
+      // #845 (#796 follow-up): the project default for whether behavior
+      // timestamp columns are timestamptz (`behaviors.timezone`). A behavior's
+      // own `options: { timezone }` overrides it inside the extension.
+      behaviorsTimezone: getProjectConfig().behaviors.timezone,
       // REL-2 (#587): the extension computes the relation-manifest and
       // api-includes specifiers RELATIVE to each module folder, so it needs the
       // same generated dir the emitters write into. Passed explicitly because

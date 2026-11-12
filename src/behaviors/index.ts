@@ -32,6 +32,16 @@ const behaviorRegistry = new Map<string, BehaviorDefinition>([
 ]);
 
 /**
+ * The behaviors that emit a timestamp column (`timestamps`, `soft_delete`) —
+ * the ones a `timezone` option applies to (`src/schema/field-timestamp.ts`).
+ */
+export function timestampBehaviorNames(): string[] {
+	return [...behaviorRegistry.values()]
+		.filter((b) => b.fields.some((f) => f.type === 'datetime'))
+		.map((b) => b.name);
+}
+
+/**
  * Get a behavior definition by name
  */
 export function getBehavior(name: string): BehaviorDefinition | undefined {

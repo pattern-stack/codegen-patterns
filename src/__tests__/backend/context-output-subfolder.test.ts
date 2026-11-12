@@ -15,6 +15,7 @@
 
 import { describe, it, expect } from 'bun:test';
 import { buildBackendLocals } from '../../../templates/entity/new/backend/entity-locals.js';
+import { PROJECT_CONFIG_LOCALS } from './_entity-lookup';
 
 const SRC = 'app/backend/src';
 
@@ -30,7 +31,7 @@ function localsFor(entityExtra: Record<string, unknown>) {
 		relationships: {},
 		behaviors: ['timestamps'],
 	};
-	return buildBackendLocals(definition, { modulesDir: `${SRC}/modules` });
+	return buildBackendLocals(definition, { ...PROJECT_CONFIG_LOCALS, modulesDir: `${SRC}/modules` });
 }
 
 describe('#403 backend — context nests module output paths', () => {

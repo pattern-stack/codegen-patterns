@@ -166,6 +166,11 @@ describe('IntegratedEntityRepository.integrationUpsertOne — FK resolution', ()
     // Identity columns never in set.
     expect(conflict.set.externalId).toBeUndefined();
     expect(conflict.set.provider).toBeUndefined();
+    // #845: createdAt is stamped (never left to a session-zone DEFAULT now())
+    // and stays out of `set`, so a conflicting row keeps its original value.
+    expect(values.createdAt).toBeInstanceOf(Date);
+    expect(values.createdAt).toBe(values.updatedAt);
+    expect('createdAt' in conflict.set).toBe(false);
   });
 
   it('leaves FK null and OMITS it from set when parent is unresolved (no-clobber)', async () => {

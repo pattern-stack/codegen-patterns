@@ -124,8 +124,8 @@ Type notes:
 - `json` — `jsonb`; typed as `Record<string, unknown>` unless you narrow it in
   your own code.
 - `datetime` vs `date` — timestamp vs date-only column. `datetime` is `timestamp with time zone`
-  (#796), as are the `timestamps` / `soft_delete` columns and a junction or relationship's time
-  columns. `timezone: false` (datetime only) keeps a wall-clock `timestamp without time zone`
+  (#796), as are the `timestamps` / `soft_delete` columns (unless switched off — see `behaviors:`
+  below) and a junction or relationship's time columns. `timezone: false` (datetime only) keeps a wall-clock `timestamp without time zone`
   column, read through the `Date`'s UTC fields. With Electric sync, a `timezone: false` column
   arrives as a string unless `frontend.parsers.timestamp` is set, for example
   `(s) => new Date(s.replace(' ', 'T') + 'Z')`. Upgrading with `drizzle-kit push`: set the database's default
@@ -145,6 +145,35 @@ behaviors:
 ```
 
 Behaviors compose — list any subset.
+
+**Behavior columns over a host's naive timestamps.** `timestamps` and `soft_delete` emit
+`timestamp with time zone`. When you adopt tables whose `created_at` / `updated_at` / `deleted_at`
+are `timestamp without time zone` holding UTC, switch them off — for the whole project in
+`codegen.config.yaml`, or per behavior on one entity (the entity wins):
+
+```yaml
+# codegen.config.yaml
+behaviors:
+  timezone: false          # default true
+
+# entity YAML
+behaviors:
+  - name: timestamps
+    options: { timezone: false }   # created_at / updated_at without time zone
+  - name: soft_delete
+    options: { timezone: true }    # override a project-level false
+```
+
+Why it matters: Drizzle parses a column by its *declared* type. Declared timestamptz, a naive
+column's offset-less text is read in the **process** time zone (a 4-hour skew measured in
+America/New_York); declared naive, it is read as UTC. With the knob off, values written through
+the generated repositories are stored as UTC wall time — every write path (create, update, soft
+delete, integration upserts) stamps the timestamp itself as a JS `Date`. A database-side
+`DEFAULT now()` (a raw `INSERT` that omits the column) is stored in the **session** TimeZone, so
+keep sessions at UTC. With Electric sync, a switched-off behavior column is a `timestamp` column
+like a `timezone: false` field, so it arrives as a string unless `frontend.parsers.timestamp` is set
+(see `datetime` above). `timezone` is accepted only on `timestamps` and
+`soft_delete`, and only as `true` / `false`.
 
 ## `relationships:` — foreign keys + typed accessors
 

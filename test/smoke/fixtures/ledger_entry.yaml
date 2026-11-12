@@ -1,0 +1,22 @@
+# Smoke fixture: ledger_entry (#845, #796 follow-up)
+#
+# An adopted host's table whose `created_at` / `updated_at` are `timestamp
+# without time zone` holding UTC. `options: { timezone: false }` on the
+# `timestamps` behavior emits them bare; `soft_delete` keeps the project default
+# (`behaviors.timezone`, true) and stays timestamptz. The smoke scan reads both
+# from this YAML through the generator's own rule, and `tsc` compiles the result.
+entity:
+  name: ledger_entry
+  plural: ledger_entries
+  pattern: Base
+
+fields:
+  memo:
+    type: string
+    required: true
+
+behaviors:
+  - name: timestamps
+    options:
+      timezone: false
+  - soft_delete

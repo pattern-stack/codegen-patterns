@@ -69,12 +69,20 @@ d('timestamptz columns under a non-UTC process and session (#796)', () => {
     expect(r.rows[0].TimeZone).toBe('Asia/Kolkata');
   });
 
-  test('T1: the DDL — only the declared opt-out is without time zone', async () => {
+  test('T1: the DDL — only the declared opt-outs are without time zone', async () => {
     const naive = await raw.query(
       `select table_name || '.' || column_name as col from information_schema.columns
         where table_schema = 'public' and data_type = 'timestamp without time zone'`,
     );
-    expect(naive.rows.map((r: any) => r.col)).toEqual(['appointments.opens_at']);
+    // The declared opt-outs: appointment's `timezone: false` field, and
+    // ledger_entry's timestamp behaviors switched off (#845,
+    // tests/behavior-timezone.test.ts).
+    expect(naive.rows.map((r: any) => r.col).sort()).toEqual([
+      'appointments.opens_at',
+      'ledger_entries.created_at',
+      'ledger_entries.deleted_at',
+      'ledger_entries.updated_at',
+    ]);
 
     const tz = await raw.query(
       `select table_name || '.' || column_name as col from information_schema.columns
