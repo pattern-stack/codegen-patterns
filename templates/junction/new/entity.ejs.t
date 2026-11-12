@@ -14,6 +14,9 @@ import { <%= leftTable %> } from '<%= leftEntityImportFromJunction %>';
 <%_ if (leftEntity !== rightEntity) { _%>
 import { <%= rightTable %> } from '<%= rightEntityImportFromJunction %>';
 <%_ } _%>
+<%_ payloadFkImports.forEach(imp => { _%>
+import { <%= imp.relatedTable %> } from '<%= imp.importPath %>';
+<%_ }) _%>
 
 // ============================================================================
 // Enums
@@ -28,7 +31,7 @@ export const <%= roleEnumName %> = pgEnum('<%= name %>_role', [
 <%_ } _%>
 <%_ processedCustomFields.filter(f => f.hasChoices).forEach(field => { _%>
 
-export const <%= field.enumName %> = pgEnum('<%= name %>_<%= field.name %>', [
+export const <%= field.enumName %> = pgEnum('<%= field.enumDbName %>', [
 <%_ field.choices.forEach(c => { _%>
   '<%= c %>',
 <%_ }) _%>
@@ -52,9 +55,11 @@ export const <%= tableVarName %> = pgTable(
     // below): the same pair with two different roles is two distinct rows.
     role: <%= roleEnumName %>('role').notNull(),
 <%_ } _%>
+<%_ if (isPrimary) { _%>
 
-    // BaseJunctionFields — is_primary is always emitted
+    // BaseJunctionFields — is_primary (`is_primary: false` opts out)
     isPrimary: boolean('is_primary').notNull().default(false),
+<%_ } _%>
 <%_ if (temporal) { _%>
 
     // Temporal window (temporal: true, default)
@@ -72,21 +77,15 @@ export const <%= tableVarName %> = pgTable(
 
     // Custom fields
 <%_ processedCustomFields.forEach(field => { _%>
-<%_ if (field.hasChoices) { _%>
-    <%= field.camelName %>: <%= field.enumName %>('<%= field.name %>')<%= field.isArray ? '.array()' : '' %>,
-<%_ } else if (field.columnCall) { _%>
-    <%= field.camelName %>: <%- field.columnCall %><%= field.isArray ? '.array()' : '' %>,
-<%_ } else if (field.drizzleType === 'uuid') { _%>
-    <%= field.camelName %>: uuid('<%= field.name %>'),
-<%_ } else { _%>
-    <%= field.camelName %>: <%= field.drizzleType %>('<%= field.name %>')<%= field.isArray ? '.array()' : '' %>,
-<%_ } _%>
+    <%= field.camelName %>: <%- field.drizzleChain %>,
 <%_ }) _%>
 <%_ } _%>
+<%_ if (timestamps) { _%>
 
     // Timestamps
     createdAt: <%- timestampColumn('created_at', generatedTimeWithTimezone) %>.notNull().defaultNow(),
     updatedAt: <%- timestampColumn('updated_at', generatedTimeWithTimezone) %>.notNull().defaultNow(),
+<%_ } _%>
   },
   (table) => [
 <%_ if (hasRole) { _%>
@@ -100,6 +99,9 @@ export const <%= tableVarName %> = pgTable(
     // Composite primary key on the two FK columns (Q4 resolution: no surrogate id)
     primaryKey({ columns: [table.<%= leftColumnCamel %>, table.<%= rightColumnCamel %>] }),
 <%_ } _%>
+<%_ payloadIndexes.forEach(ix => { _%>
+    <%- ix.expr.replace(/\bt\./g, 'table.') %>,
+<%_ }) _%>
   ],
 );
 

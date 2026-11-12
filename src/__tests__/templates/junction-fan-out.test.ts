@@ -220,6 +220,18 @@ describe('the parent templates render the fan-out', () => {
 		expect(svc.match(/import type \{ Person \} from '\.\.\/persons\/person\.entity';/g)).toHaveLength(1);
 	});
 
+	it('is_primary: false renders no <plural>SetPrimary; a required payload field makes link required', () => {
+		const optOut = render('service.ejs.t', localsFor(CREW, [{ ...CREW_PERSON, is_primary: false }]));
+		expect(optOut).not.toContain('SetPrimary');
+		expect(optOut).toContain('link?: CrewPersonLinkInput,');
+		const required = render(
+			'service.ejs.t',
+			localsFor(CREW, [{ ...CREW_PERSON, fields: { source: { type: 'string', required: true } } }]),
+		);
+		expect(required).toContain('personsSetPrimary(');
+		expect(required).toContain('link: CrewPersonLinkInput,');
+	});
+
 	it('re-rendering is byte-identical (no inject state)', () => {
 		const a = render('service.ejs.t', localsFor(CREW, [CREW_PERSON]));
 		const b = render('service.ejs.t', localsFor(CREW, [CREW_PERSON]));

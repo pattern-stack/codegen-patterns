@@ -100,9 +100,10 @@ describe('collectTimezoneOptOuts (#796)', () => {
 			'j.yaml': 'pattern: Junction\nbetween: [opportunity, contact]\n',
 			'jlean.yaml': 'pattern: Junction\nbetween: [opportunity, meeting]\ntemporal: false\nsourced: false\n',
 			'r.yaml': 'relationship:\n  name: r\n  table: r_tbl\n',
+			'jbare.yaml': 'pattern: Junction\nbetween: [opportunity, account]\ntemporal: false\nsourced: false\ntimestamps: false\n',
 		});
 		const p = (n: string) => path.join(dir, n);
-		const files = [p('j.yaml'), p('jlean.yaml'), p('r.yaml')];
+		const files = [p('j.yaml'), p('jlean.yaml'), p('r.yaml'), p('jbare.yaml')];
 		expect([...collectTimezoneOptOuts(files, '', true)]).toEqual([]);
 		expect([...collectTimezoneOptOuts(files, '', false)].sort()).toEqual([
 			'opportunity_contacts.created_at',

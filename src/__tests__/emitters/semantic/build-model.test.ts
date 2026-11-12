@@ -500,10 +500,17 @@ describe('junctions', () => {
 			expect(j.compositeKey).toEqual(['opportunity_id', 'contact_id', 'role']);
 		});
 
-		it('emits no role column for a role without choices — the template generates none (#690)', () => {
-			const j = junctionOf({ fields: { role: { type: 'enum', values: ['champion'] } } });
-			expect(j.fields.role).toBeUndefined();
+		it('emits a role without choices as an ordinary payload column, not part of the key', () => {
+			const j = junctionOf({ fields: { role: { type: 'string' } } });
+			expect(j.fields.role).toEqual({ key: 'role', type: 'string', column: 'role' });
 			expect(j.compositeKey).toEqual(['opportunity_id', 'contact_id']);
+		});
+
+		it('omits is_primary and the timestamps when the junction opts out of them', () => {
+			const j = junctionOf({ is_primary: false, timestamps: false });
+			expect(j.fields.is_primary).toBeUndefined();
+			expect(j.fields.created_at).toBeUndefined();
+			expect(j.fields.updated_at).toBeUndefined();
 		});
 
 		it('types payload fields the way the template types their columns', () => {

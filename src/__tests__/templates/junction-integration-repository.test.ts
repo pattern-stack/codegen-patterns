@@ -62,9 +62,7 @@ async function localsFromYaml(yaml: string): Promise<Record<string, unknown>> {
 const render = (locals: Record<string, unknown>) =>
   ejs.render(extractBody(REPO_TEMPLATE), locals, { rmWhitespace: false });
 
-// prompt.js reads `fields.role.choices` directly (the CLI normalizes YAML
-// `values:` → `choices:` upstream; invoking prompt.js in isolation we supply
-// `choices:` as the normalized shape).
+// The identity role is declared with `choices:` (`values:` is a schema error, #690).
 const ROLE_YAML = `pattern: Junction
 between: [opportunity, contact]
 fields:

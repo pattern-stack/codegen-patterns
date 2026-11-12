@@ -18,7 +18,7 @@ import { Command, Option } from 'clipanion';
 import type { CommandClass } from 'clipanion';
 
 import { loadEntityFromYaml, loadJunctionFromYaml } from '../../utils/yaml-loader.js';
-import { deriveJunctionName } from '../../schema/junction-definition.schema.js';
+import { deriveJunctionName, hasIdentityRole } from '../../schema/junction-definition.schema.js';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { invokeJunctionNew } from '../shared/hygen.js';
@@ -69,8 +69,7 @@ function summarizeJunctionFile(filePath: string): JunctionSummaryRow | null {
 	if (!result.success) return null;
 	const def = result.definition;
 	const name = deriveJunctionName(def);
-	const roleChoices = def.fields?.role?.choices;
-	const hasRole = Array.isArray(roleChoices) && roleChoices.length > 0;
+	const hasRole = hasIdentityRole(def.fields);
 	return {
 		name,
 		left: def.between[0],

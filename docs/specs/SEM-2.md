@@ -324,6 +324,8 @@ narrower claim, and the CRM set is the one SEM-3 builds on.
   `primaryKey` / `pk` is `'id'`, which names no column: queries rooted at a junction fail loudly until #689.
 - **A junction `role` declared with `values:` generates no column at all** (the template reads `choices:`); every
   junction fixture in the repo uses `values:` — #690. The model mirrors the table, so it has no `role` either.
+  *Revision 2026-11-11: #690 fixed — `values:` is now a junction schema error, and a `role` without `choices:` is
+  an ordinary payload column (in the table and in the model).*
 - **Entity `id` is not in `analytics.fields`** (the entity's `pk`); a junction contributes no `id` either.
 - **Soft-deleted rows are summed unless the host's scope excludes them.** The model declares columns, not row
   filters; `deleted_at` is a plain datetime field. Row scoping is the host's `ScopeResolver` (query-surface), per I3.

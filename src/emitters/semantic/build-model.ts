@@ -17,7 +17,7 @@ import { junctionName, junctionPlural, junctionTableName } from '../../config/ju
 import { getBehavior } from '../../behaviors/index';
 import type { ParsedEntity, ParsedField } from '../../analyzer/types';
 import { tenantColumnName } from '../../schema/tenancy';
-import type { JunctionDefinition } from '../../schema/junction-definition.schema';
+import { hasIdentityRole, type JunctionDefinition } from '../../schema/junction-definition.schema';
 import type {
 	AggColType,
 	DerivedExprNode,
@@ -79,7 +79,8 @@ export function scopeColumns(entity: ParsedEntity, projectTenantColumn: string):
 
 /**
  * A junction payload field's YAML `type:` → `AggColType`, mirroring what
- * `templates/junction/new/prompt.js` (`DRIZZLE_TYPE_MAP`) turns it into: an
+ * the entity column builder (`processFields`, which the junction template
+ * renders payload fields with) turns it into: an
  * enum only when `choices:` is non-empty (otherwise a `text` column), and any
  * type the template does not map becomes `text` too.
  */
@@ -100,15 +101,15 @@ function junctionFieldType(field: { type?: string; choices?: unknown }): AggColT
  *   the composite key) — derived to a dimension with a declared domain, the
  *   same way scope columns are derived: it is the junction's identity, so
  *   grouping by it needs no tag;
- * - the BaseJunctionFields: `is_primary` always, `started_at` / `ended_at`
+ * - the BaseJunctionFields: `is_primary` unless `is_primary: false`, `started_at` / `ended_at`
  *   when `temporal` (default true), `sourced_from` / `confidence` /
  *   `matched_at` when `sourced` (default true);
  * - every other `fields:` entry, typed as the template types it;
- * - `created_at` / `updated_at`, as dimensions (SEM-3's lifecycle rule).
+ * - `created_at` / `updated_at` unless `timestamps: false`, as dimensions
+ *   (SEM-3's lifecycle rule).
  *
  * There is no `id`: a junction's key is composite (see `compositeKey`). A
- * `role` declared with anything but a non-empty `choices:` produces no column
- * at all (the template drops it), so it is not emitted either. Junction YAML
+ * `role` without a non-empty `choices:` is an ordinary payload column. Junction YAML
  * has no analytics tag vocabulary, so nothing here is a measure.
  */
 function buildJunctionFields(def: JunctionDefinition): {
@@ -126,13 +127,13 @@ function buildJunctionFields(def: JunctionDefinition): {
 	put(`${right}_id`, 'uuid');
 	const compositeKey = [`${left}_id`, `${right}_id`];
 
-	const role = payload.role;
-	if (role && Array.isArray(role.choices) && role.choices.length > 0) {
+	const identityRole = hasIdentityRole(payload);
+	if (identityRole) {
 		put('role', 'enum', { role: 'dimension', hasDeclaredDomain: true });
 		compositeKey.push('role');
 	}
 
-	put('is_primary', 'boolean');
+	if (def.is_primary !== false) put('is_primary', 'boolean');
 	if (def.temporal !== false) {
 		put('started_at', 'datetime');
 		put('ended_at', 'datetime');
@@ -144,15 +145,17 @@ function buildJunctionFields(def: JunctionDefinition): {
 	}
 
 	for (const [name, field] of Object.entries(payload)) {
-		if (name === 'role') continue;
+		if (name === 'role' && identityRole) continue;
 		const type = junctionFieldType(field ?? {});
 		put(name, type, type === 'enum' ? { hasDeclaredDomain: true } : {});
 	}
 
 	// The junction's own lifecycle columns, given the same dimension role as an
 	// entity's behavior-contributed ones (BEHAVIOR_DIMENSION_COLUMNS).
-	for (const column of ['created_at', 'updated_at']) {
-		put(column, 'datetime', BEHAVIOR_DIMENSION_COLUMNS.has(column) ? { role: 'dimension' } : {});
+	if (def.timestamps !== false) {
+		for (const column of ['created_at', 'updated_at']) {
+			put(column, 'datetime', BEHAVIOR_DIMENSION_COLUMNS.has(column) ? { role: 'dimension' } : {});
+		}
 	}
 
 	return { fields, compositeKey };

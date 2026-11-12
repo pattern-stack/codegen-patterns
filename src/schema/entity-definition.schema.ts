@@ -237,7 +237,7 @@ const BaseFieldSchema = z.object({
 /**
  * Field Definition Schema - Combines base fields with optional UI metadata
  */
-const FieldDefinitionSchema = BaseFieldSchema.merge(UiMetadataSchema)
+export const FieldDefinitionSchema = BaseFieldSchema.merge(UiMetadataSchema)
   .merge(AnalyticsFieldSchema)
   // Strict since SEM-1: a field key we do not declare is an author error, not
   // something to strip silently. Without this, YAML still carrying a removed

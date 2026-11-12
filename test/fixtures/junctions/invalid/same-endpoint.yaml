@@ -5,4 +5,4 @@ between: [contact, contact]
 fields:
   role:
     type: enum
-    values: [a, b]
+    choices: [a, b]

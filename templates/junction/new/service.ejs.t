@@ -21,9 +21,9 @@ import type { <%= rightEntityPascal %> } from '<%= rightEntityImportFromJunction
  */
 export type <%= entityNamePascal %>LinkInput = globalThis.Partial<
   globalThis.Pick<<%= classNames.entity %>,
-    'isPrimary'<% if (temporal) { %> | 'startedAt' | 'endedAt'<% } %><% if (sourced) { %> | 'sourcedFrom' | 'confidence' | 'matchedAt'<% } %><% if (hasRole) { %> | 'role'<% } %>
+    <%- linkInputKeys %>
   >
->;
+><% if (linkInputRequiredKeys) { %> & globalThis.Pick<<%= classNames.entity %>, <%- linkInputRequiredKeys %>><% } %>;
 
 @Injectable()
 export class <%= classNames.service %> extends WithAnalytics(
@@ -90,7 +90,7 @@ export class <%= classNames.service %> extends WithAnalytics(
   async attach(
     <%= leftEntityCamel %>Id: string,
     <%= rightEntityCamel %>Id: string,
-    link?: <%= entityNamePascal %>LinkInput,
+    link<%= linkInputRequiredKeys ? '' : '?' %>: <%= entityNamePascal %>LinkInput,
   ): Promise<<%= classNames.entity %>> {
     return this.create({
       <%= leftColumnCamel %>: <%= leftEntityCamel %>Id,
@@ -148,6 +148,7 @@ export class <%= classNames.service %> extends WithAnalytics(
       }));
     }
   }
+<%_ if (isPrimary) { _%>
 
   /**
    * Mark the (`<%= leftEntityCamel %>Id`, `<%= rightEntityCamel %>Id`) row
@@ -169,6 +170,7 @@ export class <%= classNames.service %> extends WithAnalytics(
       );
     }
   }
+<%_ } _%>
 
   // Inherited from BaseService:
   //   findById, findByIds, list, count, exists, create, update, delete

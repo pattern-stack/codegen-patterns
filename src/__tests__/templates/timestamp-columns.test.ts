@@ -91,7 +91,7 @@ describe('junction time columns (#796)', () => {
 
 	it('refuses timezone: on a non-datetime payload field', async () => {
 		await expect(junctionLocals('  note:\n    type: string\n    timezone: false\n')).rejects.toThrow(
-			`[codegen] junction field 'note': ${TIMEZONE_ON_NON_DATETIME_MESSAGE}`,
+			`junction field 'note': ${TIMEZONE_ON_NON_DATETIME_MESSAGE}`,
 		);
 	});
 });
@@ -116,9 +116,11 @@ describe('relationship time columns (#796)', () => {
 describe('non-boolean timezone: is refused (#796)', () => {
 	for (const bad of ['"no"', '0']) {
 		const yamlField = `  opens_at:\n    type: datetime\n    timezone: ${bad}\n`;
+		// A junction payload field is an entity field (#740): the schema's
+		// `timezone: z.boolean()` refuses it, as it does on an entity.
 		it(`junction rejects timezone: ${bad}`, async () => {
 			await expect(junctionLocals(yamlField)).rejects.toThrow(
-				`[codegen] junction field 'opens_at': ${TIMEZONE_NOT_BOOLEAN_MESSAGE}`,
+				"junction field 'opens_at': Expected boolean",
 			);
 		});
 		it(`relationship rejects timezone: ${bad}`, async () => {

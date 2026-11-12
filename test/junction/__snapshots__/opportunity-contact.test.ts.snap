@@ -43,7 +43,7 @@ export const opportunityContacts = pgTable(
     // below): the same pair with two different roles is two distinct rows.
     role: opportunityContactRoleEnum('role').notNull(),
 
-    // BaseJunctionFields — is_primary is always emitted
+    // BaseJunctionFields — is_primary (\`is_primary: false\` opts out)
     isPrimary: boolean('is_primary').notNull().default(false),
 
     // Temporal window (temporal: true, default)
@@ -216,7 +216,7 @@ import type { Contact } from '../contacts/contact.entity';
  */
 export type OpportunityContactLinkInput = globalThis.Partial<
   globalThis.Pick<OpportunityContact,
-    'isPrimary' | 'startedAt' | 'endedAt' | 'sourcedFrom' | 'confidence' | 'matchedAt' | 'role'
+    'isPrimary' | 'startedAt' | 'endedAt' | 'sourcedFrom' | 'confidence' | 'matchedAt' | 'role' | 'lastContactedAt'
   >
 >;
 
