@@ -251,7 +251,6 @@ describe('junction payload fields parse against the entity field schema', () => 
 		for (const [key, value] of [
 			['unique', true],
 			['min_length', 1],
-			['max_length', 9],
 			['min', 0],
 			['max', 9],
 			['role', 'measure'],
@@ -263,6 +262,21 @@ describe('junction payload fields parse against the entity field schema', () => 
 				expect.stringContaining(`fields.k.${key}: '${key}' is not supported on a junction field`),
 			);
 		}
+	});
+
+	// #772: `max_length` on a string payload field is a varchar(n) column, by the
+	// entity rule; the same rule refuses it on a non-string or an enum field.
+	it('accepts max_length on a string payload field; refuses it where the entity schema does', () => {
+		expect(parse({ fields: { k: { type: 'string', max_length: 9 } } }).success).toBe(true);
+		expect(messages(parse({ fields: { k: { type: 'integer', max_length: 9 } } }))).toContainEqual(
+			expect.stringContaining("fields.k.max_length: 'max_length' can only be used with type 'string'"),
+		);
+		expect(
+			messages(parse({ fields: { k: { type: 'string', choices: ['a', 'b'], max_length: 9 } } })),
+		).toContainEqual(expect.stringContaining("fields.k.max_length: 'max_length' does not apply to an enum field"));
+		expect(
+			messages(parse({ fields: { role: { type: 'enum', choices: ['a', 'b'], max_length: 9 } } })),
+		).toContainEqual(expect.stringContaining("fields.role.max_length: 'max_length' does not apply to an enum field"));
 	});
 
 	it('refuses a payload field named like the junction’s own columns', () => {

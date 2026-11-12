@@ -36,6 +36,7 @@ import {
   timezoneNotBoolean,
   timezoneOnNonDatetime,
 } from "../../../src/schema/field-timestamp.js";
+import { fieldLengthIssues } from "../../../src/schema/field-length.js";
 import {
   renderColumnDefault,
   stringLengthBounds,
@@ -224,12 +225,11 @@ function processFields(fields) {
     const choices = field.choices;
     const hasChoices = Array.isArray(choices) && choices.length > 0;
 
-    // Relationship `fields:` are not parsed by FieldDefinitionSchema, so its
-    // string-only refusal for the length keys is repeated here (#772).
-    for (const key of ["min_length", "max_length"]) {
-      if (field[key] !== undefined && type !== "string") {
-        throw new Error(`[codegen] relationship field '${fieldName}': '${key}' can only be used with type 'string'`);
-      }
+    // Relationship `fields:` are not parsed by FieldDefinitionSchema, so the
+    // length-key rule it applies is read here from the same module (#772).
+    const [lengthIssue] = fieldLengthIssues({ ...field, type });
+    if (lengthIssue) {
+      throw new Error(`[codegen] relationship field '${fieldName}': ${lengthIssue.message}`);
     }
     const elementType = ARRAY_ELEMENT_TYPE[type] ?? type;
     const isArray = isArrayType(type);

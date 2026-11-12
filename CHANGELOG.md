@@ -100,11 +100,16 @@ every such column and raise `max_length` (or clean the data) wherever it exceeds
   `string` field with `max_length: n` is now a `varchar(n)` column (was `text`), and the create and
   update DTOs check `z.string().max(n)` (was unbounded); `min_length: n` adds `.min(n)` to the same
   DTOs (it has no column form). Every backend template ignored both keys before; only the frontend
-  field metadata read `max_length`. One rule (`stringLengthBounds` in `entity-locals.js`) serves
-  entity fields and relationship `fields:`; a relationship field now refuses either key on a
-  non-`string` type, as the entity schema does, and the entity schema refuses `min_length` greater
-  than `max_length`. Junction payload fields still refuse both keys. Enum fields (`choices:`) are
-  unaffected. Migration: `drizzle-kit push` / `generate` turn `text` → `varchar(n)` into
+  field metadata read `max_length`. One rule (`stringLengthBounds` in `entity-locals.js`) emits
+  them for entity fields, junction payload fields and relationship `fields:`; one rule
+  (`fieldLengthIssues` in `src/schema/field-length.ts`) decides when the keys are accepted, read by
+  the entity / junction schema and the relationship prompt alike: `type: string` only, `min_length`
+  no greater than `max_length`, and never next to `choices:` / `choices_from:` (that pair was
+  accepted and ignored; an enum's values bound it, so it is now an error whose path names the
+  field). Junction payload fields take `max_length` (a `varchar(n)` column); a junction has no
+  DTOs (its `LinkInput` is a TypeScript type), so there the limit is the database's alone, and
+  `min_length`, which has no column form, stays refused. Migration: `drizzle-kit push` /
+  `generate` turn `text` → `varchar(n)` into
   `SET DATA TYPE varchar(n) USING "col"::varchar(n)`, which **silently truncates** any longer
   value (a hand-written `ALTER … TYPE varchar(n)` without `USING` fails instead). Run
   `select max(length(<col>)) from <table>` for each such column first, and raise `max_length` (or

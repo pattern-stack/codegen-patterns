@@ -440,8 +440,10 @@ const EXTERNAL_ID_TRACKING_FIELDS = new Set([
  * renders a field column reads (entity, junction payload via `processFields`,
  * relationship `fields:`). `maxLength` makes the column `varchar(n)` instead of
  * `text`; both bounds check the create DTO (and the update DTO, its
- * `.partial()`). The schema accepts the keys on `type: string` only; an enum's
- * values bound it already, so `choices:` leaves both null.
+ * `.partial()`). Whether the keys are valid is `fieldLengthIssues`
+ * (`src/schema/field-length.ts`): `type: string` only, never with `choices:` —
+ * refused before this runs, so the guard below is not a silent drop. A
+ * junction has no DTOs, so there only the `varchar(n)` column applies.
  */
 export function stringLengthBounds(field, type, hasChoices) {
   if (type !== 'string' || hasChoices) return { minLength: null, maxLength: null };
