@@ -33,14 +33,16 @@ export type OrganizationInclude = IncludeOf<'organizations'>;
 export type OrganizationNoInclude = globalThis.Record<string, never>;
 
 /**
- * The row a organization read resolves to: the root narrowed by `TColumns`
- * (`undefined` ⇒ every column), each included relation nested exactly as asked.
- * `OrganizationResult` alone is the plain row.
+ * The row a organization read resolves to: each included relation nested
+ * exactly as asked, the root narrowed by `TColumns` (`undefined` ⇒ every column).
+ * `OrganizationResult` alone is the plain row; `OrganizationResult<TWith>` is the row
+ * with that include. The mask is SECOND so a one-argument `OrganizationResult<…>`
+ * is always an include, never a mask (READ-1 §2.2).
  */
 export type OrganizationResult<
-  TColumns extends OrganizationColumns | undefined = undefined,
   TWith extends OrganizationInclude = OrganizationNoInclude,
-> = ResultOf<'organizations', TColumns, TWith>;
+  TColumns extends OrganizationColumns | undefined = undefined,
+> = ResultOf<'organizations', TWith, TColumns>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -48,7 +50,7 @@ export type OrganizationResult<
  * The controller merges allowlisted fragments at REQUEST time, so which relations
  * are present is not statically known — one of finitely many literals, but not a
  * single one. So the handler's result type is the widened form: every relation
- * OPTIONAL, the row's own columns required. `OrganizationResult<undefined, OrganizationInclude>`
+ * OPTIONAL, the row's own columns required. `OrganizationResult<OrganizationInclude>`
  * (the fully-included shape) would be wrong here — it claims every relation is
  * always present, which no single request produces.
  *
@@ -56,7 +58,7 @@ export type OrganizationResult<
  * the call site (REL-2 §2.3/§5.2).
  */
 export type OrganizationApiResult = Organization &
-  globalThis.Partial<OrganizationResult<undefined, OrganizationInclude>>;
+  globalThis.Partial<OrganizationResult<OrganizationInclude>>;
 
 @Injectable()
 export class OrganizationRepository extends BaseRepository<Organization, typeof organizations, Relations> {
@@ -67,6 +69,9 @@ export class OrganizationRepository extends BaseRepository<Organization, typeof 
     // Every read runs on db.query.organizations — fail HERE, naming the cause,
     // if the injected client was built without the relations manifest.
     this.requireRelationalQuery('organizations');
+    // findById / findByIds / list are defined below, so a pattern base class or
+    // capability mixin overriding one of them would never run — throw, naming it.
+    this.claimGeneratedReads(OrganizationRepository);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -91,16 +96,16 @@ export class OrganizationRepository extends BaseRepository<Organization, typeof 
   // one. The depth cap is an HTTP concern (`api.includes.max_depth`).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override async findById<C extends OrganizationColumns | undefined = undefined, W extends OrganizationInclude = OrganizationNoInclude>(
+  override async findById<W extends OrganizationInclude = OrganizationNoInclude, C extends OrganizationColumns | undefined = undefined>(
     id: string,
-    opts?: ReadOptions<C, W>,
-  ): Promise<OrganizationResult<C, W> | null> {
+    opts?: ReadOptions<W, C>,
+  ): Promise<OrganizationResult<W, C> | null> {
     const row = await this.db.query.organizations.findFirst({
       where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
       columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
     });
-    return (row as OrganizationResult<C, W> | undefined) ?? null;
+    return (row as OrganizationResult<W, C> | undefined) ?? null;
   }
 
   /**
@@ -111,10 +116,10 @@ export class OrganizationRepository extends BaseRepository<Organization, typeof 
    * is selected and stripped again. Not chunked: Postgres caps a statement at
    * 65 535 parameters.
    */
-  override async findByIds<C extends OrganizationColumns | undefined = undefined, W extends OrganizationInclude = OrganizationNoInclude>(
+  override async findByIds<W extends OrganizationInclude = OrganizationNoInclude, C extends OrganizationColumns | undefined = undefined>(
     ids: readonly string[],
-    opts?: ReadOptions<C, W>,
-  ): Promise<Array<OrganizationResult<C, W>>> {
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<OrganizationResult<W, C>>> {
     const unique = this.uniqueIds(ids);
     if (unique.length === 0) {
       // No statement — but the same boundary check one would make (strict throws).
@@ -127,16 +132,16 @@ export class OrganizationRepository extends BaseRepository<Organization, typeof 
       columns: mask.columns,
       with: opts?.with,
     });
-    return this.inInputOrder(rows, unique, mask.stripId) as Array<OrganizationResult<C, W>>;
+    return this.inInputOrder(rows, unique, mask.stripId) as Array<OrganizationResult<W, C>>;
   }
 
   /**
    * `where` is a ROW FILTER — `(t) => eq(t.name, x)` — never a pre-rendered SQL:
    * it is handed the aliased root. `sort` is column keys, rendered the same way.
    */
-  override async list<C extends OrganizationColumns | undefined = undefined, W extends OrganizationInclude = OrganizationNoInclude>(
-    query?: ListOptions<typeof organizations> & ReadOptions<C, W>,
-  ): Promise<Array<OrganizationResult<C, W>>> {
+  override async list<W extends OrganizationInclude = OrganizationNoInclude, C extends OrganizationColumns | undefined = undefined>(
+    query?: ListOptions<typeof organizations> & ReadOptions<W, C>,
+  ): Promise<Array<OrganizationResult<W, C>>> {
     const sort = query?.sort;
     const rows = await this.db.query.organizations.findMany({
       where: { RAW: this.rootFilter(query?.where) },
@@ -146,7 +151,7 @@ export class OrganizationRepository extends BaseRepository<Organization, typeof 
       limit: query?.limit,
       offset: query?.offset,
     });
-    return rows as Array<OrganizationResult<C, W>>;
+    return rows as Array<OrganizationResult<W, C>>;
   }
 
   /**
@@ -166,10 +171,10 @@ export class OrganizationRepository extends BaseRepository<Organization, typeof 
   // is skipped — that declarative query is the more specific intent and wins.
   // ═══════════════════════════════════════════════════════════════════════
 
-  async findByParentId<C extends OrganizationColumns | undefined = undefined, W extends OrganizationInclude = OrganizationNoInclude>(
+  async findByParentId<W extends OrganizationInclude = OrganizationNoInclude, C extends OrganizationColumns | undefined = undefined>(
     id: string,
-    opts?: { limit?: number } & ReadOptions<C, W>,
-  ): Promise<Array<OrganizationResult<C, W>>> {
+    opts?: { limit?: number } & ReadOptions<W, C>,
+  ): Promise<Array<OrganizationResult<W, C>>> {
     const rows = await this.db.query.organizations.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.parentId, id)) },
       columns: this.checkColumns<C>(opts?.columns),
@@ -178,7 +183,7 @@ export class OrganizationRepository extends BaseRepository<Organization, typeof 
       orderBy: opts?.limit === undefined ? undefined : { id: 'asc' },
       limit: opts?.limit,
     });
-    return rows as Array<OrganizationResult<C, W>>;
+    return rows as Array<OrganizationResult<W, C>>;
   }
 
   // Inherited from BaseRepository:

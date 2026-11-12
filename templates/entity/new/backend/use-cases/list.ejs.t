@@ -63,7 +63,7 @@ export class <%= classNames.listUseCase %> {
   async execute<TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
     listQuery?: ListQuery,
     listOptions: { include?: TWith; where?: RowFilter<typeof <%= entityNamePlural %>> } = {},
-  ): Promise<Page<<%= classNames.entity %>Result<undefined, TWith>>> {
+  ): Promise<Page<<%= classNames.entity %>Result<TWith>>> {
     const { include: includeTree, where: whereClause } = listOptions;
 <% } else { -%>
   async execute(
@@ -132,7 +132,7 @@ export class <%= classNames.listUseCase %> {
 <% } -%>
     const [pageRows, rowTotal] = await Promise.all([
 <% if (includes) { -%>
-      this.service.list<undefined, TWith>({
+      this.service.list<TWith>({
         where: whereClause,
         limit: resolvedQuery.pageSize,
         offset: resolvedQuery.offset,

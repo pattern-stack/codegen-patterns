@@ -43,7 +43,7 @@ export class ListDealsUseCase {
   async execute<TWith extends DealInclude = DealNoInclude>(
     listQuery?: ListQuery,
     listOptions: { include?: TWith; where?: RowFilter<typeof deals> } = {},
-  ): Promise<Page<DealResult<undefined, TWith>>> {
+  ): Promise<Page<DealResult<TWith>>> {
     const { include: includeTree, where: whereClause } = listOptions;
     const resolvedQuery = resolveListQuery(listQuery);
 
@@ -83,7 +83,7 @@ export class ListDealsUseCase {
     // `WHERE (created_at, id) < (cursorCreatedAt, cursorId)` LIMIT pageSize,
     // dropping the offset. The envelope + nextCursor below are unchanged.
     const [pageRows, rowTotal] = await Promise.all([
-      this.service.list<undefined, TWith>({
+      this.service.list<TWith>({
         where: whereClause,
         limit: resolvedQuery.pageSize,
         offset: resolvedQuery.offset,

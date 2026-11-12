@@ -34,11 +34,13 @@ const _needsOrderFns = processedQueries.some((q) => q.hasOrder && (q.hasVia || q
 const E = classNames.entity;
 // READ-1 §2.3 — the generic parameters, options and result of every shaped read.
 // `with` exists only where REL-2 §2.5 allows it; `columns` everywhere.
+// `with` first, `columns` second — everywhere, the order `<Entity>Result` takes,
+// so REL-2's `<Entity>Result<W>` keeps its meaning.
 const _readGenerics = includes
-  ? `<C extends ${E}Columns | undefined = undefined, W extends ${E}Include = ${E}NoInclude>`
+  ? `<W extends ${E}Include = ${E}NoInclude, C extends ${E}Columns | undefined = undefined>`
   : `<C extends ${E}Columns | undefined = undefined>`;
-const _readOpts = includes ? 'ReadOptions<C, W>' : 'ReadOptions<C, never>';
-const _readResult = includes ? `${E}Result<C, W>` : `${E}Result<C>`;
+const _readOpts = includes ? 'ReadOptions<W, C>' : 'ReadOptions<never, C>';
+const _readResult = includes ? `${E}Result<W, C>` : `${E}Result<${E}NoInclude, C>`;
 const _withLine = includes ? '\n      with: opts?.with,' : '';
 _%>
 <%# READ-1: `eq` / `inArray` are unconditional — `findById` / `findByIds` use them. %>
@@ -129,14 +131,16 @@ export type <%= E %>Include = IncludeOf<'<%= entityNamePlural %>'>;
 export type <%= E %>NoInclude = globalThis.Record<string, never>;
 
 /**
- * The row a <%= entityName %> read resolves to: the root narrowed by `TColumns`
- * (`undefined` ⇒ every column), each included relation nested exactly as asked.
- * `<%= E %>Result` alone is the plain row.
+ * The row a <%= entityName %> read resolves to: each included relation nested
+ * exactly as asked, the root narrowed by `TColumns` (`undefined` ⇒ every column).
+ * `<%= E %>Result` alone is the plain row; `<%= E %>Result<TWith>` is the row
+ * with that include. The mask is SECOND so a one-argument `<%= E %>Result<…>`
+ * is always an include, never a mask (READ-1 §2.2).
  */
 export type <%= E %>Result<
-  TColumns extends <%= E %>Columns | undefined = undefined,
   TWith extends <%= E %>Include = <%= E %>NoInclude,
-> = ResultOf<'<%= entityNamePlural %>', TColumns, TWith>;
+  TColumns extends <%= E %>Columns | undefined = undefined,
+> = ResultOf<'<%= entityNamePlural %>', TWith, TColumns>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -144,7 +148,7 @@ export type <%= E %>Result<
  * The controller merges allowlisted fragments at REQUEST time, so which relations
  * are present is not statically known — one of finitely many literals, but not a
  * single one. So the handler's result type is the widened form: every relation
- * OPTIONAL, the row's own columns required. `<%= classNames.entity %>Result<undefined, <%= classNames.entity %>Include>`
+ * OPTIONAL, the row's own columns required. `<%= classNames.entity %>Result<<%= classNames.entity %>Include>`
  * (the fully-included shape) would be wrong here — it claims every relation is
  * always present, which no single request produces.
  *
@@ -152,7 +156,7 @@ export type <%= E %>Result<
  * the call site (REL-2 §2.3/§5.2).
  */
 export type <%= classNames.entity %>ApiResult = <%= classNames.entity %> &
-  globalThis.Partial<<%= classNames.entity %>Result<undefined, <%= classNames.entity %>Include>>;
+  globalThis.Partial<<%= classNames.entity %>Result<<%= classNames.entity %>Include>>;
 
 @Injectable()
 <%_ /* ADR-041: the spine alone, the spine wrapped in one capability mixin, or
@@ -230,6 +234,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
   ) {
     super(db);
     this.requireRelationalQuery('<%= entityNamePlural %>');
+    this.claimGeneratedReads(<%= classNames.repository %>);
   }
 
   /**
@@ -250,6 +255,9 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
     // Every read runs on db.query.<%= entityNamePlural %> — fail HERE, naming the cause,
     // if the injected client was built without the relations manifest.
     this.requireRelationalQuery('<%= entityNamePlural %>');
+    // findById / findByIds / list are defined below, so a pattern base class or
+    // capability mixin overriding one of them would never run — throw, naming it.
+    this.claimGeneratedReads(<%= classNames.repository %>);
   }
 <%_ } -%>
 

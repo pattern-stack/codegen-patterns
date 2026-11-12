@@ -33,14 +33,16 @@ export type DealStateInclude = IncludeOf<'deal_states'>;
 export type DealStateNoInclude = globalThis.Record<string, never>;
 
 /**
- * The row a deal_state read resolves to: the root narrowed by `TColumns`
- * (`undefined` ⇒ every column), each included relation nested exactly as asked.
- * `DealStateResult` alone is the plain row.
+ * The row a deal_state read resolves to: each included relation nested
+ * exactly as asked, the root narrowed by `TColumns` (`undefined` ⇒ every column).
+ * `DealStateResult` alone is the plain row; `DealStateResult<TWith>` is the row
+ * with that include. The mask is SECOND so a one-argument `DealStateResult<…>`
+ * is always an include, never a mask (READ-1 §2.2).
  */
 export type DealStateResult<
-  TColumns extends DealStateColumns | undefined = undefined,
   TWith extends DealStateInclude = DealStateNoInclude,
-> = ResultOf<'deal_states', TColumns, TWith>;
+  TColumns extends DealStateColumns | undefined = undefined,
+> = ResultOf<'deal_states', TWith, TColumns>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -48,7 +50,7 @@ export type DealStateResult<
  * The controller merges allowlisted fragments at REQUEST time, so which relations
  * are present is not statically known — one of finitely many literals, but not a
  * single one. So the handler's result type is the widened form: every relation
- * OPTIONAL, the row's own columns required. `DealStateResult<undefined, DealStateInclude>`
+ * OPTIONAL, the row's own columns required. `DealStateResult<DealStateInclude>`
  * (the fully-included shape) would be wrong here — it claims every relation is
  * always present, which no single request produces.
  *
@@ -56,7 +58,7 @@ export type DealStateResult<
  * the call site (REL-2 §2.3/§5.2).
  */
 export type DealStateApiResult = DealState &
-  globalThis.Partial<DealStateResult<undefined, DealStateInclude>>;
+  globalThis.Partial<DealStateResult<DealStateInclude>>;
 
 @Injectable()
 export class DealStateRepository extends BaseRepository<DealState, typeof deal_states, Relations> {
@@ -67,6 +69,9 @@ export class DealStateRepository extends BaseRepository<DealState, typeof deal_s
     // Every read runs on db.query.deal_states — fail HERE, naming the cause,
     // if the injected client was built without the relations manifest.
     this.requireRelationalQuery('deal_states');
+    // findById / findByIds / list are defined below, so a pattern base class or
+    // capability mixin overriding one of them would never run — throw, naming it.
+    this.claimGeneratedReads(DealStateRepository);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -91,16 +96,16 @@ export class DealStateRepository extends BaseRepository<DealState, typeof deal_s
   // one. The depth cap is an HTTP concern (`api.includes.max_depth`).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override async findById<C extends DealStateColumns | undefined = undefined, W extends DealStateInclude = DealStateNoInclude>(
+  override async findById<W extends DealStateInclude = DealStateNoInclude, C extends DealStateColumns | undefined = undefined>(
     id: string,
-    opts?: ReadOptions<C, W>,
-  ): Promise<DealStateResult<C, W> | null> {
+    opts?: ReadOptions<W, C>,
+  ): Promise<DealStateResult<W, C> | null> {
     const row = await this.db.query.deal_states.findFirst({
       where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
       columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
     });
-    return (row as DealStateResult<C, W> | undefined) ?? null;
+    return (row as DealStateResult<W, C> | undefined) ?? null;
   }
 
   /**
@@ -111,10 +116,10 @@ export class DealStateRepository extends BaseRepository<DealState, typeof deal_s
    * is selected and stripped again. Not chunked: Postgres caps a statement at
    * 65 535 parameters.
    */
-  override async findByIds<C extends DealStateColumns | undefined = undefined, W extends DealStateInclude = DealStateNoInclude>(
+  override async findByIds<W extends DealStateInclude = DealStateNoInclude, C extends DealStateColumns | undefined = undefined>(
     ids: readonly string[],
-    opts?: ReadOptions<C, W>,
-  ): Promise<Array<DealStateResult<C, W>>> {
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<DealStateResult<W, C>>> {
     const unique = this.uniqueIds(ids);
     if (unique.length === 0) {
       // No statement — but the same boundary check one would make (strict throws).
@@ -127,16 +132,16 @@ export class DealStateRepository extends BaseRepository<DealState, typeof deal_s
       columns: mask.columns,
       with: opts?.with,
     });
-    return this.inInputOrder(rows, unique, mask.stripId) as Array<DealStateResult<C, W>>;
+    return this.inInputOrder(rows, unique, mask.stripId) as Array<DealStateResult<W, C>>;
   }
 
   /**
    * `where` is a ROW FILTER — `(t) => eq(t.name, x)` — never a pre-rendered SQL:
    * it is handed the aliased root. `sort` is column keys, rendered the same way.
    */
-  override async list<C extends DealStateColumns | undefined = undefined, W extends DealStateInclude = DealStateNoInclude>(
-    query?: ListOptions<typeof deal_states> & ReadOptions<C, W>,
-  ): Promise<Array<DealStateResult<C, W>>> {
+  override async list<W extends DealStateInclude = DealStateNoInclude, C extends DealStateColumns | undefined = undefined>(
+    query?: ListOptions<typeof deal_states> & ReadOptions<W, C>,
+  ): Promise<Array<DealStateResult<W, C>>> {
     const sort = query?.sort;
     const rows = await this.db.query.deal_states.findMany({
       where: { RAW: this.rootFilter(query?.where) },
@@ -146,7 +151,7 @@ export class DealStateRepository extends BaseRepository<DealState, typeof deal_s
       limit: query?.limit,
       offset: query?.offset,
     });
-    return rows as Array<DealStateResult<C, W>>;
+    return rows as Array<DealStateResult<W, C>>;
   }
 
   /**

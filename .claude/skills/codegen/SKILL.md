@@ -368,7 +368,7 @@ All families get `findById`, `findByIds`, `list`, `count`, `exists`, `create`,
 **The read surface (READ-1, `docs/specs/READ-1.md`).** Every generated read —
 `findById`, `findByIds`, `list`, each plain `queries:` and `belongs_to` finder — takes
 `{ columns?, with? }` (`with` only when the entity declares a relationship), typed by
-per-call generics `<C, W>` emitted on the generated subclass (REL-2 §2.1's TS2536 keeps
+per-call generics `<W, C>` (include first, mask second — the order `<Entity>Result` takes) emitted on the generated subclass (REL-2 §2.1's TS2536 keeps
 them off the base). ONE execution path for that read surface: each of those reads runs on
 RQBv2 with `where: { RAW: this.rootFilter(pred) }` — the caller's predicate AND the scope,
 both rendered on the alias. NOT on it, still on the core builder via `scopeAnd`: `count`,
@@ -390,9 +390,16 @@ derives the same manifest. A caller column key goes through `hasColumn` (own key
 `db.query.*.find*` carries `rootFilter`), `no-untethered-raw-callback.test.ts` (the
 alias shapes), and `just test-baseline`'s second typecheck against Drizzle rc.5 via the
 `drizzle-orm-rc5` alias. A generated repository's constructor calls
-`requireRelationalQuery('<plural>')`.
+`requireRelationalQuery('<plural>')` and `claimGeneratedReads(<Class>)`; the generated
+service's calls `claimGeneratedReads(<Class>)` too (`runtime/base-classes/read-surface.ts`).
+The generated class defines `findById` / `findByIds` / `list` itself, so an override of
+one on a class between it and the base (a pattern base class, a capability mixin) could
+never run: construction THROWS, naming the method and the class (READ-1 §3.4). `count`
+is exempt (the generated one calls `super`); a subclass of the generated class is not
+checked. To narrow every read, override `scopeAndOn`.
 `withRequester` awaits its callback inside the ALS, so a lazy thenable builds in
-context. `<Entity>Result<TColumns, TWith>` (both defaulted); `ResultOf<T, C, W>`.
+context. `<Entity>Result<TWith, TColumns>` (both defaulted — REL-2's
+`<Entity>Result<W>` keeps its meaning); `ResultOf<T, W, C?>`.
 
 | Family | Adds |
 |---|---|

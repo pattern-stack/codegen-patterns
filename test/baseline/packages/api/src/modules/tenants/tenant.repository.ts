@@ -33,14 +33,16 @@ export type TenantInclude = IncludeOf<'tenants'>;
 export type TenantNoInclude = globalThis.Record<string, never>;
 
 /**
- * The row a tenant read resolves to: the root narrowed by `TColumns`
- * (`undefined` ⇒ every column), each included relation nested exactly as asked.
- * `TenantResult` alone is the plain row.
+ * The row a tenant read resolves to: each included relation nested
+ * exactly as asked, the root narrowed by `TColumns` (`undefined` ⇒ every column).
+ * `TenantResult` alone is the plain row; `TenantResult<TWith>` is the row
+ * with that include. The mask is SECOND so a one-argument `TenantResult<…>`
+ * is always an include, never a mask (READ-1 §2.2).
  */
 export type TenantResult<
-  TColumns extends TenantColumns | undefined = undefined,
   TWith extends TenantInclude = TenantNoInclude,
-> = ResultOf<'tenants', TColumns, TWith>;
+  TColumns extends TenantColumns | undefined = undefined,
+> = ResultOf<'tenants', TWith, TColumns>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -48,7 +50,7 @@ export type TenantResult<
  * The controller merges allowlisted fragments at REQUEST time, so which relations
  * are present is not statically known — one of finitely many literals, but not a
  * single one. So the handler's result type is the widened form: every relation
- * OPTIONAL, the row's own columns required. `TenantResult<undefined, TenantInclude>`
+ * OPTIONAL, the row's own columns required. `TenantResult<TenantInclude>`
  * (the fully-included shape) would be wrong here — it claims every relation is
  * always present, which no single request produces.
  *
@@ -56,7 +58,7 @@ export type TenantResult<
  * the call site (REL-2 §2.3/§5.2).
  */
 export type TenantApiResult = Tenant &
-  globalThis.Partial<TenantResult<undefined, TenantInclude>>;
+  globalThis.Partial<TenantResult<TenantInclude>>;
 
 @Injectable()
 export class TenantRepository extends BaseRepository<Tenant, typeof tenants, Relations> {
@@ -67,6 +69,9 @@ export class TenantRepository extends BaseRepository<Tenant, typeof tenants, Rel
     // Every read runs on db.query.tenants — fail HERE, naming the cause,
     // if the injected client was built without the relations manifest.
     this.requireRelationalQuery('tenants');
+    // findById / findByIds / list are defined below, so a pattern base class or
+    // capability mixin overriding one of them would never run — throw, naming it.
+    this.claimGeneratedReads(TenantRepository);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -92,13 +97,13 @@ export class TenantRepository extends BaseRepository<Tenant, typeof tenants, Rel
 
   override async findById<C extends TenantColumns | undefined = undefined>(
     id: string,
-    opts?: ReadOptions<C, never>,
-  ): Promise<TenantResult<C> | null> {
+    opts?: ReadOptions<never, C>,
+  ): Promise<TenantResult<TenantNoInclude, C> | null> {
     const row = await this.db.query.tenants.findFirst({
       where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
       columns: this.checkColumns<C>(opts?.columns),
     });
-    return (row as TenantResult<C> | undefined) ?? null;
+    return (row as TenantResult<TenantNoInclude, C> | undefined) ?? null;
   }
 
   /**
@@ -111,8 +116,8 @@ export class TenantRepository extends BaseRepository<Tenant, typeof tenants, Rel
    */
   override async findByIds<C extends TenantColumns | undefined = undefined>(
     ids: readonly string[],
-    opts?: ReadOptions<C, never>,
-  ): Promise<Array<TenantResult<C>>> {
+    opts?: ReadOptions<never, C>,
+  ): Promise<Array<TenantResult<TenantNoInclude, C>>> {
     const unique = this.uniqueIds(ids);
     if (unique.length === 0) {
       // No statement — but the same boundary check one would make (strict throws).
@@ -124,7 +129,7 @@ export class TenantRepository extends BaseRepository<Tenant, typeof tenants, Rel
       where: { RAW: this.rootFilter((t) => inArray(t.id, unique)) },
       columns: mask.columns,
     });
-    return this.inInputOrder(rows, unique, mask.stripId) as Array<TenantResult<C>>;
+    return this.inInputOrder(rows, unique, mask.stripId) as Array<TenantResult<TenantNoInclude, C>>;
   }
 
   /**
@@ -132,8 +137,8 @@ export class TenantRepository extends BaseRepository<Tenant, typeof tenants, Rel
    * it is handed the aliased root. `sort` is column keys, rendered the same way.
    */
   override async list<C extends TenantColumns | undefined = undefined>(
-    query?: ListOptions<typeof tenants> & ReadOptions<C, never>,
-  ): Promise<Array<TenantResult<C>>> {
+    query?: ListOptions<typeof tenants> & ReadOptions<never, C>,
+  ): Promise<Array<TenantResult<TenantNoInclude, C>>> {
     const sort = query?.sort;
     const rows = await this.db.query.tenants.findMany({
       where: { RAW: this.rootFilter(query?.where) },
@@ -142,7 +147,7 @@ export class TenantRepository extends BaseRepository<Tenant, typeof tenants, Rel
       limit: query?.limit,
       offset: query?.offset,
     });
-    return rows as Array<TenantResult<C>>;
+    return rows as Array<TenantResult<TenantNoInclude, C>>;
   }
 
   /**

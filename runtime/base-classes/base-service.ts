@@ -25,6 +25,7 @@ import {
   buildChangeEvents,
   emitSafely,
 } from './lifecycle-events';
+import { assertGeneratedReadsOwned } from './read-surface';
 
 // ============================================================================
 // IBaseRepository interface
@@ -79,6 +80,23 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
   protected emitLifecycleEvents = true;
 
   constructor(protected readonly repository: TRepo) {}
+
+  /**
+   * Fail at CONSTRUCTION when a class between this base and the generated
+   * service `owner` — a pattern's service base, a mixin — overrides `findById` /
+   * `findByIds` / `list`. The generated service forwards those three straight to
+   * the repository with their typed options, so such an override would never
+   * run; this makes that loud instead of silent (READ-1 §3.4). Called by the
+   * generated constructor with its own class.
+   */
+  protected claimGeneratedReads(owner: abstract new (...args: never[]) => unknown): void {
+    assertGeneratedReadsOwned(
+      owner,
+      BaseService,
+      'To wrap a read, give the wrapper its own name or override it on a subclass of the generated service; ' +
+        "to narrow which rows it returns, do it on the repository's `scopeAndOn`.",
+    );
+  }
 
   /**
    * Find a single entity by its primary key.

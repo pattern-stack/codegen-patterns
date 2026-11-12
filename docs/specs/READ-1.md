@@ -86,18 +86,19 @@ export type ColumnsOf<T extends keyof Relations> =
   NonNullable<DBQueryConfig<'many', Relations, Relations[T]>['columns']>;
 
 /**
- * The row a read resolves to, given its options: the root narrowed by `columns`
- * (absent ⇒ every column), each included relation nested exactly as asked.
+ * The row a read resolves to, given its options: each included relation nested
+ * exactly as asked, the root narrowed by `columns` (absent ⇒ every column).
  */
 export type ResultOf<
   T extends keyof Relations,
-  TColumns extends ColumnsOf<T> | undefined,
   TWith extends IncludeOf<T>,
+  TColumns extends ColumnsOf<T> | undefined = undefined,
 > = BuildQueryResult<Relations, Relations[T], { columns: TColumns; with: TWith }>;
 ```
 
-`ResultOf` **gains** a parameter and the order is `columns, with` (root first, then hops — the order the SQL is read
-in). Every caller is generated, so this is a regenerate, not a migration (I7).
+`ResultOf` **gains** an optional THIRD parameter, the mask. REL-2's `ResultOf<T, TWith>` keeps its exact meaning, so
+nothing written against REL-2 breaks (decided 2026-11-12, §10 Found #10 — the first cut put the mask first, which
+turned a stale `AccountResult<AccountNoInclude>` into a silent `{}`).
 
 **`columns` absent must mean "every column".** Measured against `BuildQueryResult`: `columns: undefined` takes its
 `'Full'` branch; `columns: {}` takes the mask branch and resolves to **no** keys. So the "no mask" default for
@@ -110,34 +111,42 @@ export type AccountColumns = ColumnsOf<'accounts'>;
 export type AccountInclude = IncludeOf<'accounts'>;           // unchanged
 export type AccountNoInclude = globalThis.Record<string, never>; // unchanged — TWith default
 export type AccountResult<
-  TColumns extends AccountColumns | undefined = undefined,
   TWith extends AccountInclude = AccountNoInclude,
-> = ResultOf<'accounts', TColumns, TWith>;
+  TColumns extends AccountColumns | undefined = undefined,
+> = ResultOf<'accounts', TWith, TColumns>;
 ```
 
-`<Entity>Result` takes defaults on both so `AccountResult` alone is the plain row and `AccountResult<undefined, W>` is
-REL-2's old `AccountResult<W>`. `<Entity>ApiResult` (HTTP) is unchanged — HTTP takes no `columns` (§7).
+`<Entity>Result` takes defaults on both, the include first: `AccountResult` alone is the plain row,
+`AccountResult<W>` is exactly REL-2's `AccountResult<W>` (so `AccountResult<AccountNoInclude>` is the row, not `{}`),
+and `AccountResult<AccountNoInclude, { id: true }>` is `{ id: string }`. A mask in the first slot shares no key with
+the include surface and is a compile error (TS2559). `<Entity>ApiResult` (HTTP) is unchanged — HTTP takes no
+`columns` (§7).
+
+**One order everywhere: `with` first, `columns` second.** The methods' type parameters (`<W, C>`), `ReadOptions<W, C>`
+and `<Entity>Result<W, C>` all follow it, so the generated `rows as <Entity>Result<W, C>` reads straight off the
+signature and the generated use cases pass `findById<TWith>` / `list<TWith>` with no `undefined` placeholder. Call
+sites infer both, so the method order is not a consumer-facing choice.
 
 ### 2.3 The methods (emitted on every generated repository — REL-2 §2.1's TS2536 still binds)
 
 ```ts
-findById<C extends AccountColumns | undefined = undefined, W extends AccountInclude = AccountNoInclude>(
+findById<W extends AccountInclude = AccountNoInclude, C extends AccountColumns | undefined = undefined>(
   id: string,
-  opts?: { columns?: C; with?: W },
-): Promise<AccountResult<C, W> | null>;
+  opts?: { with?: W; columns?: C },
+): Promise<AccountResult<W, C> | null>;
 
-findByIds<C …, W …>(
+findByIds<W …, C …>(
   ids: readonly string[],
-  opts?: { columns?: C; with?: W },
-): Promise<Array<AccountResult<C, W>>>;
+  opts?: { with?: W; columns?: C },
+): Promise<Array<AccountResult<W, C>>>;
 
-list<C …, W …>(
-  query?: ListOptions<typeof accounts> & { columns?: C; with?: W },
-): Promise<Array<AccountResult<C, W>>>;
+list<W …, C …>(
+  query?: ListOptions<typeof accounts> & { with?: W; columns?: C },
+): Promise<Array<AccountResult<W, C>>>;
 
 // one per `queries:` entry (plain by-column) and per `belongs_to` FK — same shape
-findByOwnerId<C …, W …>(ownerId: string, opts?: { columns?: C; with?: W; limit?: number }): Promise<Array<…>>; // `limit` ⇒ ordered by id
-findByEmail<C …, W …>(email: string, opts?: { columns?: C; with?: W }): Promise<AccountResult<C, W> | null>; // unique
+findByOwnerId<W …, C …>(ownerId: string, opts?: { with?: W; columns?: C; limit?: number }): Promise<Array<…>>; // `limit` ⇒ ordered by id
+findByEmail<W …, C …>(email: string, opts?: { with?: W; columns?: C }): Promise<AccountResult<W, C> | null>; // unique
 ```
 
 - **`with` is emitted only where REL-2 §2.5 allows it** (the entity declares a non-transitive relationship). An entity
@@ -163,7 +172,7 @@ findByEmail<C …, W …>(email: string, opts?: { columns?: C; with?: W }): Prom
 | `[]` under `strict` with no requester context | **throws**, like any read: no statement is built, but `assertReadScope()` runs the scope's boundary checks first, so a missing boundary is not hidden by an empty input (#859 review) |
 | a large id list | one `in ($1…$n)`; Postgres caps a statement at 65 535 parameters. Not chunked — chunking would silently become several statements (I4). Documented on the method |
 
-`columns: {}` (an empty mask) is rejected **twice**: at compile time — `ReadOptions<C, W>` types the slot as
+`columns: {}` (an empty mask) is rejected **twice**: at compile time — `ReadOptions<W, C>` types the slot as
 `C & NonEmptyMask<C>`, which demands an impossible key when `keyof C` is `never` (asserted by a `@ts-expect-error` in
 the smoke's type tests) — and at runtime by `checkColumns`, which throws naming the repository for a mask built
 dynamically. "Empty" is judged after dropping `undefined`-valued keys, which Drizzle ignores: `{ name: undefined }`
@@ -189,11 +198,11 @@ findById<V extends AccountVariant>(id: string, opts: { variant: V }): Promise<Ac
 What this spec guarantees so that is a small change later:
 - `columns` and `with` are **the** two shape knobs and every read accepts both, so a variant is exactly one
   `{ columns, with }` value — no third knob to map;
-- `<Entity>VariantResult<V>` is `<Entity>Result<(typeof AccountVariants)[V]['columns'], …['with']>` — `ResultOf`
+- `<Entity>VariantResult<V>` is `<Entity>Result<(typeof AccountVariants)[V]['with'], …['columns']>` — `ResultOf`
   already takes both;
 - `variant` and `columns`/`with` will be mutually exclusive at the type level (`{ variant: V; columns?: never;
   with?: never }`), so the overloads cannot be combined into an ambiguous call.
-- the generated service forwards with explicit `<C, W>` type arguments, so each variant overload is mirrored in
+- the generated service forwards with explicit `<W, C>` type arguments, so each variant overload is mirrored in
   `service.ejs.t` too — mechanical, but two templates, not one;
 - the HTTP surface (`?variant=short`) is a closed, server-defined shape, which is I6-compatible in the way a
   client-supplied `fields=` is not. Not specified here.
@@ -259,6 +268,43 @@ with the aliased root — so "the caller's predicate AND the scope" is written o
 | hand-written `db.query.<t>` | **the caller's** — `rootScope.<t>(owner)` (§5) | manifest `hopScope` |
 
 §8.2 asserts every cell of the first row against Postgres.
+
+### 3.4 The generated class owns its read names — an override beneath it is refused, loudly
+
+A generated repository defines `findById`, `findByIds` and `list` itself (and a `count` that only re-types and calls
+`super`). So an override of one of those three on a class BETWEEN `BaseRepository` and the generated class — an app
+pattern's base class, a capability mixin, a generated `<Entity>ComposedBase`'s mixins — can never run. The generated
+service is the same: it forwards those three straight to the repository with their typed options, past any override
+on a pattern's service base.
+
+That must not be silent (decided 2026-11-12, §10 Found #10). The generated constructor calls
+`this.claimGeneratedReads(<GeneratedClass>)` (`BaseRepository` and `BaseService` both carry it; the walk is
+`assertGeneratedReadsOwned` in `runtime/base-classes/read-surface.ts`). It walks the prototype chain from the generated
+class's parent down to the base, exclusive at both ends, and **throws at construction** if any class on it has its
+own `findById` / `findByIds` / `list`, naming the method and the class:
+
+```
+AccountRepository: AuditedBase.findById overrides a read the generated AccountRepository defines itself,
+so it would never run (READ-1 §3.4). The generated findById / findByIds / list own those names. To narrow which
+rows EVERY read sees, override `scopeAndOn` …; to wrap a read, give the wrapper its own name or override it on a
+subclass of the generated class.
+```
+
+Not checked, on purpose: `count` (the generated one calls `super`, so a base override runs); a SUBCLASS of the
+generated class (its override runs — that is the ordinary way to wrap a generated read); and the family bases'
+own `findBy*` methods, which a generated finder of the same name overrides by design. No runtime base or mixin
+overrides the three names today, so the check fires only on project code.
+
+Why loud, and not the two alternatives:
+- **Shaped reads on the base, no generated override.** The typed signatures still cannot live on the base (REL-2
+  §2.1's TS2536), so they would have to reach the class by interface merging, and a base/mixin override written as
+  `findById(id)` would drop `columns` / `with` while the signature promised the shaped result — a silent shape lie
+  instead of a silent bypass.
+- **`super` when a non-base override exists.** Same lie (the override takes neither option), plus two execution
+  paths chosen at runtime.
+
+Both trade the silent bypass for a different silent defect. Refusing at construction is the only option where the
+override neither runs wrongly nor vanishes.
 
 ---
 
@@ -461,10 +507,14 @@ consumer posture — I9's warning that `bun run typecheck` does not validate a r
   own `columns`; a 2-deep include with masks at both levels; `findByIds` with mask + include; `list` with mask; a
   `queries:` finder with mask;
 - the defaults: `findById(id)` is exactly the row type;
+- the named result type (§2.2, Found #10): `AccountResult` and `AccountResult<AccountNoInclude>` are exactly `Account`
+  (the latter was `{}` with the mask first), `AccountResult<{ contacts: true }>` carries `contacts: Contact[]`,
+  `AccountResult<AccountNoInclude, { id: true }>` is `{ id: string }`, and a mask in the include slot is a
+  `@ts-expect-error`;
 - negatives (`@ts-expect-error`, which TS2578 keeps honest): an unknown column in a mask; an unknown relation in `with`;
   reading a column the mask excluded; a pre-rendered `SQL` passed as `where`; `service.count(<SQL>)` and
   `service.list({ where: <SQL> })` (review #3); one table's `rootScope` on another table's query (review #10).
-  (`with` on a relation-less entity is typed `ReadOptions<C, never>`; the CRM fixture has no relation-less entity,
+  (`with` on a relation-less entity is typed `ReadOptions<never, C>`; the CRM fixture has no relation-less entity,
   so that negative is not asserted.)
 
 ### 8.2 Runtime SQL — `just test-unit`, no Docker (`.toSQL()` on real statements)
@@ -475,7 +525,10 @@ finder and an FK finder, with and without `columns` / `with` / `where`:
 - the root predicate renders on the alias (`"d0"."tenant_id"`), never on the real name;
 - the caller's `where` renders on the alias;
 - the root `select` names exactly the masked columns (plus `id` for a `findByIds` that omitted it);
-- each hop carries `hopScope`.
+- each hop carries `hopScope`;
+- §3.4: a pattern base class overriding `findById`, and a capability mixin overriding `list`, make construction throw,
+  naming the method and the class; a mixin overriding only `count` constructs and its override runs; a subclass of the
+  generated shape may override; the same on `BaseService`.
 
 ### 8.3 Integration — `just test-integration`, real Postgres
 
@@ -488,7 +541,10 @@ Extending REL-2's leak graph (`region` / `site` / `sensor`, every entity scoped)
 - **R4** `scopedRoot(SCOPES.<t>)` (what `rootScope.<t>` expands to) on a hand-written `db.query` excludes the same root
   poison rows a repository does;
 - **R5** a lazy thenable returned from `withRequester`'s callback runs inside the context (unit test with a hand-made
-  thenable that reads the ALS in `.then`, plus a real `db.query` traversal under `strict`).
+  thenable that reads the ALS in `.then`, plus a real `db.query` traversal under `strict`);
+- **R6** (§3.4) a class with its own `findById` / `findByIds` / `list` spliced between the GENERATED `RegionRepository`
+  and its base makes `new RegionRepository(db)` throw, naming both; one with its own `count` does not; the same for
+  `findById` under the GENERATED `RegionService`. This is what proves the generated constructors make the call.
 
 ### 8.4 The host case, regenerated
 
@@ -510,8 +566,8 @@ Recorded in §11.
 |---|---|
 | `<Entity>Columns` | `ColumnsOf<'<key>'>` |
 | `<Entity>Include` | unchanged |
-| `<Entity>Result<TColumns, TWith>` | `ResultOf<'<key>', TColumns, TWith>` — **the second parameter moved** |
-| `findById` / `findByIds` / `list` / `findBy*` | `<C, W>(…, opts?: { columns?: C; with?: W })` |
+| `<Entity>Result<TWith, TColumns>` | `ResultOf<'<key>', TWith, TColumns>` — REL-2's `<Entity>Result<TWith>` unchanged; the mask is an optional second parameter |
+| `findById` / `findByIds` / `list` / `findBy*` | `<W, C>(…, opts?: { with?: W; columns?: C })` |
 
 The navigator accumulates an include tree and a root mask and calls one of these once (I4). Nothing else changes.
 
@@ -519,9 +575,9 @@ The navigator accumulates an include tree and a root mask and calls one of these
 
 ### Found #1 — the mask's compile-time brand broke every cast on Drizzle 1.0.0-rc.5
 
-`ReadOptions<C, W>.columns` is `C & NonEmptyMask<C>` (§2.4). Passing `opts?.columns` straight into `findMany` made
+`ReadOptions<W, C>.columns` is `C & NonEmptyMask<C>` (§2.4). Passing `opts?.columns` straight into `findMany` made
 Drizzle infer its result from `columns: C & NonEmptyMask<C>`, a different deferred type from the `C` that
-`<Entity>Result<C, W>` names. On **rc.4** (this repo's pin) the generated `rows as <Entity>Result<C, W>` still
+`<Entity>Result<W, C>` names. On **rc.4** (this repo's pin) the generated `rows as <Entity>Result<W, C>` still
 type-checked; on **rc.5** every one was `TS2352: Conversion … may be a mistake`, in every generated repository. No gate
 here could see it: every harness ran rc.4. Found by §8.4's scratch regeneration.
 
@@ -618,8 +674,23 @@ repository, composed or not, and the service's `Parameters<TRepo['count']>[0]` i
 | **Q-7** a mask of `undefined`-valued keys passed the key-count check | dropped before the check (§2.4) |
 | `findByIds([])` under `strict` with no context returned `[]` | `assertReadScope()` runs the boundary check first (§2.4) |
 | **A-N1** "every generated read runs on RQBv2" overstated | §3.1 lists the exceptions; the template comment, skill, CHANGELOG and PR body say "the read surface" |
-| **A-N2 / A-N3 / A-N5** break-table gaps | CHANGELOG + PR rows: the generated overrides of `findById` / `findByIds` / `list` / `count` shadow a project's own base-class or mixin overrides; a stale one-argument `<Entity>Result<…NoInclude>` still compiles (to `{}`); pattern-implied scope makes a to-one include nullable and filters the hop |
+| **A-N2 / A-N3 / A-N5** break-table gaps | A-N5: a CHANGELOG + PR row — pattern-implied scope makes a to-one include nullable and filters the hop. A-N2 (the generated overrides silently shadow a project's own base-class or mixin read override) and A-N3 (a stale one-argument `<Entity>Result<…NoInclude>` compiled to `{}`) were first recorded as break rows, then **designed away** (Found #10): the override is refused at construction, and the mask moved to the second parameter |
 | Nits | the shape gate reads a multi-line `rootFilter(` argument and requires an arrow after `RAW:` (§4.2 — #864 still covers the AST version); the #813 lint counts type-only table imports, which caught the search use case's `where` and the service's `options` binding; `_unregisterLibraryPatternForTests` no longer splits `_resetRegistryForTests` from its JSDoc; the manifest comment says "below"; README and CAP-3 carry the `memberPredicate` row-filter revision |
+
+### Found #10 — two approved design changes after the second review (2026-11-12)
+
+Both apply the standing rule that a break is allowed only when it is how the design would be from scratch, and that a
+silent break is the worst kind.
+
+- **The mask is the SECOND parameter of `<Entity>Result` / `ResultOf` (A-N3).** The first cut put it first (`columns,
+  with` — "the order the SQL is read in"). That broke REL-2's `AccountResult<W>`, and one form silently:
+  `AccountResult<AccountNoInclude>` still compiled, because `NoInclude` fit the mask slot, and resolved to `{}`. With
+  the include first and the mask an optional second parameter, every REL-2 spelling keeps its meaning, and a mask
+  written in the first slot is a TS2559 (§2.2). Method generics, `ReadOptions` and the use cases follow the same order
+  (§2.2), which also removed the use cases' `<undefined, TWith>` placeholder. Type tests: §8.1; mutation: §11.
+- **A base or mixin override of a generated read is refused at construction (A-N2).** The generated repository's
+  `findById` / `findByIds` / `list` (and the service's) silently bypassed a project's own override on a class beneath
+  them. §3.4 records the check, what it exempts and why the two non-loud designs were rejected.
 
 ### Found #5 — smaller things fixed in passing
 
@@ -637,6 +708,7 @@ Gate output from the run made after the last code edit (`4d7f46a9`, all three re
 |---|---|
 | `just test-all` | **exit 0** — typecheck; `test-unit` 4417 pass / 3 skip (the `dist/`-gated singleton spec, unbuilt checkout) / 0 fail; `test-baseline` with BOTH typecheck legs (repo pin rc.4 and rc.5) passing with only the #680 expectation; every smoke PASS (default, subsystems ×2, relationship, junction ×4, junction-cross-domain ×2, capability ×2, integration, frontend); `test-junction` 12; `test-integration-emit` 56; `test-studio` 101; 47 expectations held |
 | `just test-integration` (Docker) | **203 pass, 2 skip, 0 fail** — including `read-api.test.ts` R1–R5 |
+| After Found #10 (2026-11-12): `just test-all` / `just test-integration` | **exit 0** — `test-unit` 4435 pass / 3 skip / 0 fail; both baseline typecheck legs with only #680; every smoke PASS; `test-junction` 12; `test-integration-emit` 56; `test-studio` 101; 47 expectations held. `test-integration` **205 pass, 2 skip, 0 fail** (R6a/R6b added) |
 | Host case (§8.4), scratch regeneration on a second Drizzle RC | at `e3128c98` (not re-run after the second review): 0 `tsc` errors; the page-by-ids `findByIds` read: 1 statement, rows in input order, root + every hop on the tenant column |
 
 **Mutations, each confirmed red and then reverted:**
@@ -655,6 +727,9 @@ Gate output from the run made after the last code edit (`4d7f46a9`, all three re
 | `idKey` compares a non-uuid key as given | `read-api-sql.spec.ts` R-2 test |
 | `regenerateRelationsManifest` without the app-pattern load (#859 A-B1) | `relations-generator-patterns.test.ts` (the graph builder throws on the unregistered pattern) |
 | `idKey` compares an integer key as its text (#859 Q-4) | `read-api-sql.spec.ts` (`'07'` test) |
+| the new §8.1 result-type assertions on the mask-first head (Found #10) | `test-smoke-relationship`: `AccountResult<AccountNoInclude>` is `{}` (TS2344), `{ contacts: true }` rejected (TS2559), the mask-in-include-slot `@ts-expect-error` unused (TS2578) |
+| `assertGeneratedReadsOwned` returns without walking (§3.4) | `read-api-sql.spec.ts` §3.4 tests (3 red) |
+| drop `this.claimGeneratedReads(…)` from the repository and service templates (§3.4) | `test-integration` R6a + R6b; `repository-template.test.ts` |
 
 ## §11a Issues
 

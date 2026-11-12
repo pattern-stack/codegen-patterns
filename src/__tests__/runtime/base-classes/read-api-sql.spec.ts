@@ -39,6 +39,7 @@ import {
 	UNSCOPED,
 } from '../../../../runtime/base-classes/scope-filters';
 import { withRequester } from '../../../../runtime/base-classes/tenant-context';
+import { BaseService } from '../../../../runtime/base-classes/base-service';
 
 // ── the schema, as the entity templates emit one ───────────────────────────
 const owners = pgTable('owners', {
@@ -103,8 +104,8 @@ type ColumnsOf<T extends keyof Relations> = NonNullable<
 >;
 type ResultOf<
 	T extends keyof Relations,
-	C extends ColumnsOf<T> | undefined,
 	W extends IncludeOf<T>,
+	C extends ColumnsOf<T> | undefined = undefined,
 > = BuildQueryResult<Relations, Relations[T], { columns: C; with: W }>;
 
 // ── a fake pg client: records statements, serves canned rows ────────────────
@@ -131,9 +132,9 @@ type WidgetColumns = ColumnsOf<'widgets'>;
 type WidgetInclude = IncludeOf<'widgets'>;
 type WidgetNoInclude = Record<string, never>;
 type WidgetResult<
-	C extends WidgetColumns | undefined = undefined,
 	W extends WidgetInclude = WidgetNoInclude,
-> = ResultOf<'widgets', C, W>;
+	C extends WidgetColumns | undefined = undefined,
+> = ResultOf<'widgets', W, C>;
 
 class WidgetRepository extends BaseRepository<Widget, typeof widgets, Relations> {
 	readonly table = widgets;
@@ -149,6 +150,7 @@ class WidgetRepository extends BaseRepository<Widget, typeof widgets, Relations>
 	constructor(db: ConstructorParameters<typeof BaseRepository<Widget, typeof widgets, Relations>>[0]) {
 		super(db);
 		this.requireRelationalQuery('widgets');
+		this.claimGeneratedReads(WidgetRepository);
 	}
 
 	/** Exposed for the review-#1 guard test. */
@@ -162,34 +164,34 @@ class WidgetRepository extends BaseRepository<Widget, typeof widgets, Relations>
 	}
 
 	// A unique `queries:` finder, in the generated shape.
-	async findBySku<C extends WidgetColumns | undefined = undefined, W extends WidgetInclude = WidgetNoInclude>(
+	async findBySku<W extends WidgetInclude = WidgetNoInclude, C extends WidgetColumns | undefined = undefined>(
 		sku: string,
-		opts?: ReadOptions<C, W>,
-	): Promise<WidgetResult<C, W> | null> {
+		opts?: ReadOptions<W, C>,
+	): Promise<WidgetResult<W, C> | null> {
 		const row = await this.db.query.widgets.findFirst({
 			where: { RAW: this.rootFilter((t) => eq(t.sku, sku)) },
 			columns: this.checkColumns<C>(opts?.columns),
 			with: opts?.with,
 		});
-		return (row as WidgetResult<C, W> | undefined) ?? null;
+		return (row as WidgetResult<W, C> | undefined) ?? null;
 	}
 
-	override async findById<C extends WidgetColumns | undefined = undefined, W extends WidgetInclude = WidgetNoInclude>(
+	override async findById<W extends WidgetInclude = WidgetNoInclude, C extends WidgetColumns | undefined = undefined>(
 		id: string,
-		opts?: ReadOptions<C, W>,
-	): Promise<WidgetResult<C, W> | null> {
+		opts?: ReadOptions<W, C>,
+	): Promise<WidgetResult<W, C> | null> {
 		const row = await this.db.query.widgets.findFirst({
 			where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
 			columns: this.checkColumns<C>(opts?.columns),
 			with: opts?.with,
 		});
-		return (row as WidgetResult<C, W> | undefined) ?? null;
+		return (row as WidgetResult<W, C> | undefined) ?? null;
 	}
 
-	override async findByIds<C extends WidgetColumns | undefined = undefined, W extends WidgetInclude = WidgetNoInclude>(
+	override async findByIds<W extends WidgetInclude = WidgetNoInclude, C extends WidgetColumns | undefined = undefined>(
 		ids: readonly string[],
-		opts?: ReadOptions<C, W>,
-	): Promise<Array<WidgetResult<C, W>>> {
+		opts?: ReadOptions<W, C>,
+	): Promise<Array<WidgetResult<W, C>>> {
 		const unique = this.uniqueIds(ids);
 		if (unique.length === 0) {
 			this.assertReadScope();
@@ -201,12 +203,12 @@ class WidgetRepository extends BaseRepository<Widget, typeof widgets, Relations>
 			columns: mask.columns,
 			with: opts?.with,
 		});
-		return this.inInputOrder(rows, unique, mask.stripId) as Array<WidgetResult<C, W>>;
+		return this.inInputOrder(rows, unique, mask.stripId) as Array<WidgetResult<W, C>>;
 	}
 
-	override async list<C extends WidgetColumns | undefined = undefined, W extends WidgetInclude = WidgetNoInclude>(
-		query?: ListOptions<typeof widgets> & ReadOptions<C, W>,
-	): Promise<Array<WidgetResult<C, W>>> {
+	override async list<W extends WidgetInclude = WidgetNoInclude, C extends WidgetColumns | undefined = undefined>(
+		query?: ListOptions<typeof widgets> & ReadOptions<W, C>,
+	): Promise<Array<WidgetResult<W, C>>> {
 		const sort = query?.sort;
 		const rows = await this.db.query.widgets.findMany({
 			where: { RAW: this.rootFilter(query?.where) },
@@ -216,13 +218,13 @@ class WidgetRepository extends BaseRepository<Widget, typeof widgets, Relations>
 			limit: query?.limit,
 			offset: query?.offset,
 		});
-		return rows as Array<WidgetResult<C, W>>;
+		return rows as Array<WidgetResult<W, C>>;
 	}
 
-	async findByOwnerId<C extends WidgetColumns | undefined = undefined, W extends WidgetInclude = WidgetNoInclude>(
+	async findByOwnerId<W extends WidgetInclude = WidgetNoInclude, C extends WidgetColumns | undefined = undefined>(
 		id: string,
-		opts?: { limit?: number } & ReadOptions<C, W>,
-	): Promise<Array<WidgetResult<C, W>>> {
+		opts?: { limit?: number } & ReadOptions<W, C>,
+	): Promise<Array<WidgetResult<W, C>>> {
 		const rows = await this.db.query.widgets.findMany({
 			where: { RAW: this.rootFilter((t) => eq(t.ownerId, id)) },
 			columns: this.checkColumns<C>(opts?.columns),
@@ -230,7 +232,7 @@ class WidgetRepository extends BaseRepository<Widget, typeof widgets, Relations>
 			orderBy: opts?.limit === undefined ? undefined : { id: 'asc' },
 			limit: opts?.limit,
 		});
-		return rows as Array<WidgetResult<C, W>>;
+		return rows as Array<WidgetResult<W, C>>;
 	}
 }
 
@@ -489,6 +491,132 @@ describe('READ-1 review #8a — a client without the relations manifest fails at
 		expect(() => new WidgetRepository(bare as never)).toThrow(
 			/no relational query for 'widgets'.*drizzle\(\{ client, relations \}\)/,
 		);
+	});
+});
+
+// ── READ-1 §3.4: a base or mixin override of a generated read is LOUD ────────
+type WidgetDb = ConstructorParameters<typeof BaseRepository<Widget, typeof widgets, Relations>>[0];
+
+/** A project's own pattern base class that overrides `findById`. */
+abstract class AuditedWidgetBase extends BaseRepository<Widget, typeof widgets, Relations> {
+	readonly audited: string[] = [];
+	override async findById(id: string): Promise<Widget | null> {
+		this.audited.push(id);
+		return super.findById(id);
+	}
+}
+
+/** A capability mixin (ADR-041 shape) that overrides `list`, and one that overrides only `count`. */
+type RepoCtor = abstract new (...args: any[]) => BaseRepository<Widget, typeof widgets, Relations>;
+function WithCachedList<TBase extends RepoCtor>(Base: TBase) {
+	abstract class CachedList extends Base {
+		override async list(): Promise<Widget[]> {
+			return [];
+		}
+	}
+	return CachedList;
+}
+function WithCountedReads<TBase extends RepoCtor>(Base: TBase) {
+	abstract class CountedReads extends Base {
+		counted = 0;
+		override async count(where?: Parameters<BaseRepository<Widget, typeof widgets, Relations>['count']>[0]) {
+			this.counted++;
+			return super.count(where);
+		}
+	}
+	return CountedReads;
+}
+
+/** The generated shape over each: it defines `findById` / `list` itself and claims them. */
+class OverAuditedBase extends AuditedWidgetBase {
+	readonly table = widgets;
+	constructor(db: WidgetDb) {
+		super(db);
+		this.claimGeneratedReads(OverAuditedBase);
+	}
+	override async findById(id: string): Promise<Widget | null> {
+		return (await this.db.query.widgets.findFirst({ where: { RAW: this.rootFilter((t) => eq(t.id, id)) } })) ?? null;
+	}
+}
+class OverCachedList extends WithCachedList(BaseRepository<Widget, typeof widgets, Relations>) {
+	readonly table = widgets;
+	constructor(db: WidgetDb) {
+		super(db);
+		this.claimGeneratedReads(OverCachedList);
+	}
+	override async list(): Promise<Widget[]> {
+		return this.db.query.widgets.findMany({ where: { RAW: this.rootFilter() } });
+	}
+}
+class OverCountedReads extends WithCountedReads(BaseRepository<Widget, typeof widgets, Relations>) {
+	readonly table = widgets;
+	constructor(db: WidgetDb) {
+		super(db);
+		this.claimGeneratedReads(OverCountedReads);
+	}
+}
+/** A project SUBCLASS of the generated class — its override runs, so it is not refused. */
+class CustomWidgetRepository extends WidgetRepository {
+	override async findById(id: string): Promise<Widget | null> {
+		return id === 'custom' ? null : super.findById(id);
+	}
+}
+
+/** The same rule on the service: a pattern's service base overriding `findById`. */
+abstract class CachedServiceBase extends BaseService<WidgetRepository, Widget> {
+	override findById(id: string): Promise<Widget | null> {
+		return this.repository.findById(id);
+	}
+}
+class OverCachedService extends CachedServiceBase {
+	constructor(repository: WidgetRepository) {
+		super(repository);
+		this.claimGeneratedReads(OverCachedService);
+	}
+}
+class PlainWidgetService extends BaseService<WidgetRepository, Widget> {
+	constructor(repository: WidgetRepository) {
+		super(repository);
+		this.claimGeneratedReads(PlainWidgetService);
+	}
+}
+
+describe('READ-1 §3.4 — a base-class or mixin override of a generated read is refused at construction', () => {
+	it('a pattern base class overriding `findById`: construction throws, naming the method and the class', () => {
+		const { db } = fakeDb();
+		expect(() => new OverAuditedBase(db)).toThrow(
+			/OverAuditedBase: AuditedWidgetBase\.findById overrides a read the generated OverAuditedBase defines itself, so it would never run/,
+		);
+	});
+
+	it('a capability mixin overriding `list`: construction throws, naming the mixin', () => {
+		const { db } = fakeDb();
+		expect(() => new OverCachedList(db)).toThrow(/CachedList\.list overrides a read/);
+	});
+
+	it('a mixin overriding only `count` is fine — the generated `count` calls `super`, so it runs', async () => {
+		const { db } = fakeDb([[3]]);
+		const repo = new OverCountedReads(db);
+		await withRequester({ userId: 'u1', organizationId: null, tenantId: '11111111-1111-4111-8111-111111111111' }, () =>
+			repo.count(),
+		);
+		expect(repo.counted).toBe(1);
+	});
+
+	it('the generated shape over the plain base constructs; a SUBCLASS of it may override (its override runs)', async () => {
+		const { db, statements } = fakeDb();
+		expect(() => new WidgetRepository(db)).not.toThrow();
+		const custom = new CustomWidgetRepository(db);
+		expect(await custom.findById('custom')).toBeNull();
+		expect(statements).toHaveLength(0);
+	});
+
+	it('the service: a service base overriding `findById` throws; the plain base constructs', () => {
+		const repo = new WidgetRepository(fakeDb().db);
+		expect(() => new OverCachedService(repo)).toThrow(
+			/OverCachedService: CachedServiceBase\.findById overrides a read the generated OverCachedService defines itself/,
+		);
+		expect(() => new PlainWidgetService(repo)).not.toThrow();
 	});
 });
 

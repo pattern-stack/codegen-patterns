@@ -76,14 +76,16 @@ export type ContactInclude = IncludeOf<'contacts'>;
 export type ContactNoInclude = globalThis.Record<string, never>;
 
 /**
- * The row a contact read resolves to: the root narrowed by `TColumns`
- * (`undefined` ⇒ every column), each included relation nested exactly as asked.
- * `ContactResult` alone is the plain row.
+ * The row a contact read resolves to: each included relation nested
+ * exactly as asked, the root narrowed by `TColumns` (`undefined` ⇒ every column).
+ * `ContactResult` alone is the plain row; `ContactResult<TWith>` is the row
+ * with that include. The mask is SECOND so a one-argument `ContactResult<…>`
+ * is always an include, never a mask (READ-1 §2.2).
  */
 export type ContactResult<
-  TColumns extends ContactColumns | undefined = undefined,
   TWith extends ContactInclude = ContactNoInclude,
-> = ResultOf<'contacts', TColumns, TWith>;
+  TColumns extends ContactColumns | undefined = undefined,
+> = ResultOf<'contacts', TWith, TColumns>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -91,7 +93,7 @@ export type ContactResult<
  * The controller merges allowlisted fragments at REQUEST time, so which relations
  * are present is not statically known — one of finitely many literals, but not a
  * single one. So the handler's result type is the widened form: every relation
- * OPTIONAL, the row's own columns required. `ContactResult<undefined, ContactInclude>`
+ * OPTIONAL, the row's own columns required. `ContactResult<ContactInclude>`
  * (the fully-included shape) would be wrong here — it claims every relation is
  * always present, which no single request produces.
  *
@@ -99,7 +101,7 @@ export type ContactResult<
  * the call site (REL-2 §2.3/§5.2).
  */
 export type ContactApiResult = Contact &
-  globalThis.Partial<ContactResult<undefined, ContactInclude>>;
+  globalThis.Partial<ContactResult<ContactInclude>>;
 
 @Injectable()
 export class ContactRepository extends IntegratedEntityRepository<
@@ -139,6 +141,9 @@ export class ContactRepository extends IntegratedEntityRepository<
     // Every read runs on db.query.contacts — fail HERE, naming the cause,
     // if the injected client was built without the relations manifest.
     this.requireRelationalQuery('contacts');
+    // findById / findByIds / list are defined below, so a pattern base class or
+    // capability mixin overriding one of them would never run — throw, naming it.
+    this.claimGeneratedReads(ContactRepository);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -163,16 +168,16 @@ export class ContactRepository extends IntegratedEntityRepository<
   // one. The depth cap is an HTTP concern (`api.includes.max_depth`).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override async findById<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
+  override async findById<W extends ContactInclude = ContactNoInclude, C extends ContactColumns | undefined = undefined>(
     id: string,
-    opts?: ReadOptions<C, W>,
-  ): Promise<ContactResult<C, W> | null> {
+    opts?: ReadOptions<W, C>,
+  ): Promise<ContactResult<W, C> | null> {
     const row = await this.db.query.contacts.findFirst({
       where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
       columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
     });
-    return (row as ContactResult<C, W> | undefined) ?? null;
+    return (row as ContactResult<W, C> | undefined) ?? null;
   }
 
   /**
@@ -183,10 +188,10 @@ export class ContactRepository extends IntegratedEntityRepository<
    * is selected and stripped again. Not chunked: Postgres caps a statement at
    * 65 535 parameters.
    */
-  override async findByIds<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
+  override async findByIds<W extends ContactInclude = ContactNoInclude, C extends ContactColumns | undefined = undefined>(
     ids: readonly string[],
-    opts?: ReadOptions<C, W>,
-  ): Promise<Array<ContactResult<C, W>>> {
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<ContactResult<W, C>>> {
     const unique = this.uniqueIds(ids);
     if (unique.length === 0) {
       // No statement — but the same boundary check one would make (strict throws).
@@ -199,16 +204,16 @@ export class ContactRepository extends IntegratedEntityRepository<
       columns: mask.columns,
       with: opts?.with,
     });
-    return this.inInputOrder(rows, unique, mask.stripId) as Array<ContactResult<C, W>>;
+    return this.inInputOrder(rows, unique, mask.stripId) as Array<ContactResult<W, C>>;
   }
 
   /**
    * `where` is a ROW FILTER — `(t) => eq(t.name, x)` — never a pre-rendered SQL:
    * it is handed the aliased root. `sort` is column keys, rendered the same way.
    */
-  override async list<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
-    query?: ListOptions<typeof contacts> & ReadOptions<C, W>,
-  ): Promise<Array<ContactResult<C, W>>> {
+  override async list<W extends ContactInclude = ContactNoInclude, C extends ContactColumns | undefined = undefined>(
+    query?: ListOptions<typeof contacts> & ReadOptions<W, C>,
+  ): Promise<Array<ContactResult<W, C>>> {
     const sort = query?.sort;
     const rows = await this.db.query.contacts.findMany({
       where: { RAW: this.rootFilter(query?.where) },
@@ -218,7 +223,7 @@ export class ContactRepository extends IntegratedEntityRepository<
       limit: query?.limit,
       offset: query?.offset,
     });
-    return rows as Array<ContactResult<C, W>>;
+    return rows as Array<ContactResult<W, C>>;
   }
 
   /**
@@ -235,28 +240,28 @@ export class ContactRepository extends IntegratedEntityRepository<
   // Declarative queries (from queries: block in entity YAML)
   // ═══════════════════════════════════════════════════════════════════════
 
-  async findByEmail<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
+  async findByEmail<W extends ContactInclude = ContactNoInclude, C extends ContactColumns | undefined = undefined>(
     email: string,
-    opts?: ReadOptions<C, W>,
-  ): Promise<ContactResult<C, W> | null> {
+    opts?: ReadOptions<W, C>,
+  ): Promise<ContactResult<W, C> | null> {
     const row = await this.db.query.contacts.findFirst({
       where: { RAW: this.rootFilter((t) => eq(t.email, email)) },
       columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
     });
-    return (row as ContactResult<C, W> | undefined) ?? null;
+    return (row as ContactResult<W, C> | undefined) ?? null;
   }
 
-  async findByUserIdAndAccountId<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
+  async findByUserIdAndAccountId<W extends ContactInclude = ContactNoInclude, C extends ContactColumns | undefined = undefined>(
     userId: string, accountId: string,
-    opts?: ReadOptions<C, W>,
-  ): Promise<Array<ContactResult<C, W>>> {
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<ContactResult<W, C>>> {
     const rows = await this.db.query.contacts.findMany({
       where: { RAW: this.rootFilter((t) => and(eq(t.userId, userId), eq(t.accountId, accountId))) },
       columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
     });
-    return rows as Array<ContactResult<C, W>>;
+    return rows as Array<ContactResult<W, C>>;
   }
 
   async findByOpportunityId(opportunityId: string): Promise<Contact[]> {
@@ -276,10 +281,10 @@ export class ContactRepository extends IntegratedEntityRepository<
   // is skipped — that declarative query is the more specific intent and wins.
   // ═══════════════════════════════════════════════════════════════════════
 
-  async findByAccountId<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
+  async findByAccountId<W extends ContactInclude = ContactNoInclude, C extends ContactColumns | undefined = undefined>(
     id: string,
-    opts?: { limit?: number } & ReadOptions<C, W>,
-  ): Promise<Array<ContactResult<C, W>>> {
+    opts?: { limit?: number } & ReadOptions<W, C>,
+  ): Promise<Array<ContactResult<W, C>>> {
     const rows = await this.db.query.contacts.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.accountId, id)) },
       columns: this.checkColumns<C>(opts?.columns),
@@ -288,13 +293,13 @@ export class ContactRepository extends IntegratedEntityRepository<
       orderBy: opts?.limit === undefined ? undefined : { id: 'asc' },
       limit: opts?.limit,
     });
-    return rows as Array<ContactResult<C, W>>;
+    return rows as Array<ContactResult<W, C>>;
   }
 
-  async findByUserId<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
+  async findByUserId<W extends ContactInclude = ContactNoInclude, C extends ContactColumns | undefined = undefined>(
     id: string,
-    opts?: { limit?: number } & ReadOptions<C, W>,
-  ): Promise<Array<ContactResult<C, W>>> {
+    opts?: { limit?: number } & ReadOptions<W, C>,
+  ): Promise<Array<ContactResult<W, C>>> {
     const rows = await this.db.query.contacts.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.userId, id)) },
       columns: this.checkColumns<C>(opts?.columns),
@@ -303,7 +308,7 @@ export class ContactRepository extends IntegratedEntityRepository<
       orderBy: opts?.limit === undefined ? undefined : { id: 'asc' },
       limit: opts?.limit,
     });
-    return rows as Array<ContactResult<C, W>>;
+    return rows as Array<ContactResult<W, C>>;
   }
 
   // Inherited from IntegratedEntityRepository:

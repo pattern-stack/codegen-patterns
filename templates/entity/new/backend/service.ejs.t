@@ -13,18 +13,18 @@ import { <%= classNames.repository %> } from './<%= entityFileStem %>.repository
 // the same generics, the same options, the same result.
 const E = classNames.entity;
 const _readGenerics = includes
-  ? `<C extends ${E}Columns | undefined = undefined, W extends ${E}Include = ${E}NoInclude>`
+  ? `<W extends ${E}Include = ${E}NoInclude, C extends ${E}Columns | undefined = undefined>`
   : `<C extends ${E}Columns | undefined = undefined>`;
-const _readArgs = includes ? '<C, W>' : '<C>';
-const _readOpts = includes ? 'ReadOptions<C, W>' : 'ReadOptions<C, never>';
-const _readResult = includes ? `${E}Result<C, W>` : `${E}Result<C>`;
+const _readArgs = includes ? '<W, C>' : '<C>';
+const _readOpts = includes ? 'ReadOptions<W, C>' : 'ReadOptions<never, C>';
+const _readResult = includes ? `${E}Result<W, C>` : `${E}Result<${E}NoInclude, C>`;
 _%>
 import type {
   <%= E %>Columns,
 <% if (includes) { -%>
   <%= E %>Include,
-  <%= E %>NoInclude,
 <% } -%>
+  <%= E %>NoInclude,
   <%= E %>Result,
 } from './<%= entityFileStem %>.repository';
 import type { ListOptions, ReadOptions } from '<%= baseRepositoryImport %>';
@@ -77,6 +77,9 @@ export class <%= classNames.service %> extends WithAnalytics(
 <%_ }) _%>
   ) {
     super(repository);
+    // findById / findByIds / list are forwarded below — an override of one on a
+    // pattern's service base would never run, so construction throws, naming it.
+    this.claimGeneratedReads(<%= classNames.service %>);
   }
 
   // ═══════════════════════════════════════════════════════════════════════

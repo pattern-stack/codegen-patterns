@@ -380,6 +380,7 @@ import { IntegratedEntityService } from '@shared/base-classes/integrated-entity-
 import { OpportunityRepository } from './opportunity.repository';
 import type {
   OpportunityColumns,
+  OpportunityNoInclude,
   OpportunityResult,
 } from './opportunity.repository';
 import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
@@ -402,6 +403,9 @@ export class OpportunityService extends WithAnalytics(
     protected override readonly repository: OpportunityRepository,
   ) {
     super(repository);
+    // findById / findByIds / list are forwarded below — an override of one on a
+    // pattern's service base would never run, so construction throws, naming it.
+    this.claimGeneratedReads(OpportunityService);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -415,21 +419,21 @@ export class OpportunityService extends WithAnalytics(
 
   override findById<C extends OpportunityColumns | undefined = undefined>(
     id: string,
-    opts?: ReadOptions<C, never>,
-  ): Promise<OpportunityResult<C> | null> {
+    opts?: ReadOptions<never, C>,
+  ): Promise<OpportunityResult<OpportunityNoInclude, C> | null> {
     return this.repository.findById<C>(id, opts);
   }
 
   override findByIds<C extends OpportunityColumns | undefined = undefined>(
     ids: readonly string[],
-    opts?: ReadOptions<C, never>,
-  ): Promise<Array<OpportunityResult<C>>> {
+    opts?: ReadOptions<never, C>,
+  ): Promise<Array<OpportunityResult<OpportunityNoInclude, C>>> {
     return this.repository.findByIds<C>(ids, opts);
   }
 
   override list<C extends OpportunityColumns | undefined = undefined>(
-    listOptions?: ListOptions<typeof opportunities> & ReadOptions<C, never>,
-  ): Promise<Array<OpportunityResult<C>>> {
+    listOptions?: ListOptions<typeof opportunities> & ReadOptions<never, C>,
+  ): Promise<Array<OpportunityResult<OpportunityNoInclude, C>>> {
     return this.repository.list<C>(listOptions);
   }
 
@@ -520,6 +524,9 @@ export class ContactService extends WithAnalytics(
     private readonly accountRepo: AccountRepository,
   ) {
     super(repository);
+    // findById / findByIds / list are forwarded below — an override of one on a
+    // pattern's service base would never run, so construction throws, naming it.
+    this.claimGeneratedReads(ContactService);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -531,24 +538,24 @@ export class ContactService extends WithAnalytics(
   // calls, no navigator — the navigator is REL-3's (#588).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override findById<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
+  override findById<W extends ContactInclude = ContactNoInclude, C extends ContactColumns | undefined = undefined>(
     id: string,
-    opts?: ReadOptions<C, W>,
-  ): Promise<ContactResult<C, W> | null> {
-    return this.repository.findById<C, W>(id, opts);
+    opts?: ReadOptions<W, C>,
+  ): Promise<ContactResult<W, C> | null> {
+    return this.repository.findById<W, C>(id, opts);
   }
 
-  override findByIds<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
+  override findByIds<W extends ContactInclude = ContactNoInclude, C extends ContactColumns | undefined = undefined>(
     ids: readonly string[],
-    opts?: ReadOptions<C, W>,
-  ): Promise<Array<ContactResult<C, W>>> {
-    return this.repository.findByIds<C, W>(ids, opts);
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<ContactResult<W, C>>> {
+    return this.repository.findByIds<W, C>(ids, opts);
   }
 
-  override list<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
-    listOptions?: ListOptions<typeof contacts> & ReadOptions<C, W>,
-  ): Promise<Array<ContactResult<C, W>>> {
-    return this.repository.list<C, W>(listOptions);
+  override list<W extends ContactInclude = ContactNoInclude, C extends ContactColumns | undefined = undefined>(
+    listOptions?: ListOptions<typeof contacts> & ReadOptions<W, C>,
+  ): Promise<Array<ContactResult<W, C>>> {
+    return this.repository.list<W, C>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

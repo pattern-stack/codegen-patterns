@@ -33,14 +33,16 @@ export type OpportunityInclude = IncludeOf<'opportunities'>;
 export type OpportunityNoInclude = globalThis.Record<string, never>;
 
 /**
- * The row a opportunity read resolves to: the root narrowed by `TColumns`
- * (`undefined` ⇒ every column), each included relation nested exactly as asked.
- * `OpportunityResult` alone is the plain row.
+ * The row a opportunity read resolves to: each included relation nested
+ * exactly as asked, the root narrowed by `TColumns` (`undefined` ⇒ every column).
+ * `OpportunityResult` alone is the plain row; `OpportunityResult<TWith>` is the row
+ * with that include. The mask is SECOND so a one-argument `OpportunityResult<…>`
+ * is always an include, never a mask (READ-1 §2.2).
  */
 export type OpportunityResult<
-  TColumns extends OpportunityColumns | undefined = undefined,
   TWith extends OpportunityInclude = OpportunityNoInclude,
-> = ResultOf<'opportunities', TColumns, TWith>;
+  TColumns extends OpportunityColumns | undefined = undefined,
+> = ResultOf<'opportunities', TWith, TColumns>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -48,7 +50,7 @@ export type OpportunityResult<
  * The controller merges allowlisted fragments at REQUEST time, so which relations
  * are present is not statically known — one of finitely many literals, but not a
  * single one. So the handler's result type is the widened form: every relation
- * OPTIONAL, the row's own columns required. `OpportunityResult<undefined, OpportunityInclude>`
+ * OPTIONAL, the row's own columns required. `OpportunityResult<OpportunityInclude>`
  * (the fully-included shape) would be wrong here — it claims every relation is
  * always present, which no single request produces.
  *
@@ -56,7 +58,7 @@ export type OpportunityResult<
  * the call site (REL-2 §2.3/§5.2).
  */
 export type OpportunityApiResult = Opportunity &
-  globalThis.Partial<OpportunityResult<undefined, OpportunityInclude>>;
+  globalThis.Partial<OpportunityResult<OpportunityInclude>>;
 
 @Injectable()
 export class OpportunityRepository extends BaseRepository<Opportunity, typeof opportunities, Relations> {
@@ -67,6 +69,9 @@ export class OpportunityRepository extends BaseRepository<Opportunity, typeof op
     // Every read runs on db.query.opportunities — fail HERE, naming the cause,
     // if the injected client was built without the relations manifest.
     this.requireRelationalQuery('opportunities');
+    // findById / findByIds / list are defined below, so a pattern base class or
+    // capability mixin overriding one of them would never run — throw, naming it.
+    this.claimGeneratedReads(OpportunityRepository);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -91,16 +96,16 @@ export class OpportunityRepository extends BaseRepository<Opportunity, typeof op
   // one. The depth cap is an HTTP concern (`api.includes.max_depth`).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override async findById<C extends OpportunityColumns | undefined = undefined, W extends OpportunityInclude = OpportunityNoInclude>(
+  override async findById<W extends OpportunityInclude = OpportunityNoInclude, C extends OpportunityColumns | undefined = undefined>(
     id: string,
-    opts?: ReadOptions<C, W>,
-  ): Promise<OpportunityResult<C, W> | null> {
+    opts?: ReadOptions<W, C>,
+  ): Promise<OpportunityResult<W, C> | null> {
     const row = await this.db.query.opportunities.findFirst({
       where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
       columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
     });
-    return (row as OpportunityResult<C, W> | undefined) ?? null;
+    return (row as OpportunityResult<W, C> | undefined) ?? null;
   }
 
   /**
@@ -111,10 +116,10 @@ export class OpportunityRepository extends BaseRepository<Opportunity, typeof op
    * is selected and stripped again. Not chunked: Postgres caps a statement at
    * 65 535 parameters.
    */
-  override async findByIds<C extends OpportunityColumns | undefined = undefined, W extends OpportunityInclude = OpportunityNoInclude>(
+  override async findByIds<W extends OpportunityInclude = OpportunityNoInclude, C extends OpportunityColumns | undefined = undefined>(
     ids: readonly string[],
-    opts?: ReadOptions<C, W>,
-  ): Promise<Array<OpportunityResult<C, W>>> {
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<OpportunityResult<W, C>>> {
     const unique = this.uniqueIds(ids);
     if (unique.length === 0) {
       // No statement — but the same boundary check one would make (strict throws).
@@ -127,16 +132,16 @@ export class OpportunityRepository extends BaseRepository<Opportunity, typeof op
       columns: mask.columns,
       with: opts?.with,
     });
-    return this.inInputOrder(rows, unique, mask.stripId) as Array<OpportunityResult<C, W>>;
+    return this.inInputOrder(rows, unique, mask.stripId) as Array<OpportunityResult<W, C>>;
   }
 
   /**
    * `where` is a ROW FILTER — `(t) => eq(t.name, x)` — never a pre-rendered SQL:
    * it is handed the aliased root. `sort` is column keys, rendered the same way.
    */
-  override async list<C extends OpportunityColumns | undefined = undefined, W extends OpportunityInclude = OpportunityNoInclude>(
-    query?: ListOptions<typeof opportunities> & ReadOptions<C, W>,
-  ): Promise<Array<OpportunityResult<C, W>>> {
+  override async list<W extends OpportunityInclude = OpportunityNoInclude, C extends OpportunityColumns | undefined = undefined>(
+    query?: ListOptions<typeof opportunities> & ReadOptions<W, C>,
+  ): Promise<Array<OpportunityResult<W, C>>> {
     const sort = query?.sort;
     const rows = await this.db.query.opportunities.findMany({
       where: { RAW: this.rootFilter(query?.where) },
@@ -146,7 +151,7 @@ export class OpportunityRepository extends BaseRepository<Opportunity, typeof op
       limit: query?.limit,
       offset: query?.offset,
     });
-    return rows as Array<OpportunityResult<C, W>>;
+    return rows as Array<OpportunityResult<W, C>>;
   }
 
   /**
@@ -166,10 +171,10 @@ export class OpportunityRepository extends BaseRepository<Opportunity, typeof op
   // is skipped — that declarative query is the more specific intent and wins.
   // ═══════════════════════════════════════════════════════════════════════
 
-  async findByOrganizationId<C extends OpportunityColumns | undefined = undefined, W extends OpportunityInclude = OpportunityNoInclude>(
+  async findByOrganizationId<W extends OpportunityInclude = OpportunityNoInclude, C extends OpportunityColumns | undefined = undefined>(
     id: string,
-    opts?: { limit?: number } & ReadOptions<C, W>,
-  ): Promise<Array<OpportunityResult<C, W>>> {
+    opts?: { limit?: number } & ReadOptions<W, C>,
+  ): Promise<Array<OpportunityResult<W, C>>> {
     const rows = await this.db.query.opportunities.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.organizationId, id)) },
       columns: this.checkColumns<C>(opts?.columns),
@@ -178,13 +183,13 @@ export class OpportunityRepository extends BaseRepository<Opportunity, typeof op
       orderBy: opts?.limit === undefined ? undefined : { id: 'asc' },
       limit: opts?.limit,
     });
-    return rows as Array<OpportunityResult<C, W>>;
+    return rows as Array<OpportunityResult<W, C>>;
   }
 
-  async findByOwnerId<C extends OpportunityColumns | undefined = undefined, W extends OpportunityInclude = OpportunityNoInclude>(
+  async findByOwnerId<W extends OpportunityInclude = OpportunityNoInclude, C extends OpportunityColumns | undefined = undefined>(
     id: string,
-    opts?: { limit?: number } & ReadOptions<C, W>,
-  ): Promise<Array<OpportunityResult<C, W>>> {
+    opts?: { limit?: number } & ReadOptions<W, C>,
+  ): Promise<Array<OpportunityResult<W, C>>> {
     const rows = await this.db.query.opportunities.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.ownerId, id)) },
       columns: this.checkColumns<C>(opts?.columns),
@@ -193,13 +198,13 @@ export class OpportunityRepository extends BaseRepository<Opportunity, typeof op
       orderBy: opts?.limit === undefined ? undefined : { id: 'asc' },
       limit: opts?.limit,
     });
-    return rows as Array<OpportunityResult<C, W>>;
+    return rows as Array<OpportunityResult<W, C>>;
   }
 
-  async findByStateId<C extends OpportunityColumns | undefined = undefined, W extends OpportunityInclude = OpportunityNoInclude>(
+  async findByStateId<W extends OpportunityInclude = OpportunityNoInclude, C extends OpportunityColumns | undefined = undefined>(
     id: string,
-    opts?: { limit?: number } & ReadOptions<C, W>,
-  ): Promise<Array<OpportunityResult<C, W>>> {
+    opts?: { limit?: number } & ReadOptions<W, C>,
+  ): Promise<Array<OpportunityResult<W, C>>> {
     const rows = await this.db.query.opportunities.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.stateId, id)) },
       columns: this.checkColumns<C>(opts?.columns),
@@ -208,7 +213,7 @@ export class OpportunityRepository extends BaseRepository<Opportunity, typeof op
       orderBy: opts?.limit === undefined ? undefined : { id: 'asc' },
       limit: opts?.limit,
     });
-    return rows as Array<OpportunityResult<C, W>>;
+    return rows as Array<OpportunityResult<W, C>>;
   }
 
   // Inherited from BaseRepository:

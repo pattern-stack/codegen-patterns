@@ -12,7 +12,11 @@
  * erroring fails the build.
  */
 import { eq, sql } from 'drizzle-orm';
-import type { AccountRepository } from './modules/accounts/account.repository';
+import type {
+	AccountNoInclude,
+	AccountRepository,
+	AccountResult,
+} from './modules/accounts/account.repository';
 import type { ContactRepository } from './modules/contacts/contact.repository';
 import type { OpportunityRepository } from './modules/opportunities/opportunity.repository';
 import type { AccountService } from './modules/accounts/account.service';
@@ -44,6 +48,22 @@ export async function defaults(): Promise<void> {
 	const listed = await accountRepo.list();
 	assert<Equal<typeof listed, Account[]>>();
 }
+
+export function resultTypes(): void {
+	// `<Entity>Result<TWith, TColumns>` — the include FIRST, the mask SECOND (both
+	// defaulted), so REL-2's one-argument `AccountResult<W>` keeps its meaning.
+	assert<Equal<AccountResult, Account>>();
+	// The full row. With the mask first this was `{}` — `NoInclude` fit the mask slot
+	// and selected nothing, and the error surfaced only at a property read.
+	assert<Equal<AccountResult<AccountNoInclude>, Account>>();
+	type WithContacts = AccountResult<{ contacts: true }>;
+	assert<Equal<WithContacts['contacts'], Contact[]>>();
+	assert<Equal<WithContacts['name'], Account['name']>>();
+	assert<Equal<AccountResult<AccountNoInclude, { id: true }>, { id: string }>>();
+}
+
+// @ts-expect-error — a mask in the include slot shares no key with the include surface
+export type MaskInIncludeSlot = AccountResult<{ id: true }>;
 
 export async function rootMask(): Promise<void> {
 	const row = await accountRepo.findById('x', { columns: { id: true, name: true } });

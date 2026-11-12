@@ -260,9 +260,14 @@ describe('backend repository template — every shaped read carries its predicat
     expect(output).toContain("this.requireRelationalQuery('contacts');");
   });
 
+  it('the constructor claims the read names it defines, so a base or mixin override of one throws (READ-1 §3.4)', () => {
+    const output = renderRepository(buildBackendLocals(queriesEntity, withEntities()));
+    expect(output).toContain('this.claimGeneratedReads(ContactRepository);');
+  });
+
   it('a relation-less entity takes `columns` but no `with` (REL-2 §2.5)', () => {
     const output = renderRepository(buildBackendLocals(queriesEntity, withEntities()));
-    expect(output).toContain('opts?: ReadOptions<C, never>,');
+    expect(output).toContain('opts?: ReadOptions<never, C>,');
     expect(output).not.toContain('with: opts?.with');
   });
 });
@@ -312,13 +317,13 @@ describe('backend repository template — belongs_to + explicit FK query collisi
     // REL-2 (#587): it is now generic over its include, and the single-row shape
     // shows in the return type rather than in the parameter list.
     expect(output).toContain(
-      'async findByFieldDefinitionId<C extends FieldConfigColumns | undefined = undefined, W extends FieldConfigInclude = FieldConfigNoInclude>(\n' +
+      'async findByFieldDefinitionId<W extends FieldConfigInclude = FieldConfigNoInclude, C extends FieldConfigColumns | undefined = undefined>(\n' +
         '    fieldDefinitionId: string,\n' +
-        '    opts?: ReadOptions<C, W>,\n' +
-        '  ): Promise<FieldConfigResult<C, W> | null>',
+        '    opts?: ReadOptions<W, C>,\n' +
+        '  ): Promise<FieldConfigResult<W, C> | null>',
     );
     // The FK-traversal array variant must NOT also be emitted.
-    expect(output).not.toContain('opts?: { limit?: number } & ReadOptions<C, W>,');
+    expect(output).not.toContain('opts?: { limit?: number } & ReadOptions<W, C>,');
   });
 
   it('still emits the FK-traversal method when there is NO colliding declarative query (CGP-358 unchanged)', () => {
@@ -332,14 +337,14 @@ describe('backend repository template — belongs_to + explicit FK query collisi
     expect(countMethodDefs(output, 'findByFieldDefinitionId')).toBe(1);
     // The FK-traversal (limit) variant is the survivor here, now carrying
     // the include as a third option (REL-2 §4).
-    expect(output).toContain('opts?: { limit?: number } & ReadOptions<C, W>,');
+    expect(output).toContain('opts?: { limit?: number } & ReadOptions<W, C>,');
   });
 
   it('emits the FK-traversal method when there are no declarative queries at all', () => {
     const noQueries = { ...collisionEntity, queries: undefined as unknown as [] };
     const output = renderRepository(buildBackendLocals(noQueries, withEntities()));
     expect(countMethodDefs(output, 'findByFieldDefinitionId')).toBe(1);
-    expect(output).toContain('opts?: { limit?: number } & ReadOptions<C, W>,');
+    expect(output).toContain('opts?: { limit?: number } & ReadOptions<W, C>,');
     // No `cursor` it would ignore, and a `limit` is a stable subset: ordered by id.
     expect(output).not.toContain('cursor');
     expect(output).toContain("orderBy: opts?.limit === undefined ? undefined : { id: 'asc' },");

@@ -785,7 +785,7 @@ function assertRelationshipEmission(tmpDir: string): void {
 	);
 	assertContains(
 		accountRepository,
-		/override async findById<C extends AccountColumns \| undefined = undefined, W extends AccountInclude = AccountNoInclude>/,
+		/override async findById<W extends AccountInclude = AccountNoInclude, C extends AccountColumns \| undefined = undefined>/,
 		'account.repository.ts findById takes a typed column mask and include (READ-1)',
 	);
 	// The `(t)` is the whole assertion: RQBv2 ALIASES the root, so a predicate built

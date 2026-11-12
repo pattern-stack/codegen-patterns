@@ -33,14 +33,16 @@ export type PersonInclude = IncludeOf<'persons'>;
 export type PersonNoInclude = globalThis.Record<string, never>;
 
 /**
- * The row a person read resolves to: the root narrowed by `TColumns`
- * (`undefined` ⇒ every column), each included relation nested exactly as asked.
- * `PersonResult` alone is the plain row.
+ * The row a person read resolves to: each included relation nested
+ * exactly as asked, the root narrowed by `TColumns` (`undefined` ⇒ every column).
+ * `PersonResult` alone is the plain row; `PersonResult<TWith>` is the row
+ * with that include. The mask is SECOND so a one-argument `PersonResult<…>`
+ * is always an include, never a mask (READ-1 §2.2).
  */
 export type PersonResult<
-  TColumns extends PersonColumns | undefined = undefined,
   TWith extends PersonInclude = PersonNoInclude,
-> = ResultOf<'persons', TColumns, TWith>;
+  TColumns extends PersonColumns | undefined = undefined,
+> = ResultOf<'persons', TWith, TColumns>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -48,7 +50,7 @@ export type PersonResult<
  * The controller merges allowlisted fragments at REQUEST time, so which relations
  * are present is not statically known — one of finitely many literals, but not a
  * single one. So the handler's result type is the widened form: every relation
- * OPTIONAL, the row's own columns required. `PersonResult<undefined, PersonInclude>`
+ * OPTIONAL, the row's own columns required. `PersonResult<PersonInclude>`
  * (the fully-included shape) would be wrong here — it claims every relation is
  * always present, which no single request produces.
  *
@@ -56,7 +58,7 @@ export type PersonResult<
  * the call site (REL-2 §2.3/§5.2).
  */
 export type PersonApiResult = Person &
-  globalThis.Partial<PersonResult<undefined, PersonInclude>>;
+  globalThis.Partial<PersonResult<PersonInclude>>;
 
 @Injectable()
 export class PersonRepository extends BaseRepository<Person, typeof persons, Relations> {
@@ -67,6 +69,9 @@ export class PersonRepository extends BaseRepository<Person, typeof persons, Rel
     // Every read runs on db.query.persons — fail HERE, naming the cause,
     // if the injected client was built without the relations manifest.
     this.requireRelationalQuery('persons');
+    // findById / findByIds / list are defined below, so a pattern base class or
+    // capability mixin overriding one of them would never run — throw, naming it.
+    this.claimGeneratedReads(PersonRepository);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -92,13 +97,13 @@ export class PersonRepository extends BaseRepository<Person, typeof persons, Rel
 
   override async findById<C extends PersonColumns | undefined = undefined>(
     id: string,
-    opts?: ReadOptions<C, never>,
-  ): Promise<PersonResult<C> | null> {
+    opts?: ReadOptions<never, C>,
+  ): Promise<PersonResult<PersonNoInclude, C> | null> {
     const row = await this.db.query.persons.findFirst({
       where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
       columns: this.checkColumns<C>(opts?.columns),
     });
-    return (row as PersonResult<C> | undefined) ?? null;
+    return (row as PersonResult<PersonNoInclude, C> | undefined) ?? null;
   }
 
   /**
@@ -111,8 +116,8 @@ export class PersonRepository extends BaseRepository<Person, typeof persons, Rel
    */
   override async findByIds<C extends PersonColumns | undefined = undefined>(
     ids: readonly string[],
-    opts?: ReadOptions<C, never>,
-  ): Promise<Array<PersonResult<C>>> {
+    opts?: ReadOptions<never, C>,
+  ): Promise<Array<PersonResult<PersonNoInclude, C>>> {
     const unique = this.uniqueIds(ids);
     if (unique.length === 0) {
       // No statement — but the same boundary check one would make (strict throws).
@@ -124,7 +129,7 @@ export class PersonRepository extends BaseRepository<Person, typeof persons, Rel
       where: { RAW: this.rootFilter((t) => inArray(t.id, unique)) },
       columns: mask.columns,
     });
-    return this.inInputOrder(rows, unique, mask.stripId) as Array<PersonResult<C>>;
+    return this.inInputOrder(rows, unique, mask.stripId) as Array<PersonResult<PersonNoInclude, C>>;
   }
 
   /**
@@ -132,8 +137,8 @@ export class PersonRepository extends BaseRepository<Person, typeof persons, Rel
    * it is handed the aliased root. `sort` is column keys, rendered the same way.
    */
   override async list<C extends PersonColumns | undefined = undefined>(
-    query?: ListOptions<typeof persons> & ReadOptions<C, never>,
-  ): Promise<Array<PersonResult<C>>> {
+    query?: ListOptions<typeof persons> & ReadOptions<never, C>,
+  ): Promise<Array<PersonResult<PersonNoInclude, C>>> {
     const sort = query?.sort;
     const rows = await this.db.query.persons.findMany({
       where: { RAW: this.rootFilter(query?.where) },
@@ -142,7 +147,7 @@ export class PersonRepository extends BaseRepository<Person, typeof persons, Rel
       limit: query?.limit,
       offset: query?.offset,
     });
-    return rows as Array<PersonResult<C>>;
+    return rows as Array<PersonResult<PersonNoInclude, C>>;
   }
 
   /**

@@ -33,6 +33,9 @@ export class UserService extends WithAnalytics(
     private readonly opportunityRepo: OpportunityRepository,
   ) {
     super(repository);
+    // findById / findByIds / list are forwarded below — an override of one on a
+    // pattern's service base would never run, so construction throws, naming it.
+    this.claimGeneratedReads(UserService);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -44,24 +47,24 @@ export class UserService extends WithAnalytics(
   // calls, no navigator — the navigator is REL-3's (#588).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override findById<C extends UserColumns | undefined = undefined, W extends UserInclude = UserNoInclude>(
+  override findById<W extends UserInclude = UserNoInclude, C extends UserColumns | undefined = undefined>(
     id: string,
-    opts?: ReadOptions<C, W>,
-  ): Promise<UserResult<C, W> | null> {
-    return this.repository.findById<C, W>(id, opts);
+    opts?: ReadOptions<W, C>,
+  ): Promise<UserResult<W, C> | null> {
+    return this.repository.findById<W, C>(id, opts);
   }
 
-  override findByIds<C extends UserColumns | undefined = undefined, W extends UserInclude = UserNoInclude>(
+  override findByIds<W extends UserInclude = UserNoInclude, C extends UserColumns | undefined = undefined>(
     ids: readonly string[],
-    opts?: ReadOptions<C, W>,
-  ): Promise<Array<UserResult<C, W>>> {
-    return this.repository.findByIds<C, W>(ids, opts);
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<UserResult<W, C>>> {
+    return this.repository.findByIds<W, C>(ids, opts);
   }
 
-  override list<C extends UserColumns | undefined = undefined, W extends UserInclude = UserNoInclude>(
-    listOptions?: ListOptions<typeof users> & ReadOptions<C, W>,
-  ): Promise<Array<UserResult<C, W>>> {
-    return this.repository.list<C, W>(listOptions);
+  override list<W extends UserInclude = UserNoInclude, C extends UserColumns | undefined = undefined>(
+    listOptions?: ListOptions<typeof users> & ReadOptions<W, C>,
+  ): Promise<Array<UserResult<W, C>>> {
+    return this.repository.list<W, C>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

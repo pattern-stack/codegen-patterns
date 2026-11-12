@@ -73,6 +73,15 @@ await accounts.list({
 - A `belongs_to` finder takes `limit` (ordered by `id`); there is no `cursor`.
 - Hoist a mask or include into a `const` **without** a type annotation (or with
   `as const`) — annotating it with `<Entity>Columns` / `<Entity>Include` widens it.
+- **Naming a result type:** `<Entity>Result<TWith, TColumns>` — the include first, the
+  mask second, both optional. `AccountResult` is the row, `AccountResult<{ contacts: true }>`
+  the row with its contacts, `AccountResult<AccountNoInclude, { id: true }>` is `{ id }`.
+- **Don't override `findById` / `findByIds` / `list` in an app pattern base class or a
+  capability mixin.** The generated repository (and service) defines those itself, so
+  such an override could never run — construction throws, naming the method and your
+  class. To narrow which rows every read sees, override `scopeAndOn`; to wrap a read,
+  give the wrapper its own name, or override it on a subclass of the generated class.
+  (`count` is fine to override: the generated one calls `super`.)
 
 **Reading outside a repository.** A hand-written `db.query.<table>` read gets every
 HOP scoped by the generated relations manifest, but its ROOT is scoped by nobody.

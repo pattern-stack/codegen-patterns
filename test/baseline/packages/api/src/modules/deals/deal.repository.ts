@@ -76,14 +76,16 @@ export type DealInclude = IncludeOf<'deals'>;
 export type DealNoInclude = globalThis.Record<string, never>;
 
 /**
- * The row a deal read resolves to: the root narrowed by `TColumns`
- * (`undefined` ⇒ every column), each included relation nested exactly as asked.
- * `DealResult` alone is the plain row.
+ * The row a deal read resolves to: each included relation nested
+ * exactly as asked, the root narrowed by `TColumns` (`undefined` ⇒ every column).
+ * `DealResult` alone is the plain row; `DealResult<TWith>` is the row
+ * with that include. The mask is SECOND so a one-argument `DealResult<…>`
+ * is always an include, never a mask (READ-1 §2.2).
  */
 export type DealResult<
-  TColumns extends DealColumns | undefined = undefined,
   TWith extends DealInclude = DealNoInclude,
-> = ResultOf<'deals', TColumns, TWith>;
+  TColumns extends DealColumns | undefined = undefined,
+> = ResultOf<'deals', TWith, TColumns>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -91,7 +93,7 @@ export type DealResult<
  * The controller merges allowlisted fragments at REQUEST time, so which relations
  * are present is not statically known — one of finitely many literals, but not a
  * single one. So the handler's result type is the widened form: every relation
- * OPTIONAL, the row's own columns required. `DealResult<undefined, DealInclude>`
+ * OPTIONAL, the row's own columns required. `DealResult<DealInclude>`
  * (the fully-included shape) would be wrong here — it claims every relation is
  * always present, which no single request produces.
  *
@@ -99,7 +101,7 @@ export type DealResult<
  * the call site (REL-2 §2.3/§5.2).
  */
 export type DealApiResult = Deal &
-  globalThis.Partial<DealResult<undefined, DealInclude>>;
+  globalThis.Partial<DealResult<DealInclude>>;
 
 @Injectable()
 export class DealRepository extends IntegratedEntityRepository<
@@ -140,6 +142,9 @@ export class DealRepository extends IntegratedEntityRepository<
     // Every read runs on db.query.deals — fail HERE, naming the cause,
     // if the injected client was built without the relations manifest.
     this.requireRelationalQuery('deals');
+    // findById / findByIds / list are defined below, so a pattern base class or
+    // capability mixin overriding one of them would never run — throw, naming it.
+    this.claimGeneratedReads(DealRepository);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -164,16 +169,16 @@ export class DealRepository extends IntegratedEntityRepository<
   // one. The depth cap is an HTTP concern (`api.includes.max_depth`).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override async findById<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+  override async findById<W extends DealInclude = DealNoInclude, C extends DealColumns | undefined = undefined>(
     id: string,
-    opts?: ReadOptions<C, W>,
-  ): Promise<DealResult<C, W> | null> {
+    opts?: ReadOptions<W, C>,
+  ): Promise<DealResult<W, C> | null> {
     const row = await this.db.query.deals.findFirst({
       where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
       columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
     });
-    return (row as DealResult<C, W> | undefined) ?? null;
+    return (row as DealResult<W, C> | undefined) ?? null;
   }
 
   /**
@@ -184,10 +189,10 @@ export class DealRepository extends IntegratedEntityRepository<
    * is selected and stripped again. Not chunked: Postgres caps a statement at
    * 65 535 parameters.
    */
-  override async findByIds<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+  override async findByIds<W extends DealInclude = DealNoInclude, C extends DealColumns | undefined = undefined>(
     ids: readonly string[],
-    opts?: ReadOptions<C, W>,
-  ): Promise<Array<DealResult<C, W>>> {
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<DealResult<W, C>>> {
     const unique = this.uniqueIds(ids);
     if (unique.length === 0) {
       // No statement — but the same boundary check one would make (strict throws).
@@ -200,16 +205,16 @@ export class DealRepository extends IntegratedEntityRepository<
       columns: mask.columns,
       with: opts?.with,
     });
-    return this.inInputOrder(rows, unique, mask.stripId) as Array<DealResult<C, W>>;
+    return this.inInputOrder(rows, unique, mask.stripId) as Array<DealResult<W, C>>;
   }
 
   /**
    * `where` is a ROW FILTER — `(t) => eq(t.name, x)` — never a pre-rendered SQL:
    * it is handed the aliased root. `sort` is column keys, rendered the same way.
    */
-  override async list<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
-    query?: ListOptions<typeof deals> & ReadOptions<C, W>,
-  ): Promise<Array<DealResult<C, W>>> {
+  override async list<W extends DealInclude = DealNoInclude, C extends DealColumns | undefined = undefined>(
+    query?: ListOptions<typeof deals> & ReadOptions<W, C>,
+  ): Promise<Array<DealResult<W, C>>> {
     const sort = query?.sort;
     const rows = await this.db.query.deals.findMany({
       where: { RAW: this.rootFilter(query?.where) },
@@ -219,7 +224,7 @@ export class DealRepository extends IntegratedEntityRepository<
       limit: query?.limit,
       offset: query?.offset,
     });
-    return rows as Array<DealResult<C, W>>;
+    return rows as Array<DealResult<W, C>>;
   }
 
   /**
@@ -236,28 +241,28 @@ export class DealRepository extends IntegratedEntityRepository<
   // Declarative queries (from queries: block in entity YAML)
   // ═══════════════════════════════════════════════════════════════════════
 
-  async findByStage<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+  async findByStage<W extends DealInclude = DealNoInclude, C extends DealColumns | undefined = undefined>(
     stage: 'prospecting' | 'qualification' | 'proposal' | 'negotiation' | 'closed_won' | 'closed_lost',
-    opts?: ReadOptions<C, W>,
-  ): Promise<Array<DealResult<C, W>>> {
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<DealResult<W, C>>> {
     const rows = await this.db.query.deals.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.stage, stage)) },
       columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
     });
-    return rows as Array<DealResult<C, W>>;
+    return rows as Array<DealResult<W, C>>;
   }
 
-  async findByOwnerIdAndStage<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+  async findByOwnerIdAndStage<W extends DealInclude = DealNoInclude, C extends DealColumns | undefined = undefined>(
     ownerId: string, stage: 'prospecting' | 'qualification' | 'proposal' | 'negotiation' | 'closed_won' | 'closed_lost',
-    opts?: ReadOptions<C, W>,
-  ): Promise<Array<DealResult<C, W>>> {
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<DealResult<W, C>>> {
     const rows = await this.db.query.deals.findMany({
       where: { RAW: this.rootFilter((t) => and(eq(t.ownerId, ownerId), eq(t.stage, stage))) },
       columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
     });
-    return rows as Array<DealResult<C, W>>;
+    return rows as Array<DealResult<W, C>>;
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -267,10 +272,10 @@ export class DealRepository extends IntegratedEntityRepository<
   // is skipped — that declarative query is the more specific intent and wins.
   // ═══════════════════════════════════════════════════════════════════════
 
-  async findByOwnerId<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+  async findByOwnerId<W extends DealInclude = DealNoInclude, C extends DealColumns | undefined = undefined>(
     id: string,
-    opts?: { limit?: number } & ReadOptions<C, W>,
-  ): Promise<Array<DealResult<C, W>>> {
+    opts?: { limit?: number } & ReadOptions<W, C>,
+  ): Promise<Array<DealResult<W, C>>> {
     const rows = await this.db.query.deals.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.ownerId, id)) },
       columns: this.checkColumns<C>(opts?.columns),
@@ -279,13 +284,13 @@ export class DealRepository extends IntegratedEntityRepository<
       orderBy: opts?.limit === undefined ? undefined : { id: 'asc' },
       limit: opts?.limit,
     });
-    return rows as Array<DealResult<C, W>>;
+    return rows as Array<DealResult<W, C>>;
   }
 
-  async findByClosedById<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+  async findByClosedById<W extends DealInclude = DealNoInclude, C extends DealColumns | undefined = undefined>(
     id: string,
-    opts?: { limit?: number } & ReadOptions<C, W>,
-  ): Promise<Array<DealResult<C, W>>> {
+    opts?: { limit?: number } & ReadOptions<W, C>,
+  ): Promise<Array<DealResult<W, C>>> {
     const rows = await this.db.query.deals.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.closedById, id)) },
       columns: this.checkColumns<C>(opts?.columns),
@@ -294,13 +299,13 @@ export class DealRepository extends IntegratedEntityRepository<
       orderBy: opts?.limit === undefined ? undefined : { id: 'asc' },
       limit: opts?.limit,
     });
-    return rows as Array<DealResult<C, W>>;
+    return rows as Array<DealResult<W, C>>;
   }
 
-  async findByAccountId<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+  async findByAccountId<W extends DealInclude = DealNoInclude, C extends DealColumns | undefined = undefined>(
     id: string,
-    opts?: { limit?: number } & ReadOptions<C, W>,
-  ): Promise<Array<DealResult<C, W>>> {
+    opts?: { limit?: number } & ReadOptions<W, C>,
+  ): Promise<Array<DealResult<W, C>>> {
     const rows = await this.db.query.deals.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.accountId, id)) },
       columns: this.checkColumns<C>(opts?.columns),
@@ -309,7 +314,7 @@ export class DealRepository extends IntegratedEntityRepository<
       orderBy: opts?.limit === undefined ? undefined : { id: 'asc' },
       limit: opts?.limit,
     });
-    return rows as Array<DealResult<C, W>>;
+    return rows as Array<DealResult<W, C>>;
   }
 
   // Inherited from IntegratedEntityRepository:

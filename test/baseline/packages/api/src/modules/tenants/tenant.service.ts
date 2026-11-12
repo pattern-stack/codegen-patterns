@@ -6,6 +6,7 @@ import { BaseService } from '@shared/base-classes/base-service';
 import { TenantRepository } from './tenant.repository';
 import type {
   TenantColumns,
+  TenantNoInclude,
   TenantResult,
 } from './tenant.repository';
 import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
@@ -25,6 +26,9 @@ export class TenantService extends WithAnalytics(
     protected override readonly repository: TenantRepository,
   ) {
     super(repository);
+    // findById / findByIds / list are forwarded below — an override of one on a
+    // pattern's service base would never run, so construction throws, naming it.
+    this.claimGeneratedReads(TenantService);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -38,21 +42,21 @@ export class TenantService extends WithAnalytics(
 
   override findById<C extends TenantColumns | undefined = undefined>(
     id: string,
-    opts?: ReadOptions<C, never>,
-  ): Promise<TenantResult<C> | null> {
+    opts?: ReadOptions<never, C>,
+  ): Promise<TenantResult<TenantNoInclude, C> | null> {
     return this.repository.findById<C>(id, opts);
   }
 
   override findByIds<C extends TenantColumns | undefined = undefined>(
     ids: readonly string[],
-    opts?: ReadOptions<C, never>,
-  ): Promise<Array<TenantResult<C>>> {
+    opts?: ReadOptions<never, C>,
+  ): Promise<Array<TenantResult<TenantNoInclude, C>>> {
     return this.repository.findByIds<C>(ids, opts);
   }
 
   override list<C extends TenantColumns | undefined = undefined>(
-    listOptions?: ListOptions<typeof tenants> & ReadOptions<C, never>,
-  ): Promise<Array<TenantResult<C>>> {
+    listOptions?: ListOptions<typeof tenants> & ReadOptions<never, C>,
+  ): Promise<Array<TenantResult<TenantNoInclude, C>>> {
     return this.repository.list<C>(listOptions);
   }
 

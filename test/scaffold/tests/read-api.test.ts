@@ -15,7 +15,10 @@
  *   R4  `scopedRoot(SCOPES.<t>)` on a hand-written `db.query` excludes the same
  *       root poison a repository does (#843);
  *   R5  `withRequester` returning an un-awaited `db.query` builds inside the
- *       context under `strict` (#842).
+ *       context under `strict` (#842);
+ *   R6  a project's own base-class override of `findById` between the base and
+ *       the GENERATED repository / service is refused at construction, naming
+ *       both — never silently skipped (READ-1 §3.4).
  *
  * Gated behind SCAFFOLD_INTEGRATION=1 — see ./_skip-guard.ts.
  */
@@ -42,6 +45,7 @@ let scopedRoot: typeof import('@shared/base-classes/scope-filters').scopedRoot;
 // smoke's `tsc` over a consumer project (READ-1 §8.1).
 let RegionRepository: any;
 let SiteRepository: any;
+let RegionService: any;
 let SCOPES: any;
 
 const TENANT_A = '11111111-1111-4111-8111-111111111111';
@@ -57,6 +61,7 @@ beforeAll(async () => {
 	({ scopedRoot } = await import('@shared/base-classes/scope-filters'));
 	({ RegionRepository } = await import('@gen/modules/regions/region.repository'));
 	({ SiteRepository } = await import('@gen/modules/sites/site.repository'));
+	({ RegionService } = await import('@gen/modules/regions/region.service'));
 	({ SCOPES } = await import('@gen/generated/relations'));
 });
 
@@ -253,5 +258,56 @@ d('READ-1 — the generated read surface against Postgres', () => {
 			db.query.regions.findMany({ where: { id: { eq: ids.readable[0] } }, with: { sites: true } }),
 		);
 		expect(rows[0]!.sites.map((s) => s.id)).toEqual([ids.siteId]);
+	});
+
+	// ── R6 · a project's own read override is never silently bypassed ─────────
+	/**
+	 * Splice `Shadow` (a project base class with its own `method`) between the
+	 * GENERATED class and its parent — what a pattern base class or capability
+	 * mixin is — run `body`, and restore the real chain.
+	 */
+	function spliced(Generated: any, method: string, body: () => void): void {
+		const Parent = Object.getPrototypeOf(Generated);
+		const ParentProto = Object.getPrototypeOf(Generated.prototype);
+		const Shadow = { [`Audited${Parent.name}`]: class extends Parent {} }[`Audited${Parent.name}`]!;
+		Object.defineProperty(Shadow.prototype, method, {
+			value: function (this: any, ...args: unknown[]) {
+				return ParentProto[method].apply(this, args);
+			},
+			writable: true,
+			configurable: true,
+		});
+		Object.setPrototypeOf(Generated, Shadow);
+		Object.setPrototypeOf(Generated.prototype, Shadow.prototype);
+		try {
+			body();
+		} finally {
+			Object.setPrototypeOf(Generated, Parent);
+			Object.setPrototypeOf(Generated.prototype, ParentProto);
+		}
+	}
+
+	test('R6a — a base-class `findById` under the GENERATED repository: construction throws, naming both', () => {
+		const db = getTestDb();
+		for (const method of ['findById', 'findByIds', 'list']) {
+			spliced(RegionRepository, method, () => {
+				expect(() => new RegionRepository(db)).toThrow(
+					new RegExp(`RegionRepository: Audited\\w*\\.${method} overrides a read the generated RegionRepository defines itself`),
+				);
+			});
+		}
+		// `count` is not on the list: the generated `count` calls `super`, so a base override runs.
+		spliced(RegionRepository, 'count', () => {
+			expect(() => new RegionRepository(db)).not.toThrow();
+		});
+		expect(() => new RegionRepository(db)).not.toThrow();
+	});
+
+	test('R6b — a service base overriding `findById` under the GENERATED service: construction throws', () => {
+		const repo = new RegionRepository(getTestDb());
+		spliced(RegionService, 'findById', () => {
+			expect(() => new RegionService(repo)).toThrow(/RegionService: Audited\w*\.findById overrides a read/);
+		});
+		expect(() => new RegionService(repo)).not.toThrow();
 	});
 });

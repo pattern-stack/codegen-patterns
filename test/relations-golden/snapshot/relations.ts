@@ -83,12 +83,13 @@ export type ColumnsOf<TTable extends keyof Relations> = NonNullable<
 >;
 
 /**
- * The row a read resolves to: the root narrowed by `columns` (`undefined` ⇒ every
- * column — never `{}`, which selects none), each included relation nested exactly
- * as asked.
+ * The row a read resolves to: each included relation nested exactly as asked, the
+ * root narrowed by `columns` (`undefined` ⇒ every column — never `{}`, which
+ * selects none). The mask is the OPTIONAL last parameter, so REL-2's
+ * `ResultOf<T, TWith>` keeps its meaning.
  */
 export type ResultOf<
 	TTable extends keyof Relations,
-	TColumns extends ColumnsOf<TTable> | undefined,
 	TWith extends IncludeOf<TTable>,
+	TColumns extends ColumnsOf<TTable> | undefined = undefined,
 > = BuildQueryResult<Relations, Relations[TTable], { columns: TColumns; with: TWith }>;

@@ -33,6 +33,9 @@ export class DealService extends WithAnalytics(
     private readonly accountRepo: AccountRepository,
   ) {
     super(repository);
+    // findById / findByIds / list are forwarded below — an override of one on a
+    // pattern's service base would never run, so construction throws, naming it.
+    this.claimGeneratedReads(DealService);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -44,24 +47,24 @@ export class DealService extends WithAnalytics(
   // calls, no navigator — the navigator is REL-3's (#588).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override findById<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+  override findById<W extends DealInclude = DealNoInclude, C extends DealColumns | undefined = undefined>(
     id: string,
-    opts?: ReadOptions<C, W>,
-  ): Promise<DealResult<C, W> | null> {
-    return this.repository.findById<C, W>(id, opts);
+    opts?: ReadOptions<W, C>,
+  ): Promise<DealResult<W, C> | null> {
+    return this.repository.findById<W, C>(id, opts);
   }
 
-  override findByIds<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+  override findByIds<W extends DealInclude = DealNoInclude, C extends DealColumns | undefined = undefined>(
     ids: readonly string[],
-    opts?: ReadOptions<C, W>,
-  ): Promise<Array<DealResult<C, W>>> {
-    return this.repository.findByIds<C, W>(ids, opts);
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<DealResult<W, C>>> {
+    return this.repository.findByIds<W, C>(ids, opts);
   }
 
-  override list<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
-    listOptions?: ListOptions<typeof deals> & ReadOptions<C, W>,
-  ): Promise<Array<DealResult<C, W>>> {
-    return this.repository.list<C, W>(listOptions);
+  override list<W extends DealInclude = DealNoInclude, C extends DealColumns | undefined = undefined>(
+    listOptions?: ListOptions<typeof deals> & ReadOptions<W, C>,
+  ): Promise<Array<DealResult<W, C>>> {
+    return this.repository.list<W, C>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
@@ -77,32 +80,32 @@ export class DealService extends WithAnalytics(
   // cross-cutting concerns (analytics, events) stay uniform.
   // ═══════════════════════════════════════════════════════════════════════
 
-  findByOwnerId<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+  findByOwnerId<W extends DealInclude = DealNoInclude, C extends DealColumns | undefined = undefined>(
     ownerId: string,
-    opts?: ReadOptions<C, W>,
-  ): Promise<Array<DealResult<C, W>>> {
-    return this.repository.findByOwnerId<C, W>(ownerId, opts);
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<DealResult<W, C>>> {
+    return this.repository.findByOwnerId<W, C>(ownerId, opts);
   }
 
-  findByAccountId<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+  findByAccountId<W extends DealInclude = DealNoInclude, C extends DealColumns | undefined = undefined>(
     accountId: string,
-    opts?: ReadOptions<C, W>,
-  ): Promise<Array<DealResult<C, W>>> {
-    return this.repository.findByAccountId<C, W>(accountId, opts);
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<DealResult<W, C>>> {
+    return this.repository.findByAccountId<W, C>(accountId, opts);
   }
 
-  findByStage<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+  findByStage<W extends DealInclude = DealNoInclude, C extends DealColumns | undefined = undefined>(
     stage: 'prospecting' | 'qualification' | 'proposal' | 'negotiation' | 'closed_won' | 'closed_lost',
-    opts?: ReadOptions<C, W>,
-  ): Promise<Array<DealResult<C, W>>> {
-    return this.repository.findByStage<C, W>(stage, opts);
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<DealResult<W, C>>> {
+    return this.repository.findByStage<W, C>(stage, opts);
   }
 
-  findByOwnerIdAndStage<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
+  findByOwnerIdAndStage<W extends DealInclude = DealNoInclude, C extends DealColumns | undefined = undefined>(
     ownerId: string, stage: 'prospecting' | 'qualification' | 'proposal' | 'negotiation' | 'closed_won' | 'closed_lost',
-    opts?: ReadOptions<C, W>,
-  ): Promise<Array<DealResult<C, W>>> {
-    return this.repository.findByOwnerIdAndStage<C, W>(ownerId, stage, opts);
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<DealResult<W, C>>> {
+    return this.repository.findByOwnerIdAndStage<W, C>(ownerId, stage, opts);
   }
 
   // ═══════════════════════════════════════════════════════════════════════

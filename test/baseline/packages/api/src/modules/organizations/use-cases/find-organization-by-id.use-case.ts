@@ -21,8 +21,8 @@ export class FindOrganizationByIdUseCase {
   async execute<TWith extends OrganizationInclude = OrganizationNoInclude>(
     id: string,
     include?: TWith,
-  ): Promise<OrganizationResult<undefined, TWith>> {
-    const entity = await this.service.findById<undefined, TWith>(
+  ): Promise<OrganizationResult<TWith>> {
+    const entity = await this.service.findById<TWith>(
       id,
       include === undefined ? undefined : { with: include },
     );

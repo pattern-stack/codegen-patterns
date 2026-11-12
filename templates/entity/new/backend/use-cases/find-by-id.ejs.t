@@ -30,8 +30,8 @@ export class <%= classNames.findByIdUseCase %> {
   async execute<TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
     id: string,
     include?: TWith,
-  ): Promise<<%= classNames.entity %>Result<undefined, TWith>> {
-    const entity = await this.service.findById<undefined, TWith>(
+  ): Promise<<%= classNames.entity %>Result<TWith>> {
+    const entity = await this.service.findById<TWith>(
       id,
       include === undefined ? undefined : { with: include },
     );

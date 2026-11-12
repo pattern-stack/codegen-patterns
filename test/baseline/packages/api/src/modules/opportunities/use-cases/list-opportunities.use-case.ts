@@ -44,7 +44,7 @@ export class ListOpportunitiesUseCase {
   async execute<TWith extends OpportunityInclude = OpportunityNoInclude>(
     listQuery?: ListQuery,
     listOptions: { include?: TWith; where?: RowFilter<typeof opportunities> } = {},
-  ): Promise<Page<OpportunityResult<undefined, TWith>>> {
+  ): Promise<Page<OpportunityResult<TWith>>> {
     const { include: includeTree, where: whereClause } = listOptions;
     const resolvedQuery = resolveListQuery(listQuery);
 
@@ -84,7 +84,7 @@ export class ListOpportunitiesUseCase {
     // is nothing to seek from. Offset paging is the whole story until the YAML
     // adds the `timestamps` behavior.
     const [pageRows, rowTotal] = await Promise.all([
-      this.service.list<undefined, TWith>({
+      this.service.list<TWith>({
         where: whereClause,
         limit: resolvedQuery.pageSize,
         offset: resolvedQuery.offset,

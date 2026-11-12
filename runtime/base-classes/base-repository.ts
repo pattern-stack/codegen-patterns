@@ -19,6 +19,7 @@ import type {
 import type { AnyRelations, InferSelectModel, SQL } from 'drizzle-orm';
 import type { DrizzleClient, DrizzleTx } from '../types/drizzle';
 import { column } from './table-columns';
+import { assertGeneratedReadsOwned } from './read-surface';
 import {
   scopeFilter,
   tenantAxisPredicate,
@@ -166,12 +167,13 @@ export type NonEmptyMask<C> = C extends undefined
     : unknown;
 
 /**
- * The shape knobs every generated read takes (READ-1 §2.3): a root `columns`
- * mask and a `with` include tree. Both are inferred AT THE CALL SITE by the
+ * The shape knobs every generated read takes (READ-1 §2.3): a `with` include
+ * tree and a root `columns` mask. Both are inferred AT THE CALL SITE by the
  * generated method's own type parameters — the base cannot type them (REL-2
- * §2.1, TS2536) and only names the slots.
+ * §2.1, TS2536) and only names the slots. `W` first, `C` second: the order
+ * `<Entity>Result<W, C>` takes, everywhere.
  */
-export interface ReadOptions<C, W> {
+export interface ReadOptions<W, C> {
   columns?: C & NonEmptyMask<C>;
   with?: W;
 }
@@ -287,6 +289,24 @@ export abstract class BaseRepository<
           "this project's manifest: drizzle({ client, relations }) with `relations` from the generated relations.ts.",
       );
     }
+  }
+
+  /**
+   * Fail at CONSTRUCTION when a class between this base and the generated
+   * repository `owner` — a pattern base class, a capability mixin — overrides
+   * `findById` / `findByIds` / `list`. The generated class defines those itself
+   * (its typed `columns` / `with` signatures cannot live here, REL-2 §2.1), so
+   * such an override would never run; this makes that loud instead of silent
+   * (READ-1 §3.4). Called by the generated constructor with its own class. A
+   * subclass of `owner` is not checked — its override runs.
+   */
+  protected claimGeneratedReads(owner: abstract new (...args: never[]) => unknown): void {
+    assertGeneratedReadsOwned(
+      owner,
+      BaseRepository,
+      'To narrow which rows EVERY read sees, override `scopeAndOn` (the one root-predicate assembly every read and ' +
+        '`count` use); to wrap a read, give the wrapper its own name or override it on a subclass of the generated class.',
+    );
   }
 
   /**
@@ -626,9 +646,9 @@ export abstract class BaseRepository<
    *
    * Returns the mask typed as plain `C` — WITHOUT the `NonEmptyMask` brand — so
    * the query config Drizzle infers its result from carries `columns: C`, the
-   * same `C` the generated `<Entity>Result<C, W>` names. With the brand still on
+   * same `C` the generated `<Entity>Result<W, C>` names. With the brand still on
    * it the two results are distinct deferred types, and on 1.0.0-rc.5 the
-   * generated `rows as <Entity>Result<C, W>` is a TS2352 (measured).
+   * generated `rows as <Entity>Result<W, C>` is a TS2352 (measured).
    */
   protected checkColumns<C>(columns: (C & NonEmptyMask<C>) | undefined): C | undefined {
     if (columns === undefined || columns === null || typeof columns !== 'object') {

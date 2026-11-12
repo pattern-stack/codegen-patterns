@@ -36,6 +36,9 @@ export class OpportunityService extends WithAnalytics(
     private readonly dealStateRepo: DealStateRepository,
   ) {
     super(repository);
+    // findById / findByIds / list are forwarded below — an override of one on a
+    // pattern's service base would never run, so construction throws, naming it.
+    this.claimGeneratedReads(OpportunityService);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -47,24 +50,24 @@ export class OpportunityService extends WithAnalytics(
   // calls, no navigator — the navigator is REL-3's (#588).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override findById<C extends OpportunityColumns | undefined = undefined, W extends OpportunityInclude = OpportunityNoInclude>(
+  override findById<W extends OpportunityInclude = OpportunityNoInclude, C extends OpportunityColumns | undefined = undefined>(
     id: string,
-    opts?: ReadOptions<C, W>,
-  ): Promise<OpportunityResult<C, W> | null> {
-    return this.repository.findById<C, W>(id, opts);
+    opts?: ReadOptions<W, C>,
+  ): Promise<OpportunityResult<W, C> | null> {
+    return this.repository.findById<W, C>(id, opts);
   }
 
-  override findByIds<C extends OpportunityColumns | undefined = undefined, W extends OpportunityInclude = OpportunityNoInclude>(
+  override findByIds<W extends OpportunityInclude = OpportunityNoInclude, C extends OpportunityColumns | undefined = undefined>(
     ids: readonly string[],
-    opts?: ReadOptions<C, W>,
-  ): Promise<Array<OpportunityResult<C, W>>> {
-    return this.repository.findByIds<C, W>(ids, opts);
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<OpportunityResult<W, C>>> {
+    return this.repository.findByIds<W, C>(ids, opts);
   }
 
-  override list<C extends OpportunityColumns | undefined = undefined, W extends OpportunityInclude = OpportunityNoInclude>(
-    listOptions?: ListOptions<typeof opportunities> & ReadOptions<C, W>,
-  ): Promise<Array<OpportunityResult<C, W>>> {
-    return this.repository.list<C, W>(listOptions);
+  override list<W extends OpportunityInclude = OpportunityNoInclude, C extends OpportunityColumns | undefined = undefined>(
+    listOptions?: ListOptions<typeof opportunities> & ReadOptions<W, C>,
+  ): Promise<Array<OpportunityResult<W, C>>> {
+    return this.repository.list<W, C>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

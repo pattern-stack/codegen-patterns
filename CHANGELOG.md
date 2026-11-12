@@ -21,23 +21,22 @@ every such column and raise `max_length` (or clean the data) wherever it exceeds
 2. Regenerate: `codegen entity new --all --force`, plus `junction new --all --force`.
 3. Fix the call sites below. Rows marked **compile** are a compile error at the call site,
    including through a generated service (`service.count(eq(…))` and `service.list({ where: <SQL> })`
-   are type errors). Rows marked **runtime** or **silent** are not — read those. Two residuals: a
+   are type errors). Rows marked **runtime** are not — read those. One residual: a
    HAND-WRITTEN service extending `BaseService` inherits `list(options?: unknown)` (generated services
-   override it with the typed signature), and the `<Entity>Result` row below.
+   override it with the typed signature).
 
 | Break | Kind | Before | After |
 |---|---|---|---|
 | `ListOptions.where` / `count(where)` is a row filter (#840) | compile | `repo.list({ where: eq(accounts.name, x) })` · `repo.count(eq(accounts.name, x))` | `repo.list({ where: (t) => eq(t.name, x) })` · `repo.count((t) => eq(t.name, x))` |
 | `ListOptions.orderBy` is removed | compile | `repo.list({ orderBy: desc(accounts.createdAt) })` | `repo.list({ sort: [{ column: 'createdAt', direction: 'desc' }] })` |
 | `ListOptions` is generic over its table | compile | `ListOptions` | `ListOptions<typeof accounts>` |
-| `<Entity>Result` / `ResultOf` take the column mask first | **silent** for one form | `AccountResult<TWith>` · `ResultOf<'accounts', TWith>` | `AccountResult<undefined, TWith>` (both defaulted; `AccountResult` alone is the row) · `ResultOf<'accounts', TColumns, TWith>`. A stale `AccountResult<AccountNoInclude>` STILL COMPILES — `NoInclude` fits the mask slot — and resolves to `{}`; the error surfaces only at a property read. Search for `Result<` with one argument |
 | `WithActor.memberPredicate` returns a row filter | compile | `list({ where: repo.memberPredicate(id) })` with an `SQL` | the same call; the value is now `(table) => SQL` — pass it as `where`, or call it with a table |
 | `BaseRepository.rootScopeRawOn(t, …)` is replaced | compile | `{ RAW: (t) => this.rootScopeRawOn(t, { softDelete }) }` | `{ RAW: this.rootFilter(pred) }` |
 | `activeParentFilter` returns a row filter | compile | `this.activeParentFilter(parents, this.col('parentId'))` → `SQL` | `this.activeParentFilter(parents, 'parentId')` → `(table) => SQL`, correlated on the handle it is given |
 | The generated list use case's `where` seam | compile | `listUseCase.execute(q, { where: eq(accounts.name, x) })` | `listUseCase.execute(q, { where: (t) => eq(t.name, x) })` |
 | `belongs_to` finders and the service's has-many methods take no `cursor` | compile | `repo.findByAccountId(id, { cursor, limit })` (the `cursor` was ignored) | `repo.findByAccountId(id, { limit })` — and a `limit` now orders by `id`, so the subset is stable |
 | Pattern-implied behaviors now scope the manifest | compile + runtime | a to-one include onto an entity whose PATTERN implies `soft_delete` / `user_tracking` typed non-null; its hop unfiltered | the include is `\| null`, and the hop filters deleted / out-of-scope rows — as the repository root always did |
-| The generated repository overrides `findById` / `findByIds` / `list` / `count` | **silent** | a project's own base-class or capability-mixin override of those reads ran | the generated override runs instead (it does not call `super`). Move such logic into a `where` row filter, or onto a differently named method |
+| An app pattern base class or capability mixin overriding `findById` / `findByIds` / `list` under a generated repository or service | runtime, at **construction** | partly ran (`findByIds`, and `list` without `with`, reached it; `findById` never did) | construction throws, naming the method and the class — the generated class defines those reads itself, so the override could never run. Narrow every read with `scopeAndOn`; wrap a read under its own name or on a subclass of the generated class. `count` is unaffected (the generated one calls `super`) |
 | Read-surface reads run on the relational query builder | runtime | `findById(id)` → `select … from "accounts" where …` | `select "d0"."id" … from "accounts" as "d0" where …` — same rows, same plan; any test asserting the old SQL text changes. (`count`, `via:` / `select:` finders and junction repositories keep the core builder) |
 | **Every** generated repository needs the relations manifest on the `DRIZZLE` client | runtime | only `with` reads used `db.query` | a client built without `relations` now fails at repository **construction**, naming the cause: bind `drizzle({ client, relations })` |
 | `findByIds([])` under `strict` with no context | runtime | returned `[]` | throws, as any read does |
@@ -71,6 +70,8 @@ every such column and raise `max_length` (or clean the data) wherever it exceeds
   (`rootFilter`), so the root and every hop are scoped on every method; `rootFilter` and the core
   builder's `scopeAnd` share one assembly (`scopeAndOn`). The generated service
   forwards the same options, including on `queries:` finders (it dropped them before).
+  `<Entity>Result<TWith, TColumns>` / `ResultOf<T, TWith, TColumns?>` take the mask as an optional
+  SECOND parameter, so REL-2's `AccountResult<W>` and `ResultOf<'accounts', W>` keep their meaning.
 - **The relations manifest exports its scope (#843).** `export const <TABLE>_SCOPE` for every
   scoped entity table, and — in EVERY project, scoped or not — `export const SCOPES` over every
   entity table (unscoped ones as `tableScope(schema.<t>, UNSCOPED)`) and `rootScope.<table>(owner)`,

@@ -21,8 +21,8 @@ export class FindOpportunityByIdUseCase {
   async execute<TWith extends OpportunityInclude = OpportunityNoInclude>(
     id: string,
     include?: TWith,
-  ): Promise<OpportunityResult<undefined, TWith>> {
-    const entity = await this.service.findById<undefined, TWith>(
+  ): Promise<OpportunityResult<TWith>> {
+    const entity = await this.service.findById<TWith>(
       id,
       include === undefined ? undefined : { with: include },
     );

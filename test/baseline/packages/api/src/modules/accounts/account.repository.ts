@@ -33,14 +33,16 @@ export type AccountInclude = IncludeOf<'accounts'>;
 export type AccountNoInclude = globalThis.Record<string, never>;
 
 /**
- * The row a account read resolves to: the root narrowed by `TColumns`
- * (`undefined` ⇒ every column), each included relation nested exactly as asked.
- * `AccountResult` alone is the plain row.
+ * The row a account read resolves to: each included relation nested
+ * exactly as asked, the root narrowed by `TColumns` (`undefined` ⇒ every column).
+ * `AccountResult` alone is the plain row; `AccountResult<TWith>` is the row
+ * with that include. The mask is SECOND so a one-argument `AccountResult<…>`
+ * is always an include, never a mask (READ-1 §2.2).
  */
 export type AccountResult<
-  TColumns extends AccountColumns | undefined = undefined,
   TWith extends AccountInclude = AccountNoInclude,
-> = ResultOf<'accounts', TColumns, TWith>;
+  TColumns extends AccountColumns | undefined = undefined,
+> = ResultOf<'accounts', TWith, TColumns>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -48,7 +50,7 @@ export type AccountResult<
  * The controller merges allowlisted fragments at REQUEST time, so which relations
  * are present is not statically known — one of finitely many literals, but not a
  * single one. So the handler's result type is the widened form: every relation
- * OPTIONAL, the row's own columns required. `AccountResult<undefined, AccountInclude>`
+ * OPTIONAL, the row's own columns required. `AccountResult<AccountInclude>`
  * (the fully-included shape) would be wrong here — it claims every relation is
  * always present, which no single request produces.
  *
@@ -56,7 +58,7 @@ export type AccountResult<
  * the call site (REL-2 §2.3/§5.2).
  */
 export type AccountApiResult = Account &
-  globalThis.Partial<AccountResult<undefined, AccountInclude>>;
+  globalThis.Partial<AccountResult<AccountInclude>>;
 
 @Injectable()
 export class AccountRepository extends BaseRepository<Account, typeof accounts, Relations> {
@@ -67,6 +69,9 @@ export class AccountRepository extends BaseRepository<Account, typeof accounts, 
     // Every read runs on db.query.accounts — fail HERE, naming the cause,
     // if the injected client was built without the relations manifest.
     this.requireRelationalQuery('accounts');
+    // findById / findByIds / list are defined below, so a pattern base class or
+    // capability mixin overriding one of them would never run — throw, naming it.
+    this.claimGeneratedReads(AccountRepository);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -92,13 +97,13 @@ export class AccountRepository extends BaseRepository<Account, typeof accounts, 
 
   override async findById<C extends AccountColumns | undefined = undefined>(
     id: string,
-    opts?: ReadOptions<C, never>,
-  ): Promise<AccountResult<C> | null> {
+    opts?: ReadOptions<never, C>,
+  ): Promise<AccountResult<AccountNoInclude, C> | null> {
     const row = await this.db.query.accounts.findFirst({
       where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
       columns: this.checkColumns<C>(opts?.columns),
     });
-    return (row as AccountResult<C> | undefined) ?? null;
+    return (row as AccountResult<AccountNoInclude, C> | undefined) ?? null;
   }
 
   /**
@@ -111,8 +116,8 @@ export class AccountRepository extends BaseRepository<Account, typeof accounts, 
    */
   override async findByIds<C extends AccountColumns | undefined = undefined>(
     ids: readonly string[],
-    opts?: ReadOptions<C, never>,
-  ): Promise<Array<AccountResult<C>>> {
+    opts?: ReadOptions<never, C>,
+  ): Promise<Array<AccountResult<AccountNoInclude, C>>> {
     const unique = this.uniqueIds(ids);
     if (unique.length === 0) {
       // No statement — but the same boundary check one would make (strict throws).
@@ -124,7 +129,7 @@ export class AccountRepository extends BaseRepository<Account, typeof accounts, 
       where: { RAW: this.rootFilter((t) => inArray(t.id, unique)) },
       columns: mask.columns,
     });
-    return this.inInputOrder(rows, unique, mask.stripId) as Array<AccountResult<C>>;
+    return this.inInputOrder(rows, unique, mask.stripId) as Array<AccountResult<AccountNoInclude, C>>;
   }
 
   /**
@@ -132,8 +137,8 @@ export class AccountRepository extends BaseRepository<Account, typeof accounts, 
    * it is handed the aliased root. `sort` is column keys, rendered the same way.
    */
   override async list<C extends AccountColumns | undefined = undefined>(
-    query?: ListOptions<typeof accounts> & ReadOptions<C, never>,
-  ): Promise<Array<AccountResult<C>>> {
+    query?: ListOptions<typeof accounts> & ReadOptions<never, C>,
+  ): Promise<Array<AccountResult<AccountNoInclude, C>>> {
     const sort = query?.sort;
     const rows = await this.db.query.accounts.findMany({
       where: { RAW: this.rootFilter(query?.where) },
@@ -142,7 +147,7 @@ export class AccountRepository extends BaseRepository<Account, typeof accounts, 
       limit: query?.limit,
       offset: query?.offset,
     });
-    return rows as Array<AccountResult<C>>;
+    return rows as Array<AccountResult<AccountNoInclude, C>>;
   }
 
   /**
