@@ -29,7 +29,7 @@ function issuesFor(observation: string) {
 		`entity:\n  name: observation\n  plural: observations\n${observation}`,
 	);
 	const { entities } = loadEntities(dir, { tablePrefix: '' });
-	return checkConsistency(buildDomainGraph(entities)).filter(
+	return checkConsistency(buildDomainGraph(entities), 'tenant_id').filter(
 		(i) => i.type === 'undeclared_fk_nullability',
 	);
 }
