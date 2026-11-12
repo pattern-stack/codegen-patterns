@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Breaking
+
+- **A `belongs_to` foreign key is NOT NULL by default (#850, DDL).** Before, an FK that neither the
+  relationship (or `cardinality: one` role) nor its `fields:` entry declared was emitted NULLABLE,
+  so a reference was optional unless the author remembered to say otherwise. Now a reference is NOT
+  NULL unless it says `nullable: true` — on the relationship / role, or on the FK field (Rails 5's
+  `belongs_to` precedent). One rule (`foreignKeyColumnNullable`, `src/schema/field-nullability.ts`)
+  decides the column's `.notNull()`, the create DTO key (required for a NOT NULL FK), the
+  integration sink's strict FK resolution, the relations manifest's `optional` and the frontend
+  graph that projects it, and the parser's `ParsedField.nullable` that the semantic model reads.
+  `required:` on an FK field no longer decides nullability, and **a written `required: false` on a
+  `belongs_to` FK without `nullable:` is a schema error** that points at `nullable: true` — it used
+  to mean "nullable" and would otherwise turn NOT NULL without a word. `FieldDefinitionSchema` no
+  longer defaults `required` to `false`, so a written `required: false` survives parsing.
+  - Migration: write `nullable: true` on every `belongs_to` / `one` role whose reference may be absent (an FK field's `required: false` becomes `nullable: true`); backfill the rest before applying the generated `SET NOT NULL`.
+
 ### Added
 
 - **Configurable tenancy column (#791).** `tenant_scoped` no longer hard-codes `tenant_id`.
@@ -73,6 +89,13 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **A to-one include onto a soft-deleted or user-tracked target is typed nullable (#850).** REL-1 set `optional: false` for a NOT NULL FK, but REL-2's hop `where` drops a deleted (or
+  another user's) target, so the include was `null` at runtime while the type said `T`. The
+  relations manifest and the frontend graph descriptor now emit `optional: true` for such an edge
+  (`hopCanDropTarget`): a `belongs_to`, or a junction's own edge to an endpoint. **Type change:**
+  code that reads such an include without a null check stops compiling, and that is the point.
+  A tenant-scoped target widens it only when the source is not tenant-scoped (an unscoped entity
+  or a junction reads every tenant's rows); between two tenant-scoped entities it does not.
 - **Junction payload fields are entity fields (#740, #690).** `fields:` in a junction YAML now parses
   against the entity `FieldDefinitionSchema` and renders through the entity column builder, so
   `required`, `nullable`, `default`, `foreign_key`, `index` and `timezone` reach the column. Before,

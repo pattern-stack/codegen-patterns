@@ -22,7 +22,7 @@ export const relations = defineRelations(schema, (r) => ({
 		parentAccount: r.one.accounts({ from: r.accounts.parentAccountId, to: r.accounts.id, optional: true, where: { RAW: (t) => hopScope(t, ACCOUNTS_SCOPE, 'accounts.parentAccount') } }),
 	},
 	contacts: {
-		account: r.one.accounts({ from: r.contacts.accountId, to: r.accounts.id, optional: false, where: { RAW: (t) => hopScope(t, ACCOUNTS_SCOPE, 'contacts.account') } }),
+		account: r.one.accounts({ from: r.contacts.accountId, to: r.accounts.id, optional: true, where: { RAW: (t) => hopScope(t, ACCOUNTS_SCOPE, 'contacts.account') } }),
 		opportunities: r.many.opportunities({ from: r.contacts.id.through(r.opportunityContacts.contactId), to: r.opportunities.id.through(r.opportunityContacts.opportunityId) }),
 		opportunityContacts: r.many.opportunityContacts({ from: r.contacts.id, to: r.opportunityContacts.contactId }),
 		people: r.many.persons({ from: r.contacts.id, to: r.persons.contactId }),
@@ -31,13 +31,13 @@ export const relations = defineRelations(schema, (r) => ({
 		opportunity: r.one.opportunities({ from: r.notes.opportunityId, to: r.opportunities.id, optional: false }),
 	},
 	opportunities: {
-		account: r.one.accounts({ from: r.opportunities.accountId, to: r.accounts.id, optional: false, where: { RAW: (t) => hopScope(t, ACCOUNTS_SCOPE, 'opportunities.account') } }),
+		account: r.one.accounts({ from: r.opportunities.accountId, to: r.accounts.id, optional: true, where: { RAW: (t) => hopScope(t, ACCOUNTS_SCOPE, 'opportunities.account') } }),
 		contacts: r.many.contacts({ from: r.opportunities.id.through(r.opportunityContacts.opportunityId), to: r.contacts.id.through(r.opportunityContacts.contactId), where: { RAW: (t) => hopScope(t, CONTACTS_SCOPE, 'opportunities.contacts') } }),
 		opportunityContacts: r.many.opportunityContacts({ from: r.opportunities.id, to: r.opportunityContacts.opportunityId }),
 		primaryNote: r.one.notes({ from: r.opportunities.id, to: r.notes.opportunityId, optional: true }),
 	},
 	opportunityContacts: {
-		contact: r.one.contacts({ from: r.opportunityContacts.contactId, to: r.contacts.id, optional: false, where: { RAW: (t) => hopScope(t, CONTACTS_SCOPE, 'opportunityContacts.contact') } }),
+		contact: r.one.contacts({ from: r.opportunityContacts.contactId, to: r.contacts.id, optional: true, where: { RAW: (t) => hopScope(t, CONTACTS_SCOPE, 'opportunityContacts.contact') } }),
 		opportunity: r.one.opportunities({ from: r.opportunityContacts.opportunityId, to: r.opportunities.id, optional: false }),
 	},
 	persons: {

@@ -96,20 +96,53 @@ export function entityScope(
 }
 
 /**
+ * Whether a hop's `where` can drop a row the FK points at — so a to-one
+ * include can be `null` even over a NOT NULL FK.
+ *
+ * `softDelete` (the target row is deleted) and `userTracking` (it belongs to
+ * another user) are ordinary states of valid data, so either one counts.
+ *
+ * The tenant axis counts only when the SOURCE is not tenant-scoped. A
+ * tenant-scoped source row and its target are read under the same tenant, so
+ * a NOT NULL FK onto another tenant's row is a data error, not a case for the
+ * type to carry (#787 designs the constraint that makes it impossible), and
+ * widening every tenant-scoped to-one would push a null check onto every
+ * reader of valid data. An unscoped source (a global table, or a junction —
+ * which declares no scope of its own) reads every tenant's rows, so the hop
+ * drops each one whose target is outside the requester's tenant: valid data,
+ * read as `null`.
+ */
+export function hopCanDropTarget(
+	sourceScope: ScopeConfigLiteral | null,
+	targetScope: ScopeConfigLiteral | null,
+): boolean {
+	if (targetScope === null) return false;
+	if (targetScope.softDelete || targetScope.userTracking) return true;
+	return targetScope.tenantScoped && !(sourceScope?.tenantScoped ?? false);
+}
+
+/**
  * `optional` for a `belongs_to` — whether the include's result may be null.
  *
- * Exactly the FK column's nullability, by the one rule the entity template
- * emits the column with (`foreignKeyColumnNullable`, `field-nullability.ts`):
- * an explicit relationship `nullable:` wins, else the FK column's own
- * `fields:` declaration, else optional. A NOT NULL FK — `required: true`, or
- * `nullable: false` with a `default:` — is never optional (#613).
+ * The FK column's nullability, by the one rule the entity template emits the
+ * column with (`foreignKeyColumnNullable`, `field-nullability.ts`): an explicit
+ * relationship `nullable:` wins, else the FK field's own `nullable:`, else NOT
+ * NULL — not optional (#613, #850). A NOT NULL FK is still optional when the
+ * hop's scope can filter its target out (`hopCanDropTarget`) — REL-2's hop
+ * `where` makes the include `null` at runtime, and the type must say so
+ * (#850).
  */
 function belongsToOptional(
 	def: EntityDefinition,
 	fk: string,
 	relNullable: boolean | undefined,
+	sourceScope: ScopeConfigLiteral | null,
+	targetScope: ScopeConfigLiteral | null,
 ): boolean {
-	return foreignKeyColumnNullable(relNullable, def.fields[fk]);
+	return (
+		foreignKeyColumnNullable(relNullable, def.fields[fk]) ||
+		hopCanDropTarget(sourceScope, targetScope)
+	);
 }
 
 /** Add an edge, failing loudly on a duplicate key for the same table. */
@@ -201,7 +234,13 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 					targetTable: target.plural,
 					from: { table: entity.plural, column: fkColumn },
 					to: { table: target.plural, column: 'id' },
-					optional: belongsToOptional(def, rel.foreign_key, rel.nullable),
+					optional: belongsToOptional(
+						def,
+						rel.foreign_key,
+						rel.nullable,
+						scopeOf(entity.name),
+						scopeOf(rel.target),
+					),
 					targetScope: scopeOf(rel.target),
 					origin,
 				});
@@ -313,7 +352,10 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 			targetTable: left.plural,
 			from: { table: tableVar, column: leftFk },
 			to: { table: left.plural, column: 'id' },
-			optional: false,
+			// The junction FK is NOT NULL; only the target's scope can empty the hop.
+			// A junction declares no scope (source `null`), so a tenant-scoped
+			// endpoint counts too.
+			optional: hopCanDropTarget(null, scopeOf(leftName)),
 			targetScope: scopeOf(leftName),
 			origin,
 		});
@@ -324,7 +366,8 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 			targetTable: right.plural,
 			from: { table: tableVar, column: rightFk },
 			to: { table: right.plural, column: 'id' },
-			optional: false,
+			// The junction FK is NOT NULL; only the target's scope can empty the hop.
+			optional: hopCanDropTarget(null, scopeOf(rightName)),
 			targetScope: scopeOf(rightName),
 			origin,
 		});

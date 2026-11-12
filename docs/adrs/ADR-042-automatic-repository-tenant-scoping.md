@@ -123,6 +123,10 @@
 >    on the request). That is the right failure for a table that must always have an owner, but it means such an
 >    entity cannot hold null-tenant rows. Declare the adopted column nullable if it must.
 >
+>    *Revision 2026-11-12 (#850):* a `belongs_to` FK is now NOT NULL unless it says `nullable: true`, so an adopted
+>    `belongs_to` tenant FK leaves the null-tenant partition by default, not only when `required: true`. Write
+>    `nullable: true` on the relationship (or the FK field) to keep null-tenant rows.
+>
 > The rule lives in one place, `resolveTenancy` (`src/schema/tenancy.ts`), read by the entity prompt, the relations
 > emitter and the integration sink derivation. Still open: a `references:` key for a real FK on an emitted tenant
 > column (#792), NOT NULL by default for a new project, a non-uuid tenant `type:`, and whether the events

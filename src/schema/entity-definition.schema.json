@@ -76,7 +76,7 @@
             "type": "boolean"
           },
           "nullable": {
-            "description": "Database column allows NULL. Undeclared: NULL unless required: true. false (without required: true) needs a default:",
+            "description": "Database column allows NULL. Undeclared: NULL unless required: true; a belongs_to foreign key is NOT NULL unless nullable: true. false (without required: true) needs a default:",
             "type": "boolean"
           },
           "max_length": {

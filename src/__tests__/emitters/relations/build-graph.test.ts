@@ -131,8 +131,12 @@ describe('buildRelationGraph — belongs_to', () => {
 		expect(edge(withFk({ required: true }), 'contacts', 'account').optional).toBe(false);
 	});
 
-	it('a non-required FK column is optional', () => {
-		expect(edge(withFk({ required: false }), 'contacts', 'account').optional).toBe(true);
+	it('a written `required: false` on the FK is refused, pointing at `nullable: true` (#850)', () => {
+		expect(() => withFk({ required: false })).toThrow(/'nullable: true'/);
+	});
+
+	it('an FK field declared without `nullable:` is NOT NULL, so not optional (#850)', () => {
+		expect(edge(withFk({ index: true }), 'contacts', 'account').optional).toBe(false);
 	});
 
 	it('an explicitly nullable FK column is optional', () => {
@@ -159,11 +163,81 @@ describe('buildRelationGraph — belongs_to', () => {
 			edge(withFk({ required: true }, { nullable: true }), 'contacts', 'account').optional,
 		).toBe(true);
 		expect(
-			edge(withFk({ required: false }, { nullable: false }), 'contacts', 'account').optional,
+			edge(withFk({ nullable: true }, { nullable: false }), 'contacts', 'account').optional,
 		).toBe(false);
 	});
 
-	it('an undeclared FK column is optional', () => {
+	describe('a NOT NULL FK onto a target whose hop scope can drop it (#850)', () => {
+		const onto = (targetExtra: Record<string, unknown>, sourceExtra: Record<string, unknown> = {}) =>
+			context([
+				{
+					entry: registryEntry('account', 'accounts'),
+					def: definition('account', 'accounts', {}, {}, targetExtra),
+				},
+				{
+					entry: registryEntry('contact', 'contacts'),
+					def: definition(
+						'contact',
+						'contacts',
+						{ account_id: { type: 'uuid', required: true } },
+						{ account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' } },
+						sourceExtra,
+					),
+				},
+			]);
+
+		it('is optional when the target soft-deletes — the include is null for a deleted row', () => {
+			expect(edge(onto({ behaviors: ['soft_delete'] }), 'contacts', 'account').optional).toBe(true);
+		});
+
+		it('is optional when the target is user-tracked — another user’s row is filtered', () => {
+			expect(edge(onto({ behaviors: ['user_tracking'] }), 'contacts', 'account').optional).toBe(
+				true,
+			);
+		});
+
+		it('stays required when source and target are both tenant-scoped (a cross-tenant FK is a data error)', () => {
+			expect(
+				edge(onto({ tenant_scoped: true }, { tenant_scoped: true }), 'contacts', 'account').optional,
+			).toBe(false);
+		});
+
+		it('is optional when only the target is tenant-scoped — an unscoped source reads every tenant', () => {
+			expect(edge(onto({ tenant_scoped: true }), 'contacts', 'account').optional).toBe(true);
+		});
+	});
+
+	describe('a junction’s own edge to an endpoint (#850)', () => {
+		const endpoints = (contactExtra: Record<string, unknown>) =>
+			context(
+				[
+					{ entry: registryEntry('opportunity', 'opportunities'), def: definition('opportunity', 'opportunities') },
+					{
+						entry: registryEntry('contact', 'contacts'),
+						def: definition('contact', 'contacts', {}, {}, contactExtra),
+					},
+				],
+				[junction('opportunity', 'contact')],
+			);
+
+		it('is required onto an unscoped endpoint', () => {
+			expect(edge(endpoints({}), 'opportunityContacts', 'contact').optional).toBe(false);
+		});
+
+		it('is optional onto a soft-deleting endpoint', () => {
+			expect(
+				edge(endpoints({ behaviors: ['soft_delete'] }), 'opportunityContacts', 'contact').optional,
+			).toBe(true);
+		});
+
+		it('is optional onto a tenant-scoped endpoint — a junction declares no scope of its own', () => {
+			expect(edge(endpoints({ tenant_scoped: true }), 'opportunityContacts', 'contact').optional).toBe(
+				true,
+			);
+		});
+	});
+
+	it('an undeclared FK column is NOT NULL, so not optional (#850)', () => {
 		const ctx = context([
 			account,
 			{
@@ -176,7 +250,7 @@ describe('buildRelationGraph — belongs_to', () => {
 				),
 			},
 		]);
-		expect(edge(ctx, 'contacts', 'account').optional).toBe(true);
+		expect(edge(ctx, 'contacts', 'account').optional).toBe(false);
 	});
 });
 

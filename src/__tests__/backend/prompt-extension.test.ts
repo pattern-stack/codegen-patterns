@@ -1000,7 +1000,8 @@ describe('roles: → belongs_to emission (CAP-2)', () => {
     expect(host.role).toBe('host');
     expect(host.hasIndex).toBe(true);
     expect(host.onDelete).toBe('restrict');
-    expect(host.nullable).toBe(true);
+    // A reference is NOT NULL unless it says otherwise (#850).
+    expect(host.nullable).toBe(false);
     expect(
       locals.tableConstraints.map((c: { expr: string }) => c.expr),
     ).toContain("index('meetings_host_contact_id_idx').on(t.hostContactId)");

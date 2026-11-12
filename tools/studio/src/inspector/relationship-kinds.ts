@@ -56,8 +56,10 @@ export const RELATIONSHIP_OPTIONS: Record<OptionId, OptionDescriptor> = {
   required: {
     id: 'required',
     label: 'Required',
-    hint: 'Makes the foreign key column NOT NULL.',
-    spec: { control: 'boolean', default: false },
+    // A belongs_to FK is NOT NULL unless the YAML says `nullable: true` (#850),
+    // so the default here is the generator's: on. Off writes `nullable: true`.
+    hint: 'The foreign key column is NOT NULL. Turn off to allow a row with no target (nullable: true).',
+    spec: { control: 'boolean', default: true },
   },
   onDelete: {
     id: 'onDelete',

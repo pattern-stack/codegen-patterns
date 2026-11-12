@@ -61,7 +61,7 @@ roles:
 | `cardinality` | yes | `one` \| `many` |
 | `column` | `one` only | FK column override; default `<role>_<target>_id` |
 | `via` | `many` only, required | the junction between this entity and the target |
-| `nullable` | `one` only | FK nullability; default `true` |
+| `nullable` | `one` only | FK nullability; default NOT NULL (`false`) since #850 — was `true` |
 | `on_delete` | `one` only | `restrict` (default) \| `cascade` \| `set_null` \| `no_action` |
 
 `.strict()` at every level: an unknown key, `via` on a `one` role, or `column` on a `many` role is an error at load,
@@ -89,7 +89,7 @@ Precedence, all of it inherited from the existing path rather than restated:
 | Property | Source |
 |---|---|
 | FK column name | `column:` → else `<role>_<target>_id` |
-| `notNull` | the role's `nullable:` when set (it becomes the derived relationship's `nullable:`), else the FK field's `required:` / `nullable:` when the author also declares it in `fields:`, else nullable — exactly `processBelongsTo`'s precedence for a declared `belongs_to` (explicit relationship `nullable:` → field → default), not a second rule |
+| `notNull` | the role's `nullable:` when set (it becomes the derived relationship's `nullable:`), else the FK field's `nullable:` when the author also declares it in `fields:`, else NOT NULL (#850; was: the field's `required:` / `nullable:`, else nullable) — exactly `processBelongsTo`'s precedence for a declared `belongs_to` (explicit relationship `nullable:` → field → default), not a second rule |
 | index | the FK field's `index:` when declared in `fields:`, else **`true`** (the role default) |
 | `on_delete` | the role's `on_delete:`, default `restrict` (ADR-021) |
 

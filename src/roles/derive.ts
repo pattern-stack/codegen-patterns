@@ -52,7 +52,8 @@ export interface RoleDefinition {
 	 * `one` only — FK nullability. Carried onto the derived relationship, where
 	 * `processBelongsTo` gives it priority over the FK field's `required:` /
 	 * `nullable:` — the same precedence a declared `belongs_to`'s `nullable:`
-	 * has (no second rule). Unset: the field decides, else nullable.
+	 * has (no second rule). Unset: the field's `nullable:` decides, else NOT NULL
+	 * (`foreignKeyColumnNullable`, #850).
 	 */
 	nullable?: boolean;
 	/** `one` only — FK cascade action. Default `restrict`. */

@@ -45,7 +45,7 @@ behaviors:
 
 relationships:
   account:
-    type: belongs_to
+    type: belongs_to                # the FK is NOT NULL unless it says `nullable: true`
     target: account
     foreign_key: account_id
 
@@ -451,8 +451,9 @@ roles:
 ```
 
 - **`cardinality: one`** is a `belongs_to` with a name: it emits an FK column (`column:`, else
-  `<role>_<target>_id`), its `.references(..., { onDelete })` (`on_delete:`, default `restrict`) and an index by
-  default. Declare the FK column in `fields:` as well to control `required` / `index` explicitly. The relation key —
+  `<role>_<target>_id`), NOT NULL unless the role says `nullable: true`, its `.references(..., { onDelete })`
+  (`on_delete:`, default `restrict`) and an index by default. Declare the FK column in `fields:` as well to control
+  `nullable` / `index` explicitly. The relation key —
   and the generated service method — is the **role name** (`host()`, `about()`), so two roles may point at the
   same entity.
 - **`cardinality: many`** names the junction that owns the edge (`via:` must be `<entity>_<target>` or

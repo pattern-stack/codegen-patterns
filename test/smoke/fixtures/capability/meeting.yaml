@@ -27,7 +27,8 @@ behaviors:
 
 # `one` roles derive FK columns (host_contact_id, about_account_id) through the
 # existing belongs_to path; `many` names the junction that owns the edge.
+# `host` takes the belongs_to default (NOT NULL, #850); `about` opts out.
 roles:
   host:      { target: contact, cardinality: one, column: host_contact_id }
   attendees: { target: contact, cardinality: many, via: meeting_contact }
-  about:     { target: account, cardinality: one }
+  about:     { target: account, cardinality: one, nullable: true }

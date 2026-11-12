@@ -326,13 +326,13 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 	const meetingEntity = reads('modules/meetings/meeting.entity.ts');
 	assertContains(
 		meetingEntity,
-		/hostContactId: uuid\('host_contact_id'\)\.references\(\(\): AnyPgColumn => contacts\.id, \{ onDelete: 'restrict' \}\),/,
-		'meeting.entity.ts host role FK column (explicit column:)',
+		/hostContactId: uuid\('host_contact_id'\)\.notNull\(\)\.references\(\(\): AnyPgColumn => contacts\.id, \{ onDelete: 'restrict' \}\),/,
+		'meeting.entity.ts host role FK column (explicit column:; NOT NULL by default, #850)',
 	);
 	assertContains(
 		meetingEntity,
 		/aboutAccountId: uuid\('about_account_id'\)\.references\(\(\): AnyPgColumn => accounts\.id, \{ onDelete: 'restrict' \}\),/,
-		'meeting.entity.ts about role FK column (<role>_<target>_id default)',
+		'meeting.entity.ts about role FK column (<role>_<target>_id default; nullable: true)',
 	);
 	assertContains(
 		meetingEntity,

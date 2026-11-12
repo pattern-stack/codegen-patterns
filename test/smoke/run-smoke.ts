@@ -653,11 +653,12 @@ function assertRelationshipEmission(tmpDir: string): void {
 		/opportunities: r\.many\.opportunities\(\{ from: r\.accounts\.id, to: r\.opportunities\.accountId \}\)/,
 		'generated/relations.ts account has_many opportunities',
 	);
-	// Required FK ⇒ the include is not nullable. Target IS scoped ⇒ hop predicate.
+	// Required FK, but the target soft-deletes, so the hop can drop it and the include
+	// is nullable (#850). Target IS scoped ⇒ hop predicate.
 	assertContains(
 		manifest,
-		/account: r\.one\.accounts\(\{ from: r\.contacts\.accountId, to: r\.accounts\.id, optional: false, where: \{ RAW: \(t\) => hopScope\(t, ACCOUNTS_SCOPE, 'contacts\.account'\) \} \}\)/,
-		'generated/relations.ts contact belongs_to account, scoped per hop',
+		/account: r\.one\.accounts\(\{ from: r\.contacts\.accountId, to: r\.accounts\.id, optional: true, where: \{ RAW: \(t\) => hopScope\(t, ACCOUNTS_SCOPE, 'contacts\.account'\) \} \}\)/,
+		'generated/relations.ts contact belongs_to account, scoped per hop, optional (soft-delete target)',
 	);
 	// ── REL-2 (#587): the per-hop scope predicate + the typed-include helpers ──
 	assertContains(
