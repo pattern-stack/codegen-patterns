@@ -96,7 +96,9 @@ All notable changes to this project will be documented in this file.
 - **`RequesterContext.userId` (and `organizationId`) are optional (#853).** A tenant-only boundary
   (a job, a webhook, a probe) no longer has to invent a user: `withRequester({ tenantId }, fn)`.
   Only the user axis reads `userId`. A `user_tracking` repository in `'user'` scope throws the new
-  `MissingUserIdError` under `strict` when it is absent, and applies no user filter under `lenient`.
+  `MissingUserIdError` when a context is active but carries no `userId`, under `strict` **and**
+  `lenient`: `lenient` relaxes only a missing context, so a tenant-only context can never read (or
+  update/delete, or include) every user's rows. No context at all under `lenient` is unchanged.
   Type change: code that reads `requester.userId` now sees `string | undefined`.
   `AuthenticatedGuard` passes a route only when the ambient context carries a `userId`, so a
   tenant-only context does not authenticate an HTTP request.

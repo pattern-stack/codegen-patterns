@@ -150,6 +150,11 @@ export function tenantAxisPredicate(
  *
  * `'user'` -> `user_id = ctx.userId`; `'org'` -> `user_id IN ctx.orgUserIds`
  * (an empty list matches nothing — fail-closed); `'superuser'` -> no filter.
+ *
+ * No context at all: `lenient` -> no filter, `strict` -> throws. A context with
+ * no `userId` in `'user'` scope throws `MissingUserIdError` under either
+ * enforcement (#853). Every user-axis guard — root reads, by-id writes
+ * (`scopeAnd`), and include hops (`hopScope`) — goes through here.
  */
 export function userScopePredicateFor(
   table: PgTable,
@@ -168,12 +173,13 @@ export function userScopePredicateFor(
         : sql`false`;
     case 'user':
     default:
-      // A context with no user (a tenant-only boundary, #853): strict refuses
-      // to read unscoped; lenient applies no user filter, as with no context.
-      if (ctx.userId === undefined) {
-        if (enforcement === 'strict') throw new MissingUserIdError(owner);
-        return undefined;
-      }
+      // A context that IS present but carries no user (a tenant-only boundary,
+      // #853) cannot scope a user-owned table in 'user' scope. That is a
+      // programming error under BOTH enforcements: `lenient` relaxes only a
+      // MISSING context (the `!ctx` return above), never a present one that
+      // lacks the axis this table needs — reading unfiltered here would hand a
+      // tenant-only caller every user's rows.
+      if (ctx.userId === undefined) throw new MissingUserIdError(owner);
       return eq(column(table, 'userId', owner), ctx.userId);
   }
 }

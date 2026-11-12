@@ -269,15 +269,42 @@ describe('a requester with no userId — a tenant-only boundary (#853)', () => {
 		});
 	});
 
-	it('lenient applies no user filter, as with no context at all', async () => {
+	it("lenient 'user' scope ALSO throws — lenient relaxes a missing context, not a missing axis", async () => {
+		// Applying no filter here would hand a tenant-only caller every user's rows.
 		await withRequester(tenantOnly, async () => {
+			expect(() => userScopePredicateFor(widgets, 'lenient', 'WidgetRepository')).toThrow(MissingUserIdError);
+			expect(() =>
+				scopeFilter(widgets, cfg({ userTracking: true, tenantScoped: true, enforcement: 'lenient' }), 'W'),
+			).toThrow(MissingUserIdError);
+		});
+	});
+
+	it('an include hop onto a lenient user_tracking target throws the same error, naming the relation', async () => {
+		await withRequester(tenantOnly, async () => {
+			expect(() => hopScope(widgets, cfg({ userTracking: true }), 'accounts.widgets')).toThrow(MissingUserIdError);
+			expect(() => hopScope(widgets, cfg({ userTracking: true }), 'accounts.widgets')).toThrow(/accounts\.widgets/);
+		});
+	});
+
+	it('lenient with NO context at all is unchanged: no user filter', () => {
+		expect(userScopePredicateFor(widgets, 'lenient', 'W')).toBeUndefined();
+		expect(render(hopScope(widgets, cfg({ userTracking: true }), 'a.b')).sql).toBe('true');
+	});
+
+	it("'superuser' scope still needs no userId, under either enforcement", async () => {
+		await withRequester({ ...tenantOnly, scope: 'superuser' }, async () => {
+			expect(userScopePredicateFor(widgets, 'strict', 'W')).toBeUndefined();
 			expect(userScopePredicateFor(widgets, 'lenient', 'W')).toBeUndefined();
 		});
 	});
 
-	it("'superuser' scope still needs no userId", async () => {
-		await withRequester({ ...tenantOnly, scope: 'superuser' }, async () => {
-			expect(userScopePredicateFor(widgets, 'strict', 'W')).toBeUndefined();
+	it("'org' scope still needs no userId, under either enforcement — it filters by the member list", async () => {
+		await withRequester({ ...tenantOnly, scope: 'org', orgUserIds: ['u1', 'u2'] }, async () => {
+			for (const enforcement of ['strict', 'lenient'] as const) {
+				const { sql, params } = render(userScopePredicateFor(widgets, enforcement, 'W'));
+				expect(sql).toMatch(/"user_id" in/i);
+				expect(params).toEqual(['u1', 'u2']);
+			}
 		});
 	});
 });

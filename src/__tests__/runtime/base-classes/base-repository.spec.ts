@@ -10,6 +10,7 @@ import { BaseRepository, type BehaviorConfig, type ListOptions } from '../../../
 import {
   CrossTenantWriteError,
   MissingTenantIdError,
+  MissingUserIdError,
   withAllTenants,
   withRequester,
   withOrgScope,
@@ -528,6 +529,91 @@ describe('BaseRepository — ambient tenant scoping', () => {
   });
 });
 
+
+/**
+ * #853 — a requester context that IS present but carries no `userId` (a
+ * tenant-only boundary). `lenient` relaxes a MISSING context only; a present
+ * context lacking the user axis a `user_tracking` repo needs is a programming
+ * error under either enforcement. One owner (`userScopePredicateFor`), so the
+ * read path (`baseQuery`) and the by-id write paths (`update` / `delete`, via
+ * `scopeAnd`) throw from the same line. The include hop is pinned in
+ * `scope-filters.spec.ts` and `hop-scope-sql.spec.ts`.
+ */
+class MockDbScopingRepo extends BaseRepository<{ id: string; userId: string }, typeof widgets> {
+  readonly table = widgets;
+  protected readonly behaviors: BehaviorConfig;
+  constructor(db: DrizzleClient, behaviors: Partial<BehaviorConfig> = {}) {
+    super(db);
+    this.behaviors = { timestamps: false, softDelete: false, userTracking: true, ...behaviors };
+  }
+}
+
+describe('BaseRepository — a tenant-only context on a user_tracking repo (#853)', () => {
+  const tenantOnly = { tenantId: 't-1' };
+
+  it('lenient read throws MissingUserIdError, naming the repository', async () => {
+    const repo = new ScopingTestRepo();
+    await withRequester(tenantOnly, async () => {
+      expect(() => repo.renderFindById('w1')).toThrow(MissingUserIdError);
+      expect(() => repo.renderFindById('w1')).toThrow(/ScopingTestRepo/);
+    });
+  });
+
+  it('lenient count / findById / list all throw — no read reaches the db unfiltered', async () => {
+    const db = makeMockDb([]);
+    const repo = new MockDbScopingRepo(db);
+    await withRequester(tenantOnly, async () => {
+      await expect(repo.findById('w1')).rejects.toThrow(MissingUserIdError);
+      await expect(repo.list()).rejects.toThrow(MissingUserIdError);
+      await expect(repo.count()).rejects.toThrow(MissingUserIdError);
+    });
+  });
+
+  it('lenient update and delete (hard and soft) throw before a statement is sent', async () => {
+    for (const softDelete of [false, true]) {
+      const db = makeMockDb([{ id: 'w1' }]);
+      const repo = new MockDbScopingRepo(db, { softDelete });
+      await withRequester(tenantOnly, async () => {
+        await expect(repo.update('w1', { userId: 'x' })).rejects.toThrow(MissingUserIdError);
+        await expect(repo.delete('w1')).rejects.toThrow(MissingUserIdError);
+      });
+      expect((db as unknown as { where: ReturnType<typeof mock> }).where).not.toHaveBeenCalled();
+    }
+  });
+
+  it('strict throws the same error', async () => {
+    const repo = new StrictScopingTestRepo();
+    await withRequester(tenantOnly, async () => {
+      expect(() => repo.renderFindById('w1')).toThrow(MissingUserIdError);
+    });
+  });
+
+  it('lenient with NO context at all is unchanged: reads and writes unfiltered', async () => {
+    const repo = new ScopingTestRepo();
+    expect(repo.renderFindById('w1')).not.toMatch(/"user_id"\s*(=|in)/i);
+    const db = makeMockDb([{ id: 'w1' }]);
+    const writer = new MockDbScopingRepo(db);
+    await expect(writer.update('w1', {})).resolves.toEqual({ id: 'w1' });
+    await expect(writer.delete('w1')).resolves.toBeUndefined();
+  });
+
+  it("'superuser' and 'org' scopes need no userId", async () => {
+    const repo = new ScopingTestRepo();
+    await withRequester({ ...tenantOnly, scope: 'superuser' }, async () => {
+      expect(repo.renderFindById('w1')).not.toMatch(/"user_id"\s*(=|in)/i);
+    });
+    await withRequester({ ...tenantOnly, scope: 'org', orgUserIds: ['u1'] }, async () => {
+      expect(repo.renderFindById('w1')).toMatch(/"user_id"\s+in\s*\(/i);
+    });
+  });
+
+  it('a user_tracking: false repo never reads the user axis', async () => {
+    const repo = new ScopingTestRepo({ userTracking: false });
+    await withRequester(tenantOnly, async () => {
+      expect(() => repo.renderFindById('w1')).not.toThrow();
+    });
+  });
+});
 
 // ============================================================================
 // TEN-1 (#585) — the tenant axis (ADR-042)

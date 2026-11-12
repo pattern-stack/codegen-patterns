@@ -378,7 +378,11 @@ All families get `findById`, `findByIds`, `list`, `count`, `exists`, `create`,
 - The data plane is **closed by default**. `AuthModule.forRoot` binds
   `AuthenticatedGuard` as `APP_GUARD`: a non-`@Public()` route without an ambient
   `RequesterContext` **carrying a `userId`** returns 401. A tenant-only context
-  (`withRequester({ tenantId }, fn)`, #853) does not authenticate a route.
+  (`withRequester({ tenantId }, fn)`, #853) does not authenticate a route, and
+  reaching a `user_tracking` repository in `'user'` scope it throws
+  `MissingUserIdError` under `strict` **and** `lenient`: `lenient` relaxes only a
+  missing context, never a present one without the user axis. Background work
+  that touches user-owned rows claims `'superuser'` / `'org'` scope instead.
 - The generated `main.ts` calls `installRequesterContext(app)` and refuses to
   `listen()` when no `IUserContext` is bound under `AUTH_USER_CONTEXT`, unless
   `auth.devAllowAnonymous: true` (read as the generated `authConfig`, CFG-1).

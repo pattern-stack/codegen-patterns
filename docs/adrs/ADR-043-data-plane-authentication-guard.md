@@ -78,6 +78,8 @@ export class AuthenticatedGuard implements CanActivate {
 
 *Revision 2026-11-11 (#853):* `RequesterContext.userId` became optional so a tenant-only boundary (a job, a webhook) need not invent a user. "A context exists" therefore no longer implies "a principal was resolved", so the guard now passes only when the ambient context carries a `userId` (`tryGetRequester()?.userId`). The boundary middleware already discarded a resolved context without one; a tenant-only context set anywhere else does not authenticate a route.
 
+*Revision 2026-11-12 (#853):* the same "a present context is not a principal" rule now holds at the data layer. A tenant-only context that reaches a `user_tracking` repository in `'user'` scope throws `MissingUserIdError` under **both** `strict` and `lenient` enforcement (it previously read unfiltered under `lenient`). `lenient` keeps its one meaning: no context at all stays unscoped. See the ADR-042 revision note.
+
 ```ts
 // runtime/subsystems/auth/guards/public.decorator.ts  (new)
 import { SetMetadata } from '@nestjs/common';

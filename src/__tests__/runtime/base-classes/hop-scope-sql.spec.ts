@@ -26,7 +26,7 @@ import {
 	scopeFilter,
 	type ScopeConfig,
 } from '../../../../runtime/base-classes/scope-filters';
-import { withRequester } from '../../../../runtime/base-classes/tenant-context';
+import { MissingUserIdError, withRequester } from '../../../../runtime/base-classes/tenant-context';
 
 // ── the schema, as the entity templates emit one ───────────────────────────
 const accounts = pgTable('accounts', {
@@ -328,6 +328,63 @@ describe('REL-2 §2.4 — the ROOT filter renders against the ALIASED table', ()
 			const rootOf = (q: string): string =>
 				q.slice(q.lastIndexOf('where (')).replace(/\$\d+/g, '$?');
 			expect(rootOf(withInclude.sql)).toBe(rootOf(withoutInclude.sql));
+		});
+	});
+});
+
+describe('#853 — an include hop onto a lenient user_tracking target, under a tenant-only context', () => {
+	// A second, minimal manifest: a lenient `user_tracking` child under a parent,
+	// rendered exactly as `emit-manifest.ts` emits a hop. `lenient` relaxes only a
+	// MISSING context — a present one with no userId cannot scope the user axis,
+	// so the hop throws rather than joining every user's rows.
+	const parents = pgTable('parents', { id: uuid('id').primaryKey().defaultRandom() });
+	const notes = pgTable('notes', {
+		id: uuid('id').primaryKey().defaultRandom(),
+		parentId: uuid('parent_id').notNull(),
+		userId: uuid('user_id'),
+	});
+	const NOTES_SCOPE: ScopeConfig = {
+		tenantScoped: false,
+		softDelete: false,
+		userTracking: true,
+		enforcement: 'lenient',
+	};
+	const noteRelations = defineRelations({ parents, notes }, (r) => ({
+		parents: {
+			notes: r.many.notes({
+				from: r.parents.id,
+				to: r.notes.parentId,
+				where: { RAW: (t) => hopScope(t, NOTES_SCOPE, 'parents.notes') },
+			}),
+		},
+		notes: {},
+	}));
+	const noteDb = drizzle({
+		connection: 'postgresql://unused:unused@127.0.0.1:1/unused',
+		relations: noteRelations,
+	});
+
+	it('throws MissingUserIdError naming the relation', async () => {
+		await withRequester({ tenantId: 'T1' }, async () => {
+			expect(() => noteDb.query.parents.findMany({ with: { notes: true } }).toSQL()).toThrow(
+				MissingUserIdError,
+			);
+			expect(() => noteDb.query.parents.findMany({ with: { notes: true } }).toSQL()).toThrow(
+				/parents\.notes/,
+			);
+		});
+	});
+
+	it('with no context at all the hop is unfiltered, as before', () => {
+		const { sql } = noteDb.query.parents.findMany({ with: { notes: true } }).toSQL();
+		expect(sql).not.toMatch(/"user_id" =/);
+	});
+
+	it('with a userId the hop filters by it', async () => {
+		await withRequester({ userId: 'u1', tenantId: 'T1' }, async () => {
+			const { sql, params } = noteDb.query.parents.findMany({ with: { notes: true } }).toSQL();
+			expect(sql).toMatch(/"user_id" = \$\d+/);
+			expect(params).toContain('u1');
 		});
 	});
 });
