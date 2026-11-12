@@ -63,8 +63,9 @@ function templateTimeOptOutColumns(doc: any, projectBehaviorsTimezone: boolean):
 		return [
 			...(doc.temporal === false ? [] : ['started_at', 'ended_at']),
 			...(doc.sourced === false ? [] : ['matched_at']),
-			'created_at',
-			'updated_at',
+			// `timestamps: false` (#740) emits no created_at / updated_at; a
+			// declared one is a field, covered by the field branch.
+			...(doc.timestamps === false ? [] : ['created_at', 'updated_at']),
 		];
 	}
 	return [];
