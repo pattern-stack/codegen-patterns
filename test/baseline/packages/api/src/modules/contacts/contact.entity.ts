@@ -3,7 +3,6 @@ import {
   index,
   jsonb,
   pgTable,
-  text,
   timestamp,
   uniqueIndex,
   uuid,
@@ -28,12 +27,12 @@ export const contacts = pgTable(
     // cascade rules never fire for a soft-deleted parent. This FK constraint only applies on
     // hard-delete (e.g. admin purge). See ADR-021: docs/adrs/ADR-021-on-delete-semantics.md
     userId: uuid('user_id').notNull().references((): AnyPgColumn => users.id, { onDelete: 'restrict' }),
-    firstName: text('first_name').notNull(),
-    lastName: text('last_name').notNull(),
-    email: text('email').notNull(),
-    title: text('title'),
-    phone: text('phone'),
-    linkedinUrl: text('linkedin_url'),
+    firstName: varchar('first_name', { length: 100 }).notNull(),
+    lastName: varchar('last_name', { length: 100 }).notNull(),
+    email: varchar('email', { length: 255 }).notNull(),
+    title: varchar('title', { length: 200 }),
+    phone: varchar('phone', { length: 50 }),
+    linkedinUrl: varchar('linkedin_url', { length: 500 }),
     // external_id_tracking behavior
     externalId: varchar('external_id'),
     provider: varchar('provider'),

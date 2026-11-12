@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+**Breaking (DDL), pending Doug's sign-off; ships in the next minor (0.33.0):** `max_length` on a
+`string` field now emits `varchar(n)` instead of `text` (#772). **`drizzle-kit push` and
+`drizzle-kit generate` silently truncate longer values**: both emit `ALTER COLUMN … SET DATA TYPE
+varchar(n) USING "col"::varchar(n)`, and an explicit cast to `varchar(n)` cuts the value to `n`
+characters rather than failing. Before migrating, run `select max(length(col)) from <table>` on
+every such column and raise `max_length` (or clean the data) wherever it exceeds `n`.
+
 ### Breaking
 
 - **A `belongs_to` foreign key is NOT NULL by default (#850, DDL).** Before, an FK that neither the
@@ -89,6 +96,25 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **`max_length` and `min_length` are enforced, as documented (#772).** **Breaking (DDL).** A
+  `string` field with `max_length: n` is now a `varchar(n)` column (was `text`), and the create and
+  update DTOs check `z.string().max(n)` (was unbounded); `min_length: n` adds `.min(n)` to the same
+  DTOs (it has no column form). Every backend template ignored both keys before; only the frontend
+  field metadata read `max_length`. One rule (`stringLengthBounds` in `entity-locals.js`) emits
+  them for entity fields, junction payload fields and relationship `fields:`; one rule
+  (`fieldLengthIssues` in `src/schema/field-length.ts`) decides when the keys are accepted, read by
+  the entity / junction schema and the relationship prompt alike: `type: string` only, `min_length`
+  no greater than `max_length`, and never next to `choices:` / `choices_from:` (that pair was
+  accepted and ignored; an enum's values bound it, so it is now an error whose path names the
+  field). Junction payload fields take `max_length` (a `varchar(n)` column); a junction has no
+  DTOs (its `LinkInput` is a TypeScript type), so there the limit is the database's alone, and
+  `min_length`, which has no column form, stays refused. Migration: `drizzle-kit push` /
+  `generate` turn `text` → `varchar(n)` into
+  `SET DATA TYPE varchar(n) USING "col"::varchar(n)`, which **silently truncates** any longer
+  value (a hand-written `ALTER … TYPE varchar(n)` without `USING` fails instead). Run
+  `select max(length(<col>)) from <table>` for each such column first, and raise `max_length` (or
+  clean the data) where it exceeds `n`. Hosts that adopt existing `varchar(n)` columns now match
+  their DDL.
 - **`pattern: Activity` with `config:` compiles (#852).** The service template emitted
   `protected override readonly patternConfig`, but no service base declares one, so `tsc` failed
   with TS4113. Only the repository emits it now; it owns the config, and the service forwards to

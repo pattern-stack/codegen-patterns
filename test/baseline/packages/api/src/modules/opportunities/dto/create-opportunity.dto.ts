@@ -6,9 +6,9 @@ export const CreateOpportunitySchema = z.object({
   ownerId: z.string().uuid(),
   stateId: z.string().uuid(),
   tenantId: z.string().uuid(),
-  name: z.string(),
+  name: z.string().max(255),
   amount: z.coerce.string().nullable().optional(),
-  currency: z.string().nullable().optional(),
+  currency: z.string().max(3).nullable().optional(),
   expectedCloseDate: z.coerce.date().nullable().optional(),
   closedAt: z.coerce.date().nullable().optional(),
 });

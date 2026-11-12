@@ -69,7 +69,7 @@ fields:
   email:
     type: string           # string | integer | decimal | boolean | uuid | date | datetime | json | enum | string_array
     required: true         # NOT NULL + required in Create DTO
-    max_length: 255        # string length constraint (DB + Zod)
+    max_length: 255        # varchar(255) column + z.string().max(255) on create/update
     index: true            # single-column index
     unique: true           # unique index; per tenant under tenant_scoped
   status:
@@ -140,6 +140,13 @@ Type notes:
   `(s) => new Date(s.replace(' ', 'T') + 'Z')`. Upgrading with `drizzle-kit push`: set the database's default
   TimeZone to UTC first, or generate a migration instead. Casts such as `::date` and `date_trunc` on a
   timestamptz follow the session TimeZone; pin it.
+- `string` — `text`, or `varchar(n)` with `max_length: n` (and `.max(n)` on the create /
+  update DTOs); `min_length: n` adds `.min(n)` to the same DTOs. `min_length` may not exceed
+  `max_length`. Neither key goes with `choices:` / `choices_from:`: an enum's values bound its
+  length, so the pair is a schema error on entity, relationship and junction fields. Junction
+  payload fields take `max_length` only, enforced by the column (no DTOs). Adding or lowering `max_length` on an existing column is a column-type migration,
+  and `drizzle-kit push` / `generate` emit it as `USING "col"::varchar(n)`, which **silently
+  truncates** longer values. Check `select max(length(col)) from <table>` first.
 - `string_array` — a Postgres `text[]` column; `string[]` on the entity, `z.array(z.string())` in the DTOs.
   Add `choices:` to constrain the elements: the column becomes an array of a generated enum
   (`('pg' | 'sg')[]`), not a single enum value. `default: [pg]` gives the column an array default.
@@ -332,10 +339,12 @@ fields:
 ```
 
 `fields:` entries are **entity fields**: the same schema, so `required`, `nullable`, `default`,
-`foreign_key`, `index`, `timezone` and `choices` mean what they mean in `fields:` above, and an
-unknown key is an error (it's `choices:`, not `values:`). Keys that nothing on a junction reads are
+`foreign_key`, `index`, `timezone`, `choices` and `max_length` mean what they mean in `fields:`
+above, and an unknown key is an error (it's `choices:`, not `values:`). `max_length: n` is a
+`varchar(n)` column; a junction has no DTOs (`LinkInput` is a TypeScript type, not a Zod schema), so
+on a junction the limit is enforced by the database only. Keys that nothing on a junction reads are
 refused rather than ignored: `choices_from`, `type: entity_ref`, `unique` (a row is unique by its
-composite key), `min` / `max` / `min_length` / `max_length` (a junction has no DTOs) and the
+composite key), `min` / `max` / `min_length` (no DTO to check them, and no column form) and the
 analytics tags (`role` / `agg` / `aggs` / `additivity` / `time`). A field can't be named `id` or
 after an endpoint column (`opportunity_id`). A `role` **without** `choices:` is an ordinary
 column of its declared type. With `choices:` it's the identity enum and can't be `nullable: true`.

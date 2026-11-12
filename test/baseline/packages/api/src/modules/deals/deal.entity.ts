@@ -7,7 +7,6 @@ import {
   numeric,
   pgEnum,
   pgTable,
-  text,
   timestamp,
   uniqueIndex,
   uuid,
@@ -39,7 +38,7 @@ export const deals = pgTable(
     // cascade rules never fire for a soft-deleted parent. This FK constraint only applies on
     // hard-delete (e.g. admin purge). See ADR-021: docs/adrs/ADR-021-on-delete-semantics.md
     accountId: uuid('account_id').notNull().references((): AnyPgColumn => accounts.id, { onDelete: 'restrict' }),
-    name: text('name').notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
     amount: numeric('amount'),
     stage: dealStageEnum('stage').notNull(),
     closeDate: date('close_date', { mode: 'date' }),

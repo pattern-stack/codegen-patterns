@@ -5,7 +5,7 @@ export const CreateDealSchema = z.object({
   ownerId: z.string().uuid(),
   closedById: z.string().uuid().nullable().optional(),
   accountId: z.string().uuid(),
-  name: z.string(),
+  name: z.string().max(255),
   amount: z.coerce.string().nullable().optional(),
   stage: z.enum(['prospecting', 'qualification', 'proposal', 'negotiation', 'closed_won', 'closed_lost']),
   closeDate: z.coerce.date().nullable().optional(),

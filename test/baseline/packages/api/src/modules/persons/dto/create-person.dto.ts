@@ -3,9 +3,9 @@ import { z } from 'zod';
 
 export const CreatePersonSchema = z.object({
   tenantId: z.string().uuid(),
-  email: z.string(),
-  firstName: z.string(),
-  lastName: z.string(),
+  email: z.string().max(255),
+  firstName: z.string().max(100),
+  lastName: z.string().max(100),
   nicknames: z.array(z.string()).nullable().optional(),
   preferredChannels: z.array(z.enum(['email', 'phone', 'sms'])),
 });

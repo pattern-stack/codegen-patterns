@@ -71,13 +71,20 @@ function stripIdentityRoleNotNull(fields: unknown): unknown {
  * Entity-field keys a junction payload field accepts by shape but that nothing
  * on a junction reads. Each is refused rather than parsed and dropped — the
  * #690 class (a key that silently does nothing).
+ *
+ * `max_length` is not here (#772): a payload field is rendered by the entity
+ * column builder, so `max_length: n` is a `varchar(n)` column by the same rule
+ * (`stringLengthBounds`). A junction has no DTOs — its `LinkInput` is a
+ * TypeScript type, with no Zod schema — so on a junction the bound is the
+ * column's alone: the database enforces it. `min_length` has no column form,
+ * so on a junction nothing would read it, and it stays refused.
  */
 const UNSUPPORTED_JUNCTION_FIELD_KEYS: Record<string, string> = {
 	choices_from: "the junction template has no file loader — list the values inline with 'choices:'",
 	unique:
 		'no unique index is emitted for a junction payload field — a junction row is unique by its composite primary key',
-	min_length: 'a junction has no DTOs, so the constraint would not be enforced',
-	max_length: 'a junction has no DTOs, so the constraint would not be enforced',
+	min_length:
+		"a junction has no DTOs (its LinkInput is a TypeScript type) and a minimum length has no column form, so nothing would enforce it — 'max_length' is supported (a varchar(n) column)",
 	min: 'a junction has no DTOs, so the constraint would not be enforced',
 	max: 'a junction has no DTOs, so the constraint would not be enforced',
 	role: 'junction fields carry no analytics tags — the semantic model derives junction columns untagged',

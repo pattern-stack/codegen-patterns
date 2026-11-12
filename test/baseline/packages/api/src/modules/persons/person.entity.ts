@@ -5,6 +5,7 @@ import {
   pgTable,
   text,
   uuid,
+  varchar,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { type InferSelectModel } from 'drizzle-orm';
@@ -17,9 +18,9 @@ export const persons = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     tenantId: uuid('tenant_id').notNull().references((): AnyPgColumn => tenants.id),
-    email: text('email').notNull(),
-    firstName: text('first_name').notNull(),
-    lastName: text('last_name').notNull(),
+    email: varchar('email', { length: 255 }).notNull(),
+    firstName: varchar('first_name', { length: 100 }).notNull(),
+    lastName: varchar('last_name', { length: 100 }).notNull(),
     nicknames: text('nicknames').array(),
     preferredChannels: personPreferredChannelsEnum('preferred_channels').array().notNull().default(['email']),
   },

@@ -4,7 +4,7 @@ import { z } from 'zod';
 export const CreateUserSchema = z.object({
   personId: z.string().uuid().nullable().optional(),
   tenantId: z.string().uuid(),
-  email: z.string(),
+  email: z.string().max(255),
 });
 
 export type CreateUserDto = z.infer<typeof CreateUserSchema>;

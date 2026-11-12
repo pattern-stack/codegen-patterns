@@ -9,6 +9,7 @@ import {
   NOT_NULL_WITHOUT_DEFAULT_MESSAGE,
   notNullWithoutDefault,
 } from "./field-nullability.js";
+import { fieldLengthIssues } from "./field-length.js";
 import {
   TIMEZONE_ON_NON_DATETIME_MESSAGE,
   behaviorTimezoneOptionError,
@@ -268,30 +269,14 @@ export const FieldDefinitionSchema = BaseFieldSchema.merge(UiMetadataSchema)
     message: TIMEZONE_ON_NON_DATETIME_MESSAGE,
     path: ["timezone"],
   })
-  .refine(
-    (data) => {
-      if (data.min_length !== undefined && data.type !== "string") {
-        return false;
-      }
-      return true;
-    },
-    {
-      message: "'min_length' can only be used with type 'string'",
-      path: ["min_length"],
-    },
-  )
-  .refine(
-    (data) => {
-      if (data.max_length !== undefined && data.type !== "string") {
-        return false;
-      }
-      return true;
-    },
-    {
-      message: "'max_length' can only be used with type 'string'",
-      path: ["max_length"],
-    },
-  )
+  // `min_length` / `max_length`: string only, never on an enum, min ≤ max —
+  // the one rule in `field-length.ts`, which the relationship prompt reads too.
+  // The issue path names the field (`fields.<name>.max_length`).
+  .superRefine((data, ctx) => {
+    for (const { key, message } of fieldLengthIssues(data)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message, path: [key] });
+    }
+  })
   .refine(
     (data) => {
       if (

@@ -4,9 +4,9 @@ import {
   index,
   numeric,
   pgTable,
-  text,
   timestamp,
   uuid,
+  varchar,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { type InferSelectModel } from 'drizzle-orm';
@@ -23,9 +23,9 @@ export const opportunities = pgTable(
     ownerId: uuid('owner_id').notNull().references((): AnyPgColumn => users.id, { onDelete: 'restrict' }),
     stateId: uuid('state_id').notNull().references((): AnyPgColumn => deal_states.id, { onDelete: 'restrict' }),
     tenantId: uuid('tenant_id').notNull().references((): AnyPgColumn => tenants.id),
-    name: text('name').notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
     amount: numeric('amount'),
-    currency: text('currency').default('USD'),
+    currency: varchar('currency', { length: 3 }).default('USD'),
     expectedCloseDate: date('expected_close_date', { mode: 'date' }),
     closedAt: timestamp('closed_at', { withTimezone: true, mode: 'date' }),
   },
