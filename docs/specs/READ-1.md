@@ -136,7 +136,7 @@ list<C …, W …>(
 ): Promise<Array<AccountResult<C, W>>>;
 
 // one per `queries:` entry (plain by-column) and per `belongs_to` FK — same shape
-findByOwnerId<C …, W …>(ownerId: string, opts?: { columns?: C; with?: W; limit?: number }): Promise<Array<…>>;
+findByOwnerId<C …, W …>(ownerId: string, opts?: { columns?: C; with?: W; limit?: number }): Promise<Array<…>>; // `limit` ⇒ ordered by id
 findByEmail<C …, W …>(email: string, opts?: { columns?: C; with?: W }): Promise<AccountResult<C, W> | null>; // unique
 ```
 
@@ -158,15 +158,17 @@ findByEmail<C …, W …>(email: string, opts?: { columns?: C; with?: W }): Prom
 | order | rows returned in **input order of first occurrence** — `in (…)` does not preserve order, so the repository re-sorts; a caller wanting a lookup does `new Map(rows.map((r) => [r.id, r]))` |
 | a missing id, a soft-deleted row, another tenant's row | **absent** from the result — identical, by design (tenant-context "Not-found semantics": no existence oracle). No `null` placeholders |
 | a `columns` mask that omits `id` | still ordered: the statement selects `id` anyway and the key is stripped from each row before return, so the result type (no `id`) is the truth |
-| an id spelled differently from the database (`'A0EE…'`, `'{a0ee…}'`, no hyphens) on a `uuid` key | found, and de-duplicated against the canonical spelling: both sides are compared through `idKey`, which canonicalises a `uuid` key (lowercase, hyphenated) and leaves any other key type alone — a `text` key distinguishes case (review #2) |
+| an id spelled differently from the database (`'A0EE…'`, `'{a0ee…}'`, no hyphens on a `uuid` key; `'07'` on an integer key) | found, and de-duplicated against the canonical spelling: both sides are compared through `idKey`, which canonicalises by the key's SQL type — a `uuid` to lowercase hyphenated, an integer type to its integer text — and compares anything else as its text, so a `text` key distinguishes case (review #2, R-2, #859 Q-4). A returned row no input id claims **throws** in `inInputOrder` rather than being dropped — a spelling `idKey` does not canonicalise is loud, never lossy |
 | `columns: { id: false }` — an exclusion mask whose only exclusion is `id` | no mask is sent (an empty `{}` would select no root column: Drizzle throws without `with`, and with one returns rows with no `id`); `id` is stripped after ordering. A row without `id` throws in `inInputOrder` rather than being dropped (review #1) |
-| `[]` under `strict` with no requester context | `[]` — no statement is built, so no scope is read. A missing boundary goes undetected on THIS call only; any read that reaches the database throws |
+| `[]` under `strict` with no requester context | **throws**, like any read: no statement is built, but `assertReadScope()` runs the scope's boundary checks first, so a missing boundary is not hidden by an empty input (#859 review) |
 | a large id list | one `in ($1…$n)`; Postgres caps a statement at 65 535 parameters. Not chunked — chunking would silently become several statements (I4). Documented on the method |
 
 `columns: {}` (an empty mask) is rejected **twice**: at compile time — `ReadOptions<C, W>` types the slot as
 `C & NonEmptyMask<C>`, which demands an impossible key when `keyof C` is `never` (asserted by a `@ts-expect-error` in
 the smoke's type tests) — and at runtime by `checkColumns`, which throws naming the repository for a mask built
-dynamically. It selects nothing at runtime and types as an empty object, which is never what a caller meant. Masks are inclusion (`{ a: true }`) or exclusion (`{ a: false }`) —
+dynamically. "Empty" is judged after dropping `undefined`-valued keys, which Drizzle ignores: `{ name: undefined }`
+selects exactly what `{}` does, so it throws too, and an `undefined` key beside a real one is dropped from the mask
+that is sent (#859 Q-7). It selects nothing at runtime and types as an empty object, which is never what a caller meant. Masks are inclusion (`{ a: true }`) or exclusion (`{ a: false }`) —
 Drizzle's own rule, unchanged.
 
 ### 2.5 Designed for: return variants (not built)
@@ -202,10 +204,18 @@ What this spec guarantees so that is a small change later:
 
 ### 3.1 Decision: every generated read executes on RQBv2
 
-The include path is not "the path a `with` takes" any more. **Every** generated read — with or without options — runs
-as `this.db.query.<table>.findFirst/findMany(config)`. The core `select().from()` builder (`baseQuery()`) stays in the
-base class for what it is good for: the base's own default reads (hand-written repositories), the family bases'
-bespoke reads, `count()`, and the by-id write paths (`scopeAnd()`).
+The include path is not "the path a `with` takes" any more. Every read of the **read surface** — `findById`,
+`findByIds`, `list` and every plain `queries:` / `belongs_to` finder, with or without options — runs as
+`this.db.query.<table>.findFirst/findMany(config)`. The core `select().from()` builder (`baseQuery()`) stays for what is
+not on that surface, and those reads are exceptions to "one path", listed so nobody reads the claim wider than it is:
+
+- `count()` (no traversal, no shape) and the by-id write paths (`scopeAnd()`);
+- the base's own default reads (hand-written repositories) and the family bases' bespoke reads;
+- a `via:` / `select:` declarative finder (§2.3 — a join or a projection is a query, not a shape);
+- the junction repository's finders (`templates/junction/new/repository.ejs.t`) and `relationship new`'s repository.
+
+Each still scopes its root through `scopeAnd()` — the same `scopeAndOn` assembly `rootFilter` uses (§3.2) — so the
+exceptions are a second *rendering*, not a second scope.
 
 Why one path, and not "fix the include path's `where`":
 - **The defect class is "a value rendered for one path, used on the other".** It has happened three times (root
@@ -236,7 +246,9 @@ filter rather than an RQBv2 object filter beside it). It **replaces** `rootScope
 used the same way, inside an `orderBy: (t) => …` callback.
 
 So the three call sites of REL-2 §3 become: `scopeAnd()` (core builder: base reads, count, by-id writes),
-`rootFilter()` (every generated read), `hopScope()` (the manifest). All three are `scopeFilter`.
+`rootFilter()` (every read-surface read), `hopScope()` (the manifest). All three are `scopeFilter`, and the first two
+are one assembly: both call `scopeAndOn(table, extra, opts)` — `scopeAnd` with the repository's own table, `rootFilter`
+with the aliased root — so "the caller's predicate AND the scope" is written once (#859 Q-3).
 
 ### 3.3 Root and hop, per method — the guarantee, as a table
 
@@ -244,7 +256,7 @@ So the three call sites of REL-2 §3 become: `scopeAnd()` (core builder: base re
 |---|---|---|
 | `findById` / `findByIds` / `list` / `findBy*` — any options | `rootFilter` → `scopeFilter(t, …)` on the aliased root | manifest `hopScope` on every relation traversed — via `with` (lateral) **and** via a relation filter (`EXISTS`) |
 | `count(where)` | `scopeAnd()` → `scopeFilter(this.tableRef, …)` | — (no traversal) |
-| hand-written `db.query.<t>` | **the caller's** — `scopedRoot(SCOPES.<t>, owner)` (§5) | manifest `hopScope` |
+| hand-written `db.query.<t>` | **the caller's** — `rootScope.<t>(owner)` (§5) | manifest `hopScope` |
 
 §8.2 asserts every cell of the first row against Postgres.
 
@@ -291,8 +303,10 @@ had combined it with `with` yet.)
   - a `RAW:` whose value is not a callback (`{ RAW: someSql }`, `{ RAW: callerWhere }`);
   - a zero-argument `rootFilter(() => …)`;
   - this repository's own handle — `this.table`, `this.tableRef`, `this.col(`, or the table export
-    `<%= entityNamePlural %>.` — on a `rootFilter(` / `RAW:` line;
-  - a `RAW:` whose value is on the next line (the checks are line-based, so that shape is banned outright).
+    `<%= entityNamePlural %>.` — on a `rootFilter(` / `RAW:` line, **and anywhere in a `rootFilter(` argument**, read
+    whole across lines by balanced parentheses (#859 review: a body continuing on the next line passed the line check);
+  - a parenthesised non-callback value (`RAW: (callerWhere)`) — the value check requires an arrow;
+  - a `RAW:` whose value is on the next line (the `RAW:` checks are line-based, so that shape is banned outright).
 
   Each was mutation-checked against the template (review #6's M1–M3 all go red in `just test-unit`). It is a grep:
   a spelling no pattern names can still pass, which is why the runtime gate below stays.
@@ -307,14 +321,14 @@ had combined it with `with` yet.)
 
 ```ts
 // <generated>/relations.ts
-export const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, tenantColumn: 'tenantId', softDelete: true, … };
-export const CONTACTS_SCOPE: ScopeConfig = { … };
+export const ACCOUNTS_SCOPE = tableScope(schema.accounts, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: true, … });
+export const CONTACTS_SCOPE = tableScope(schema.contacts, { … });
 …
 /** Every ENTITY table's declared scope — unscoped tables included, explicitly. */
 export const SCOPES = {
   accounts: ACCOUNTS_SCOPE,
   contacts: CONTACTS_SCOPE,
-  opportunities: UNSCOPED,
+  opportunities: tableScope(schema.opportunities, UNSCOPED),
 } as const satisfies Partial<Record<keyof typeof schema, ScopeConfig>>;
 ```
 
@@ -323,33 +337,52 @@ export const SCOPES = {
   **absent key must not read as permissive** (CLAUDE.md gate rule (c)); a missing table is a type error at the
   `SCOPES.<t>` access, not a silent no-filter.
 - Junction tables are not in `SCOPES` (they have no scope declaration; REL-2 §1.5).
-- A graph that declares no scope anywhere still emits nothing new — no import, no constants, **no `SCOPES`** — so
-  REL-2's L8 property (an unscoped project's manifest is unchanged) holds. `scopedRoot` is not needed there.
+- **`SCOPES` and `rootScope` are emitted on every project**, including one that scopes nothing (every entry
+  `tableScope(schema.<t>, UNSCOPED)`). The first cut omitted both when no entity declared a scope, to keep an unscoped
+  project's manifest byte-identical; review (#859) rejected that — byte-stability for a project that has no users is
+  not a reason (CLAUDE.md), and the omission meant a loader written in an unscoped project could not name the root
+  scope, so it stayed root-unscoped the day an entity became `tenant_scoped`. A project with no entities (`project
+  init`) gets `SCOPES = {}` / `rootScope = {}` and imports nothing from the runtime.
+- Every constant is a **`TableScope<T>`** — `tableScope(table, cfg)` returns the config with its table attached — so
+  the table a scope describes travels with it in the type (§5.2).
 
 ### 5.2 The runtime helper
 
 ```ts
 // runtime/base-classes/scope-filters.ts
 export const UNSCOPED: ScopeConfig;
+export type TableScope<T extends PgTable> = ScopeConfig & { readonly table: T };
+export function tableScope<T extends PgTable>(table: T, cfg: ScopeConfig): TableScope<T>;
 /** The root half of a scoped read, for code that calls `db.query.<t>` itself. */
-export function scopedRoot<T extends PgTable = PgTable>(cfg: ScopeConfig, owner: string): { RAW: (t: T) => SQL };
+export function scopedRoot<T extends PgTable>(scope: TableScope<T>, owner: string): { RAW: (t: T) => SQL };
 ```
 
-The manifest also emits the TYPED form (review #10), one factory per entity table:
+`scopedRoot` takes a **`TableScope<T>`, never a bare `ScopeConfig`**, and infers `T` from it. The first cut was
+`scopedRoot<T extends PgTable = PgTable>(cfg: ScopeConfig, …)`: `T` defaulted, nothing tied it to the config, and
+`db.query.accounts.findMany({ where: scopedRoot(SCOPES.notes, 'x') })` compiled and read accounts with the notes
+posture — the documented pairing was the unsafe one (#859 Q-1). Now the scope carries its table, so another table's
+scope (or a bare `UNSCOPED`) is a compile error on any query — asserted by `@ts-expect-error`s in
+`read-api-sql.spec.ts` (type-checked) and the smoke's type tests.
+
+The manifest also emits the per-table factory, one per entity table (review #10):
 
 ```ts
 export const rootScope = {
-  accounts: (owner: string) => scopedRoot<typeof schema.accounts>(SCOPES.accounts, owner),
+  accounts: (owner: string) => scopedRoot(SCOPES.accounts, owner),
   …
 };
 ```
 
-`db.query.contacts.findMany({ where: rootScope.accounts('x') })` is a compile error (asserted by a `@ts-expect-error`
-in the smoke's type tests), so handing one table's scope to another table's query cannot apply the wrong posture.
+`db.query.contacts.findMany({ where: rootScope.accounts('x') })` is a compile error (a `@ts-expect-error` in the smoke's
+type tests). `rootScope.<t>` is the documented form; `scopedRoot(SCOPES.<t>, owner)` is what it expands to, equally typed.
 
 The posture is ONE derivation: `entityScope` folds the pattern-implied behaviors (`resolveImpliedBehaviors`), the same
 helper the repository's `behaviors` come from — so an app pattern implying `soft_delete` filters deleted rows at the
-repository root, every hop, `SCOPES` and `rootScope` alike (review #9).
+repository root, every hop, `SCOPES` and `rootScope` alike (review #9). The manifest reads it through
+`requireImpliedBehaviors`, which **throws** on a pattern this process never registered instead of skipping it, and
+`regenerateRelationsManifest` loads the project's app patterns itself before deriving anything. Before that,
+`relationship new` regenerated the manifest without loading them, so a pattern-implied behavior dropped out of every
+hop, `SCOPES` and `rootScope` whenever that command ran last (#859 A-B1; `relations-generator-patterns.test.ts`).
 
 ```ts
 // a loader outside any repository
@@ -368,7 +401,7 @@ repository applies (§3.2's one function). Repositories do **not** read `SCOPES`
 
 **Rule:** *a read that calls `db.query.<table>` directly gets hop scoping from the manifest and root scoping from
 nobody. Route it through a generated repository; if it cannot be (a cross-entity loader), its root `where` must AND
-`scopedRoot(SCOPES.<table>, owner)`.*
+`rootScope.<table>(owner)`.*
 
 Enforced:
 - **inside this repository** — `src/__tests__/templates/no-unscoped-db-query.test.ts` scans `templates/`,
@@ -449,19 +482,21 @@ finder and an FK finder, with and without `columns` / `with` / `where`:
 Extending REL-2's leak graph (`region` / `site` / `sensor`, every entity scoped):
 - **R1** `list({ where, with })` on a scoped entity through a GENERATED repository executes and returns the right rows
   (#840 — red before);
-- **R2** `findByIds` — order = input order, duplicates once, `[]` issues no statement, a foreign / soft-deleted id is
+- **R2** `findByIds` — order = input order, duplicates once, `[]` issues no statement (and still throws under `strict` with no context), a foreign / soft-deleted id is
   absent, a mask without `id` still orders;
 - **R3** poison rows at root and at each hop are excluded on **every** method, with and without options;
-- **R4** `scopedRoot(SCOPES.<t>)` on a hand-written `db.query` excludes the same root poison rows a repository does;
+- **R4** `scopedRoot(SCOPES.<t>)` (what `rootScope.<t>` expands to) on a hand-written `db.query` excludes the same root
+  poison rows a repository does;
 - **R5** a lazy thenable returned from `withRequester`'s callback runs inside the context (unit test with a hand-made
   thenable that reads the ALS in `.then`, plus a real `db.query` traversal under `strict`).
 
 ### 8.4 The host case, regenerated
 
-A scratch regeneration of the host's YAML (outside this repo — I10) through this branch's CLI: a page-by-ids read —
-25 ids, a 9-column root mask, three to-one includes each with its own column mask — through the GENERATED repository's
-`findByIds`, against the host's local database read-only. Asserted: **one** statement, the root and every hop filtered
-on the tenant column, the root selecting exactly the mask, rows in input order. Reported in the PR, not committed.
+A scratch regeneration of a host application's YAML (outside this repo — I10) through this branch's CLI: a page-by-ids
+read — a page of ids, a root column mask, several to-one includes each with its own column mask — through the
+GENERATED repository's `findByIds`, against a local database read-only. Asserted: **one** statement, the root and every
+hop filtered on the tenant column, the root selecting exactly the mask, rows in input order. Reported in the PR, not
+committed.
 
 ### 8.5 Mutation checks
 
@@ -487,8 +522,8 @@ The navigator accumulates an include tree and a root mask and calls one of these
 `ReadOptions<C, W>.columns` is `C & NonEmptyMask<C>` (§2.4). Passing `opts?.columns` straight into `findMany` made
 Drizzle infer its result from `columns: C & NonEmptyMask<C>`, a different deferred type from the `C` that
 `<Entity>Result<C, W>` names. On **rc.4** (this repo's pin) the generated `rows as <Entity>Result<C, W>` still
-type-checked; on **rc.5** — the host's pin — every one was `TS2352: Conversion … may be a mistake`, 70+ errors, in every
-one of the host's 20 entity repositories. No gate here could see it: every harness runs rc.4. Found by §8.4's scratch regeneration.
+type-checked; on **rc.5** every one was `TS2352: Conversion … may be a mistake`, in every generated repository. No gate
+here could see it: every harness ran rc.4. Found by §8.4's scratch regeneration.
 
 Fix: `checkColumns<C>(columns: (C & NonEmptyMask<C>) | undefined): C | undefined`, called with an EXPLICIT type argument
 (`this.checkColumns<C>(opts?.columns)`) — inference alone kept the brand. The query config now carries plain `C` on
@@ -538,8 +573,8 @@ predicate is typed the same way in a bare spine and a composed one.
 | 6 | the shape gate missed `rootFilter(() => eq(this.table.id, id))` (red only in Docker) | §4.2's extended bans; M1–M3 red in `just test-unit` |
 | 7 | `activeParentFilter` was bound to the un-aliased table | `activeParentFilter(parentTable, fkKey: string): (table) => SQL`, correlated on the handle it is given; SQL test on the alias |
 | 8 | the break table was incomplete | CHANGELOG + PR: vendored consumers run `codegen project update` first; every read needs `relations` on the client — and a repository now fails at CONSTRUCTION naming the cause (`requireRelationalQuery`); `withRequester`'s sync throw → rejection; the list use case's `where`; `rootScopeRawOn` → `rootFilter`; `activeParentFilter`. "The compiler finds every one" is replaced by which rows are compile errors and which are runtime |
-| 9 | `entityScope` ignored pattern-implied behaviors, so `SCOPES` could disagree with the repository | folded through `resolveImpliedBehaviors` (§5.2); mutation-checked unit test |
-| 10 | `scopedRoot` was untyped against its table | the manifest's `rootScope.<table>(owner)` (§5.2) |
+| 9 | `entityScope` ignored pattern-implied behaviors, so `SCOPES` could disagree with the repository | folded through the implied-behaviors helper (§5.2); mutation-checked unit test |
+| 10 | `scopedRoot` was untyped against its table | the manifest's `rootScope.<table>(owner)` (§5.2) — and, after the second review (Found #9), `scopedRoot` itself |
 
 Re-review R-3 (the shape gates are line-based; a multi-line or aliased form passes `test-unit`, caught only by
 the Docker job) is filed as #864. The rc.5 leg's derived tsconfig is removed on process exit and gitignored; the
@@ -567,6 +602,24 @@ repository, composed or not, and the service's `Parameters<TRepo['count']>[0]` i
   own-table `count` / `list` on repository and service compile; another table's filter on each of the four is a
   `@ts-expect-error`. Mutation: removing the `count` override turns the leg red;
 - the relationship smoke's cross-table negatives on a plain repository and service (`list`, `count`).
+
+### Found #9 — second review of #859 (adherence + quality), all fixed here
+
+| Finding | Fix |
+|---|---|
+| **A-B1** `relationship new` regenerated the manifest without loading app patterns, and the implied-behavior helper skipped an unknown pattern — so a pattern-implied scope dropped out of every hop, `SCOPES` and `rootScope` depending on which command ran last | `regenerateRelationsManifest` loads the app patterns itself (async; fails on a loader error); the graph builder reads `requireImpliedBehaviors`, which throws on an unregistered pattern; a missing entity definition throws instead of reading as UNSCOPED. `relations-generator-patterns.test.ts`, mutation-checked (dropping the load → red) |
+| **A-B2** public-repo detail (I10) in the consumer skill, spec and PR body | fixture names in the consumer skill; host counts and pins removed from §8.4 / §10 / §11 and the PR body |
+| `SCOPES` / `rootScope` absent when nothing is scoped | always emitted (§5.1) |
+| **Q-1** `scopedRoot` accepted any table's scope | `TableScope<T>` + `tableScope()`; `scopedRoot` infers `T` from the scope (§5.2) |
+| **Q-3** two owners of "scope AND predicate" (`rootFilter`, `scopeAnd`) | one `scopeAndOn(table, extra, opts)`; `scopeAnd` and `rootFilter` call it (§3.2) |
+| **Q-4** an integer key compared as `String(id)` dropped `'07'` | `idKey` canonicalises integer types; `inInputOrder` throws on a returned row no input claims (§2.4) |
+| **Q-5** `column()` / the list use case accepted `Object.prototype` names (`?sort_by=to_string` → `order by $1`) | `hasColumn` (own-key test) is the one check; `column()` and the list use case both ask it |
+| **Q-6** `belongs_to` finders accepted and ignored `cursor`, and a `limit` had no order | `cursor` removed from the finder and the service's has-many composition; a `limit` orders by `id`. Keyset paging is not trivial here (no guaranteed ordering column), so it is not built |
+| **Q-7** a mask of `undefined`-valued keys passed the key-count check | dropped before the check (§2.4) |
+| `findByIds([])` under `strict` with no context returned `[]` | `assertReadScope()` runs the boundary check first (§2.4) |
+| **A-N1** "every generated read runs on RQBv2" overstated | §3.1 lists the exceptions; the template comment, skill, CHANGELOG and PR body say "the read surface" |
+| **A-N2 / A-N3 / A-N5** break-table gaps | CHANGELOG + PR rows: the generated overrides of `findById` / `findByIds` / `list` / `count` shadow a project's own base-class or mixin overrides; a stale one-argument `<Entity>Result<…NoInclude>` still compiles (to `{}`); pattern-implied scope makes a to-one include nullable and filters the hop |
+| Nits | the shape gate reads a multi-line `rootFilter(` argument and requires an arrow after `RAW:` (§4.2 — #864 still covers the AST version); the #813 lint counts type-only table imports, which caught the search use case's `where` and the service's `options` binding; `_unregisterLibraryPatternForTests` no longer splits `_resetRegistryForTests` from its JSDoc; the manifest comment says "below"; README and CAP-3 carry the `memberPredicate` row-filter revision |
 
 ### Found #5 — smaller things fixed in passing
 
@@ -600,6 +653,8 @@ Gate output from the run made after the last code edit (`e3128c98`, both review 
 | `entityScope` without the implied behaviors | `build-graph.test.ts` (review #9) |
 | remove the generated `count` override | `test-smoke-junction` custom legs (composed ledger, re-review R-1) |
 | `idKey` compares a non-uuid key as given | `read-api-sql.spec.ts` R-2 test |
+| `regenerateRelationsManifest` without the app-pattern load (#859 A-B1) | `relations-generator-patterns.test.ts` (the graph builder throws on the unregistered pattern) |
+| `idKey` compares an integer key as its text (#859 Q-4) | `read-api-sql.spec.ts` (`'07'` test) |
 
 ## §11a Issues
 
@@ -620,6 +675,7 @@ entity over a base table), REL-3 #588.
 
 - The variant emitter (§2.5 designs for it).
 - Root scoping of hand-written `db.query` by construction (§5.3, follow-up).
-- Read `tx` (#802), keyset cursors (the FK finder's `cursor` remains unused, as today), `extras`, aggregation (I5).
+- Read `tx` (#802), keyset cursors (the FK finder no longer takes a `cursor` it would ignore — #859 Q-6; the junction
+  repository's `{ cursor?, limit? }` is unchanged and out of scope), `extras`, aggregation (I5).
 - `optional: false` across a scoped hop (a to-one include typed non-null whose target can be filtered) — a separate
   finding, not a read-options question.

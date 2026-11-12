@@ -9,41 +9,41 @@
 import { defineRelations } from 'drizzle-orm';
 import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';
 
-import { UNSCOPED, scopedRoot, type ScopeConfig } from '@shared/base-classes/scope-filters';
+import { scopedRoot, tableScope, UNSCOPED, type ScopeConfig } from '@shared/base-classes/scope-filters';
 import * as schema from './schema';
 
-export const CONTACTS_SCOPE: ScopeConfig = { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' };
-export const DEALS_SCOPE: ScopeConfig = { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' };
+export const CONTACTS_SCOPE = tableScope(schema.contacts, { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' });
+export const DEALS_SCOPE = tableScope(schema.deals, { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' });
 
 /**
- * Every entity table's declared root scope (READ-1 §5). The relations above scope
- * every HOP of a `db.query.*` read; nothing scopes its ROOT unless the read goes
- * through a generated repository. A read that cannot must AND
- * `scopedRoot(SCOPES.<table>, owner)` into its root `where`.
+ * Every entity table's declared root scope (READ-1 §5), each bound to its table. The
+ * relations below scope every HOP of a `db.query.*` read; nothing scopes its ROOT
+ * unless the read goes through a generated repository. A read that cannot must AND
+ * `rootScope.<table>(owner)` into its root `where`.
  */
 export const SCOPES = {
-	accounts: UNSCOPED,
+	accounts: tableScope(schema.accounts, UNSCOPED),
 	contacts: CONTACTS_SCOPE,
-	deal_states: UNSCOPED,
+	deal_states: tableScope(schema.deal_states, UNSCOPED),
 	deals: DEALS_SCOPE,
-	opportunities: UNSCOPED,
-	organizations: UNSCOPED,
-	persons: UNSCOPED,
-	tenants: UNSCOPED,
-	users: UNSCOPED,
+	opportunities: tableScope(schema.opportunities, UNSCOPED),
+	organizations: tableScope(schema.organizations, UNSCOPED),
+	persons: tableScope(schema.persons, UNSCOPED),
+	tenants: tableScope(schema.tenants, UNSCOPED),
+	users: tableScope(schema.users, UNSCOPED),
 } as const satisfies Partial<Record<keyof typeof schema, ScopeConfig>>;
 
 /** The ROOT scope of one table, typed to it: AND it into a hand-written `db.query.<table>` root `where`. */
 export const rootScope = {
-	accounts: (owner: string) => scopedRoot<typeof schema.accounts>(SCOPES.accounts, owner),
-	contacts: (owner: string) => scopedRoot<typeof schema.contacts>(SCOPES.contacts, owner),
-	deal_states: (owner: string) => scopedRoot<typeof schema.deal_states>(SCOPES.deal_states, owner),
-	deals: (owner: string) => scopedRoot<typeof schema.deals>(SCOPES.deals, owner),
-	opportunities: (owner: string) => scopedRoot<typeof schema.opportunities>(SCOPES.opportunities, owner),
-	organizations: (owner: string) => scopedRoot<typeof schema.organizations>(SCOPES.organizations, owner),
-	persons: (owner: string) => scopedRoot<typeof schema.persons>(SCOPES.persons, owner),
-	tenants: (owner: string) => scopedRoot<typeof schema.tenants>(SCOPES.tenants, owner),
-	users: (owner: string) => scopedRoot<typeof schema.users>(SCOPES.users, owner),
+	accounts: (owner: string) => scopedRoot(SCOPES.accounts, owner),
+	contacts: (owner: string) => scopedRoot(SCOPES.contacts, owner),
+	deal_states: (owner: string) => scopedRoot(SCOPES.deal_states, owner),
+	deals: (owner: string) => scopedRoot(SCOPES.deals, owner),
+	opportunities: (owner: string) => scopedRoot(SCOPES.opportunities, owner),
+	organizations: (owner: string) => scopedRoot(SCOPES.organizations, owner),
+	persons: (owner: string) => scopedRoot(SCOPES.persons, owner),
+	tenants: (owner: string) => scopedRoot(SCOPES.tenants, owner),
+	users: (owner: string) => scopedRoot(SCOPES.users, owner),
 };
 
 export const relations = defineRelations(schema, (r) => ({

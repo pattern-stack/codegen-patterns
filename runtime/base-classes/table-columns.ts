@@ -23,9 +23,19 @@ import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
  * points at the declaration that is wrong.
  */
 export function column(table: PgTable, name: string, owner: string): PgColumn {
-  const col: PgColumn | undefined = getColumns(table)[name];
-  if (!col) {
+  if (!hasColumn(table, name)) {
     throw new Error(`${owner}: table has no column '${name}'`);
   }
-  return col;
+  return getColumns(table)[name] as PgColumn;
+}
+
+/**
+ * Whether `name` is one of the table's OWN column keys. An own-property test,
+ * not a lookup: the column map is a plain object, so `getColumns(t)['toString']`
+ * is `Object.prototype.toString` — truthy, and a "column" that renders as a bind
+ * parameter (`order by $1`), silently ignored. A caller-supplied key
+ * (`?sort_by=…`) must be asked through here.
+ */
+export function hasColumn(table: PgTable, name: string): boolean {
+  return Object.prototype.hasOwnProperty.call(getColumns(table), name);
 }

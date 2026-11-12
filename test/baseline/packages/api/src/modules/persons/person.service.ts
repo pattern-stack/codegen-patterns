@@ -51,9 +51,9 @@ export class PersonService extends WithAnalytics(
   }
 
   override list<C extends PersonColumns | undefined = undefined>(
-    options?: ListOptions<typeof persons> & ReadOptions<C, never>,
+    listOptions?: ListOptions<typeof persons> & ReadOptions<C, never>,
   ): Promise<Array<PersonResult<C>>> {
-    return this.repository.list<C>(options);
+    return this.repository.list<C>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

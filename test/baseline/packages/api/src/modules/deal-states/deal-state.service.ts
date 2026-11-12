@@ -56,9 +56,9 @@ export class DealStateService extends WithAnalytics(
   }
 
   override list<C extends DealStateColumns | undefined = undefined, W extends DealStateInclude = DealStateNoInclude>(
-    options?: ListOptions<typeof deal_states> & ReadOptions<C, W>,
+    listOptions?: ListOptions<typeof deal_states> & ReadOptions<C, W>,
   ): Promise<Array<DealStateResult<C, W>>> {
-    return this.repository.list<C, W>(options);
+    return this.repository.list<C, W>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
@@ -74,9 +74,9 @@ export class DealStateService extends WithAnalytics(
 
   /**
    * Fetch opportunities for this DealState by FK traversal.
-   * Single repo call with optional cursor/limit pagination.
+   * Single repo call; `limit` caps it (ordered by `id`, so the subset is stable).
    */
-  async opportunities(dealStateId: string, opts?: { cursor?: string; limit?: number }): Promise<Opportunity[]> {
+  async opportunities(dealStateId: string, opts?: { limit?: number }): Promise<Opportunity[]> {
     return this.opportunityRepo.findByStateId(dealStateId, opts);
   }
 }

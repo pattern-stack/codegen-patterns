@@ -484,11 +484,13 @@ relationships:
   contacts: { type: has_many, target: contact, foreign_key: account_id }   # what members: names
 ```
 
-Its repository gains `memberPredicate(actorId)` — "this row is, or contains, `actorId`" as a predicate over its
-own table (identity for an individual; for a group, an `EXISTS` over the member table): e.g.
-`accounts.list({ where: accounts.memberPredicate(contactId) })`. It is not forwarded to the service.
+Its repository gains `memberPredicate(actorId)` — "this row is, or contains, `actorId`" as a row filter over its
+own table, `(table) => SQL` (identity for an individual; for a group, an `EXISTS` over the member table, correlated on
+the handle it is given): e.g. `accounts.list({ where: accounts.memberPredicate(contactId) })`. It is not forwarded to
+the service. (Revised 2026-11-11, READ-1: it returned a pre-rendered `SQL` before; on the relational path that names a
+table the builder aliased away.)
 
-Every one of these reads runs through the repository's scoped `baseQuery()` — tenant scope and soft-delete apply
+Every one of these reads runs through the repository's scoped read path — tenant scope and soft-delete apply
 exactly as they do to `findById`; none takes a scope parameter.
 
 Role errors fail `entity new` for the offending entity (a role's target lives in another file, so the CLI checks

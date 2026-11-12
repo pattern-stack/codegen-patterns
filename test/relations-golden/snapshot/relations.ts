@@ -9,33 +9,33 @@
 import { defineRelations } from 'drizzle-orm';
 import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';
 
-import { hopScope, UNSCOPED, scopedRoot, type ScopeConfig } from '@pattern-stack/codegen/runtime/base-classes/scope-filters';
+import { hopScope, scopedRoot, tableScope, UNSCOPED, type ScopeConfig } from '@pattern-stack/codegen/runtime/base-classes/scope-filters';
 import * as schema from './schema';
 
-export const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, tenantColumn: 'tenantId', softDelete: true, userTracking: true, enforcement: 'strict' };
-export const CONTACTS_SCOPE: ScopeConfig = { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' };
+export const ACCOUNTS_SCOPE = tableScope(schema.accounts, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: true, userTracking: true, enforcement: 'strict' });
+export const CONTACTS_SCOPE = tableScope(schema.contacts, { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' });
 
 /**
- * Every entity table's declared root scope (READ-1 §5). The relations above scope
- * every HOP of a `db.query.*` read; nothing scopes its ROOT unless the read goes
- * through a generated repository. A read that cannot must AND
- * `scopedRoot(SCOPES.<table>, owner)` into its root `where`.
+ * Every entity table's declared root scope (READ-1 §5), each bound to its table. The
+ * relations below scope every HOP of a `db.query.*` read; nothing scopes its ROOT
+ * unless the read goes through a generated repository. A read that cannot must AND
+ * `rootScope.<table>(owner)` into its root `where`.
  */
 export const SCOPES = {
 	accounts: ACCOUNTS_SCOPE,
 	contacts: CONTACTS_SCOPE,
-	notes: UNSCOPED,
-	opportunities: UNSCOPED,
-	persons: UNSCOPED,
+	notes: tableScope(schema.notes, UNSCOPED),
+	opportunities: tableScope(schema.opportunities, UNSCOPED),
+	persons: tableScope(schema.persons, UNSCOPED),
 } as const satisfies Partial<Record<keyof typeof schema, ScopeConfig>>;
 
 /** The ROOT scope of one table, typed to it: AND it into a hand-written `db.query.<table>` root `where`. */
 export const rootScope = {
-	accounts: (owner: string) => scopedRoot<typeof schema.accounts>(SCOPES.accounts, owner),
-	contacts: (owner: string) => scopedRoot<typeof schema.contacts>(SCOPES.contacts, owner),
-	notes: (owner: string) => scopedRoot<typeof schema.notes>(SCOPES.notes, owner),
-	opportunities: (owner: string) => scopedRoot<typeof schema.opportunities>(SCOPES.opportunities, owner),
-	persons: (owner: string) => scopedRoot<typeof schema.persons>(SCOPES.persons, owner),
+	accounts: (owner: string) => scopedRoot(SCOPES.accounts, owner),
+	contacts: (owner: string) => scopedRoot(SCOPES.contacts, owner),
+	notes: (owner: string) => scopedRoot(SCOPES.notes, owner),
+	opportunities: (owner: string) => scopedRoot(SCOPES.opportunities, owner),
+	persons: (owner: string) => scopedRoot(SCOPES.persons, owner),
 };
 
 export const relations = defineRelations(schema, (r) => ({

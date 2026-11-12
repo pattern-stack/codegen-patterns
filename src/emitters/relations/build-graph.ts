@@ -7,7 +7,7 @@
  * schema files, or the database (charter I1).
  */
 
-import { resolveImpliedBehaviors } from '../../patterns/implied-behaviors.js';
+import { requireImpliedBehaviors } from '../../patterns/implied-behaviors.js';
 import pluralize from 'pluralize';
 
 import type { EntityDefinition } from '../../schema/entity-definition.schema';
@@ -62,16 +62,21 @@ function junctionFkColumn(entityName: string): string {
 
 /**
  * The behaviors an entity HAS: those it declares, in either YAML form, plus those
- * its pattern(s) imply (ADR-031) — through `resolveImpliedBehaviors`, the same
- * helper the repository's `behaviors` come from (`entity-locals.js`). Reading
- * only the declared ones would let a pattern that implies `soft_delete` filter
- * deleted rows in the repository while every hop, `SCOPES` and `scopedRoot` did
- * not: one declaration, two postures (charter I1; READ-1 review #9).
+ * its pattern(s) imply (ADR-031) — the same helper the repository's `behaviors`
+ * come from (`entity-locals.js`). Reading only the declared ones would let a
+ * pattern that implies `soft_delete` filter deleted rows in the repository while
+ * every hop, `SCOPES` and `rootScope` did not: one declaration, two postures
+ * (charter I1; READ-1 review #9).
+ *
+ * `requireImpliedBehaviors`, not the skipping form: a pattern this process never
+ * registered (an app pattern the caller did not load) throws rather than
+ * narrowing the scope. The CLI's manifest step loads them first
+ * (`regenerateRelationsManifest`).
  */
 function behaviorNames(def: EntityDefinition): Set<string> {
 	return new Set([
 		...def.behaviors.map((b) => (typeof b === 'string' ? b : b.name)),
-		...resolveImpliedBehaviors(def.entity),
+		...requireImpliedBehaviors(def.entity, def.entity.name),
 	]);
 }
 
@@ -203,9 +208,19 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 	// Every edge carries its TARGET's declared scope, because `relationToSQL`
 	// applies a relation's `where` to the target table (REL-2 §1.6). Resolved once
 	// here, from the target's own YAML — the same registry-first rule naming uses.
+	// Called only for an entity the registry resolved, which has a YAML — so a
+	// missing definition is a broken context, not an unscoped entity. It throws:
+	// `null` here would emit the entity as UNSCOPED, an absent input read as
+	// permissive (CLAUDE.md gate rule (c)).
 	const scopeOf = (entityName: string): ScopeConfigLiteral | null => {
 		const def = ctx.definitions.get(entityName);
-		return def ? entityScope(def, ctx.tenancyColumn) : null;
+		if (!def) {
+			throw new Error(
+				`relations: entity '${entityName}' is in the registry but has no loaded definition — ` +
+					'its scope cannot be derived.',
+			);
+		}
+		return entityScope(def, ctx.tenancyColumn);
 	};
 
 	// ── declared `relationships:` ────────────────────────────────────────────

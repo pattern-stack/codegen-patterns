@@ -51,9 +51,9 @@ export class AccountService extends WithAnalytics(
   }
 
   override list<C extends AccountColumns | undefined = undefined>(
-    options?: ListOptions<typeof accounts> & ReadOptions<C, never>,
+    listOptions?: ListOptions<typeof accounts> & ReadOptions<C, never>,
   ): Promise<Array<AccountResult<C>>> {
-    return this.repository.list<C>(options);
+    return this.repository.list<C>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

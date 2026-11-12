@@ -546,7 +546,7 @@ function assertTenancyColumnEmission(tmpDir: string): void {
 	const manifest = reads('generated/relations.ts');
 	assertContains(
 		manifest,
-		/const ORG_TASKS_SCOPE: ScopeConfig = \{ tenantScoped: true, tenantColumn: 'organizationId', softDelete: false, userTracking: false, enforcement: 'strict' \};/,
+		/const ORG_TASKS_SCOPE = tableScope\(schema\.org_tasks, \{ tenantScoped: true, tenantColumn: 'organizationId', softDelete: false, userTracking: false, enforcement: 'strict' \}\);/,
 		'the manifest scopes hops into org_tasks on organization_id',
 	);
 	assertContains(
@@ -663,18 +663,18 @@ function assertRelationshipEmission(tmpDir: string): void {
 	// ── REL-2 (#587): the per-hop scope predicate + the typed-include helpers ──
 	assertContains(
 		manifest,
-		/import \{ hopScope, UNSCOPED, scopedRoot, type ScopeConfig \} from '@shared\/base-classes\/scope-filters';/,
-		'generated/relations.ts imports the hop predicate (and UNSCOPED, for SCOPES) from the runtime',
+		/import \{ hopScope, scopedRoot, tableScope, UNSCOPED, type ScopeConfig \} from '@shared\/base-classes\/scope-filters';/,
+		'generated/relations.ts imports the hop predicate (and tableScope / UNSCOPED, for SCOPES) from the runtime',
 	);
 	assertContains(
 		manifest,
-		/export const ACCOUNTS_SCOPE: ScopeConfig = \{ tenantScoped: false, softDelete: true, userTracking: true, enforcement: 'lenient' \};/,
+		/export const ACCOUNTS_SCOPE = tableScope\(schema\.accounts, \{ tenantScoped: false, softDelete: true, userTracking: true, enforcement: 'lenient' \}\);/,
 		"generated/relations.ts EXPORTS accounts' declared scope as a constant (READ-1 #843)",
 	);
 	// READ-1 (#843): every entity table's root scope, unscoped ones named explicitly.
 	assertContains(
 		manifest,
-		/export const SCOPES = \{\n\taccounts: ACCOUNTS_SCOPE,\n\tcontacts: UNSCOPED,\n\topportunities: UNSCOPED,\n\} as const satisfies/,
+		/export const SCOPES = \{\n\taccounts: ACCOUNTS_SCOPE,\n\tcontacts: tableScope\(schema\.contacts, UNSCOPED\),\n\topportunities: tableScope\(schema\.opportunities, UNSCOPED\),\n\} as const satisfies/,
 		'generated/relations.ts exports SCOPES over every entity table',
 	);
 	// EVERY relation whose target is scoped carries a `where`. A relation that

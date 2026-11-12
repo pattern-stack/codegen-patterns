@@ -39,11 +39,12 @@ exactly at the call site:
 
 ```ts
 // a root column mask and a typed include tree, each hop with its own mask
-const page = await observations.findByIds(ids, {
-  columns: { id: true, type: true, occurredAt: true },
+const page = await contacts.findByIds(ids, {
+  columns: { id: true, firstName: true },
   with: { account: { columns: { name: true } } },
 });
-// page: Array<{ id: string; type: …; occurredAt: Date; account: { name: string } }>
+// page: Array<{ id: string; firstName: string; account: { name: string } | null }>
+// (`| null` when the account hop can drop the row — a nullable FK, or a scoped target)
 
 await accounts.list({
   where: (t) => eq(t.status, 'active'),     // a ROW FILTER — a function of the table
@@ -63,9 +64,13 @@ await accounts.list({
   order**; a missing, soft-deleted or out-of-scope id is simply absent.
   One `in (…)` — chunk yourself past ~65k ids.
 - **`columns`** is an inclusion (`{ a: true }`) or exclusion (`{ a: false }`) mask;
-  an empty mask is a compile error. Omit it for the whole row. (An empty mask on an
+  an empty mask is a compile error (and a runtime throw — a key set to `undefined`
+  names nothing). Omit it for the whole row. (An empty mask on an
   INCLUDE — `with: { x: { columns: {} } }` — is only caught at runtime.)
-- **Root and every hop are scoped** (tenant, soft-delete, user) on every method.
+- **Root and every hop are scoped** (tenant, soft-delete, user) on every method;
+  `findByIds([])` still runs the scope's boundary check (under `strict`, a missing
+  context throws).
+- A `belongs_to` finder takes `limit` (ordered by `id`); there is no `cursor`.
 - Hoist a mask or include into a `const` **without** a type annotation (or with
   `as const`) — annotating it with `<Entity>Columns` / `<Entity>Include` widens it.
 
@@ -83,6 +88,8 @@ await db.query.accounts.findMany({
 ```
 
 `rootScope.<table>` is typed to its table: another table's scope is a compile error.
+`rootScope` and `SCOPES` exist in every project, including one that scopes nothing
+yet — write the loader with them from the start.
 
 **Upgrading a vendored project (`runtime: vendored`)**: run `codegen project update` before
 regenerating, so `@shared/base-classes` has the helpers the regenerated repositories call. The

@@ -26,6 +26,8 @@ import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';
 
 import {
 	BaseRepository,
+	column,
+	hasColumn,
 	type BehaviorConfig,
 	type ListOptions,
 	type ReadOptions,
@@ -33,8 +35,8 @@ import {
 import {
 	hopScope,
 	scopedRoot,
+	tableScope,
 	UNSCOPED,
-	type ScopeConfig,
 } from '../../../../runtime/base-classes/scope-filters';
 import { withRequester } from '../../../../runtime/base-classes/tenant-context';
 
@@ -58,14 +60,20 @@ const widgets = pgTable('widgets', {
 const schema = { owners, widgets };
 
 // ── the manifest, as `emit-manifest.ts` renders it ──────────────────────────
-const OWNERS_SCOPE: ScopeConfig = {
+const OWNERS_SCOPE = tableScope(owners, {
 	tenantScoped: true,
 	tenantColumn: 'tenantId',
 	softDelete: true,
 	userTracking: false,
 	enforcement: 'strict',
-};
-const WIDGETS_SCOPE: ScopeConfig = { ...OWNERS_SCOPE };
+});
+const WIDGETS_SCOPE = tableScope(widgets, {
+	tenantScoped: true,
+	tenantColumn: 'tenantId',
+	softDelete: true,
+	userTracking: false,
+	enforcement: 'strict',
+});
 
 const relations = defineRelations(schema, (r) => ({
 	owners: {
@@ -183,7 +191,10 @@ class WidgetRepository extends BaseRepository<Widget, typeof widgets, Relations>
 		opts?: ReadOptions<C, W>,
 	): Promise<Array<WidgetResult<C, W>>> {
 		const unique = this.uniqueIds(ids);
-		if (unique.length === 0) return [];
+		if (unique.length === 0) {
+			this.assertReadScope();
+			return [];
+		}
 		const mask = this.byIdsColumns(this.checkColumns<C>(opts?.columns));
 		const rows = await this.db.query.widgets.findMany({
 			where: { RAW: this.rootFilter((t) => inArray(t.id, unique)) },
@@ -210,12 +221,13 @@ class WidgetRepository extends BaseRepository<Widget, typeof widgets, Relations>
 
 	async findByOwnerId<C extends WidgetColumns | undefined = undefined, W extends WidgetInclude = WidgetNoInclude>(
 		id: string,
-		opts?: { cursor?: string; limit?: number } & ReadOptions<C, W>,
+		opts?: { limit?: number } & ReadOptions<C, W>,
 	): Promise<Array<WidgetResult<C, W>>> {
 		const rows = await this.db.query.widgets.findMany({
 			where: { RAW: this.rootFilter((t) => eq(t.ownerId, id)) },
 			columns: this.checkColumns<C>(opts?.columns),
 			with: opts?.with,
+			orderBy: opts?.limit === undefined ? undefined : { id: 'asc' },
 			limit: opts?.limit,
 		});
 		return rows as Array<WidgetResult<C, W>>;
@@ -285,6 +297,26 @@ describe('READ-1 §3 — every generated read renders its root on the alias, sco
 		expect(statements).toHaveLength(0);
 	});
 
+	it('a mask whose only keys are `undefined` is empty too — it throws, never selects nothing', async () => {
+		const { db, statements } = fakeDb();
+		await expect(
+			asT1(() => new WidgetRepository(db).findById('w1', { columns: { name: undefined }, with: { owner: true } })),
+		).rejects.toThrow(/WidgetRepository: an empty `columns` mask/);
+		expect(statements).toHaveLength(0);
+	});
+
+	it('`undefined`-valued keys are dropped from a mask that names a column', async () => {
+		const { db, statements } = fakeDb();
+		await asT1(() => new WidgetRepository(db).findById('w1', { columns: { name: true, sku: undefined } }));
+		expect(statements[0]!.text.slice(0, statements[0]!.text.indexOf(' from '))).toBe('select "d0"."name" as "name"');
+	});
+
+	it('an FK finder with a `limit` orders by id — a stable subset', async () => {
+		const { db, statements } = fakeDb();
+		await asT1(() => new WidgetRepository(db).findByOwnerId('o1', { limit: 3 }));
+		expect(statements[0]!.text).toContain('order by "d0"."id" asc');
+	});
+
 	it('an empty mask throws, naming the repository', async () => {
 		const { db, statements } = fakeDb();
 		const runtimeMask: Record<string, true> = {};
@@ -299,6 +331,12 @@ describe('READ-1 §2.4 — findByIds', () => {
 	it('`[]` issues no statement', async () => {
 		const { db, statements } = fakeDb();
 		expect(await asT1(() => new WidgetRepository(db).findByIds([]))).toEqual([]);
+		expect(statements).toHaveLength(0);
+	});
+
+	it('`[]` under strict with no ambient context throws, as a non-empty read would', async () => {
+		const { db, statements } = fakeDb();
+		await expect(new WidgetRepository(db).findByIds([])).rejects.toThrow(/requester context/i);
 		expect(statements).toHaveLength(0);
 	});
 
@@ -369,6 +407,11 @@ describe('READ-1 review — findByIds edge cases', () => {
 		expect(() => repo.order([{ name: 'x' }], ['w1'])).toThrow(/a row came back without an `id`/);
 	});
 
+	it('a row no input id claims THROWS — a spelling idKey missed is loud, not lossy', () => {
+		const repo = new WidgetRepository(fakeDb().db);
+		expect(() => repo.order([{ id: 'w9' }], ['w1'])).toThrow(/no input id\s+claims them/);
+	});
+
 	it('#2 an uppercase / braced / unhyphenated uuid finds its row and is read once', async () => {
 		const { db, statements } = fakeDb([[LOWER, 'One']]);
 		const rows = await asT1(() =>
@@ -400,6 +443,33 @@ describe('READ-1 review R-2 — a non-uuid key is compared as text', () => {
 			{ id: 7, label: 'seven' },
 			{ id: 9, label: 'nine' },
 		]);
+	});
+
+	it("an integer key is compared as an integer — '07' is the row 7, read once with '7'", async () => {
+		// Postgres parses '07' to 7, so both binds match the one row.
+		const { db, statements } = fakeDb([[7, 'seven']]);
+		expect(await new CounterRepository(db).findByIds(['07'])).toEqual([{ id: 7, label: 'seven' }]);
+		await new CounterRepository(db).findByIds(['07', '7']);
+		expect(statements[1]!.values).toEqual(['07']);
+	});
+});
+
+describe('READ-1 review — a caller-supplied column key is an OWN key', () => {
+	it('`toString` is not a column (it was `Object.prototype.toString`, rendered as `$1`)', () => {
+		expect(hasColumn(widgets, 'name')).toBe(true);
+		expect(hasColumn(widgets, 'toString')).toBe(false);
+		expect(hasColumn(widgets, 'constructor')).toBe(false);
+		expect(() => column(widgets, 'toString', 'WidgetRepository')).toThrow(
+			"WidgetRepository: table has no column 'toString'",
+		);
+	});
+
+	it('a sort on a prototype name throws instead of being silently ignored', async () => {
+		const { db, statements } = fakeDb();
+		await expect(
+			asT1(() => new WidgetRepository(db).list({ sort: [{ column: 'toString', direction: 'asc' }] })),
+		).rejects.toThrow("table has no column 'toString'");
+		expect(statements).toHaveLength(0);
 	});
 });
 
@@ -441,8 +511,16 @@ describe('READ-1 §5 — scopedRoot: the root of a hand-written db.query', () =>
 
 	it('UNSCOPED renders no predicate', async () => {
 		const { db, statements } = fakeDb();
-		await db.query.owners.findMany({ where: scopedRoot(UNSCOPED, 'x') });
+		await db.query.owners.findMany({ where: scopedRoot(tableScope(owners, UNSCOPED), 'x') });
 		expect(statements[0]!.text).toContain('where true');
+	});
+
+	it('takes only a scope BOUND to its table — another table\'s is a compile error', () => {
+		const { db } = fakeDb();
+		// @ts-expect-error — a bare ScopeConfig names no table
+		void db.query.owners.findMany({ where: scopedRoot(UNSCOPED, 'x') });
+		// @ts-expect-error — the widgets scope on the owners query
+		void db.query.owners.findMany({ where: scopedRoot(WIDGETS_SCOPE, 'x') });
 	});
 });
 

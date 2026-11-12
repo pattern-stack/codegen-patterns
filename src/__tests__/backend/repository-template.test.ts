@@ -239,7 +239,7 @@ describe('backend repository template — every shaped read carries its predicat
   it('findByIds de-duplicates, skips an empty list, and restores input order', () => {
     const output = renderRepository(buildBackendLocals(queriesEntity, withEntities()));
     expect(output).toContain('const unique = this.uniqueIds(ids);');
-    expect(output).toContain('if (unique.length === 0) return [];');
+    expect(output).toContain('if (unique.length === 0) {\n      // No statement — but the same boundary check one would make (strict throws).\n      this.assertReadScope();\n      return [];\n    }');
     expect(output).toContain('where: { RAW: this.rootFilter((t) => inArray(t.id, unique)) },');
     expect(output).toContain('return this.inInputOrder(rows, unique, mask.stripId)');
   });
@@ -318,7 +318,7 @@ describe('backend repository template — belongs_to + explicit FK query collisi
         '  ): Promise<FieldConfigResult<C, W> | null>',
     );
     // The FK-traversal array variant must NOT also be emitted.
-    expect(output).not.toContain('opts?: { cursor?: string; limit?: number } & ReadOptions<C, W>,');
+    expect(output).not.toContain('opts?: { limit?: number } & ReadOptions<C, W>,');
   });
 
   it('still emits the FK-traversal method when there is NO colliding declarative query (CGP-358 unchanged)', () => {
@@ -330,15 +330,18 @@ describe('backend repository template — belongs_to + explicit FK query collisi
     };
     const output = renderRepository(buildBackendLocals(nonUnique, withEntities()));
     expect(countMethodDefs(output, 'findByFieldDefinitionId')).toBe(1);
-    // The FK-traversal (cursor/limit) variant is the survivor here, now carrying
+    // The FK-traversal (limit) variant is the survivor here, now carrying
     // the include as a third option (REL-2 §4).
-    expect(output).toContain('opts?: { cursor?: string; limit?: number } & ReadOptions<C, W>,');
+    expect(output).toContain('opts?: { limit?: number } & ReadOptions<C, W>,');
   });
 
   it('emits the FK-traversal method when there are no declarative queries at all', () => {
     const noQueries = { ...collisionEntity, queries: undefined as unknown as [] };
     const output = renderRepository(buildBackendLocals(noQueries, withEntities()));
     expect(countMethodDefs(output, 'findByFieldDefinitionId')).toBe(1);
-    expect(output).toContain('opts?: { cursor?: string; limit?: number } & ReadOptions<C, W>,');
+    expect(output).toContain('opts?: { limit?: number } & ReadOptions<C, W>,');
+    // No `cursor` it would ignore, and a `limit` is a stable subset: ordered by id.
+    expect(output).not.toContain('cursor');
+    expect(output).toContain("orderBy: opts?.limit === undefined ? undefined : { id: 'asc' },");
   });
 });

@@ -146,9 +146,14 @@ d('READ-1 — the generated read surface against Postgres', () => {
 		});
 	});
 
-	test('R2b — `[]` returns [] (and needs no context: no statement is built)', async () => {
+	test('R2b — `[]` returns [] with no statement, but a strict entity still demands its boundary', async () => {
 		const repo = new RegionRepository(getTestDb());
-		expect(await repo.findByIds([])).toEqual([]);
+		await asA(async () => {
+			expect(await repo.findByIds([])).toEqual([]);
+		});
+		// No context: the same throw a non-empty read gives — `[]` does not hide a
+		// missing boundary (#859 review).
+		await expect(repo.findByIds([])).rejects.toThrow(/No requester context active/);
 	});
 
 	test('R2c — a mask without `id` still orders, and the rows carry only the mask', async () => {

@@ -208,7 +208,7 @@ function runCodegen() {
       `import { loadCodegenConfig } from './src/config/project-config.js'; ` +
       `const ctx = { cwd: '${ROOT}', configPath: '${TEST_CONFIG}', config: loadCodegenConfig('${TEST_CONFIG}'), isInitialized: true, framework: null, installedSubsystems: [], entityCount: 0, json: false, verbose: false }; ` +
       `await regenerateBarrels({ ctx, entitiesDir: '${ENTITY_FIXTURES_DIR}', generatedDir: '${generatedDir}' }); ` +
-      `regenerateRelationsManifest({ ctx, entitiesDir: '${ENTITY_FIXTURES_DIR}', generatedDir: '${generatedDir}' });` +
+      `await regenerateRelationsManifest({ ctx, entitiesDir: '${ENTITY_FIXTURES_DIR}', generatedDir: '${generatedDir}' });` +
       `"`,
     { cwd: CODEGEN_DIR, stdio: 'pipe' },
   );

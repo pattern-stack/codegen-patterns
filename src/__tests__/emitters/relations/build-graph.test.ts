@@ -511,6 +511,27 @@ describe('manifest rendering', () => {
 		expect(empty).toContain("import * as schema from './schema';");
 		expect(empty).toContain('export const relations = defineRelations(schema, () => ({}));');
 		expect(empty).toBe(buildRelationsManifest({ tables: [], warnings: [], entityScopes: [] }));
+		// SCOPES / rootScope exist on every project; an empty one imports nothing from
+		// the runtime (`project init` writes it before any runtime alias resolves).
+		expect(empty).not.toContain('scope-filters');
+		expect(empty).toContain('export const SCOPES = {} as const;');
+		expect(empty).toContain('export const rootScope = {};');
+	});
+
+	it('emits SCOPES and rootScope on a project that scopes nothing (READ-1 §5.1)', () => {
+		// A loader written against `rootScope.<t>` today keeps applying the root
+		// scope the day the entity becomes scoped — the map is never absent.
+		const out = buildRelationsManifest({
+			tables: [],
+			warnings: [],
+			entityScopes: [{ table: 'notes', scope: null }],
+		});
+		expect(out).toContain(
+			"import { scopedRoot, tableScope, UNSCOPED, type ScopeConfig } from '@shared/base-classes/scope-filters';",
+		);
+		expect(out).toContain('\tnotes: tableScope(schema.notes, UNSCOPED),');
+		expect(out).toContain('\tnotes: (owner: string) => scopedRoot(SCOPES.notes, owner),');
+		expect(out).not.toContain('hopScope');
 	});
 
 	it('carries the @generated banner', () => {
@@ -526,7 +547,7 @@ describe('entityScope', () => {
 	it('folds in PATTERN-implied behaviors, as the repository does (READ-1 review #9)', () => {
 		// A pattern implying soft_delete makes the repository filter deleted rows
 		// (entity-locals folds resolveImpliedBehaviors). The hops, SCOPES and
-		// scopedRoot must agree — one declaration, one posture (charter I1).
+		// rootScope must agree — one declaration, one posture (charter I1).
 		registerLibraryPattern(
 			definePattern({
 				name: 'ReadOneSoftDeleting',
@@ -556,7 +577,7 @@ describe('entityScope', () => {
 		}
 	});
 
-	it('is null when nothing is declared, so the manifest does not grow', () => {
+	it('is null when nothing is declared — the manifest maps it to UNSCOPED', () => {
 		expect(entityScope(definition('a', 'as'), 'tenant_id')).toBeNull();
 		expect(
 			entityScope(definition('a', 'as', {}, {}, { behaviors: ['timestamps'] }), 'tenant_id'),
@@ -729,17 +750,17 @@ describe('the tenant column travels with the scope (#791)', () => {
 			buildRelationGraph({ ...context(entries()), tenancyColumn: 'organization_id' }),
 		);
 		expect(out).toContain(
-			"const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, tenantColumn: 'organizationId', softDelete: false, userTracking: false, enforcement: 'strict' };",
+			"const ACCOUNTS_SCOPE = tableScope(schema.accounts, { tenantScoped: true, tenantColumn: 'organizationId', softDelete: false, userTracking: false, enforcement: 'strict' });",
 		);
 		expect(out).toContain(
-			"const CONTACTS_SCOPE: ScopeConfig = { tenantScoped: true, tenantColumn: 'teamId', softDelete: false, userTracking: false, enforcement: 'strict' };",
+			"const CONTACTS_SCOPE = tableScope(schema.contacts, { tenantScoped: true, tenantColumn: 'teamId', softDelete: false, userTracking: false, enforcement: 'strict' });",
 		);
 	});
 
 	it('a default project renders tenantColumn too — it is never omitted', () => {
 		const out = buildRelationsManifest(buildRelationGraph(context(entries())));
 		expect(out).toContain(
-			"const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, tenantColumn: 'tenantId', softDelete: false, userTracking: false, enforcement: 'strict' };",
+			"const ACCOUNTS_SCOPE = tableScope(schema.accounts, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: false, userTracking: false, enforcement: 'strict' });",
 		);
 	});
 });

@@ -59,9 +59,9 @@ export class DealService extends WithAnalytics(
   }
 
   override list<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
-    options?: ListOptions<typeof deals> & ReadOptions<C, W>,
+    listOptions?: ListOptions<typeof deals> & ReadOptions<C, W>,
   ): Promise<Array<DealResult<C, W>>> {
-    return this.repository.list<C, W>(options);
+    return this.repository.list<C, W>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

@@ -77,8 +77,10 @@ export class DealStateRepository extends BaseRepository<DealState, typeof deal_s
   // not on the base: with `TRelations` and the table key as naked type
   // parameters, `DBQueryConfig<…>['with']` is a TS2536 (REL-2 §2.1).
   //
-  // ONE execution path: every read runs on RQBv2
-  // (`db.query.deal_states`), with or without options, and its root
+  // ONE execution path for the read surface below — `findById`, `findByIds`,
+  // `list` and every plain `queries:` / `belongs_to` finder run on RQBv2
+  // (`db.query.deal_states`), with or without options. (`count`, and a
+  // `via:` / `select:` finder, keep the core builder's `scopeAnd`.) The root
   // predicate is ONE call — `this.rootFilter(where)`, the caller's row filter AND
   // this repository's scope, both rendered against the table RQBv2 hands the
   // callback. RQBv2 ALIASES the root (`"deal_states" as "d0"`), so
@@ -102,7 +104,8 @@ export class DealStateRepository extends BaseRepository<DealState, typeof deal_s
   }
 
   /**
-   * One statement for many ids (READ-1 §2.4): `[]` issues none, duplicates are
+   * One statement for many ids (READ-1 §2.4): `[]` issues none (after the scope's
+   * boundary check), duplicates are
    * read once, rows come back in INPUT order, and a missing / soft-deleted /
    * out-of-scope id is simply absent. A mask that omits `id` still orders — `id`
    * is selected and stripped again. Not chunked: Postgres caps a statement at
@@ -113,7 +116,11 @@ export class DealStateRepository extends BaseRepository<DealState, typeof deal_s
     opts?: ReadOptions<C, W>,
   ): Promise<Array<DealStateResult<C, W>>> {
     const unique = this.uniqueIds(ids);
-    if (unique.length === 0) return [];
+    if (unique.length === 0) {
+      // No statement — but the same boundary check one would make (strict throws).
+      this.assertReadScope();
+      return [];
+    }
     const mask = this.byIdsColumns(this.checkColumns<C>(opts?.columns));
     const rows = await this.db.query.deal_states.findMany({
       where: { RAW: this.rootFilter((t) => inArray(t.id, unique)) },

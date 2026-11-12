@@ -241,30 +241,43 @@ export const UNSCOPED: ScopeConfig = Object.freeze({
 });
 
 /**
+ * A {@link ScopeConfig} bound to the table it describes. The manifest emits every
+ * entity table's scope as one (`SCOPES.<table>`, `<TABLE>_SCOPE`), so the table
+ * a scope belongs to travels with it in the TYPE: {@link scopedRoot} infers its
+ * table from it, and handing one table's scope to another table's query is a
+ * compile error rather than a wrong posture (READ-1 §5.2).
+ */
+export type TableScope<T extends PgTable> = ScopeConfig & { readonly table: T };
+
+/** Bind a scope to its table — what the manifest emits for every entity table. */
+export function tableScope<T extends PgTable>(table: T, cfg: ScopeConfig): TableScope<T> {
+  return Object.freeze({ ...cfg, table });
+}
+
+/**
  * The ROOT half of a scoped read, for code that calls `db.query.<table>`
  * itself rather than going through a generated repository (READ-1 §5.2, #843).
  *
  * The relations manifest scopes every HOP of such a read; nothing scopes its
- * root. AND this into the root `where` with the table's constant from the
- * manifest's exported `SCOPES`:
+ * root. AND this into the root `where` — through the manifest's
+ * `rootScope.<table>(owner)`, which is this over `SCOPES.<table>`:
  *
  * ```ts
  * await db.query.accounts.findMany({
- *   where: { AND: [{ id: { in: ids } }, scopedRoot(SCOPES.accounts, 'AccountLoader')] },
+ *   where: { AND: [{ id: { in: ids } }, rootScope.accounts('AccountLoader')] },
  * });
  * ```
  *
- * Prefer the manifest's per-table `rootScope.<table>(owner)`, which fixes `T`
- * to that table: handing one table's scope to another table's query is then a
- * compile error rather than a wrong posture or a missing-column throw.
+ * It takes a {@link TableScope}, never a bare `ScopeConfig`: `T` is the scope's
+ * own table, so the `RAW` callback only fits that table's query.
  *
  * It is `hopScope` shaped as a filter — the same `scopeFilter` a repository's
  * root and every manifest hop use — and it renders against the handle RQBv2
  * passes the callback, i.e. the aliased root.
  */
-export function scopedRoot<T extends PgTable = PgTable>(
-  cfg: ScopeConfig,
+export function scopedRoot<T extends PgTable>(
+  scope: TableScope<T>,
   owner: string,
 ): { RAW: (table: T) => SQL } {
-  return { RAW: (table: T) => hopScope(table, cfg, owner) };
+  return { RAW: (table: T) => hopScope(table, scope, owner) };
 }

@@ -74,11 +74,12 @@ const SCANNED = [
 const UNTETHERED = /\bRAW\s*:\s*\(\s*\)\s*=>/;
 
 /**
- * READ-1 (#840): `RAW: <value>` — anything that is neither a callback (`(`) nor
- * the repository's root filter, which returns one. A pre-rendered SQL in a
- * relational filter names the real table, which the builder aliased away.
+ * READ-1 (#840): `RAW: <value>` — anything that is neither an ARROW callback
+ * (`(…) =>`) nor the repository's root filter, which returns one. A pre-rendered
+ * SQL in a relational filter names the real table, which the builder aliased
+ * away. A parenthesised value (`RAW: (callerWhere)`) is a value, not a callback.
  */
-const PRERENDERED = /\bRAW\s*:\s*(?!\(|this\.rootFilter\()[A-Za-z_$]/;
+const PRERENDERED = /\bRAW\s*:\s*(?!\([^()]*\)\s*=>|this\.rootFilter\()[A-Za-z_$(]/;
 
 /**
  * READ-1 review #6 — the shapes of the SAME defect at the call site READ-1 moved
@@ -97,12 +98,45 @@ const OWN_HANDLE_IN_CALLBACK =
 	/(\brootFilter\(|\bRAW\s*:).*(\bthis\.(table|tableRef)\b|\bthis\.col\(|<%= *entityNamePlural *%>\.)/;
 const RAW_VALUE_ON_NEXT_LINE = /\bRAW\s*:\s*$/;
 
+/** The own-handle names, for the multi-line check below. */
+const OWN_HANDLE = /\bthis\.(table|tableRef)\b|\bthis\.col\(|<%= *entityNamePlural *%>\./;
+
+/**
+ * The full ARGUMENT of every `rootFilter(` call, however many lines it spans —
+ * balanced parentheses from the call's `(`. The line checks above only see the
+ * first line, so a callback whose body continues on the next one
+ * (`rootFilter((t) =>\n  eq(this.table.id, id))`) passed them (review nit).
+ * Capped so an unbalanced mention in prose cannot swallow a file.
+ */
+function rootFilterArguments(text: string): Array<{ offset: number; arg: string }> {
+	const out: Array<{ offset: number; arg: string }> = [];
+	const call = /\brootFilter\(/g;
+	for (let m = call.exec(text); m !== null; m = call.exec(text)) {
+		const start = m.index + m[0].length;
+		let depth = 1;
+		let i = start;
+		for (; i < text.length && i < start + 600 && depth > 0; i++) {
+			if (text[i] === '(') depth++;
+			else if (text[i] === ')') depth--;
+		}
+		out.push({ offset: m.index, arg: text.slice(start, i - 1) });
+	}
+	return out;
+}
+
 function scan(): string[] {
 	const offenders: string[] = [];
 	for (const pattern of SCANNED) {
 		for (const file of globSync(pattern, { cwd: REPO_ROOT, nodir: true })) {
 			const abs = join(REPO_ROOT, file);
-			const lines = readFileSync(abs, 'utf8').split('\n');
+			const text = readFileSync(abs, 'utf8');
+			for (const { offset, arg } of rootFilterArguments(text)) {
+				if (OWN_HANDLE.test(arg)) {
+					const line = text.slice(0, offset).split('\n').length;
+					offenders.push(`${relative(REPO_ROOT, abs)}:${line}: rootFilter(${arg.replace(/\s+/g, ' ').trim()})`);
+				}
+			}
+			const lines = text.split('\n');
 			for (const [index, line] of lines.entries()) {
 				if (
 					UNTETHERED.test(line) ||
@@ -202,7 +236,17 @@ describe('a RAW callback must take the table it renders against', () => {
 		}
 	});
 
+	it('reads a multi-line rootFilter argument whole (review nit)', () => {
+		const multi = 'where: { RAW: this.rootFilter((t) =>\n      and(eq(t.id, id), eq(this.table.name, n))) },';
+		expect(multi.split('\n').some((l) => OWN_HANDLE_IN_CALLBACK.test(l))).toBe(false); // the line check misses it
+		expect(rootFilterArguments(multi).some(({ arg }) => OWN_HANDLE.test(arg))).toBe(true);
+		const ok = 'where: { RAW: this.rootFilter((t) =>\n      and(eq(t.id, id), eq(t.name, n))) },';
+		expect(rootFilterArguments(ok).some(({ arg }) => OWN_HANDLE.test(arg))).toBe(false);
+	});
+
 	it('catches the pre-rendered form READ-1 banned, and leaves the callback forms alone', () => {
+		expect(PRERENDERED.test('{ RAW: (callerWhere) },')).toBe(true);
+		expect(PRERENDERED.test('{ RAW: (t: PgTable) => hopScope(t, CFG, "a.b") },')).toBe(false);
 		// The exact line the generated `list()` carried before #840.
 		expect(PRERENDERED.test('...(callerWhere === undefined ? [] : [{ RAW: callerWhere }]),')).toBe(true);
 		expect(PRERENDERED.test('{ RAW: sql`true` },')).toBe(true);

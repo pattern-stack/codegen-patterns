@@ -5,7 +5,7 @@ force: true
 <%- generatedBanner %>
 import { Injectable } from '@nestjs/common';
 import { buildPage, resolveListQuery, type ListQuery, type Page } from '<%= paginationImport %>';
-import type { RowFilter, SortTerm } from '<%= baseRepositoryImport %>';
+import { hasColumn, type RowFilter, type SortTerm } from '<%= baseRepositoryImport %>';
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 import { <%= entityNamePlural %><% if (!includes) { %>, type <%= classNames.entity %><% } %> } from '../<%= entityFileStem %>.entity';
 <% if (includes) { -%>
@@ -98,8 +98,9 @@ export class <%= classNames.listUseCase %> {
       /_([a-z])/g,
       (_m: string, c: string) => c.toUpperCase(),
     );
-    const isKnownColumn =
-      (<%= entityNamePlural %> as unknown as globalThis.Record<string, unknown>)[sortColumn] !== undefined;
+    // `hasColumn` — the repository's own column test (an own-key check, so
+    // `?sort_by=to_string` is unknown, not `Object.prototype.toString`).
+    const isKnownColumn = hasColumn(<%= entityNamePlural %>, sortColumn);
     const sortTerms: SortTerm[] = isKnownColumn
       ? [
           { column: sortColumn, direction: resolvedQuery.sortOrder },

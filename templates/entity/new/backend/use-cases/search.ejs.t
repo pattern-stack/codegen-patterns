@@ -36,7 +36,7 @@ export class <%= searchQuery.useCaseClassName %> {
     // A ROW FILTER, not a rendered SQL: the list renders it against the table
     // handle its executing path holds — the aliased root on the relational path
     // (READ-1 §4). Built from `t`, never from the imported table.
-    const where = (t: typeof <%= entityNamePlural %>): SQL | undefined => {
+    const rowFilter = (t: typeof <%= entityNamePlural %>): SQL | undefined => {
       const whereTerms: SQL[] = [];
 <% searchQuery.filters.forEach((f) => { -%>
 <% if (f.isBoolean) { -%>
@@ -52,7 +52,7 @@ export class <%= searchQuery.useCaseClassName %> {
       return and(...whereTerms);
     };
 
-    return this.listUseCase.execute(searchInput, { where });
+    return this.listUseCase.execute(searchInput, { where: rowFilter });
   }
 }
 <% } -%>

@@ -369,16 +369,24 @@ All families get `findById`, `findByIds`, `list`, `count`, `exists`, `create`,
 `findById`, `findByIds`, `list`, each plain `queries:` and `belongs_to` finder — takes
 `{ columns?, with? }` (`with` only when the entity declares a relationship), typed by
 per-call generics `<C, W>` emitted on the generated subclass (REL-2 §2.1's TS2536 keeps
-them off the base). ONE execution path: every generated read runs on RQBv2 with
-`where: { RAW: this.rootFilter(pred) }` — the caller's predicate AND the scope, both
-rendered on the alias. `ListOptions<TTable>.where` / `count(where)` are a
+them off the base). ONE execution path for that read surface: each of those reads runs on
+RQBv2 with `where: { RAW: this.rootFilter(pred) }` — the caller's predicate AND the scope,
+both rendered on the alias. NOT on it, still on the core builder via `scopeAnd`: `count`,
+`via:` / `select:` finders, junction and `relationship new` repositories, and the base /
+family bases' own reads (READ-1 §3.1). `rootFilter` and `scopeAnd` share one assembly,
+`scopeAndOn(table, extra, opts)`. `ListOptions<TTable>.where` / `count(where)` are a
 `RowFilter<TTable>` (`(t) => SQL`); a pre-rendered `SQL` and `orderBy` do not exist
 (`no-untethered-raw-callback.test.ts` bans a non-callback `RAW:`). `findByIds`: no
-statement for `[]`, de-duplicated, input order, absent ids dropped. The manifest
-exports every scoped table's `<TABLE>_SCOPE`, a `SCOPES` map (unscoped tables as
-`UNSCOPED`) and `rootScope.<table>(owner)` — the typed root scope of a hand-written
-`db.query` (another table's is a compile error). `entityScope` folds pattern-implied
-behaviors, like the repository. Gates: `no-unscoped-db-query.test.ts` (every emitted
+statement for `[]` (but the `strict` boundary check still runs), de-duplicated by the
+key's SQL type (`uuid`, integer), input order, absent ids dropped, an unclaimed row
+throws. A `belongs_to` finder takes `limit` (ordered by `id`), no `cursor`. The manifest
+exports every scoped table's `<TABLE>_SCOPE`, and ALWAYS a `SCOPES` map (unscoped tables
+as `tableScope(schema.<t>, UNSCOPED)`) and `rootScope.<table>(owner)` — the typed root
+scope of a hand-written `db.query`. Every entry is a `TableScope<T>`, so `scopedRoot`
+infers its table and another table's scope is a compile error. `entityScope` folds
+pattern-implied behaviors via `requireImpliedBehaviors` (throws on an unregistered
+pattern); `regenerateRelationsManifest` loads the app patterns itself, so every command
+derives the same manifest. A caller column key goes through `hasColumn` (own keys only). Gates: `no-unscoped-db-query.test.ts` (every emitted
 `db.query.*.find*` carries `rootFilter`), `no-untethered-raw-callback.test.ts` (the
 alias shapes), and `just test-baseline`'s second typecheck against Drizzle rc.5 via the
 `drizzle-orm-rc5` alias. A generated repository's constructor calls

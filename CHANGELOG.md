@@ -15,28 +15,34 @@ every such column and raise `max_length` (or clean the data) wherever it exceeds
 
 1. **Vendored runtime (`runtime: vendored`): run `codegen project update` first.** `entity new`
    does not refresh `@shared/base-classes`, and the regenerated repositories call `rootFilter`,
-   `checkColumns`, `byIdsColumns`, `inInputOrder`, `uniqueIds` and `requireRelationalQuery`; the
-   manifest imports `UNSCOPED` and `scopedRoot`.
+   `checkColumns`, `byIdsColumns`, `inInputOrder`, `uniqueIds`, `assertReadScope` and
+   `requireRelationalQuery`; the list use case imports `hasColumn`; the manifest imports
+   `scopedRoot`, `tableScope` and `UNSCOPED`.
 2. Regenerate: `codegen entity new --all --force`, plus `junction new --all --force`.
-3. Fix the call sites below. Each changed call SHAPE is a **compile error** at the call site,
+3. Fix the call sites below. Rows marked **compile** are a compile error at the call site,
    including through a generated service (`service.count(eq(…))` and `service.list({ where: <SQL> })`
-   are type errors). The last three rows are runtime behaviour, each loud or result-preserving.
-   One residual: a HAND-WRITTEN service extending `BaseService` inherits `list(options?: unknown)`
-   (generated services override it with the typed signature).
+   are type errors). Rows marked **runtime** or **silent** are not — read those. Two residuals: a
+   HAND-WRITTEN service extending `BaseService` inherits `list(options?: unknown)` (generated services
+   override it with the typed signature), and the `<Entity>Result` row below.
 
-| Break | Before | After |
-|---|---|---|
-| `ListOptions.where` / `count(where)` is a row filter (#840) | `repo.list({ where: eq(accounts.name, x) })` · `repo.count(eq(accounts.name, x))` | `repo.list({ where: (t) => eq(t.name, x) })` · `repo.count((t) => eq(t.name, x))` |
-| `ListOptions.orderBy` is removed | `repo.list({ orderBy: desc(accounts.createdAt) })` | `repo.list({ sort: [{ column: 'createdAt', direction: 'desc' }] })` |
-| `ListOptions` is generic over its table | `ListOptions` | `ListOptions<typeof accounts>` |
-| `<Entity>Result` / `ResultOf` take the column mask first | `AccountResult<TWith>` · `ResultOf<'accounts', TWith>` | `AccountResult<undefined, TWith>` (both defaulted; `AccountResult` alone is the row) · `ResultOf<'accounts', TColumns, TWith>` |
-| `WithActor.memberPredicate` returns a row filter | `list({ where: repo.memberPredicate(id) })` with an `SQL` | the same call; the value is now `(table) => SQL` — pass it as `where`, or call it with a table |
-| `BaseRepository.rootScopeRawOn(t, …)` is replaced | `{ RAW: (t) => this.rootScopeRawOn(t, { softDelete }) }` | `{ RAW: this.rootFilter(pred) }` |
-| `activeParentFilter` returns a row filter | `this.activeParentFilter(parents, this.col('parentId'))` → `SQL` | `this.activeParentFilter(parents, 'parentId')` → `(table) => SQL`, correlated on the handle it is given |
-| The generated list use case's `where` seam | `listUseCase.execute(q, { where: eq(accounts.name, x) })` | `listUseCase.execute(q, { where: (t) => eq(t.name, x) })` |
-| Plain generated reads run on the relational query builder | `findById(id)` → `select … from "accounts" where …` | `select "d0"."id" … from "accounts" as "d0" where …` — same rows, same plan; any test asserting the old SQL text changes |
-| **Every** generated read needs the relations manifest on the `DRIZZLE` client | only `with` reads used `db.query` | a client built without `relations` now fails at repository **construction**, naming the cause: bind `drizzle({ client, relations })` |
-| `withRequester` awaits its callback inside the context | a synchronous throw in `fn` threw synchronously | it becomes a rejected promise — identical for any caller that `await`s |
+| Break | Kind | Before | After |
+|---|---|---|---|
+| `ListOptions.where` / `count(where)` is a row filter (#840) | compile | `repo.list({ where: eq(accounts.name, x) })` · `repo.count(eq(accounts.name, x))` | `repo.list({ where: (t) => eq(t.name, x) })` · `repo.count((t) => eq(t.name, x))` |
+| `ListOptions.orderBy` is removed | compile | `repo.list({ orderBy: desc(accounts.createdAt) })` | `repo.list({ sort: [{ column: 'createdAt', direction: 'desc' }] })` |
+| `ListOptions` is generic over its table | compile | `ListOptions` | `ListOptions<typeof accounts>` |
+| `<Entity>Result` / `ResultOf` take the column mask first | **silent** for one form | `AccountResult<TWith>` · `ResultOf<'accounts', TWith>` | `AccountResult<undefined, TWith>` (both defaulted; `AccountResult` alone is the row) · `ResultOf<'accounts', TColumns, TWith>`. A stale `AccountResult<AccountNoInclude>` STILL COMPILES — `NoInclude` fits the mask slot — and resolves to `{}`; the error surfaces only at a property read. Search for `Result<` with one argument |
+| `WithActor.memberPredicate` returns a row filter | compile | `list({ where: repo.memberPredicate(id) })` with an `SQL` | the same call; the value is now `(table) => SQL` — pass it as `where`, or call it with a table |
+| `BaseRepository.rootScopeRawOn(t, …)` is replaced | compile | `{ RAW: (t) => this.rootScopeRawOn(t, { softDelete }) }` | `{ RAW: this.rootFilter(pred) }` |
+| `activeParentFilter` returns a row filter | compile | `this.activeParentFilter(parents, this.col('parentId'))` → `SQL` | `this.activeParentFilter(parents, 'parentId')` → `(table) => SQL`, correlated on the handle it is given |
+| The generated list use case's `where` seam | compile | `listUseCase.execute(q, { where: eq(accounts.name, x) })` | `listUseCase.execute(q, { where: (t) => eq(t.name, x) })` |
+| `belongs_to` finders and the service's has-many methods take no `cursor` | compile | `repo.findByAccountId(id, { cursor, limit })` (the `cursor` was ignored) | `repo.findByAccountId(id, { limit })` — and a `limit` now orders by `id`, so the subset is stable |
+| Pattern-implied behaviors now scope the manifest | compile + runtime | a to-one include onto an entity whose PATTERN implies `soft_delete` / `user_tracking` typed non-null; its hop unfiltered | the include is `\| null`, and the hop filters deleted / out-of-scope rows — as the repository root always did |
+| The generated repository overrides `findById` / `findByIds` / `list` / `count` | **silent** | a project's own base-class or capability-mixin override of those reads ran | the generated override runs instead (it does not call `super`). Move such logic into a `where` row filter, or onto a differently named method |
+| Read-surface reads run on the relational query builder | runtime | `findById(id)` → `select … from "accounts" where …` | `select "d0"."id" … from "accounts" as "d0" where …` — same rows, same plan; any test asserting the old SQL text changes. (`count`, `via:` / `select:` finders and junction repositories keep the core builder) |
+| **Every** generated repository needs the relations manifest on the `DRIZZLE` client | runtime | only `with` reads used `db.query` | a client built without `relations` now fails at repository **construction**, naming the cause: bind `drizzle({ client, relations })` |
+| `findByIds([])` under `strict` with no context | runtime | returned `[]` | throws, as any read does |
+| `findByIds` re-ordering | runtime | a returned row whose key spelling no input matched was dropped | `uuid` and integer keys are canonicalised (`'07'` finds row 7); a row still unclaimed throws |
+| `withRequester` awaits its callback inside the context | runtime | a synchronous throw in `fn` threw synchronously | it becomes a rejected promise — identical for any caller that `await`s |
 
 ### Breaking
 
@@ -56,22 +62,29 @@ every such column and raise `max_length` (or clean the data) wherever it exceeds
 
 ### Added
 
-- **One read surface on every generated read (READ-1, #841).** `findById`, `findByIds`, `list` and
+- **One read surface (READ-1, #841).** `findById`, `findByIds`, `list` and
   every plain `queries:` / `belongs_to` finder take `{ columns?, with? }`; the result type is
   inferred exactly at the call site, nested masks included. `findByIds(ids, { columns, with })` is
   one statement: `[]` issues none, duplicates are read once, rows come back in input order, and a
   missing / soft-deleted / out-of-scope id is absent. An empty `columns: {}` is a compile error and
-  a runtime throw. Every generated read executes on one path (RQBv2) with one root filter
-  (`rootFilter`), so the root and every hop are scoped on every method. The generated service
+  a runtime throw. Every read on that surface executes on one path (RQBv2) with one root filter
+  (`rootFilter`), so the root and every hop are scoped on every method; `rootFilter` and the core
+  builder's `scopeAnd` share one assembly (`scopeAndOn`). The generated service
   forwards the same options, including on `queries:` finders (it dropped them before).
 - **The relations manifest exports its scope (#843).** `export const <TABLE>_SCOPE` for every
-  scoped entity table, `export const SCOPES` over every entity table (unscoped ones as
-  `UNSCOPED`), and `rootScope.<table>(owner)` — the root scope of a hand-written `db.query.*`
-  read, typed to its table (another table's scope is a compile error). The scope now folds in
-  pattern-implied behaviors, as the repository's `behaviors` always did.
+  scoped entity table, and — in EVERY project, scoped or not — `export const SCOPES` over every
+  entity table (unscoped ones as `tableScope(schema.<t>, UNSCOPED)`) and `rootScope.<table>(owner)`,
+  the root scope of a hand-written `db.query.*` read. Each entry is a `TableScope<T>` bound to its
+  table, so `scopedRoot` / `rootScope` on another table's query is a compile error. The scope now
+  folds in pattern-implied behaviors, as the repository's `behaviors` always did; every command that
+  writes the manifest (`relationship new` included) loads the app patterns first, and an
+  unregistered pattern fails the step rather than narrowing the scope.
 - **`findByIds` compares ids as the database spells them.** For a `uuid` key, an uppercase, braced
-  or unhyphenated id finds its row and de-duplicates against the canonical spelling (it was
-  silently absent before, in the base `findByIds` too).
+  or unhyphenated id finds its row and de-duplicates against the canonical spelling; for an integer
+  key, `'07'` finds row 7 (both were silently absent before, in the base `findByIds` too).
+- **A caller-supplied column key is checked as an own key (`hasColumn`).** `?sort_by=to_string`
+  used to resolve to `Object.prototype.toString` and render `order by $1` (silently ignored); it is
+  now an unknown column, so the list falls back to its default sort.
 - **Configurable tenancy column (#791).** `tenant_scoped` no longer hard-codes `tenant_id`.
   `codegen.config.yaml` takes `tenancy: { column: <snake_name> }` (default `tenant_id`), and an
   entity may write `tenant_scoped: { column: <snake_name> }` to override it. If the entity already

@@ -40,7 +40,7 @@ import {
 // otherwise). Re-exported here because that is where every existing caller
 // reaches for them, and one definition with two import paths is not two
 // definitions.
-export { column } from './table-columns';
+export { column, hasColumn } from './table-columns';
 export { tenantPredicateFor } from './scope-filters';
 
 /**
@@ -53,6 +53,16 @@ function describeTenant(value: unknown): string {
   if (value === undefined) return 'no tenant';
   return `'${String(value)}'`;
 }
+
+/** The Postgres integer types an `id` may have — `idKey` compares them as integers. */
+const INTEGER_KEY_TYPES: ReadonlySet<string> = new Set([
+  'smallint',
+  'integer',
+  'bigint',
+  'smallserial',
+  'serial',
+  'bigserial',
+]);
 
 // ============================================================================
 // Typed reads
@@ -315,7 +325,8 @@ export abstract class BaseRepository<
    * Find entities by their primary keys — READ-1 §2.4's semantics, which the
    * generated override keeps on its relational path:
    *
-   *   - `[]` returns `[]` and issues no statement;
+   *   - `[]` returns `[]` and issues no statement — after the scope's boundary
+   *     checks, so under `strict` a missing context throws on `[]` too;
    *   - duplicate ids are read once and returned once;
    *   - rows come back in INPUT order (first occurrence) — `in (…)` does not
    *     preserve it, so the rows are re-sorted here;
@@ -327,7 +338,10 @@ export abstract class BaseRepository<
    */
   async findByIds(ids: readonly string[]): Promise<TEntity[]> {
     const unique = this.uniqueIds(ids);
-    if (unique.length === 0) return [];
+    if (unique.length === 0) {
+      this.assertReadScope();
+      return [];
+    }
     const rows = await this.baseQuery(inArray(this.col('id'), unique));
     return this.inInputOrder(rows, unique, false) as TEntity[];
   }
@@ -360,9 +374,10 @@ export abstract class BaseRepository<
    * Soft-deleted rows are always excluded when softDelete=true.
    *
    * Routes the caller predicate through `scopeAnd()` — the SAME assembly
-   * `baseQuery()` uses — rather than re-listing the guards here. It used to
-   * hand-assemble them, which is how it silently drifted out of the choke
-   * point (SCOPE-0, #616); there is now exactly one place a guard is added.
+   * (`scopeAndOn`) `baseQuery()` and every generated read's `rootFilter` use —
+   * rather than re-listing the guards here. It used to hand-assemble them, which
+   * is how it silently drifted out of the choke point (SCOPE-0, #616); there is
+   * now exactly one place a guard is added.
    */
   async count(where?: RowFilter<TTable>): Promise<number> {
     const query = this.db
@@ -580,10 +595,11 @@ export abstract class BaseRepository<
    * `"regions"."deleted_at"`: an invalid reference to a FROM-clause entry, and
    * the read fails (REL-2 §10 Found #9; #840 for the caller's `where`).
    *
-   * The scope half is `scopeFilter` — the same function `scopeAnd()` folds into
-   * the core builder and the manifest's `hopScope` applies at every hop — so the
-   * root and the hops cannot disagree (charter I3). Renders `true` when nothing
-   * applies, because a `RAW` slot takes a `SQL`.
+   * The assembly is `scopeAndOn(table, …)` — the SAME one `scopeAnd()` uses on the
+   * core builder — and its scope half is `scopeFilter`, which the manifest's
+   * `hopScope` applies at every hop, so the root and the hops cannot disagree
+   * (charter I3). Renders `true` when nothing applies, because a `RAW` slot
+   * takes a `SQL`.
    *
    * Generic in its OWN table parameter, not the class's `TTable`: `T` is
    * inferred from the RQBv2 `RAW` slot the result is handed to (the concrete
@@ -593,16 +609,8 @@ export abstract class BaseRepository<
    * position and stop a concrete repository fitting `RepositoryCtor`.
    */
   protected rootFilter<T extends PgTable>(where?: RowFilter<T>): (table: T) => SQL {
-    return (table: T) => {
-      const scope = scopeFilter(
-        table,
-        this.scopeConfigFor({ softDelete: this.behaviors.softDelete }),
-        this.constructor.name,
-      );
-      const caller = where?.(table);
-      if (scope && caller) return and(scope, caller) ?? sql`true`;
-      return scope ?? caller ?? sql`true`;
-    };
+    return (table: T) =>
+      this.scopeAndOn(table, where?.(table), { softDelete: this.behaviors.softDelete }) ?? sql`true`;
   }
 
   /**
@@ -611,6 +619,11 @@ export abstract class BaseRepository<
    * rejects the literal `{}` at compile time; this catches a mask built at
    * runtime.
    *
+   * "Empty" is judged AFTER dropping `undefined`-valued keys: Drizzle ignores
+   * them, so `{ name: undefined }` selects exactly what `{}` does — nothing at
+   * the root, and with a `with` a row of relations only. Those keys are dropped
+   * from the mask that is sent, and a mask left with no key throws.
+   *
    * Returns the mask typed as plain `C` — WITHOUT the `NonEmptyMask` brand — so
    * the query config Drizzle infers its result from carries `columns: C`, the
    * same `C` the generated `<Entity>Result<C, W>` names. With the brand still on
@@ -618,39 +631,49 @@ export abstract class BaseRepository<
    * generated `rows as <Entity>Result<C, W>` is a TS2352 (measured).
    */
   protected checkColumns<C>(columns: (C & NonEmptyMask<C>) | undefined): C | undefined {
-    if (
-      columns !== undefined &&
-      columns !== null &&
-      typeof columns === 'object' &&
-      Object.keys(columns).length === 0
-    ) {
+    if (columns === undefined || columns === null || typeof columns !== 'object') {
+      return columns as C | undefined;
+    }
+    const defined = Object.entries(columns as Record<string, unknown>).filter(
+      ([, v]) => v !== undefined,
+    );
+    if (defined.length === 0) {
       throw new Error(
         `${this.constructor.name}: an empty \`columns\` mask selects nothing — ` +
-          'name at least one column, or omit `columns` for the whole row.',
+          'name at least one column (a key set to `undefined` names none), or omit `columns` for the whole row.',
       );
     }
-    return columns;
+    return Object.fromEntries(defined) as C;
   }
 
   /**
    * The key an id is compared by — the database's spelling, not the caller's.
    *
-   * `in (…)` on a `uuid` column PARSES its operands, so `'A0EEBC99-…'`,
-   * `'{a0eebc99-…}'` and `'a0eebc99…'` (no hyphens) all match the row, but
-   * Postgres prints the canonical lowercase hyphenated form. Comparing the
-   * caller's raw string against that would silently drop the row (READ-1 review
-   * #2). So for a `uuid` primary key both sides are canonicalised. Any other key
-   * is compared as its TEXT (`String(id)`): an integer key comes back as a number
-   * for the caller's `'7'`, and a `text` key still distinguishes case.
+   * Postgres PARSES an `in (…)` operand into the key's type, so several caller
+   * spellings name one row, and the row comes back in the canonical one.
+   * Comparing the caller's raw string against that would silently drop the row
+   * (READ-1 review #2, R-2). So both sides are canonicalised by the key's type:
+   *   - `uuid` — `'A0EEBC99-…'`, `'{a0eebc99-…}'` and the unhyphenated form all
+   *     become the lowercase hyphenated form;
+   *   - an integer type — `'7'`, `'07'` and the driver's `7` all become `'7'`;
+   *   - anything else (`text`, `varchar`, …) — its text, case kept, as Postgres
+   *     compares it.
+   * A spelling this does not canonicalise makes `inInputOrder` THROW, never drop.
    */
   protected idKey(id: unknown): unknown {
-    // Not a uuid key: compare as TEXT. A caller's `'7'` and the driver's `7` for an
-    // integer key are the same row (Postgres coerced the bind) — review R-2.
-    if (this.col('id').getSQLType() !== 'uuid') return id === null || id === undefined ? id : String(id);
-    if (typeof id !== 'string') return id;
-    const hex = id.replace(/[{}-]/g, '').toLowerCase();
-    if (!/^[0-9a-f]{32}$/.test(hex)) return id;
-    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    if (id === null || id === undefined) return id;
+    const type = this.col('id').getSQLType();
+    if (type === 'uuid') {
+      if (typeof id !== 'string') return id;
+      const hex = id.replace(/[{}-]/g, '').toLowerCase();
+      if (!/^[0-9a-f]{32}$/.test(hex)) return id;
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
+    if (INTEGER_KEY_TYPES.has(type)) {
+      const text = String(id).trim();
+      return /^[+-]?\d+$/.test(text) ? BigInt(text).toString() : text;
+    }
+    return String(id);
   }
 
   /**
@@ -705,8 +728,8 @@ export abstract class BaseRepository<
    * nothing and inventing nothing: an id with no row is absent. With `stripId`,
    * removes the `id` key a mask that omitted it was given by `byIdsColumns`.
    *
-   * A row WITHOUT an `id` is a defect in the statement, not a missing row, so it
-   * THROWS rather than being keyed under `undefined` and silently dropped.
+   * A row WITHOUT an `id`, or one no input id claims, is a defect in the read,
+   * not a missing row, so it THROWS rather than being silently dropped.
    */
   protected inInputOrder<TRow extends object>(
     rows: readonly TRow[],
@@ -726,10 +749,22 @@ export abstract class BaseRepository<
     }
     const ordered: TRow[] = [];
     for (const id of ids) {
-      const row = byId.get(this.idKey(id));
+      const key = this.idKey(id);
+      const row = byId.get(key);
       if (row === undefined) continue;
+      byId.delete(key);
       if (stripId) delete (row as Record<string, unknown>)['id'];
       ordered.push(row);
+    }
+    // A row the database returned for this `in (…)` that no input id claims means
+    // `idKey` spells this key differently from Postgres — the row was matched in
+    // SQL and would be silently dropped here. Loud, not lossy.
+    if (byId.size > 0) {
+      throw new Error(
+        `${this.constructor.name}.findByIds: ${byId.size} row(s) matched in SQL but no input id ` +
+          `claims them (key type '${this.col('id').getSQLType()}') — idKey does not canonicalise ` +
+          'this key the way Postgres does. This is a bug in the read, not a missing row.',
+      );
     }
     return ordered;
   }
@@ -895,26 +930,42 @@ export abstract class BaseRepository<
 
   /**
    * Combine every ambient guard — soft-delete, the user-axis scope, the
-   * tenant-axis scope — with a caller `extra` predicate into one `SQL`.
-   * Returns `undefined` when nothing applies. Used by read + by-id write paths
-   * so a single `.where(...)` carries all of them.
+   * tenant-axis scope — with a caller `extra` predicate into one `SQL`, rendered
+   * against `table`. Returns `undefined` when nothing applies.
    *
-   * This is the ONLY place a guard is added. `baseQuery()`, `count()`,
-   * `update()` and `delete()` all route through here, which is why one line
-   * above covers every generated read and every by-id write.
+   * This is the ONLY place a guard is added. Its two callers differ only in the
+   * handle: {@link scopeAnd} passes this repository's own table (the core
+   * builder — `baseQuery()`, `count()`, `update()`, `delete()`), and
+   * {@link rootFilter} passes the aliased root RQBv2 hands its `RAW` callback
+   * (every generated read).
    */
+  protected scopeAndOn(
+    table: PgTable,
+    extra: SQL | undefined,
+    opts?: { softDelete?: boolean },
+  ): SQL | undefined {
+    const scope = scopeFilter(table, this.scopeConfigFor(opts), this.constructor.name);
+    if (!scope) return extra;
+    if (!extra) return scope;
+    return and(scope, extra);
+  }
+
+  /** {@link scopeAndOn} on this repository's own table — the core builder's form. */
   protected scopeAnd(
     extra?: SQL,
     opts?: { softDelete?: boolean },
   ): SQL | undefined {
-    const scope = scopeFilter(
-      this.tableRef,
-      this.scopeConfigFor(opts),
-      this.constructor.name,
-    );
-    if (!scope) return extra;
-    if (!extra) return scope;
-    return and(scope, extra);
+    return this.scopeAndOn(this.tableRef, extra, opts);
+  }
+
+  /**
+   * Run the scope's boundary checks without building a statement: under
+   * `strict`, a missing requester / tenant throws here exactly as it would on a
+   * read. For a read that short-circuits before issuing one (`findByIds([])`), so
+   * a forgotten boundary fails the same way whatever the input.
+   */
+  protected assertReadScope(): void {
+    this.scopeAnd(undefined, { softDelete: this.behaviors.softDelete });
   }
 
   /**

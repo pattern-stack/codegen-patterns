@@ -27,7 +27,7 @@ export class SearchDealsUseCase {
     // A ROW FILTER, not a rendered SQL: the list renders it against the table
     // handle its executing path holds — the aliased root on the relational path
     // (READ-1 §4). Built from `t`, never from the imported table.
-    const where = (t: typeof deals): SQL | undefined => {
+    const rowFilter = (t: typeof deals): SQL | undefined => {
       const whereTerms: SQL[] = [];
       if (searchInput.stage) whereTerms.push(eq(t.stage, searchInput.stage));
       if (searchInput.ownerId) whereTerms.push(eq(t.ownerId, searchInput.ownerId));
@@ -36,6 +36,6 @@ export class SearchDealsUseCase {
       return and(...whereTerms);
     };
 
-    return this.listUseCase.execute(searchInput, { where });
+    return this.listUseCase.execute(searchInput, { where: rowFilter });
   }
 }

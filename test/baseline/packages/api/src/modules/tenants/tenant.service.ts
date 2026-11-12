@@ -51,9 +51,9 @@ export class TenantService extends WithAnalytics(
   }
 
   override list<C extends TenantColumns | undefined = undefined>(
-    options?: ListOptions<typeof tenants> & ReadOptions<C, never>,
+    listOptions?: ListOptions<typeof tenants> & ReadOptions<C, never>,
   ): Promise<Array<TenantResult<C>>> {
-    return this.repository.list<C>(options);
+    return this.repository.list<C>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

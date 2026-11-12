@@ -446,11 +446,6 @@ export async function loadAppPatterns(
  * registry. Not exported from the barrel — tests import it directly from
  * `./registry.js`.
  */
-/** Remove ONE library pattern a test registered — `_resetRegistryForTests` clears them all. */
-export function _unregisterLibraryPatternForTests(name: string): void {
-	LIBRARY_PATTERNS.delete(name);
-}
-
 export function _resetRegistryForTests(
 	opts: { includeLibrary?: boolean } = {},
 ): void {
@@ -459,6 +454,11 @@ export function _resetRegistryForTests(
 	if (opts.includeLibrary) {
 		LIBRARY_PATTERNS.clear();
 	}
+}
+
+/** Remove ONE library pattern a test registered — `_resetRegistryForTests` clears them all. */
+export function _unregisterLibraryPatternForTests(name: string): void {
+	LIBRARY_PATTERNS.delete(name);
 }
 
 // ============================================================================

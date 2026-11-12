@@ -152,10 +152,11 @@ function tableExports(sf: ts.SourceFile): Set<string> {
   const names = new Set<string>();
   for (const st of sf.statements) {
     if (ts.isImportDeclaration(st) && st.importClause && ENTITY_SPECIFIER.test(specifierText(st))) {
+      // Type-only imports count too: `typeof <plural>` reads the table binding, and
+      // a local of the same name declared in that scope shadows it (READ-1 review).
       const nb = st.importClause.namedBindings;
-      if (st.importClause.isTypeOnly) continue;
       if (nb && ts.isNamedImports(nb)) {
-        for (const e of nb.elements) if (!e.isTypeOnly && PLURAL_SHAPE.test(e.name.text)) names.add(e.name.text);
+        for (const e of nb.elements) if (PLURAL_SHAPE.test(e.name.text)) names.add(e.name.text);
       }
     } else if (ts.isVariableStatement(st)) {
       for (const d of st.declarationList.declarations) {

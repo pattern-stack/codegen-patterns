@@ -413,10 +413,10 @@ export class EntityNewCommand extends Command {
 			// Same failure contract as the real run below: a relation-key
 			// collision is reported as an error and fails the command — never an
 			// uncaught stack trace (docs/specs/REL-1.md §3).
-			let relationsPlan: ReturnType<typeof regenerateRelationsManifest> | null = null;
+			let relationsPlan: Awaited<ReturnType<typeof regenerateRelationsManifest>> | null = null;
 			let relationsError: string | null = null;
 			try {
-				relationsPlan = regenerateRelationsManifest({
+				relationsPlan = await regenerateRelationsManifest({
 					ctx,
 					entitiesDir,
 					generatedDir,
@@ -614,10 +614,10 @@ export class EntityNewCommand extends Command {
 		// `database.module.ts` imports the manifest, so a project that continues
 		// past a failure here does not compile. A relation-key collision is a
 		// declaration the author has to fix (docs/specs/REL-1.md §3).
-		let relationsResult: ReturnType<typeof regenerateRelationsManifest> | null = null;
+		let relationsResult: Awaited<ReturnType<typeof regenerateRelationsManifest>> | null = null;
 		let relationsFailed = false;
 		try {
-			relationsResult = regenerateRelationsManifest({ ctx, entitiesDir, generatedDir });
+			relationsResult = await regenerateRelationsManifest({ ctx, entitiesDir, generatedDir });
 			if (!isJsonMode()) {
 				for (const warning of relationsResult.warnings) {
 					printWarning(`relations: ${warning}`);

@@ -150,8 +150,10 @@ export class DealRepository extends IntegratedEntityRepository<
   // not on the base: with `TRelations` and the table key as naked type
   // parameters, `DBQueryConfig<…>['with']` is a TS2536 (REL-2 §2.1).
   //
-  // ONE execution path: every read runs on RQBv2
-  // (`db.query.deals`), with or without options, and its root
+  // ONE execution path for the read surface below — `findById`, `findByIds`,
+  // `list` and every plain `queries:` / `belongs_to` finder run on RQBv2
+  // (`db.query.deals`), with or without options. (`count`, and a
+  // `via:` / `select:` finder, keep the core builder's `scopeAnd`.) The root
   // predicate is ONE call — `this.rootFilter(where)`, the caller's row filter AND
   // this repository's scope, both rendered against the table RQBv2 hands the
   // callback. RQBv2 ALIASES the root (`"deals" as "d0"`), so
@@ -175,7 +177,8 @@ export class DealRepository extends IntegratedEntityRepository<
   }
 
   /**
-   * One statement for many ids (READ-1 §2.4): `[]` issues none, duplicates are
+   * One statement for many ids (READ-1 §2.4): `[]` issues none (after the scope's
+   * boundary check), duplicates are
    * read once, rows come back in INPUT order, and a missing / soft-deleted /
    * out-of-scope id is simply absent. A mask that omits `id` still orders — `id`
    * is selected and stripped again. Not chunked: Postgres caps a statement at
@@ -186,7 +189,11 @@ export class DealRepository extends IntegratedEntityRepository<
     opts?: ReadOptions<C, W>,
   ): Promise<Array<DealResult<C, W>>> {
     const unique = this.uniqueIds(ids);
-    if (unique.length === 0) return [];
+    if (unique.length === 0) {
+      // No statement — but the same boundary check one would make (strict throws).
+      this.assertReadScope();
+      return [];
+    }
     const mask = this.byIdsColumns(this.checkColumns<C>(opts?.columns));
     const rows = await this.db.query.deals.findMany({
       where: { RAW: this.rootFilter((t) => inArray(t.id, unique)) },
@@ -262,12 +269,14 @@ export class DealRepository extends IntegratedEntityRepository<
 
   async findByOwnerId<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
     id: string,
-    opts?: { cursor?: string; limit?: number } & ReadOptions<C, W>,
+    opts?: { limit?: number } & ReadOptions<C, W>,
   ): Promise<Array<DealResult<C, W>>> {
     const rows = await this.db.query.deals.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.ownerId, id)) },
       columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
+      // A `limit` without an order is an arbitrary subset; `id` makes it one.
+      orderBy: opts?.limit === undefined ? undefined : { id: 'asc' },
       limit: opts?.limit,
     });
     return rows as Array<DealResult<C, W>>;
@@ -275,12 +284,14 @@ export class DealRepository extends IntegratedEntityRepository<
 
   async findByClosedById<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
     id: string,
-    opts?: { cursor?: string; limit?: number } & ReadOptions<C, W>,
+    opts?: { limit?: number } & ReadOptions<C, W>,
   ): Promise<Array<DealResult<C, W>>> {
     const rows = await this.db.query.deals.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.closedById, id)) },
       columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
+      // A `limit` without an order is an arbitrary subset; `id` makes it one.
+      orderBy: opts?.limit === undefined ? undefined : { id: 'asc' },
       limit: opts?.limit,
     });
     return rows as Array<DealResult<C, W>>;
@@ -288,12 +299,14 @@ export class DealRepository extends IntegratedEntityRepository<
 
   async findByAccountId<C extends DealColumns | undefined = undefined, W extends DealInclude = DealNoInclude>(
     id: string,
-    opts?: { cursor?: string; limit?: number } & ReadOptions<C, W>,
+    opts?: { limit?: number } & ReadOptions<C, W>,
   ): Promise<Array<DealResult<C, W>>> {
     const rows = await this.db.query.deals.findMany({
       where: { RAW: this.rootFilter((t) => eq(t.accountId, id)) },
       columns: this.checkColumns<C>(opts?.columns),
       with: opts?.with,
+      // A `limit` without an order is an arbitrary subset; `id` makes it one.
+      orderBy: opts?.limit === undefined ? undefined : { id: 'asc' },
       limit: opts?.limit,
     });
     return rows as Array<DealResult<C, W>>;

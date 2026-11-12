@@ -59,9 +59,9 @@ export class ContactService extends WithAnalytics(
   }
 
   override list<C extends ContactColumns | undefined = undefined, W extends ContactInclude = ContactNoInclude>(
-    options?: ListOptions<typeof contacts> & ReadOptions<C, W>,
+    listOptions?: ListOptions<typeof contacts> & ReadOptions<C, W>,
   ): Promise<Array<ContactResult<C, W>>> {
-    return this.repository.list<C, W>(options);
+    return this.repository.list<C, W>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

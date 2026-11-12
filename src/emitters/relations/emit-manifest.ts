@@ -89,55 +89,69 @@ function renderEdge(edge: RelationEdge): string {
  * declaration cannot drift; two declarations can.
  */
 function scopeConstants(graph: RelationGraph): string[] {
-	const byName = new Map<string, ScopeConfigLiteral>();
+	const byName = new Map<string, { table: string; cfg: ScopeConfigLiteral }>();
 	for (const { table, scope } of graph.entityScopes) {
-		if (scope !== null) byName.set(scopeConstName(table), scope);
+		if (scope !== null) byName.set(scopeConstName(table), { table, cfg: scope });
 	}
 	for (const { edges } of graph.tables) {
 		for (const edge of edges) {
 			if (edge.targetScope === null) continue;
-			byName.set(scopeConstName(edge.targetTable), edge.targetScope);
+			byName.set(scopeConstName(edge.targetTable), { table: edge.targetTable, cfg: edge.targetScope });
 		}
 	}
+	// `tableScope(schema.<t>, …)` binds the config to its table at the TYPE level,
+	// so `scopedRoot(ACCOUNTS_SCOPE, …)` on another table's query is a compile
+	// error (READ-1 §5.2). The literal itself is still checked against `ScopeConfig`.
 	return [...byName.entries()]
 		.sort((a, b) => a[0].localeCompare(b[0]))
-		.map(([name, cfg]) => `export const ${name}: ScopeConfig = ${renderScopeLiteral(cfg)};`);
+		.map(
+			([name, { table, cfg }]) =>
+				`export const ${name} = tableScope(schema.${table}, ${renderScopeLiteral(cfg)});`,
+		);
 }
 
 /**
- * `SCOPES` — every ENTITY table's scope, keyed by its schema export. An entity
- * that declares none maps to the runtime's `UNSCOPED`, named explicitly: an
- * ABSENT key must never read as "unscoped" (READ-1 §5.1). Pair it with
- * `scopedRoot(SCOPES.<table>, owner)` to root-scope a hand-written `db.query`.
+ * `SCOPES` — every ENTITY table's scope, keyed by its schema export, ALWAYS
+ * emitted (READ-1 §5.1): an entity that declares none maps to the runtime's
+ * `UNSCOPED`, bound to its table and named explicitly, so an ABSENT key never
+ * reads as "unscoped" — and a loader written against an unscoped project already
+ * applies the root scope the day an entity becomes scoped. A project with no
+ * entities gets `{}`.
  */
 function scopesMap(graph: RelationGraph): string {
 	const lines = graph.entityScopes.map(
-		({ table, scope }) => `\t${table}: ${scope === null ? 'UNSCOPED' : scopeConstName(table)},`,
+		({ table, scope }) =>
+			`\t${table}: ${scope === null ? `tableScope(schema.${table}, UNSCOPED)` : scopeConstName(table)},`,
 	);
 	return (
 		'/**\n' +
-		' * Every entity table\'s declared root scope (READ-1 §5). The relations above scope\n' +
-		' * every HOP of a `db.query.*` read; nothing scopes its ROOT unless the read goes\n' +
-		' * through a generated repository. A read that cannot must AND\n' +
-		' * `scopedRoot(SCOPES.<table>, owner)` into its root `where`.\n' +
+		" * Every entity table's declared root scope (READ-1 §5), each bound to its table. The\n" +
+		' * relations below scope every HOP of a `db.query.*` read; nothing scopes its ROOT\n' +
+		' * unless the read goes through a generated repository. A read that cannot must AND\n' +
+		' * `rootScope.<table>(owner)` into its root `where`.\n' +
 		' */\n' +
-		`export const SCOPES = {\n${lines.join('\n')}\n} as const satisfies Partial<Record<keyof typeof schema, ScopeConfig>>;\n`
+		// An empty map (a project with no entities yet — `project init`) names no
+		// runtime symbol, so the manifest imports nothing from the runtime: that
+		// file is written before any runtime alias is guaranteed to resolve.
+		(lines.length === 0
+			? 'export const SCOPES = {} as const;\n'
+			: `export const SCOPES = {\n${lines.join('\n')}\n} as const satisfies Partial<Record<keyof typeof schema, ScopeConfig>>;\n`)
 	);
 }
 
 /**
- * `rootScope.<table>(owner)` — `scopedRoot` with its table FIXED to that table's
- * schema type, so `db.query.contacts.findMany({ where: rootScope.accounts(…) })`
- * is a compile error (READ-1 review #10). The typed form of `SCOPES`.
+ * `rootScope.<table>(owner)` — `scopedRoot` over that table's `SCOPES` entry,
+ * whose table type it inherits, so `db.query.contacts.findMany({ where:
+ * rootScope.accounts(…) })` is a compile error (READ-1 review #10). Always
+ * emitted, like `SCOPES`.
  */
 function rootScopeMap(graph: RelationGraph): string {
 	const lines = graph.entityScopes.map(
-		({ table }) =>
-			`\t${table}: (owner: string) => scopedRoot<typeof schema.${table}>(SCOPES.${table}, owner),`,
+		({ table }) => `\t${table}: (owner: string) => scopedRoot(SCOPES.${table}, owner),`,
 	);
 	return (
 		'/** The ROOT scope of one table, typed to it: AND it into a hand-written `db.query.<table>` root `where`. */\n' +
-		`export const rootScope = {\n${lines.join('\n')}\n};\n`
+		`export const rootScope = {${lines.length === 0 ? '' : `\n${lines.join('\n')}\n`}};\n`
 	);
 }
 
@@ -192,26 +206,27 @@ export function buildRelationsManifest(
 	scopeFiltersImport = DEFAULT_SCOPE_FILTERS_IMPORT,
 ): string {
 	const constants = scopeConstants(graph);
-	// A graph that declares no scope anywhere emits neither the import, nor the
-	// constants, nor `SCOPES`, so its manifest does not grow for consumers who do
-	// not scope (REL-2 L8).
-	const scoped = constants.length > 0;
-	const needsUnscoped = scoped && graph.entityScopes.some((e) => e.scope === null);
+	// `SCOPES` and `rootScope` are emitted for EVERY project (READ-1 §5.1); only
+	// the imports they do not use are dropped, so a consumer's `noUnusedLocals`
+	// stays clean on an unscoped or empty project.
+	const hasEntities = graph.entityScopes.length > 0;
+	const needsUnscoped = graph.entityScopes.some((e) => e.scope === null);
 	const needsHop = graph.tables.some(({ edges }) => edges.some((e) => e.targetScope !== null));
 	const scopeImports = [
 		...(needsHop ? ['hopScope'] : []),
+		...(hasEntities ? ['scopedRoot', 'tableScope'] : []),
 		...(needsUnscoped ? ['UNSCOPED'] : []),
-		'scopedRoot',
 		'type ScopeConfig',
 	];
-	const scopeHead = scoped
+	const scopeHead = hasEntities
 		? `import { ${scopeImports.join(', ')} } from '${scopeFiltersImport}';\n`
 		: '';
 	const head =
 		`${BANNER}import { defineRelations } from 'drizzle-orm';\n` +
 		`import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';\n\n` +
 		`${scopeHead}import * as schema from '${schemaImport}';\n\n` +
-		(scoped ? `${constants.join('\n')}\n\n${scopesMap(graph)}\n${rootScopeMap(graph)}\n` : '');
+		(constants.length > 0 ? `${constants.join('\n')}\n\n` : '') +
+		`${scopesMap(graph)}\n${rootScopeMap(graph)}\n`;
 
 	if (graph.tables.length === 0) {
 		// A project with no relations still exports a manifest: the emitted

@@ -121,15 +121,15 @@ describe('relations golden manifest', () => {
 	it('imports hopScope and emits one EXPORTED scope constant per SCOPED table', () => {
 		// UNSCOPED too: `SCOPES` names every unscoped entity table explicitly (READ-1 §5.1).
 		expect(emitted).toContain(
-			"import { hopScope, UNSCOPED, scopedRoot, type ScopeConfig } from '@pattern-stack/codegen/runtime/base-classes/scope-filters';",
+			"import { hopScope, scopedRoot, tableScope, UNSCOPED, type ScopeConfig } from '@pattern-stack/codegen/runtime/base-classes/scope-filters';",
 		);
 		// account: tenant_scoped + soft_delete + user_tracking ⇒ strict.
 		expect(emitted).toContain(
-			"export const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, tenantColumn: 'tenantId', softDelete: true, userTracking: true, enforcement: 'strict' };",
+			"export const ACCOUNTS_SCOPE = tableScope(schema.accounts, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: true, userTracking: true, enforcement: 'strict' });",
 		);
 		// contact: soft_delete only ⇒ lenient, one conjunct.
 		expect(emitted).toContain(
-			"export const CONTACTS_SCOPE: ScopeConfig = { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' };",
+			"export const CONTACTS_SCOPE = tableScope(schema.contacts, { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' });",
 		);
 		// note / opportunity / person / the junction declare nothing, so no constant.
 		expect(emitted).not.toContain('NOTES_SCOPE');
@@ -144,9 +144,9 @@ describe('relations golden manifest', () => {
 		const body = block.slice(0, block.indexOf('} as const satisfies'));
 		expect(body).toContain('\taccounts: ACCOUNTS_SCOPE,');
 		expect(body).toContain('\tcontacts: CONTACTS_SCOPE,');
-		expect(body).toContain('\tnotes: UNSCOPED,');
-		expect(body).toContain('\topportunities: UNSCOPED,');
-		expect(body).toContain('\tpersons: UNSCOPED,');
+		expect(body).toContain('\tnotes: tableScope(schema.notes, UNSCOPED),');
+		expect(body).toContain('\topportunities: tableScope(schema.opportunities, UNSCOPED),');
+		expect(body).toContain('\tpersons: tableScope(schema.persons, UNSCOPED),');
 		// The junction declares no scope of its own (REL-2 §1.5) — not a root.
 		expect(body).not.toContain('opportunityContacts');
 		expect(emitted).toContain('} as const satisfies Partial<Record<keyof typeof schema, ScopeConfig>>;');
@@ -154,10 +154,10 @@ describe('relations golden manifest', () => {
 
 	it('exports rootScope — one typed root-scope factory per entity table (review #10)', () => {
 		expect(emitted).toContain(
-			'\taccounts: (owner: string) => scopedRoot<typeof schema.accounts>(SCOPES.accounts, owner),',
+			'\taccounts: (owner: string) => scopedRoot(SCOPES.accounts, owner),',
 		);
 		expect(emitted).toContain(
-			'\tnotes: (owner: string) => scopedRoot<typeof schema.notes>(SCOPES.notes, owner),',
+			'\tnotes: (owner: string) => scopedRoot(SCOPES.notes, owner),',
 		);
 		expect(emitted).not.toMatch(/\topportunityContacts: \(owner/);
 	});

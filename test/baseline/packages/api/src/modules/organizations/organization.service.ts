@@ -56,9 +56,9 @@ export class OrganizationService extends WithAnalytics(
   }
 
   override list<C extends OrganizationColumns | undefined = undefined, W extends OrganizationInclude = OrganizationNoInclude>(
-    options?: ListOptions<typeof organizations> & ReadOptions<C, W>,
+    listOptions?: ListOptions<typeof organizations> & ReadOptions<C, W>,
   ): Promise<Array<OrganizationResult<C, W>>> {
-    return this.repository.list<C, W>(options);
+    return this.repository.list<C, W>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
@@ -84,17 +84,17 @@ export class OrganizationService extends WithAnalytics(
 
   /**
    * Fetch children for this Organization by FK traversal.
-   * Single repo call with optional cursor/limit pagination.
+   * Single repo call; `limit` caps it (ordered by `id`, so the subset is stable).
    */
-  async children(organizationId: string, opts?: { cursor?: string; limit?: number }): Promise<Organization[]> {
+  async children(organizationId: string, opts?: { limit?: number }): Promise<Organization[]> {
     return this.repository.findByParentId(organizationId, opts);
   }
 
   /**
    * Fetch opportunities for this Organization by FK traversal.
-   * Single repo call with optional cursor/limit pagination.
+   * Single repo call; `limit` caps it (ordered by `id`, so the subset is stable).
    */
-  async opportunities(organizationId: string, opts?: { cursor?: string; limit?: number }): Promise<Opportunity[]> {
+  async opportunities(organizationId: string, opts?: { limit?: number }): Promise<Opportunity[]> {
     return this.opportunityRepo.findByOrganizationId(organizationId, opts);
   }
 }

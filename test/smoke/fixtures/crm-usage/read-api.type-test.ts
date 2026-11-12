@@ -20,7 +20,8 @@ import type { Account } from './modules/accounts/account.entity';
 import type { Contact } from './modules/contacts/contact.entity';
 import { accounts } from './modules/accounts/account.entity';
 import { contacts } from './modules/contacts/contact.entity';
-import { rootScope, type Relations } from './generated/relations';
+import { rootScope, SCOPES, type Relations } from './generated/relations';
+import { scopedRoot, UNSCOPED } from '@shared/base-classes/scope-filters';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false;
@@ -103,6 +104,12 @@ export async function handWrittenRoot(): Promise<void> {
 	await db.query.accounts.findMany({ where: { AND: [{ name: { eq: 'x' } }, rootScope.accounts('loader')] } });
 	// @ts-expect-error — one table's root scope on another table's query is a compile error
 	await db.query.contacts.findMany({ where: rootScope.accounts('loader') });
+	// `scopedRoot` itself is typed by the scope it is given (#859 Q-1): SCOPES entries carry their table.
+	await db.query.accounts.findMany({ where: scopedRoot(SCOPES.accounts, 'loader') });
+	// @ts-expect-error — another table's SCOPES entry
+	await db.query.contacts.findMany({ where: scopedRoot(SCOPES.accounts, 'loader') });
+	// @ts-expect-error — a bare ScopeConfig names no table
+	await db.query.contacts.findMany({ where: scopedRoot(UNSCOPED, 'loader') });
 }
 
 export async function negatives(): Promise<void> {

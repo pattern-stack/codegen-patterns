@@ -62,9 +62,9 @@ export class OpportunityService extends WithAnalytics(
   }
 
   override list<C extends OpportunityColumns | undefined = undefined, W extends OpportunityInclude = OpportunityNoInclude>(
-    options?: ListOptions<typeof opportunities> & ReadOptions<C, W>,
+    listOptions?: ListOptions<typeof opportunities> & ReadOptions<C, W>,
   ): Promise<Array<OpportunityResult<C, W>>> {
-    return this.repository.list<C, W>(options);
+    return this.repository.list<C, W>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

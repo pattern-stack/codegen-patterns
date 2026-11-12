@@ -59,9 +59,9 @@ export class UserService extends WithAnalytics(
   }
 
   override list<C extends UserColumns | undefined = undefined, W extends UserInclude = UserNoInclude>(
-    options?: ListOptions<typeof users> & ReadOptions<C, W>,
+    listOptions?: ListOptions<typeof users> & ReadOptions<C, W>,
   ): Promise<Array<UserResult<C, W>>> {
-    return this.repository.list<C, W>(options);
+    return this.repository.list<C, W>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
@@ -87,9 +87,9 @@ export class UserService extends WithAnalytics(
 
   /**
    * Fetch owned_opportunities for this User by FK traversal.
-   * Single repo call with optional cursor/limit pagination.
+   * Single repo call; `limit` caps it (ordered by `id`, so the subset is stable).
    */
-  async owned_opportunities(userId: string, opts?: { cursor?: string; limit?: number }): Promise<Opportunity[]> {
+  async owned_opportunities(userId: string, opts?: { limit?: number }): Promise<Opportunity[]> {
     return this.opportunityRepo.findByOwnerId(userId, opts);
   }
 }

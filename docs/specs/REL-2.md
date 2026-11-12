@@ -311,8 +311,10 @@ by every smoke.
 
 ### 2.4 Two execution paths, one scope
 
-> **Revised 2026-11-11 (READ-1, `docs/specs/READ-1.md` §3).** The two paths below are now ONE for generated reads:
-> every generated `findById` / `findByIds` / `list` / finder runs on RQBv2, with or without options, and its root
+> **Revised 2026-11-11 (READ-1, `docs/specs/READ-1.md` §3).** The two paths below are now ONE for the read surface:
+> every generated `findById` / `findByIds` / `list` / plain `queries:` and `belongs_to` finder runs on RQBv2, with or
+> without options (`count`, `via:` / `select:` finders and junction repositories keep the core builder — READ-1 §3.1),
+> and its root
 > predicate is `{ RAW: this.rootFilter(where) }` — the caller's row filter AND the scope, one callback rendered on the
 > alias. `rootScopeRawOn` was replaced by `rootFilter`; the pre-rendered `ListOptions.where: SQL` and `orderBy` were
 > deleted, because carrying the caller's SQL onto this path failed exactly as below (#840, the third instance). The

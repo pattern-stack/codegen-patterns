@@ -103,9 +103,9 @@ export class <%= classNames.service %> extends WithAnalytics(
   }
 
   override list<%- _readGenerics %>(
-    options?: ListOptions<typeof <%= entityNamePlural %>> & <%- _readOpts %>,
+    listOptions?: ListOptions<typeof <%= entityNamePlural %>> & <%- _readOpts %>,
   ): Promise<Array<<%- _readResult %>>> {
-    return this.repository.list<%- _readArgs %>(options);
+    return this.repository.list<%- _readArgs %>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
@@ -196,9 +196,9 @@ export class <%= classNames.service %> extends WithAnalytics(
 
   /**
    * Fetch <%= rel.name %> for this <%= entityNamePascal %> by FK traversal.
-   * Single repo call with optional cursor/limit pagination.
+   * Single repo call; `limit` caps it (ordered by `id`, so the subset is stable).
    */
-  async <%= rel.name %>(<%- entityCamel %>Id: string, opts?: { cursor?: string; limit?: number }): Promise<<%= rel.targetClass %>[]> {
+  async <%= rel.name %>(<%- entityCamel %>Id: string, opts?: { limit?: number }): Promise<<%= rel.targetClass %>[]> {
 <%_ if (rel.isSelfRef) { _%>
     return this.repository.findBy<%= fkPascal %>(<%- entityCamel %>Id, opts);
 <%_ } else { _%>

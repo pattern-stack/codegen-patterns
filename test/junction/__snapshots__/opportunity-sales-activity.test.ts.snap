@@ -407,9 +407,9 @@ export class OpportunityService extends WithAnalytics(
   }
 
   override list<C extends OpportunityColumns | undefined = undefined>(
-    options?: ListOptions<typeof opportunities> & ReadOptions<C, never>,
+    listOptions?: ListOptions<typeof opportunities> & ReadOptions<C, never>,
   ): Promise<Array<OpportunityResult<C>>> {
-    return this.repository.list<C>(options);
+    return this.repository.list<C>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
@@ -520,9 +520,9 @@ export class SalesActivityService extends WithAnalytics(
   }
 
   override list<C extends SalesActivityColumns | undefined = undefined>(
-    options?: ListOptions<typeof sales_activities> & ReadOptions<C, never>,
+    listOptions?: ListOptions<typeof sales_activities> & ReadOptions<C, never>,
   ): Promise<Array<SalesActivityResult<C>>> {
-    return this.repository.list<C>(options);
+    return this.repository.list<C>(listOptions);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
