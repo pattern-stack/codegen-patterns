@@ -8,6 +8,7 @@
  * Asserts:
  *   - no ambient context + guarded route → throws UnauthorizedException (401).
  *   - ambient context present + guarded route → passes (the boundary ran).
+ *   - ambient context with no userId (tenant-only, #853) + guarded route → 401.
  *   - `@Public()` route with no context → passes (the escape hatch).
  *   - `@Public()` route with context → passes.
  */
@@ -60,6 +61,16 @@ describe('AuthenticatedGuard', () => {
       guard.canActivate(guardedCtx),
     );
     expect(result).toBe(true);
+  });
+
+  it('rejects a guarded route whose ambient context carries no userId (a tenant-only boundary, #853)', async () => {
+    const guard = makeGuard();
+    await withRequester({ tenantId: 't-1' }, async () => {
+      expect(() => guard.canActivate(guardedCtx)).toThrow(UnauthorizedException);
+    });
+    await withRequester({ userId: '', tenantId: 't-1' }, async () => {
+      expect(() => guard.canActivate(guardedCtx)).toThrow(UnauthorizedException);
+    });
   });
 
   it('passes a @Public() route with no ambient requester (the escape hatch)', () => {

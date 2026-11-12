@@ -143,6 +143,12 @@ Recorded here and folded into a dated ADR revision note in the implementing PR (
 
 ### 1. The ALS — `runtime/base-classes/tenant-context.ts`
 
+*Revision 2026-11-11 (#853):* `userId` and `organizationId` are now optional; a tenant-only boundary writes
+`withRequester({ tenantId }, fn)`. A `user_tracking` repository in `'user'` scope throws `MissingUserIdError` when
+such a context reaches it, under `strict` **and** `lenient` (2026-11-12): `lenient` relaxes a missing context, never a
+present one that lacks the user axis. Root reads, by-id writes and include hops all throw from
+`userScopePredicateFor`. See the ADR-042 revision note.
+
 ```ts
 export interface RequesterContext {
   readonly userId: string;

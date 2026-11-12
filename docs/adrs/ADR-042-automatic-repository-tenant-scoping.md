@@ -196,6 +196,8 @@ Extend `RequesterContext` with an optional tenant id:
 
 The same `withRequester({ userId, organizationId, tenantId }, fn)` call site that already exists at each boundary (`tenant-context.ts:8-17`) now carries the tenant too. No new ALS, no new propagation path, no new injection plumbing.
 
+*Revision 2026-11-11 (#853):* `userId` and `organizationId` are optional on `RequesterContext`. A boundary that establishes only a tenant (a job, a webhook) writes `withRequester({ tenantId }, fn)`. The user axis is the only reader of `userId`: a `user_tracking` repository in `'user'` scope throws `MissingUserIdError` when a context is active but carries no `userId`, under `strict` **and** `lenient`: the user-axis twin of `MissingTenantIdError`. `lenient` still relaxes only a *missing* context (no context at all reads unscoped, as before); a context that is present but lacks the user axis the entity needs is a programming error, and reading unfiltered would hand a tenant-only caller every user's rows. `'org'` / `'superuser'` scopes do not read `userId` and are unaffected. One owner: `userScopePredicateFor` (`scope-filters.ts`), which root reads, by-id writes and include hops all call.
+
 Add a `getTenantId()` helper next to the existing scope helpers (`tenant-context.ts:132-175`):
 
 ```ts

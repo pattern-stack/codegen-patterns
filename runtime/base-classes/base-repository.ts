@@ -474,7 +474,9 @@ export abstract class BaseRepository<
    * When a requester context is active, scopes by `user_id` per the ambient
    * scope: `'user'` → `user_id = ctx.userId`; `'org'` → `user_id IN
    * ctx.orgUserIds` (empty list matches nothing — fail-closed); `'superuser'`
-   * → no filter. See `tenant-context.ts` for the boundary-install contract.
+   * → no filter. An active context with no `userId` in `'user'` scope throws
+   * `MissingUserIdError` under either enforcement (#853). See
+   * `tenant-context.ts` for the boundary-install contract.
    *
    * One line, because REL-2 (#587) lifted the axis into `scope-filters.ts`: the
    * same function scopes every HOP of an include tree, and a second copy here is

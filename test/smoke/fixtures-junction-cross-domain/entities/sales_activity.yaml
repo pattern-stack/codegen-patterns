@@ -7,6 +7,12 @@ entity:
   name: sales_activity
   plural: sales_activities
   pattern: Activity
+  # The Activity pattern config (#852): the repository carries `patternConfig`,
+  # the service does not — no service base class declares it, so emitting it
+  # there was TS4113. This is the gate that compiles an Activity-with-config.
+  config:
+    Activity:
+      subject: opportunity
 
 fields:
   type:
@@ -15,6 +21,8 @@ fields:
   subject:
     type: string
     required: true
+  opportunity_id:
+    type: uuid
 
 behaviors:
   - timestamps

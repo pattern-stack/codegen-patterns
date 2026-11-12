@@ -76,16 +76,20 @@ export type RequesterScope = 'user' | 'org' | 'superuser';
 
 export interface RequesterContext {
   /**
-   * The user making the request. Always present — even in `'org'` and
-   * `'superuser'` scopes it is the audit-trail "who actually did this".
+   * The user making the request — the audit-trail "who actually did this",
+   * in every scope. Optional because only the USER axis reads it: a boundary
+   * that establishes only a tenant (a job, a webhook, a probe) need not invent
+   * one (#853). A `user_tracking` repository in `'user'` scope requires it
+   * under either enforcement and throws `MissingUserIdError` without it.
+   * `'lenient'` relaxes only a context that is missing entirely.
    */
-  readonly userId: string;
+  readonly userId?: string;
   /**
-   * The organization the requester belongs to. Required when
-   * `scope === 'org'`; may be null for `'user'` (users with no org) and for
-   * `'superuser'` (cross-org reads).
+   * The organization the requester belongs to. Meaningful for `scope === 'org'`;
+   * may be null or absent for `'user'` (users with no org), `'superuser'`
+   * (cross-org reads) and tenant-only boundaries.
    */
-  readonly organizationId: string | null;
+  readonly organizationId?: string | null;
   /**
    * Data-visibility scope. Defaults to `'user'` when omitted.
    */
@@ -154,7 +158,7 @@ export function requireRequester(): RequesterContext {
   if (!ctx) {
     throw new Error(
       'No requester context active. Wrap the entry point in ' +
-        'withRequester({ userId, organizationId }, fn). See tenant-context.ts.',
+        'withRequester({ userId, tenantId, ... }, fn). See tenant-context.ts.',
     );
   }
   return ctx;
@@ -288,6 +292,25 @@ export class CrossTenantWriteError extends Error {
         'repository writes within the ambient tenant only. To act on another ' +
         "tenant deliberately, wrap the call in withTenantScope(tenantId, fn), " +
         'which makes the choice explicit and auditable. See tenant-context.ts.',
+    );
+  }
+}
+
+/**
+ * Thrown by a `user_tracking` repository in `'user'` scope when an ambient
+ * context IS active but carries no `userId`, under `strict` AND `lenient`
+ * enforcement (#853). The user-axis twin of `MissingTenantIdError`. Without it
+ * the user filter would silently drop and a tenant-only caller would read every
+ * user's rows. `lenient` relaxes only a missing context, not a missing axis.
+ */
+export class MissingUserIdError extends Error {
+  override readonly name = 'MissingUserIdError';
+
+  constructor(public readonly owner: string) {
+    super(
+      `${owner}: requester context has no userId, but this repository scopes reads by user ` +
+        "(user_tracking, 'user' scope). Seed userId at the boundary, or claim " +
+        "'superuser' / 'org' scope. See tenant-context.ts.",
     );
   }
 }
