@@ -22,6 +22,7 @@ import { findYamlFiles } from '../../utils/find-yaml-files';
 import { detectYamlType, loadJunctionFromYaml } from '../../utils/yaml-loader';
 import { junctionIdentity } from './build-model';
 import { sortEntities, type SemanticEmitContext } from './types';
+import { TenancyConfigSchema } from '../../schema/codegen-config.schema';
 
 /**
  * Directory names, not `paths.*` defaults: the caller resolves those from the
@@ -40,6 +41,8 @@ export interface SemanticConfigInput {
 		generated?: string;
 		[key: string]: unknown;
 	};
+	/** #791 — the project's default tenant column; its role is dimension. */
+	tenancy?: { column?: string };
 	generate?: {
 		semantic?: unknown;
 		[key: string]: unknown;
@@ -105,7 +108,12 @@ export function loadSemanticEmitContext(
 
 	return {
 		skip: undefined,
-		ctx: { entities, parsed, junctions: loadJunctionDefinitions(junctionsDir) },
+		ctx: {
+			entities,
+			parsed,
+			junctions: loadJunctionDefinitions(junctionsDir),
+			tenancyColumn: TenancyConfigSchema.parse(config?.tenancy ?? {}).column,
+		},
 		outDir,
 	};
 }

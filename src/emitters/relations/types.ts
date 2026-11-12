@@ -30,6 +30,12 @@ export type { EntityRegistryEntry } from '../../parser/entity-registry';
  */
 export interface ScopeConfigLiteral {
 	tenantScoped: boolean;
+	/**
+	 * The tenant column's property key (#791) — `'tenantId'`, `'organizationId'`.
+	 * Always present on a scoped entity (the runtime's `ScopeConfig` requires it
+	 * when `tenantScoped`) and always rendered; `undefined` only when unscoped.
+	 */
+	tenantColumn?: string;
 	softDelete: boolean;
 	userTracking: boolean;
 	enforcement: 'lenient' | 'strict';
@@ -104,6 +110,13 @@ export interface RelationsEmitContext {
 	 * what the emitter's own tests and `project init` use.
 	 */
 	scopeFiltersImport?: string;
+	/**
+	 * The project's default tenant column, `tenancy.column` (#791). An entity's
+	 * own `tenant_scoped: { column }` overrides it. Required: the frontend graph
+	 * and the backend manifest must resolve the same scope, so no caller may
+	 * leave it to a default.
+	 */
+	tenancyColumn: string;
 }
 
 /** Canonical entity order for deterministic emission: ascending by `name`. */

@@ -21,6 +21,34 @@ name shadows a TS global: `record`, `item`, `map` and `error` work, and no plura
 (`items`, `options`, `conditions`). A name equal to a symbol the templates import (`page`, `post`, `patch`, `query`,
 `body`, `param`) still gives a duplicate-identifier error (#833). (#813)
 
+## `tenant_scoped:` — the tenant column
+
+```yaml
+tenant_scoped: true                        # scope on the project's tenant column (tenant_id by default)
+tenant_scoped: { column: organization_id } # scope on this column instead
+```
+
+`tenant_scoped` scopes the entity's repository on one column. Which column is decided in one place
+(`src/schema/tenancy.ts`): the entity's `tenant_scoped: { column }`, else the project's `tenancy.column` in
+`codegen.config.yaml`, else `tenant_id`. The name is snake_case.
+
+- **Adoption.** If the entity already declares that column, as a `fields:` entry or as the foreign key of a
+  `belongs_to`, codegen uses it instead of emitting a second one. It keeps the declaration's own type and
+  nullability (`required: true` makes it NOT NULL); a `belongs_to` keeps its `.references()`. A `fields:` entry
+  must be `type: uuid`: the ambient tenant is a uuid, so a string column is a generation error naming the entity.
+- **Otherwise** the tenant block emits a nullable `uuid` column with that name and no foreign key.
+- Either way the column gets one `<table>_<column>_idx` index (an adopted column's own `index: true` folds into it),
+  is the prefix of every `unique: true` / `unique_indexes:` constraint, is left off the create/update DTOs and the
+  integration write surface (the repository stamps it), and is the column the hop scope in the relations manifest
+  filters on.
+- **Collisions are refused.** The column may not be `id`, nor a column the entity's behaviors emit (`created_at`,
+  `updated_at`, `deleted_at`, `created_by`, `updated_by`, `provider`, `external_id`, `provider_metadata`, including
+  the ones `pattern: Integrated` implies). The error names the entity, the column and what owns it.
+- **Not listed in `fields:` of a unique entry.** The tenant column is prefixed automatically; listing it is an error.
+- A `required: true` adopted column leaves the NULL-tenant partition: a request with no tenant writes NULL into it
+  and Postgres rejects the insert.
+- `tenant_scoped` is not supported with `eav_value_table: true`.
+
 ## `fields:` — columns
 
 Each key is a `snake_case` column; the generated TS property is `camelCase`.
@@ -62,12 +90,14 @@ A `belongs_to`'s FK column follows the same rule from its `fields:` entry; a
 
 Uniqueness — a field's `unique: true` emits `uniqueIndex('<table>_<col>_uniq')`
 (#511). Under `tenant_scoped: true` it is per tenant: the constraint
-`unique('<table>_tenant_id_<col>_uniq').on(tenant_id, <col>).nullsNotDistinct()` (#784), and no bare global unique is
-emitted. A
+`unique('<table>_<tenant column>_<col>_uniq').on(<tenant column>, <col>).nullsNotDistinct()` (#784; the tenant column
+is `tenant_id` unless `tenant_scoped:` names another, see below), and no bare global unique is
+emitted. `unique: true` on the tenant column itself means one row per tenant: `unique('<table>_<tenant column>_uniq')
+.on(<tenant column>).nullsNotDistinct()`. A
 `belongs_to` FK column declared in `fields:` with `unique: true` is a one-to-one.
 On a non-tenant entity, `unique: true` + `index: true` on one field emits only the
 unique index (it already leads with the column); under `tenant_scoped` both are
-kept, since `(tenant_id, <col>)` cannot serve a lookup on `<col>` alone. On a non-tenant
+kept, since `(<tenant column>, <col>)` cannot serve a lookup on `<col>` alone. On a non-tenant
 entity NULLs are distinct (Postgres default), so a nullable unique column admits many
 NULLs. On a `tenant_scoped` entity the unique is NULLS NOT DISTINCT (#784, see
 `unique_indexes:` below), so a nullable `unique: true` column admits one NULL per
@@ -168,16 +198,16 @@ unique_indexes:
 ```
 
 An entry has four shapes (the first column is on a non-tenant entity, the second on `tenant_scoped: true`,
-where `tenant_id` is prefixed onto the columns):
+where the tenant column is prefixed onto the columns):
 
 | Entry | not tenant-scoped | tenant-scoped |
 |---|---|---|
-| `{ fields }` | `uniqueIndex(n).on(cols)` | `unique(n).on(tenant_id, cols).nullsNotDistinct()` |
+| `{ fields }` | `uniqueIndex(n).on(cols)` | `unique(n).on(tenant, cols).nullsNotDistinct()` |
 | `{ fields, nulls_not_distinct: true }` | `unique(n).on(cols).nullsNotDistinct()` | same as above |
-| `{ fields, nulls_not_distinct: false }` | `uniqueIndex(n).on(cols)` | `uniqueIndex(n).on(tenant_id, cols)` |
-| `{ fields, where, name }` | `uniqueIndex(n).on(cols).where(sql...)` | `uniqueIndex(n).on(tenant_id, cols).where(sql...)` |
+| `{ fields, nulls_not_distinct: false }` | `uniqueIndex(n).on(cols)` | `uniqueIndex(n).on(tenant, cols)` |
+| `{ fields, where, name }` | `uniqueIndex(n).on(cols).where(sql...)` | `uniqueIndex(n).on(tenant, cols).where(sql...)` |
 
-- `name:` defaults to `<table>_<cols>_uniq` (with `tenant_id` first under tenancy). It is a lowercase snake_case
+- `name:` defaults to `<table>_<cols>_uniq` (with the tenant column first under tenancy). It is a lowercase snake_case
   identifier of at most 63 characters, and required with `where:`. Index names are schema-wide in Postgres, so prefix
   them with the table name.
 - `where:` is raw SQL over snake_case column names of this table. Those names are rewritten to Drizzle column
@@ -190,11 +220,11 @@ where `tenant_id` is prefixed onto the columns):
   a non-ASCII letter next to a column name splits the word. Other words are not checked, so a stale column
   name fails at `drizzle-kit push`, not at generation.
 - `where` and `nulls_not_distinct: true` are mutually exclusive: drizzle-orm 1.0.0-rc.4 has no NULLS option on a
-  partial index. So a partial entry on a tenant-scoped entity does not deduplicate rows whose `tenant_id` is NULL.
+  partial index. So a partial entry on a tenant-scoped entity does not deduplicate rows whose tenant column is NULL.
 - On a tenant-scoped entity the default is NULLS NOT DISTINCT, so the NULL-tenant partition (ADR-042 §3) is one
   partition. NULLS NOT DISTINCT covers every column of the constraint, so a nullable column in it admits one NULL per
   key. NULLS NOT DISTINCT needs PostgreSQL 15+.
-- Generation errors: a `fields:` name that is not a column of the table, `tenant_id` listed on a tenant-scoped
+- Generation errors: a `fields:` name that is not a column of the table, the tenant column listed on a tenant-scoped
   entity, a field repeated within an entry, two constraints with one name, and two non-partial uniques over the
   same columns (including a field `unique: true` repeated here).
 

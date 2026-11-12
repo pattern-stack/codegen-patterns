@@ -34,6 +34,7 @@ import {
 import type { ParsedEntity } from '../../analyzer/types';
 import {
 	FrontendConfigSchema,
+	TenancyConfigSchema,
 	ResolvedPathsSchema,
 } from '../../schema/codegen-config.schema';
 import { findYamlFiles } from '../../utils/find-yaml-files';
@@ -125,6 +126,7 @@ function resolveLocation(
  */
 export function mapFrontendEmitConfig(config: FrontendConfigInput): FrontendEmitConfig {
 	const fe = FrontendConfigSchema.parse(config.frontend ?? {});
+	const tenancy = TenancyConfigSchema.parse(config.tenancy ?? {});
 
 	const dbEntities = resolveLocation(config, 'dbEntities', DEFAULT_DB_ENTITIES);
 	const collectionsAuth = resolveLocation(
@@ -149,6 +151,7 @@ export function mapFrontendEmitConfig(config: FrontendConfigInput): FrontendEmit
 		dbEntitiesImport: dbEntities.import,
 		catalogCategories: fe.catalog.categories,
 		textareaThreshold: fe.fields.textareaThreshold,
+		tenancyColumn: tenancy.column,
 	};
 }
 

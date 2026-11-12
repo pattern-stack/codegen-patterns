@@ -64,18 +64,21 @@ const schema = { accounts, contacts, opportunities, opportunityContacts };
 // ── the scope constants, exactly as `emit-manifest.ts` renders them ────────
 const ACCOUNTS_SCOPE: ScopeConfig = {
 	tenantScoped: true,
+	tenantColumn: 'tenantId',
 	softDelete: true,
 	userTracking: false,
 	enforcement: 'strict',
 };
 const CONTACTS_SCOPE: ScopeConfig = {
 	tenantScoped: true,
+	tenantColumn: 'tenantId',
 	softDelete: true,
 	userTracking: false,
 	enforcement: 'strict',
 };
 const OPPORTUNITIES_SCOPE: ScopeConfig = {
 	tenantScoped: true,
+	tenantColumn: 'tenantId',
 	softDelete: true,
 	userTracking: false,
 	enforcement: 'strict',
@@ -263,6 +266,7 @@ describe('REL-2 §2.4 — the ROOT filter renders against the ALIASED table', ()
 	// smoke only regex-matches emitted text.
 	const SCOPED: ScopeConfig = {
 		tenantScoped: true,
+		tenantColumn: 'tenantId',
 		softDelete: true,
 		userTracking: false,
 		enforcement: 'strict',

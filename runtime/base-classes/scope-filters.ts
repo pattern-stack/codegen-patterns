@@ -61,16 +61,34 @@ import {
  * The repository carries it as `BaseRepository.scopeConfig`; the manifest
  * carries it as a per-entity constant beside the edges it applies to.
  */
-export interface ScopeConfig {
-  /** `tenant_scoped: true` — filter by the ambient tenant (ADR-042). */
-  tenantScoped: boolean;
+export type ScopeConfig = TenantAxis & {
   /** The `soft_delete` behavior — exclude rows with a `deleted_at`. */
   softDelete: boolean;
   /** The `user_tracking` behavior — filter by the ambient requester's scope. */
   userTracking: boolean;
   /** What a MISSING ambient context means: silence, or a throw. */
   enforcement: 'lenient' | 'strict';
-}
+};
+
+/**
+ * The tenant half of a scope declaration, as a union the compiler enforces:
+ * `tenantColumn` is REQUIRED whenever `tenantScoped` is true and absent
+ * otherwise (#791). There is no default key — a declaration that says
+ * "tenant-scoped" must also say on which column, so a hand-written repository
+ * cannot forget it and have `create()` drop the stamp (Drizzle ignores an
+ * insert key the table does not have).
+ */
+export type TenantAxis =
+  | {
+      /** `tenant_scoped: true` — filter by the ambient tenant (ADR-042). */
+      tenantScoped: true;
+      /**
+       * The tenant column's property key on the table — `'tenantId'` for the
+       * `tenant_id` column, `'organizationId'` for `organization_id`.
+       */
+      tenantColumn: string;
+    }
+  | { tenantScoped: false; tenantColumn?: undefined };
 
 /** A config with nothing on — no predicate, no `where` emitted for it. */
 export function isUnscoped(cfg: ScopeConfig): boolean {
@@ -84,7 +102,10 @@ export function isUnscoped(cfg: ScopeConfig): boolean {
  *   `null`               -> `IS NULL` (the null-tenant partition, not a wildcard).
  *   a string             -> `= tenantId`.
  *
- * Throws (naming `owner`) when the table has no `tenant_id` — a declaration
+ * `tenantColumn` is the column's property key (`'tenantId'`, `'organizationId'`, …)
+ * and is required — there is no default key (#791).
+ *
+ * Throws (naming `owner`) when the table has no such column — a declaration
  * saying `tenant_scoped: true` over a table without the column is a query that
  * would otherwise go out with one guard silently missing.
  */
@@ -92,9 +113,10 @@ export function tenantPredicateFor(
   table: PgTable,
   tenantId: string | null | undefined,
   owner: string,
+  tenantColumn: string,
 ): SQL | undefined {
   if (tenantId === undefined) return undefined;
-  const col = column(table, 'tenantId', owner);
+  const col = column(table, tenantColumn, owner);
   return tenantId === null ? isNull(col) : eq(col, tenantId);
 }
 
@@ -114,7 +136,12 @@ export function tenantAxisPredicate(
 ): SQL | undefined {
   if (!cfg.tenantScoped) return undefined;
   if (tryGetRequester()?.tenantScope === 'all') return undefined;
-  return tenantPredicateFor(table, getTenantId(cfg.enforcement, owner), owner);
+  return tenantPredicateFor(
+    table,
+    getTenantId(cfg.enforcement, owner),
+    owner,
+    cfg.tenantColumn,
+  );
 }
 
 /**

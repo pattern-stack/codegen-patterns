@@ -570,6 +570,7 @@ class TenantTestRepo extends BaseRepository<
       softDelete: false,
       userTracking: false,
       tenantScoped: true,
+      tenantColumn: 'tenantId',
       ...behaviors,
     };
     this.scopeEnforcement = enforcement;
@@ -607,6 +608,7 @@ class MisdeclaredTenantRepo extends BaseRepository<
     softDelete: false,
     userTracking: false,
     tenantScoped: true,
+    tenantColumn: 'tenantId',
   };
   protected readonly scopeEnforcement = 'strict' as const;
   constructor() {
@@ -622,14 +624,14 @@ const asTenant = <T>(tenantId: string | null, fn: () => Promise<T>): Promise<T> 
 
 describe('tenantPredicateFor — the per-hop primitive REL-2 consumes', () => {
   it('undefined → no predicate', () => {
-    expect(tenantPredicateFor(tenantWidgets, undefined, 'X')).toBeUndefined();
+    expect(tenantPredicateFor(tenantWidgets, undefined, 'X', 'tenantId')).toBeUndefined();
   });
 
   it('null → IS NULL (the partition, not a wildcard)', () => {
     const sql = new QueryBuilder()
       .select()
       .from(tenantWidgets)
-      .where(tenantPredicateFor(tenantWidgets, null, 'X'))
+      .where(tenantPredicateFor(tenantWidgets, null, 'X', 'tenantId'))
       .toSQL().sql.toLowerCase();
     expect(sql).toContain('"tenant_id" is null');
   });
@@ -638,14 +640,14 @@ describe('tenantPredicateFor — the per-hop primitive REL-2 consumes', () => {
     const q = new QueryBuilder()
       .select()
       .from(tenantWidgets)
-      .where(tenantPredicateFor(tenantWidgets, 't-a', 'X'))
+      .where(tenantPredicateFor(tenantWidgets, 't-a', 'X', 'tenantId'))
       .toSQL();
     expect(q.sql.toLowerCase()).toMatch(/"tenant_id"\s*=/);
     expect(q.params).toContain('t-a');
   });
 
   it('a table with no tenant_id throws, naming the owner', () => {
-    expect(() => tenantPredicateFor(untenantedWidgets, 't-a', 'WidgetRepo')).toThrow(
+    expect(() => tenantPredicateFor(untenantedWidgets, 't-a', 'WidgetRepo', 'tenantId')).toThrow(
       /WidgetRepo: table has no column 'tenantId'/,
     );
   });
@@ -659,7 +661,7 @@ describe('tenantPredicateFor — the per-hop primitive REL-2 consumes', () => {
     const sql = new QueryBuilder()
       .select()
       .from(other)
-      .where(tenantPredicateFor(other, 't-a', 'Hop'))
+      .where(tenantPredicateFor(other, 't-a', 'Hop', 'tenantId'))
       .toSQL().sql.toLowerCase();
     expect(sql).toContain('"other_widget"."tenant_id"');
   });
@@ -953,6 +955,93 @@ describe('BaseRepository — by-id writes are refused while the filter is droppe
       await withAllTenants(async () => {
         expect(() => repo.assertWrite('update')).not.toThrow();
       });
+    });
+  });
+});
+
+// ============================================================================
+// #791 — a tenant column other than tenant_id (BehaviorConfig.tenantColumn)
+// ============================================================================
+
+/** An existing schema keyed by `organization_id`, with no `tenant_id` at all. */
+const orgWidgets = pgTable('org_widget', {
+  id: text('id').primaryKey(),
+  organizationId: text('organization_id').notNull(),
+  name: text('name'),
+});
+
+class OrgTenantRepo extends BaseRepository<
+  { id: string; organizationId: string },
+  typeof orgWidgets
+> {
+  readonly table = orgWidgets;
+  protected readonly behaviors: BehaviorConfig = {
+    timestamps: false,
+    softDelete: false,
+    userTracking: false,
+    tenantScoped: true,
+    tenantColumn: 'organizationId',
+  };
+  protected readonly scopeEnforcement = 'strict' as const;
+  constructor() {
+    super(new QueryBuilder() as unknown as DrizzleClient);
+  }
+  stamp(input: Record<string, unknown>): Record<string, unknown> {
+    return this.stampTenant(input);
+  }
+  guardUpdate(input: Record<string, unknown>): Record<string, unknown> {
+    return this.guardTenantOnUpdate(input);
+  }
+  renderFindById(id: string): { sql: string; params: unknown[] } {
+    return this.baseQuery(eq(this.table['id'], id)).toSQL();
+  }
+}
+
+describe('BaseRepository — tenantColumn (#791)', () => {
+  it('filters reads on the configured column', async () => {
+    const repo = new OrgTenantRepo();
+    await asTenant('org-a', async () => {
+      const { sql, params } = repo.renderFindById('w1');
+      expect(sql).toContain('"org_widget"."organization_id" = $');
+      expect(sql).not.toContain('tenant_id');
+      expect(params).toContain('org-a');
+    });
+  });
+
+  it('stamps the configured column on create, and never a tenantId key', async () => {
+    const repo = new OrgTenantRepo();
+    await asTenant('org-a', async () => {
+      expect(repo.stamp({ name: 'w' })).toEqual({ name: 'w', organizationId: 'org-a' });
+    });
+  });
+
+  it('rejects a disagreeing value in the configured column on create and update', async () => {
+    const repo = new OrgTenantRepo();
+    await asTenant('org-a', async () => {
+      expect(() => repo.stamp({ name: 'w', organizationId: 'org-b' })).toThrow(
+        /create\(\) was given organization_id/,
+      );
+      expect(() => repo.guardUpdate({ organizationId: 'org-b' })).toThrow(CrossTenantWriteError);
+      expect(repo.guardUpdate({ organizationId: 'org-a' })).toEqual({ organizationId: 'org-a' });
+    });
+  });
+
+  it('a tenantColumn the table does not have fails loud on reads AND writes, naming the repository', async () => {
+    class Forgot extends OrgTenantRepo {
+      protected override readonly behaviors: BehaviorConfig = {
+        timestamps: false,
+        softDelete: false,
+        userTracking: false,
+        tenantScoped: true,
+        tenantColumn: 'tenantId',
+      };
+    }
+    await asTenant('org-a', async () => {
+      expect(() => new Forgot().renderFindById('w1')).toThrow(/Forgot/);
+      // The write path: without the column check, Drizzle would drop the unknown
+      // `tenantId` insert key and the row would land in the null-tenant partition.
+      expect(() => new Forgot().stamp({ name: 'w' })).toThrow(/Forgot.*no column 'tenantId'/);
+      expect(() => new Forgot().guardUpdate({ name: 'w' })).toThrow(/Forgot.*no column 'tenantId'/);
     });
   });
 });

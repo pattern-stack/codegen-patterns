@@ -98,6 +98,7 @@ beforeAll(async () => {
       softDelete: true,
       userTracking: false,
       tenantScoped: true,
+      tenantColumn: 'tenantId',
     };
     // Exactly what the template emits for `tenant_scoped: true`.
     protected readonly scopeEnforcement = 'strict' as const;
@@ -112,6 +113,7 @@ beforeAll(async () => {
       softDelete: true,
       userTracking: true,
       tenantScoped: true,
+      tenantColumn: 'tenantId',
     };
     protected readonly scopeEnforcement = 'strict' as const;
   }
@@ -125,6 +127,7 @@ beforeAll(async () => {
       softDelete: true,
       userTracking: false,
       tenantScoped: true,
+      tenantColumn: 'tenantId',
     };
     protected readonly scopeEnforcement = 'strict' as const;
     protected readonly integrationConfig = {
@@ -147,6 +150,7 @@ beforeAll(async () => {
       softDelete: false,
       userTracking: false,
       tenantScoped: true,
+      tenantColumn: 'tenantId',
     };
     protected readonly scopeEnforcement = 'strict' as const;
   }
@@ -328,6 +332,7 @@ d('writes are tenant-scoped', () => {
         softDelete: false,
         userTracking: false,
         tenantScoped: true,
+        tenantColumn: 'tenantId',
       };
       protected readonly scopeEnforcement = 'strict' as const;
     }

@@ -719,7 +719,7 @@ describe('contact-v2.yaml integration', () => {
 	it('passes consistency checks', () => {
 		const result = loadEntities(resolve('test/fixtures/entities'));
 		const graph = buildDomainGraph(result.entities);
-		const issues = checkConsistency(graph);
+		const issues = checkConsistency(graph, 'tenant_id');
 
 		const v2Issues = issues.filter((i) =>
 			['unknown_query_field', 'unknown_sync_field_mapping', 'external_id_tracking_collision'].includes(i.type),
@@ -741,7 +741,7 @@ describe('cross-block validation', () => {
 		contact.queries = [...(contact.queries ?? []), { by: ['nonexistent_field'] }];
 
 		const graph = buildDomainGraph([contact]);
-		const issues = checkConsistency(graph);
+		const issues = checkConsistency(graph, 'tenant_id');
 		const queryIssues = issues.filter((i) => i.type === 'unknown_query_field');
 		expect(queryIssues.length).toBeGreaterThan(0);
 		expect(queryIssues[0].message).toContain('nonexistent_field');
@@ -755,7 +755,7 @@ describe('cross-block validation', () => {
 		contact.queries = [{ by: ['opportunity_id'], via: 'opportunity_contact_link' }];
 
 		const graph = buildDomainGraph([contact]);
-		const issues = checkConsistency(graph);
+		const issues = checkConsistency(graph, 'tenant_id');
 		const queryIssues = issues.filter((i) => i.type === 'unknown_query_field');
 		expect(queryIssues).toHaveLength(0);
 	});
@@ -772,7 +772,7 @@ describe('cross-block validation', () => {
 		contact.queries = [{ by: ['account_id'] }];
 
 		const graph = buildDomainGraph([contact]);
-		const issues = checkConsistency(graph);
+		const issues = checkConsistency(graph, 'tenant_id');
 		const queryIssues = issues.filter((i) => i.type === 'unknown_query_field');
 		expect(queryIssues).toHaveLength(0);
 	});
@@ -785,7 +785,7 @@ describe('cross-block validation', () => {
 		contact.queries = [{ by: ['nonexistent'] }];
 
 		const graph = buildDomainGraph([contact]);
-		const issues = checkConsistency(graph);
+		const issues = checkConsistency(graph, 'tenant_id');
 		const queryIssues = issues.filter((i) => i.type === 'unknown_query_field');
 		expect(queryIssues.length).toBeGreaterThan(0);
 		expect(queryIssues[0].message).toContain('nonexistent');
@@ -801,7 +801,7 @@ describe('cross-block validation', () => {
 		contact.queries = [{ by: ['user_id', 'account_id'] }];
 
 		const graph = buildDomainGraph([contact]);
-		const issues = checkConsistency(graph);
+		const issues = checkConsistency(graph, 'tenant_id');
 		const queryIssues = issues.filter((i) => i.type === 'unknown_query_field');
 		expect(queryIssues).toHaveLength(0);
 	});

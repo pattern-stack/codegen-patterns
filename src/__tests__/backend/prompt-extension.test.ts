@@ -6,8 +6,8 @@ import { describe, it, expect } from 'bun:test';
 import {
   buildBackendLocals,
   identifierRef,
-  resolveImpliedBehaviors,
 } from '../../../templates/entity/new/backend/entity-locals.js';
+import { resolveImpliedBehaviors } from '../../patterns/implied-behaviors';
 import { withEntities } from './_entity-lookup';
 
 // Minimal base locals (the real version has many more fields, but we only need

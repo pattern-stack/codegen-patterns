@@ -18,7 +18,7 @@ export {
   tenantPredicateFor,
   userScopePredicateFor,
 } from './scope-filters';
-export type { ScopeConfig } from './scope-filters';
+export type { ScopeConfig, TenantAxis } from './scope-filters';
 
 // Ambient tenant scope (AsyncLocalStorage) — read by BaseRepository.scopePredicate,
 // set at request/worker boundaries via withRequester/withUserScope/etc.

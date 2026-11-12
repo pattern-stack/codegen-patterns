@@ -40,13 +40,20 @@ const bare = pgTable('bare', {
 	name: text('name').notNull(),
 });
 
-const cfg = (over: Partial<ScopeConfig> = {}): ScopeConfig => ({
-	tenantScoped: false,
-	softDelete: false,
-	userTracking: false,
-	enforcement: 'lenient',
-	...over,
-});
+// `tenantColumn` is required whenever `tenantScoped` (the union); the helper names
+// the default key so a test only spells it when it is the subject.
+const cfg = (
+	over: { tenantScoped?: boolean; tenantColumn?: string; softDelete?: boolean; userTracking?: boolean; enforcement?: 'lenient' | 'strict' } = {},
+): ScopeConfig => {
+	const rest = {
+		softDelete: over.softDelete ?? false,
+		userTracking: over.userTracking ?? false,
+		enforcement: over.enforcement ?? 'lenient',
+	};
+	return over.tenantScoped
+		? { tenantScoped: true, tenantColumn: over.tenantColumn ?? 'tenantId', ...rest }
+		: { tenantScoped: false, ...rest };
+};
 
 const dialect = new PgDialect();
 
@@ -75,23 +82,23 @@ describe('isUnscoped', () => {
 
 describe('tenantPredicateFor', () => {
 	it('an ABSENT tenant means "do not scope", not "match nothing"', () => {
-		expect(tenantPredicateFor(widgets, undefined, 'T')).toBeUndefined();
+		expect(tenantPredicateFor(widgets, undefined, 'T', 'tenantId')).toBeUndefined();
 	});
 
 	it('an EXPLICIT null is the null-tenant partition — IS NULL, not a wildcard', () => {
-		const p = tenantPredicateFor(widgets, null, 'T');
+		const p = tenantPredicateFor(widgets, null, 'T', 'tenantId');
 		expect(p).toBeDefined();
 		expect(render(p).sql).toContain('is null');
 	});
 
 	it('a string is an equality on tenant_id', () => {
-		const p = tenantPredicateFor(widgets, 'T1', 'T');
+		const p = tenantPredicateFor(widgets, 'T1', 'T', 'tenantId');
 		expect(p).toBeDefined();
 		expect(render(p).sql).toContain('tenant_id');
 	});
 
 	it('throws, naming the owner, when the table has no tenant_id', () => {
-		expect(() => tenantPredicateFor(bare, 'T1', 'accounts.contacts')).toThrow(
+		expect(() => tenantPredicateFor(bare, 'T1', 'accounts.contacts', 'tenantId')).toThrow(
 			"accounts.contacts: table has no column 'tenantId'",
 		);
 	});

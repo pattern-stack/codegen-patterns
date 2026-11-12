@@ -1,0 +1,35 @@
+# Smoke fixture: org_lead (#791 — pattern: Integrated + an adopted tenant column)
+#
+# org_task proves adoption on a Base entity. This is the same adoption on an
+# `Integrated` one, where the tenant column also reaches the integration surface:
+# the `unique(organization_id, provider, external_id)` ON CONFLICT target, the
+# generated `integrationConfig.conflictTarget`, and the sink — where the adopted
+# column must stay OFF the upsert write surface (the upsert's `set` must never
+# rewrite a row's owning tenant, #715) while the find view keeps it. `tsc` over
+# the generated project compiles all of it.
+#
+# In `run-smoke.ts`'s default scenario the project config sets
+# `tenancy: { column: organization_id }`, so `tenant_scoped: true` adopts the
+# declared field. `run-smoke-subsystems.ts` reads this directory without the
+# `tenancy:` block: there the project default is `tenant_id`, emitted beside this
+# plain `organization_id` field. Both shapes must compile.
+entity:
+  name: org_lead
+  plural: org_leads
+  table: org_leads
+  pattern: Integrated
+
+tenant_scoped: true
+
+fields:
+  organization_id:
+    type: uuid
+    required: true
+
+  name:
+    type: string
+    required: true
+    max_length: 200
+
+behaviors:
+  - timestamps

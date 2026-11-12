@@ -207,6 +207,7 @@ export function buildClientGraph(ctx: FrontendEmitContext): ClientGraph {
 		entities,
 		definitions,
 		junctions: junctionDefs,
+		tenancyColumn: ctx.config.tenancyColumn,
 	});
 
 	const byPlural = new Map(entities.map((e) => [e.plural, e]));

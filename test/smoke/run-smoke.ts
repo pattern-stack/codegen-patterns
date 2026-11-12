@@ -490,6 +490,72 @@ function assertUniqueIndexShapes(tmpDir: string): void {
 	);
 }
 
+/**
+ * #791 — a configurable tenancy column, through the real CLI. The project
+ * default is `organization_id` (step 4.6); org_task.yaml declares that field, so
+ * `tenant_scoped: true` ADOPTS it; tenant_note.yaml overrides back to
+ * `tenant_id`. `tsc` proves both compile; these prove what was emitted, so a
+ * dropped `tenancy.column` read (prompt.js, or the manifest's loader) cannot
+ * pass by compiling the default shape.
+ */
+function assertTenancyColumnEmission(tmpDir: string): void {
+	const reads = (rel: string) => fs.readFileSync(path.join(tmpDir, 'src', rel), 'utf8');
+	const entity = reads('modules/org-tasks/org-task.entity.ts');
+	const columns = entity.match(/organizationId:/g) ?? [];
+	if (columns.length !== 1) {
+		throw new Error(`org-task.entity.ts declares organizationId ${columns.length} times; expected 1 (adopted)`);
+	}
+	assertContains(entity, /organizationId: uuid\('organization_id'\)\.notNull\(\),/, 'org_task adopts its NOT NULL organization_id field');
+	assertNotContains(entity, /tenant_id|tenantId/, 'org_task emits no tenant_id column when it adopts organization_id');
+	assertContains(entity, /index\('org_tasks_organization_id_idx'\)\.on\(t\.organizationId\)/, 'org_task indexes the adopted tenant column');
+	assertContains(
+		entity,
+		/unique\('org_tasks_organization_id_slug_uniq'\)\.on\(t\.organizationId, t\.slug\)\.nullsNotDistinct\(\)/,
+		'org_task slug is unique per organization',
+	);
+	assertContains(
+		reads('modules/org-tasks/org-task.repository.ts'),
+		/tenantScoped: true,\n\s+tenantColumn: 'organizationId',/,
+		'org_task BehaviorConfig names its tenant column',
+	);
+	assertNotContains(
+		reads('modules/org-tasks/dto/create-org-task.dto.ts'),
+		/organizationId/,
+		'CreateOrgTaskDto leaves the tenant column to the repository',
+	);
+	// pattern: Integrated + an adopted column (org_lead.yaml): the external-id
+	// unique and the generated conflict target both lead with the adopted column.
+	const lead = reads('modules/org-leads/org-lead.entity.ts');
+	assertContains(lead, /organizationId: uuid\('organization_id'\)\.notNull\(\),/, 'org_lead adopts its organization_id field');
+	assertNotContains(lead, /tenant_id|tenantId/, 'org_lead emits no tenant_id column');
+	assertContains(
+		lead,
+		/unique\('uq_org_leads_tenant_provider_external_id'\)\.on\(t\.organizationId, t\.provider, t\.externalId\)\.nullsNotDistinct\(\)/,
+		'org_lead external-id unique is per organization',
+	);
+	assertContains(
+		reads('modules/org-leads/org-lead.repository.ts'),
+		/conflictTarget: \['organizationId', 'provider', 'externalId'\]/,
+		'org_lead conflict target names the adopted column',
+	);
+	assertContains(
+		reads('modules/tenant-notes/tenant-note.entity.ts'),
+		/tenantId: uuid\('tenant_id'\),/,
+		'tenant_note overrides the project default back to tenant_id',
+	);
+	const manifest = reads('generated/relations.ts');
+	assertContains(
+		manifest,
+		/const ORG_TASKS_SCOPE: ScopeConfig = \{ tenantScoped: true, tenantColumn: 'organizationId', softDelete: false, userTracking: false, enforcement: 'strict' \};/,
+		'the manifest scopes hops into org_tasks on organization_id',
+	);
+	assertContains(
+		manifest,
+		/parentTask: r\.one\.org_tasks\(\{[^\n]*hopScope\(t, ORG_TASKS_SCOPE, 'org_tasks\.parentTask'\)/,
+		'the org_task self-hop carries the organization_id scope',
+	);
+}
+
 function assertRelationshipEmission(tmpDir: string): void {
 	const reads = (rel: string): string =>
 		fs.readFileSync(path.join(tmpDir, 'src', rel), 'utf8');
@@ -827,6 +893,19 @@ async function main(): Promise<number> {
 			log('enabled generate.semantic for the relationship scenario');
 		}
 
+		// 4.6. #791 — the project's default tenancy column. org_task.yaml adopts
+		// its declared `organization_id` through it; tenant_note.yaml overrides it
+		// back to `tenant_id`. Asserted in `assertTenancyColumnEmission`.
+		if (SCENARIO === 'default') {
+			const configPath = path.join(tmpDir, 'codegen.config.yaml');
+			const config = fs.readFileSync(configPath, 'utf8');
+			if (/^tenancy:/m.test(config)) {
+				throw new Error('codegen.config.yaml already has a tenancy: block');
+			}
+			fs.writeFileSync(configPath, `${config.trimEnd()}\n\ntenancy:\n  column: organization_id\n`);
+			log('set tenancy.column: organization_id for the default scenario');
+		}
+
 		// 5. Run `codegen entity new --all`.
 		//
 		// ONE run is the whole subject (#815): every `has_many` onto an entity in
@@ -851,6 +930,8 @@ async function main(): Promise<number> {
 			log('field unique emission OK');
 			assertUniqueIndexShapes(tmpDir);
 			log('unique_indexes shapes OK');
+			assertTenancyColumnEmission(tmpDir);
+			log('tenancy column emission OK (#791)');
 		}
 
 		// 5.1. CGP-62 — under the `relationship` scenario, assert the

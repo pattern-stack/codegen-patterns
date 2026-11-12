@@ -33,6 +33,8 @@ export * from '@gen/modules/asset-tags/asset-tag.entity';
 // #784: partial unique indexes (revision) and the tenant NULLS NOT DISTINCT default (category).
 export * from '@gen/modules/revisions/revision.entity';
 export * from '@gen/modules/categories/category.entity';
+// #791: `pattern: Integrated` + an adopted tenant column (organization_id) — the ON CONFLICT target.
+export * from '@gen/modules/org-leads/org-lead.entity';
 // #796: timestamptz columns, and the `timezone: false` opt-out (appointment).
 export * from '@gen/modules/appointments/appointment.entity';
 

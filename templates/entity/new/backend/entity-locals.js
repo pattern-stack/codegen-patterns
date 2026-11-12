@@ -26,13 +26,15 @@ import {
   detectMethodCollisions,
 } from '../../../../src/patterns/compose.js';
 import '../../../../src/patterns/library/index.js';
-import { emittedStem } from '../../../../src/config/file-naming.js';
+import { camelCase, emittedStem } from '../../../../src/config/file-naming.js';
+import { resolveImpliedBehaviors } from '../../../../src/patterns/implied-behaviors.js';
 import {
   fieldColumnNullable,
   foreignKeyColumnNullable,
   hasColumnDefault,
 } from '../../../../src/schema/field-nullability.js';
 import { fieldWithTimezone, timestampColumn } from '../../../../src/schema/field-timestamp.js';
+import { resolveTenancy } from '../../../../src/schema/tenancy.js';
 import { rewriteSharedImport, subsystemsImport } from '../../../../src/config/runtime-mode.mjs';
 import { DEFAULT_CODEGEN_CONFIG } from '../../../../src/config/project-config.js';
 import {
@@ -306,44 +308,11 @@ export function resolvePatternComposition(entity) {
   };
 }
 
-/**
- * Resolve the behaviors implied by an entity's declared pattern(s).
- *
- * A pattern (e.g. `Integrated`) may declare `impliedBehaviors` — behaviors the
- * entity gets for free without re-declaring them in its `behaviors:` array.
- * Walks every declared pattern (both the `pattern: X` and `patterns: [...]`
- * shapes), unions their `impliedBehaviors`, and returns a deduped list.
- * Unknown patterns are skipped silently — composition validation surfaces
- * those separately (src/patterns/validate-composition.ts).
- *
- * @param {object} entity - the entity block from the parsed YAML
- * @returns {string[]} deduped implied behavior names
- */
-export function resolveImpliedBehaviors(entity) {
-  const names = [];
-  if (typeof entity.pattern === 'string' && entity.pattern) {
-    names.push(entity.pattern);
-  }
-  if (Array.isArray(entity.patterns)) {
-    names.push(...entity.patterns);
-  }
-
-  const implied = new Set();
-  for (const name of names) {
-    const def = getPattern(name);
-    for (const b of def?.impliedBehaviors ?? []) {
-      implied.add(b);
-    }
-  }
-  return Array.from(implied);
-}
-
 // ============================================================================
 // Helper utilities
 // ============================================================================
 
 const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-const camelCase = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 const pascalCase = (s) => capitalize(camelCase(s));
 const pluralize = (s) => pluralizePkg.plural(s);
 
@@ -893,12 +862,13 @@ function collectRepositoryDeps(belongsTo, existingHasMany) {
  *   `foreign_key` outside this set is host-owned and emits no DB-level FK.
  *   Absent → every target is treated as owned (the pre-#636 behaviour), which
  *   only happens when a caller builds locals without prompt.js.
- * @param {Set<string>} [uniqueLedIndexNames] names of fields whose `index: true`
- *   is suppressed because their unique index (#511) already leads with the
- *   column. Absent or empty → suppress nothing: an extra index is harmless, a
+ * @param {Set<string>} [suppressedIndexNames] names of fields whose `index: true`
+ *   is suppressed because another index already serves them: their unique index
+ *   (#511) leads with the column, or they are the adopted tenant column (the
+ *   tenant index is that index). Absent or empty → suppress nothing: an extra index is harmless, a
  *   silently dropped one is not.
  */
-function processFieldFeatures(renderedFields, fields, naming, ownedTables, uniqueLedIndexNames) {
+function processFieldFeatures(renderedFields, fields, naming, ownedTables, suppressedIndexNames) {
   const entityNamePlural = naming.ownNaming.plural;
   const owned = ownedTables === undefined
     ? null
@@ -956,7 +926,7 @@ function processFieldFeatures(renderedFields, fields, naming, ownedTables, uniqu
     }
 
     // --- index: true (#355) ---
-    if (field.index === true && !(uniqueLedIndexNames && uniqueLedIndexNames.has(pf.name))) {
+    if (field.index === true && !(suppressedIndexNames && suppressedIndexNames.has(pf.name))) {
       indexExpressions.push({
         comment: null,
         expr: `index('${entityNamePlural}_${pf.name}_idx').on(t.${pf.camelName})`,
@@ -980,7 +950,7 @@ function entityTableColumns({
   belongsTo,
   nonFkFields,
   hasExternalIdTracking,
-  tenantScoped,
+  tenancy,
   hasTimestamps,
   hasSoftDelete,
 }) {
@@ -994,7 +964,9 @@ function entityTableColumns({
       { column: 'provider_metadata', prop: 'providerMetadata' },
     );
   }
-  if (tenantScoped) cols.push({ column: 'tenant_id', prop: 'tenantId' });
+  // An ADOPTED tenant column (#791) is already in the list, as its field or
+  // belongs_to; only an emitted one is added here.
+  if (tenancy && !tenancy.adopted) cols.push({ column: tenancy.column, prop: tenancy.prop });
   if (hasTimestamps) {
     cols.push({ column: 'created_at', prop: 'createdAt' }, { column: 'updated_at', prop: 'updatedAt' });
   }
@@ -1010,7 +982,7 @@ function entityTableColumns({
  *
  *   partial = where is set
  *   nnd     = partial ? false : (nulls_not_distinct ?? tenantScoped)
- *   cols    = tenantScoped ? [tenant_id, ...fields] : fields
+ *   cols    = tenantScoped ? [<tenant column>, ...fields] : fields
  *   name    = name ?? `<table>_${cols.join('_')}_uniq`
  *
  *   partial -> uniqueIndex(name).on(cols).where(sql`...`)
@@ -1021,13 +993,18 @@ function entityTableColumns({
  * plain index never deduplicates the (first-class) null-tenant partition
  * (ADR-042 §3); NULLS NOT DISTINCT does. A partial index cannot be NND on
  * drizzle-orm 1.0.0-rc.4, so a partial entry does not. An author `name` is kept
- * verbatim. Generation errors: C1 (unknown column), C2 (tenant_id listed or a
- * repeated field), and the `where:` scanner errors (renderSqlPredicate).
+ * verbatim. Generation errors: C1 (unknown column), C2 (the tenant column
+ * listed, or a repeated field), and the `where:` scanner errors
+ * (renderSqlPredicate).
+ *
+ * `tenancy` is `resolveTenancy`'s result (#791) — `null` when the entity is not
+ * tenant_scoped; its `column` is the prefix (`tenant_id` by default).
  */
 function processUniqueIndexes(
   entries,
-  { entityName, entityNamePlural, tenantScoped = false, tableColumns },
+  { entityName, entityNamePlural, tenancy = null, tableColumns },
 ) {
+  const tenantScoped = tenancy !== null;
   if (!Array.isArray(entries)) return [];
   const propByColumn = new Map(tableColumns.map((c) => [c.column, c.prop]));
   const columnList = tableColumns.map((c) => c.column).join(', ');
@@ -1037,8 +1014,8 @@ function processUniqueIndexes(
     const label = `[codegen] '${entityName}' ${ui.source}`;
     const seen = new Set();
     for (const f of ui.fields) {
-      if (tenantScoped && f === 'tenant_id') {
-        throw new Error(`${label}: 'tenant_id' must not be listed in fields — a tenant_scoped entity prefixes it automatically.`);
+      if (tenantScoped && f === tenancy.column) {
+        throw new Error(`${label}: '${f}' must not be listed in fields — it is the tenant column, and a tenant_scoped entity prefixes it automatically.`);
       }
       if (seen.has(f)) throw new Error(`${label}: field '${f}' is listed twice.`);
       seen.add(f);
@@ -1049,7 +1026,7 @@ function processUniqueIndexes(
 
     const partial = ui.where !== undefined;
     const nnd = partial ? false : (ui.nulls_not_distinct ?? tenantScoped);
-    const cols = tenantScoped ? ['tenant_id', ...ui.fields] : ui.fields;
+    const cols = tenantScoped ? [tenancy.column, ...ui.fields] : ui.fields;
     const name = ui.name || `${entityNamePlural}_${cols.join('_')}_uniq`;
     const onCols = cols.map((c) => `t.${propByColumn.get(c)}`).join(', ');
 
@@ -1120,10 +1097,16 @@ function assertDistinctConstraints(tableConstraints, entityName) {
  * primary key is unique by definition). Reads the raw map so a `belongs_to` FK
  * column declared in `fields:` is covered too.
  */
-function fieldUniqueEntries(fields) {
+function fieldUniqueEntries(fields, tenancy = null) {
   return Object.entries(fields || {})
     .filter(([name, def]) => name !== 'id' && def && def.unique === true)
-    .map(([name]) => ({ fields: [name], source: `field '${name}' (unique: true)` }));
+    .map(([name]) => ({
+      // `unique: true` on the tenant column means one row per tenant: the
+      // builder prefixes the tenant column itself, so the entry lists no field
+      // and lowers to `unique(<tenant column>)`.
+      fields: tenancy !== null && name === tenancy.column ? [] : [name],
+      source: `field '${name}' (unique: true)`,
+    }));
 }
 
 /**
@@ -1428,11 +1411,14 @@ export function resolveSoftDeleteBoolean(deleteKnob, hasSoftDelete) {
  * @param {boolean} eavEnabled
  * @param {boolean} hasSoftDelete
  * @param {object} [sinkPolicy]       integration.sink knobs {delete?, exclude_fields?}
- * @param {boolean} [tenantScoped]    entity `tenant_scoped: true` (ADR-042) —
- *   prefixes the ON CONFLICT target with tenant_id
+ * @param {object|null} [tenancy]    `resolveTenancy`'s result (ADR-042, #791) —
+ *   prefixes the ON CONFLICT target with the tenant column, and keeps an
+ *   ADOPTED tenant column (a field or a belongs_to) out of the write surface:
+ *   the runtime stamps it, and the upsert `set` must never rewrite it (#715).
  */
-export function buildIntegrationSurface(patternName, processedFields, belongsTo, hasTimestamps, eavEnabled, hasSoftDelete, sinkPolicy, tenantScoped = false) {
+export function buildIntegrationSurface(patternName, processedFields, belongsTo, hasTimestamps, eavEnabled, hasSoftDelete, sinkPolicy, tenancy = null) {
   if (patternName !== 'Integrated') return null;
+  const tenantProp = tenancy ? tenancy.prop : null;
 
   // Per-field exclusion (#490): drop declared-excluded fields from copy-through.
   // Exclusion targets copy-through scalars only (FK columns and user_id are
@@ -1447,13 +1433,13 @@ export function buildIntegrationSurface(patternName, processedFields, belongsTo,
   // Excluded fields (#490) are also dropped here — they are removed from the
   // copy-through write surface so integrationUpsertOne never clobbers them.
   const writeColumns = processedFields
-    .filter((f) => !excludeSet.has(f.name))
+    .filter((f) => !excludeSet.has(f.name) && f.camelName !== tenantProp)
     .map((f) => f.camelName);
 
   // FK resolvers — one per belongs_to. writeKey = `${relationKey}ExternalId`
   // (Decision 4). refTable is the string 'self' for self-FKs, else the parent
   // table var name (emitted as a live identifier by the template).
-  const fkResolvers = belongsTo.map((rel) => ({
+  const fkResolvers = belongsTo.filter((rel) => rel.camelField !== tenantProp).map((rel) => ({
     column: rel.camelField,
     writeKey: `${rel.relationKey}ExternalId`,
     refTable: rel.isSelfFk ? 'self' : rel.relatedTable,
@@ -1489,12 +1475,12 @@ export function buildIntegrationSurface(patternName, processedFields, belongsTo,
   // softDelete: use resolveSoftDeleteBoolean (delete knob takes precedence over
   // !!hasSoftDelete default; noop/absent both preserve !!hasSoftDelete, spec §Delete).
   const integrationConfig = {
-    // A tenant-scoped entity upserts on (tenant_id, provider, external_id) —
+    // A tenant-scoped entity upserts on (<tenant column>, provider, external_id) —
     // the generated config states it, so the runtime never has to introspect
     // the table to find out (charter I1). Matches the emitted `unique(...)`
     // constraint above.
-    conflictTarget: tenantScoped
-      ? ['tenantId', 'provider', 'externalId']
+    conflictTarget: tenantProp
+      ? [tenantProp, 'provider', 'externalId']
       : ['provider', 'externalId'],
     writeColumns,
     projectionColumns,
@@ -1507,7 +1493,7 @@ export function buildIntegrationSurface(patternName, processedFields, belongsTo,
   // Excluded fields (#490) are dropped from writeFields too — same exclusion set
   // as writeColumns. The projection keeps them (projectionFields below).
   const writeFields = processedFields
-    .filter((f) => !excludeSet.has(f.name))
+    .filter((f) => !excludeSet.has(f.name) && f.camelName !== tenantProp)
     .map((f) => ({
       camelName: f.camelName,
       tsType: f.nullable ? `${f.tsType} | null` : f.tsType,
@@ -1852,21 +1838,38 @@ export function buildBackendLocals(definition, baseLocals) {
   // Tenant scoping (ADR-042 / TEN-1). One YAML flag drives the column, the
   // index, the uniqueness prefix, the BehaviorConfig field and the repository's
   // strict enforcement — one declaration, five emissions (charter I1).
+  //
+  // #791: the column is configurable (`tenancy.column` in codegen.config.yaml,
+  // or `tenant_scoped: { column }`), and a column the entity already declares —
+  // a field or a belongs_to FK — is ADOPTED rather than emitted twice. The rule
+  // is `resolveTenancy` (src/schema/tenancy.ts), shared with the relations
+  // emitter. `baseLocals.tenancyColumn` is the project default prompt.js reads
+  // from the config; absent means the schema default.
   // ==========================================================================
-  const tenantScoped = definition.tenant_scoped === true;
+  const tenancy = resolveTenancy(
+    entityName,
+    definition,
+    baseLocals.tenancyColumn ?? DEFAULT_CODEGEN_CONFIG.tenancy.column,
+  );
+  const tenantScoped = tenancy !== null;
+  // The tenant block in entity.ejs.t emits the column only when nothing adopts it.
+  const tenantColumnEmitted = tenantScoped && tenancy.adopted === null;
+  // The BehaviorConfig key — ALWAYS emitted for a scoped entity (the runtime's
+  // `BehaviorConfig` requires it when `tenantScoped`); `null` only when unscoped.
+  const behaviorTenantColumn = tenantScoped ? tenancy.prop : null;
 
   // A tenant-scoped entity whose repository would upsert on a caller-supplied
   // conflict target is a cross-tenant WRITE waiting to happen: the ON CONFLICT
   // target selects the row before any WHERE applies. The EAV value-table
   // repository emits exactly that (`upsertCurrentValues`), and its conflict
-  // target is author-declared, so it cannot be prefixed with `tenant_id`
+  // target is author-declared, so it cannot be prefixed with the tenant column
   // without breaking index inference. Refuse the combination rather than emit a
   // repository that claims an isolation it does not have (TEN-1 §5.2).
   if (tenantScoped && eavValueTable) {
     throw new Error(
       `Entity '${entityName}': tenant_scoped: true is not supported with ` +
         'eav_value_table: true. The generated upsertCurrentValues() upserts on ' +
-        'an author-declared conflict target, which cannot carry tenant_id, so ' +
+        'an author-declared conflict target, which cannot carry the tenant column, so ' +
         "one tenant's batch would update another tenant's rows. Drop one of " +
         'the two flags. See ADR-042 and docs/specs/TEN-1.md §5.2.',
     );
@@ -2007,22 +2010,26 @@ export function buildBackendLocals(definition, baseLocals) {
   // lines.
   // #511: on a non-tenant entity a field with both `unique: true` and
   // `index: true` gets only the unique index (it leads with the column). Under
-  // tenant_scoped the unique index is (tenant_id, col) and cannot serve a
+  // tenant_scoped the unique index is (<tenant column>, col) and cannot serve a
   // lookup on col alone, so the author's `index: true` is kept.
-  const uniqueLedIndexNames = new Set();
+  const suppressedIndexNames = new Set();
   if (!tenantScoped) {
     for (const [name, def] of Object.entries(fields || {})) {
       if (name !== 'id' && def && def.unique === true && def.index === true) {
-        uniqueLedIndexNames.add(name);
+        suppressedIndexNames.add(name);
       }
     }
   }
+  // `suppressedIndexNames` therefore also holds the adopted tenant column: its
+  // own `index: true` is the tenant index below, under the same
+  // `<table>_<column>_idx` name, and emitting both is a C3 duplicate.
+  if (tenantScoped && tenancy.adopted) suppressedIndexNames.add(tenancy.column);
   const fieldFeatures = processFieldFeatures(
     nonFkFields,
     fields,
     targetNaming,
     baseLocals?.ownedTableNames,
-    uniqueLedIndexNames,
+    suppressedIndexNames,
   );
   const belongsToTables = new Set(belongsTo.map((r) => r.relatedTable));
   const fieldFkImports = fieldFeatures.fkImports.filter(
@@ -2045,16 +2052,16 @@ export function buildBackendLocals(definition, baseLocals) {
     belongsTo,
     nonFkFields,
     hasExternalIdTracking,
-    tenantScoped,
+    tenancy,
     hasTimestamps,
     hasSoftDelete,
   });
   const uniqueIndexExpressions = processUniqueIndexes(
     [
-      ...fieldUniqueEntries(fields),
+      ...fieldUniqueEntries(fields, tenancy),
       ...(definition.unique_indexes ?? []).map((ui, i) => ({ ...ui, source: `unique_indexes[${i}]` })),
     ],
-    { entityName, entityNamePlural, tenantScoped, tableColumns },
+    { entityName, entityNamePlural, tenancy, tableColumns },
   );
 
   // belongs_to FK columns that declared `index: true` on their underlying
@@ -2062,7 +2069,7 @@ export function buildBackendLocals(definition, baseLocals) {
   // processFieldFeatures never sees it — emit its index here using the same
   // `<table>_<col>_idx` naming a non-FK indexed field gets.
   const belongsToIndexExpressions = belongsTo
-    .filter((rel) => rel.hasIndex && !uniqueLedIndexNames.has(rel.field))
+    .filter((rel) => rel.hasIndex && !suppressedIndexNames.has(rel.field))
     .map((rel) => ({
       comment: null,
       expr: `index('${entityNamePlural}_${rel.field}_idx').on(t.${rel.camelField})`,
@@ -2085,9 +2092,9 @@ export function buildBackendLocals(definition, baseLocals) {
   if (tenantScoped) {
     // Every scoped read filters on this column, so it is indexed unconditionally.
     tableConstraints.unshift({
-      comment: 'tenant_scoped behavior (ADR-042) — every scoped read filters on tenant_id',
-      expr: `index('${entityNamePlural}_tenant_id_idx').on(t.tenantId)`,
-      name: `${entityNamePlural}_tenant_id_idx`,
+      comment: `tenant_scoped behavior (ADR-042) — every scoped read filters on ${tenancy.column}`,
+      expr: `index('${entityNamePlural}_${tenancy.column}_idx').on(t.${tenancy.prop})`,
+      name: `${entityNamePlural}_${tenancy.column}_idx`,
       builder: 'index',
       source: 'tenant_scoped',
     });
@@ -2106,11 +2113,11 @@ export function buildBackendLocals(definition, baseLocals) {
               'external_id_tracking + tenant_scoped — per-tenant ON CONFLICT target for integrationUpsert',
             expr:
               `unique('uq_${entityNamePlural}_tenant_provider_external_id')` +
-              '.on(t.tenantId, t.provider, t.externalId).nullsNotDistinct()',
+              `.on(t.${tenancy.prop}, t.provider, t.externalId).nullsNotDistinct()`,
             name: `uq_${entityNamePlural}_tenant_provider_external_id`,
             builder: 'unique',
             partial: false,
-            columns: ['tenant_id', 'provider', 'external_id'],
+            columns: [tenancy.column, 'provider', 'external_id'],
             source: 'external_id_tracking',
           }
         : {
@@ -2255,18 +2262,25 @@ export function buildBackendLocals(definition, baseLocals) {
   };
 
   // Fields for create DTO: exclude id, behavior-managed fields, and FK fields
+  // An adopted tenant column (#791) is stamped by the repository from the
+  // ambient tenant, exactly as an emitted one is — it is never a DTO input.
+  const isTenantColumn = (name) => tenantScoped && name === tenancy.column;
   const createDtoFields = nonFkFields.filter(
     (f) => !BEHAVIOR_MANAGED_FIELDS.has(f.name)
-        && !(hasExternalIdTracking && EXTERNAL_ID_TRACKING_FIELDS.has(f.name)),
+        && !(hasExternalIdTracking && EXTERNAL_ID_TRACKING_FIELDS.has(f.name))
+        && !isTenantColumn(f.name),
   );
 
-  // FK fields from belongs_to for create/output DTOs
+  // FK fields from belongs_to for the entity's output DTO (every belongs_to)
   const belongsToFkFields = belongsTo.map((rel) => ({
     camelName: rel.camelField,
     zodChainCreate: rel.nullable ? 'z.string().uuid().nullable().optional()' : 'z.string().uuid()',
     zodChainOutput: rel.nullable ? 'z.string().uuid().nullable()' : 'z.string().uuid()',
     nullable: rel.nullable,
   }));
+
+  // ...and for the create DTO: an adopted tenant FK (#791) is stamped, not input.
+  const createFkFields = belongsToFkFields.filter((fk) => !(tenantScoped && fk.camelName === tenancy.prop));
 
   // Build zodChain for each create DTO field
   const createDtoFieldsWithZod = createDtoFields.map((f) => ({
@@ -2297,7 +2311,7 @@ export function buildBackendLocals(definition, baseLocals) {
     eavEnabled,
     hasSoftDelete,
     sinkPolicy,
-    tenantScoped,
+    tenancy,
   );
 
   // ── ADR-041 emission ──────────────────────────────────────────────────────
@@ -2480,8 +2494,12 @@ export function buildBackendLocals(definition, baseLocals) {
     hasUserTracking,
     hasExternalIdTracking,
 
-    // Tenant scoping (ADR-042 / TEN-1)
+    // Tenant scoping (ADR-042 / TEN-1; configurable column, #791)
     tenantScoped,
+    tenantColumnEmitted,
+    tenantColumnName: tenancy ? tenancy.column : null,
+    tenantColumnProp: tenancy ? tenancy.prop : null,
+    behaviorTenantColumn,
 
     // Generation toggles
     generateWrites,
@@ -2538,6 +2556,7 @@ export function buildBackendLocals(definition, baseLocals) {
     outputDtoFields: outputDtoFields,
     belongsTo: belongsTo,
     belongsToFkFields: belongsToFkFields,
+    createFkFields,
 
     // Drizzle
     drizzleImports: drizzleEntityImports,

@@ -147,6 +147,9 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
     softDelete: <%= !!hasSoftDelete %>,
     userTracking: <%= !!hasUserTracking %>,
     tenantScoped: <%= !!tenantScoped %>,
+<% if (tenantScoped) { -%>
+    tenantColumn: '<%= behaviorTenantColumn %>',
+<% } -%>
   };
 <% } -%>
 <% if (tenantScoped) { -%>

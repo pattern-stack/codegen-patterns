@@ -6,7 +6,7 @@ force: true
 import { z } from 'zod';
 
 export const <%= classNames.createSchema %> = z.object({
-<%_ belongsToFkFields.forEach(fk => { _%>
+<%_ createFkFields.forEach(fk => { _%>
   <%= fk.camelName %>: <%- fk.zodChainCreate %>,
 <%_ }) _%>
 <%_ createDtoFields.forEach(field => { _%>

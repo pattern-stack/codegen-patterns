@@ -553,6 +553,11 @@ generate:
   semantic: false                # default false; emit src/generated/semantic/ (declared AggregateModel) —
                                  # true needs the optional peer @pattern-stack/query-surface installed
 
+tenancy:
+  column: tenant_id              # default; the column `tenant_scoped` entities scope on. An entity's own
+                                 # `tenant_scoped: { column: organization_id }` overrides it; a column the entity
+                                 # already declares (field or belongs_to FK) is adopted, not emitted twice
+
 # frontend:                      # inert unless generate.frontend: true
 #   ...                          # see "Frontend generation" above for the full block
 ```
