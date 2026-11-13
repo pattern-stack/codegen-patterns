@@ -4,26 +4,37 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-**Breaking (DDL), pending Doug's sign-off; ships in the next minor (0.33.0):** `max_length` on a
-`string` field now emits `varchar(n)` instead of `text` (#772). **`drizzle-kit push` and
-`drizzle-kit generate` silently truncate longer values**: both emit `ALTER COLUMN … SET DATA TYPE
-varchar(n) USING "col"::varchar(n)`, and an explicit cast to `varchar(n)` cuts the value to `n`
-characters rather than failing. Before migrating, run `select max(length(col)) from <table>` on
-every such column and raise `max_length` (or clean the data) wherever it exceeds `n`.
+## [0.33.0] — 2026-11-12
 
-**Breaking (generated read API, READ-1 — `docs/specs/READ-1.md`).** Upgrade in this order:
+**Breaking (DDL and generated API).** Tenancy, table naming and the read API: a configurable
+tenant column (#791), the SQL table name decoupled from the code name (#848), a time-zone knob
+for behavior and template time columns (#845), junction payload fields as entity fields (#740,
+#690), one generated read API (READ-1, #840–#843), `belongs_to` foreign keys NOT NULL by default
+(#850) and `max_length` enforced as `varchar(n)` (#772). Upgrading from 0.32.0:
 
-1. **Vendored runtime (`runtime: vendored`): run `codegen project update` first.** `entity new`
-   does not refresh `@shared/base-classes`, and the regenerated repositories call `rootFilter`,
-   `checkColumns`, `byIdsColumns`, `inInputOrder`, `uniqueIds`, `assertReadScope` and
-   `requireRelationalQuery`; the list use case imports `hasColumn`; the manifest imports
-   `scopedRoot`, `tableScope` and `UNSCOPED`.
-2. Regenerate: `codegen entity new --all --force`, plus `junction new --all --force`.
-3. Fix the call sites below. Rows marked **compile** are a compile error at the call site,
-   including through a generated service (`service.count(eq(…))` and `service.list({ where: <SQL> })`
-   are type errors). Rows marked **runtime** are not — read those. One residual: a
-   HAND-WRITTEN service extending `BaseService` inherits `list(options?: unknown)` (generated services
-   override it with the typed signature).
+1. Vendored runtime (`runtime: vendored`): run `codegen project update` first. The regenerated
+   repositories call new base-class helpers (READ-1).
+2. Edit the YAML:
+   - Write `nullable: true` on every `belongs_to` / `cardinality: one` role whose reference may be
+     absent, and replace `required: false` on a foreign-key field with `nullable: true` (#850). A
+     written `required: false` on a foreign key is now a schema error that says so.
+   - Check every `table:`. Equal to `plural`, it is redundant and may be deleted; different, it now
+     renames the table to that value (#848).
+   - Remove `max_length` / `min_length` from enum (`choices:` / `choices_from:`) fields (#772).
+3. Regenerate: `codegen entity new --all --force`, plus `junction new --all --force` and
+   `relationship new --all --force` if you declare them.
+4. Before migrating: backfill NULLs in foreign-key columns that become NOT NULL, and run
+   `select max(length(<col>)) from <table>` on every `max_length` column — drizzle-kit turns
+   `text` → `varchar(n)` into `SET DATA TYPE varchar(n) USING "col"::varchar(n)`, which
+   **silently truncates** longer values (#772).
+5. Fix the read-API call sites in the table below (#840–#843).
+
+### Breaking — generated read API (READ-1, `docs/specs/READ-1.md`)
+
+Rows marked **compile** are a compile error at the call site, including through a generated
+service (`service.count(eq(…))` and `service.list({ where: <SQL> })` are type errors). Rows marked
+**runtime** are not — read those. One residual: a HAND-WRITTEN service extending `BaseService`
+inherits `list(options?: unknown)` (generated services override it with the typed signature).
 
 | Break | Kind | Before | After |
 |---|---|---|---|
@@ -219,7 +230,7 @@ every such column and raise `max_length` (or clean the data) wherever it exceeds
 - **Junction payload fields are writable through `attach` (#740).** They are part of
   `<Junction>LinkInput`; a `required: true` field is a required key and makes the `link` argument of
   `attach` and of the parents' `attach<X>` / `addTo<X>` required. Entity-field keys a junction would
-  ignore (`unique`, `min`/`max`/`min_length`/`max_length`, the analytics tags) and fields named `id`
+  ignore (`unique`, `min`/`max`/`min_length`, the analytics tags; `max_length` is accepted, #772) and fields named `id`
   or after an endpoint column are schema errors.
 - **A junction `role` without `choices:` is a column (#740).** It used to be deleted
   silently. Now it's emitted as its declared type, and it's part of the key only when it's an enum
