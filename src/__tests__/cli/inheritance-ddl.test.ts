@@ -214,13 +214,15 @@ describe('the family generates (S2: the DDL)', () => {
 			expect(out).not.toContain('_match_check');
 		});
 
-		it('when EVERY matching FK is nullable, the FK and the derived column are NULL together (a CHECK per FK)', () => {
+		it('when EVERY matching FK is nullable, a SET FK must have its derived column (a CHECK per FK)', () => {
 			const root = familyProject('inh-nullable-match');
 			expect(run(root, ['entity', 'new', '--all', '--force']).status).toBe(0);
 			const note = read(root, 'communication-notes/communication-note.entity.ts');
 			expect(note).toContain("communicationKind: communicationKindEnum('communication_kind'),");
 			expect(note).toContain("check('communication_notes_communication_match_check'");
-			expect(note).toContain('(${tCols.communicationId} IS NULL) = (${tCols.communicationKind} IS NULL)');
+			expect(note).toContain('${tCols.communicationId} IS NULL OR ${tCols.communicationKind} IS NOT NULL');
+			expect(note).toContain("check('communication_notes_role_match_check'");
+			expect(note).toContain('${tCols.roleId} IS NULL OR ${tCols.communicationKind} IS NOT NULL');
 		});
 	});
 

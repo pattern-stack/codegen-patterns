@@ -245,39 +245,65 @@ d('match: on a role lookup -- a participant role is one of the communication kin
   });
 });
 
-d('match: with a nullable FK -- the FK and its derived column are NULL together', () => {
+d('match: with nullable FKs sharing a derived column -- a SET FK always has its derived column', () => {
   // MATCH SIMPLE skips a composite FK that has a NULL in any column, so a set communication_id with a NULL
   // communication_kind would never be checked against the communication at all. The emitted CHECK closes that.
-  const insertNote = (comm: string | null, kind: string | null) =>
-    run(sql`INSERT INTO communication_notes (communication_id, communication_kind, body)
-            VALUES (${comm}, ${kind}, 'n')`);
+  // The reverse is allowed: a column set by one nullable FK while the other is NULL.
+  const insertNote = (comm: string | null, role: string | null, kind: string | null) =>
+    run(sql`INSERT INTO communication_notes (communication_id, role_id, communication_kind, body)
+            VALUES (${comm}, ${role}, ${kind}, 'n')`);
+  const insertRole = (id: string, kind: string) =>
+    run(sql`INSERT INTO communication_participant_roles (id, kind, role) VALUES (${id}, ${kind}, 'r')`);
 
-  test('control: no communication and no kind inserts', async () => {
-    await insertNote(null, null);
+  test('control: no FK and no kind inserts', async () => {
+    await insertNote(null, null, null);
   });
 
   test('control: a communication with its own kind inserts', async () => {
     await insertComm(ids.meetingComm, 'meeting');
-    await insertNote(ids.meetingComm, 'meeting');
+    await insertNote(ids.meetingComm, null, 'meeting');
+  });
+
+  test('allowed: one nullable FK set while the other is NULL, sharing the derived column', async () => {
+    await insertRole(ids.meetingRole, 'meeting');
+    // role set, communication NULL: the column is set, the role FK is checked against it
+    await insertNote(null, ids.meetingRole, 'meeting');
+    await insertComm(ids.meetingComm, 'meeting');
+    // communication set, role NULL
+    await insertNote(ids.meetingComm, null, 'meeting');
+    // both set, agreeing
+    await insertNote(ids.meetingComm, ids.meetingRole, 'meeting');
+  });
+
+  test('allowed: a derived column with no FK set', async () => {
+    await insertNote(null, null, 'meeting');
   });
 
   test('a set FK with a NULL derived column fails the CHECK (23514) instead of skipping the composite FK', async () => {
     await insertComm(ids.meetingComm, 'meeting');
-    const err = await violation(() => insertNote(ids.meetingComm, null));
+    const err = await violation(() => insertNote(ids.meetingComm, null, null));
     expect(err?.code).toBe('23514');
     expect(err?.constraint).toBe('communication_notes_communication_match_check');
   });
 
-  test('a derived column with no FK fails the same CHECK', async () => {
-    const err = await violation(() => insertNote(null, 'meeting'));
+  test('a set role with a NULL derived column fails its own CHECK (23514)', async () => {
+    await insertRole(ids.meetingRole, 'meeting');
+    const err = await violation(() => insertNote(null, ids.meetingRole, null));
     expect(err?.code).toBe('23514');
-    expect(err?.constraint).toBe('communication_notes_communication_match_check');
+    expect(err?.constraint).toBe('communication_notes_role_match_check');
   });
 
   test('a set FK with the wrong kind still fails the composite FK (23503)', async () => {
     await insertComm(ids.meetingComm, 'meeting');
-    const err = await violation(() => insertNote(ids.meetingComm, 'email'));
+    const err = await violation(() => insertNote(ids.meetingComm, null, 'email'));
     expect(err?.code).toBe('23503');
     expect(err?.constraint).toBe('communication_notes_communication_match_fk');
+  });
+
+  test('a role of another kind than the shared column fails the role composite FK (23503)', async () => {
+    await insertRole(ids.emailRole, 'email');
+    const err = await violation(() => insertNote(null, ids.emailRole, 'meeting'));
+    expect(err?.code).toBe('23503');
+    expect(err?.constraint).toBe('communication_notes_role_match_fk');
   });
 });

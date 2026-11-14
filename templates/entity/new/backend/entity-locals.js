@@ -2249,7 +2249,8 @@ export function buildBackendLocals(definition, baseLocals) {
   }
   // A derived column that is nullable (EVERY relationship matching it is nullable) would let a set FK skip its
   // composite check: MATCH SIMPLE does not check a row with a NULL in any key column. So the FK and the derived
-  // column are NULL together, per relationship (RFC-0006 §2.4).
+  // column are checked together, per relationship: a SET FK needs its derived column (RFC-0006 §2.4). The
+  // reverse (a derived column with no FK) is harmless, and another nullable FK may be the one using it.
   const nullableDerived = new Set(matched.derived.filter((d) => d.nullable).map((d) => d.column));
   for (const fk of matched.fks) {
     const rel = belongsTo.find((r) => r.relName === fk.relName);
@@ -2257,10 +2258,11 @@ export function buildBackendLocals(definition, baseLocals) {
     if (locals.length === 0) continue;
     const name = `${entityTableName}_${fk.relName}_match_check`;
     const body = locals
-      .map((l) => `(\${${T}.${camelCase(rel.field)}} IS NULL) = (\${${T}.${camelCase(l)}} IS NULL)`)
+      .map((l) => `\${${T}.${camelCase(rel.field)}} IS NULL OR \${${T}.${camelCase(l)}} IS NOT NULL`)
+      .map((c) => (locals.length > 1 ? `(${c})` : c))
       .join(' AND ');
     tableConstraints.push({
-      comment: `match: ${rel.field} and ${locals.join(', ')} are NULL together, so a set ${rel.field} always reaches its composite FK`,
+      comment: `match: a set ${rel.field} needs ${locals.join(', ')}, so it always reaches its composite FK (MATCH SIMPLE skips a NULL)`,
       expr: `check('${name}', sql\`${body}\`)`,
       name,
       builder: 'check',

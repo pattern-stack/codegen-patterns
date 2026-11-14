@@ -368,10 +368,11 @@ What it emits:
 
 **When every relationship matching a column is nullable**, the derived column is nullable too, and a set FK with a
 NULL derived column would skip its composite check. So the entity carries an internal CHECK per such relationship,
-`<table>_<relationship>_match_check`: `(<fk> IS NULL) = (<derived> IS NULL)`, through the same internal check builder
-as the child's kind CHECK. The FK and its derived column are NULL together. Consequence for a column shared by two
-nullable relationships: each FK is NULL exactly when the column is, so the two FKs are set together or not at all;
-declare one of them NOT NULL (which makes the column NOT NULL) when that is not the shape you want.
+`<table>_<relationship>_match_check`: `<fk> IS NULL OR <derived> IS NOT NULL`, through the same internal check builder
+as the child's kind CHECK. The requirement is only that a **set** FK is always checked, so a set FK always has its
+derived column. The reverse is allowed: a derived column with no FK is harmless, and for a column shared by two
+nullable relationships one FK may be set while the other is NULL (the column is then set, and the set FK is checked
+against it). A relationship matching several nullable columns gets one conjunct per column.
 
 **Case 1: a transcript part only under a meeting.** The FK to the communication is on the part's base, so that is
 where the rule goes. The part's kinds *are* the communication's kinds, and the part's own discriminator is the
