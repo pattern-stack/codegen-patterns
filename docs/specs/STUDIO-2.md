@@ -1,7 +1,6 @@
 # STUDIO-2 — the API view: what each entity and each relationship generates
 
-**Status:** In progress — the server route and contract are built (A3); the API tab (A4) and the edge view (A5)
-are designed here and not yet built
+**Status:** Built (Phase A) — the server route and contract (A3), the API tab (A4) and the edge view (A5)
 **Date:** 2026-11-14
 **Depends on:** STUDIO-0 (#698), ADR-046 (`docs/adrs/ADR-046-derived-once-templates-print.md`)
 **Coupled to:** #679 (collapsing `pattern: Junction` and `relationship:` into one concept), REL-3 (#588), STUDIO-1
@@ -9,8 +8,7 @@ are designed here and not yet built
 **Governed by:** charter (`.ai-docs/stacks/relations-v2-and-semantic-model/PROJECT.md`) §4 · CLAUDE.md § Studio ·
 plan `.ai-docs/stacks/api-surface-model/PLAN.md` §6
 
-Sections 1–3 and 8's e2e stage describe what is built. Sections 4–7 describe the design; A4 and A5 correct them to
-what is built.
+Every section describes what is built; §10 holds what is still open.
 
 ---
 
@@ -46,6 +44,16 @@ only process the server spawns is the CLI, through `runCliJson` in `src/studio/s
 `getSurface` copies `getGraph`'s pattern exactly — `runCliJson(['project', 'surface'], { cwd })`, and a missing
 payload (or one without `surface`) throws `CliFailureError`, which the server returns as a 502. It never returns
 `{}`: a failed derivation must not render as an entity that generates nothing.
+
+**The failure carries the CLI's words (A5, Doug's S2/E2).** Every failure of `project surface --json` prints
+`{ command: 'project surface', status: 'error', error }` and exits 1 — the #669 convention `entity new` follows —
+instead of an empty stdout (`printError` is a no-op in JSON mode, so before A5 neither stream said anything).
+`getSurface` passes `error` through as the 502's `detail` when `status === 'error'` and `error` is a non-empty string;
+otherwise it keeps the stderr/stdout fallback, and a missing payload is still a failure. So an `api.includes` path
+that names no relation reaches the API tab as `project surface failed` over
+`account.api.includes.find_by_id: 'nonexistent' names no relation at 'nonexistent' — …`, not as the JSON envelope and
+not as "the server is not responding". Unit-tested in `src/__tests__/cli/project-surface-json-errors.test.ts`.
+`project graph --json` still has the empty-stdout flaw on its one failure path (no entity directory); not fixed here.
 
 In-process was rejected for a second reason specific to this route: patterns and capabilities are registered in a
 process-global registry filled by dynamic imports. A long-lived server process would keep serving a `.pattern.ts`
@@ -124,7 +132,9 @@ node is selected (as `relate` does). The tab is `inspector/ApiTab.tsx`; the pure
   allowlist reads "No `api.includes` declared — `?include=` is closed." (charter I6).
 - **Unmodelled**: a relationship or junction node shows "<name> — not modelled yet (#679)" and the CLI's reason. A
   node in neither `entities` nor `unmodelled` says it is undescribed; no state ever shows an empty list.
-- **Failure**: a failed `/api/surface` shows the error and a Retry in the tab; the canvas and other tabs are
+- **Failure**: a failed `/api/surface` shows the error and a Retry in the tab — for a 502, the server's `error` as the
+  title and the CLI's message (§2) as the detail; only an unreachable server (status 0) reads as "not responding"
+  (`api/describe-error.ts`); the canvas and other tabs are
   unaffected. An error outranks "Nothing selected", so a dead server is never hidden behind an empty selection. When
   the whole server is down, a header Reload also empties the canvas (the graph route fails too); the canvas stays
   intact when the surface route fails on its own.
@@ -134,15 +144,39 @@ node is selected (as `relate` does). The tab is `inspector/ApiTab.tsx`; the pure
 
 ---
 
-## 5. The edge view (design — built in A5)
+## 5. The edge view (built in A5)
 
-- **Edge selection.** Selection becomes `{ kind: 'node' | 'edge'; id }`; the canvas gains `onEdgeClick` and dims for
-  an edge.
-- **`relationId`.** Each drawn edge carries `relationId` = `<from>.relationships.<name>`, set where the edge id is
-  built (`adapters/schema-adapter.ts`) and never parsed back out of the id.
-- **Panel.** `relations[relationId].generates` by side, then those of its `inverseOf`, then `includeKeys`.
-- **Junctions.** Junction-origin methods appear on both parents' API tabs. Whether a `pattern: Junction` pairing is
-  itself a selectable edge is open (§10).
+- **Edge selection.** Selection is `{ kind: 'node' | 'edge'; id } | null` (`graph/selection.ts`), held by `App.tsx`.
+  The canvas has `onEdgeClick`; a second click on the selected node or edge clears it (`toggleSelection`). Node
+  selection lights what it did before (the library's `useGraphSelection`). Edge selection is computed in Studio
+  (`edgeHighlight`): the edge and its two endpoints stay lit, everything else dims — including the reverse edge
+  between the same two nodes, which is a different relation. The selected edge draws one step wider.
+- **Where the panel shows.** Selecting an edge opens the inspector's API tab, which renders `inspector/EdgePanel.tsx`
+  in place of the entity surface. The API tab is enabled for a node or an edge; Detail stays node-only. The tab's
+  failure and loading states apply to the edge panel unchanged — an error still outranks the selection.
+- **`relationId`.** `StudioEdgeData.relationId` is set where the edge is built (`relationIdOf` in
+  `adapters/schema-adapter.ts`) from the edge's own fields: `<from>.relationships.<name>`, or `<from>.roles.<role>`
+  for a role-derived edge — the derivation's spelling for both. Nothing parses an edge id. A junction's two halves
+  carry none. `schema-adapter.test.ts` pins every demo edge's `relationId` and asserts the set equals the ids in a real
+  `project surface --json` payload of the same graph.
+- **Panel** (`inspector/edge-view.ts`, pure). A heading chip — the relation's id, in its edge kind's colour, linked to
+  its declaration (read off the provenance of a method it generates on the declaring entity, never rebuilt from the
+  id). Then four groups, in `EDGE_GROUPS` order (`surface-kinds.ts`):
+  1. **on `<from>`** — `generates` entries on the declaring entity;
+  2. **on `<to>`** — `generates` entries on the other entity (in the demo, always empty: a `belongs_to` generates on
+     its own side, its `has_many` inverse on the other);
+  3. **inverse** — the `inverseOf` relation's chip and its `generates`;
+  4. **Include keys** — the relation's `includeKeys`, then its inverse's.
+  Each method row is the entity surface's own entry (`surface-rows.tsx`, shared with the API tab): signature, kind
+  label, `→ entity.layer.method`, origin chip. A `generates` entry its entity does not list is flagged
+  `not on the entity surface`, not dropped. Each group states its empty sentence rather than showing nothing.
+- **Never an empty list.** A junction half reads "No relation surface for this edge" (its methods are on both
+  parents' API tabs); an inline edge whose `relationId` the surface does not list reads "`<id>` is not in the derived
+  surface". Both sentences live in `EDGE_PANEL_STATES`.
+- **Junctions.** Junction-origin methods appear on both parents' API tabs. A `pattern: Junction` pairing is not a
+  selectable relation in v1 (§10).
+- **Tests**: `__tests__/edge-view.test.ts` over the demo payload (`contact → account`, `account → contacts`, a
+  junction half, an unlisted relation, no inverse, a missing method); `__tests__/selection.test.ts`.
 
 ---
 
@@ -178,16 +212,22 @@ real demo project and asserts over HTTP, by exact value:
 | | `contact.relationships.account`'s `inverseOf` is `account.relationships.contacts`; it generates exactly `contact.repository.findByAccountId` and `contact.service.account` |
 | | `AccountService.contacts` is `relation_many`, delegating to `contact.findByAccountId` |
 | | `warnings` and `unmodelled` are both `[]` |
+| 7b, `api.includes.find_by_id.paths: [nonexistent]` appended to `entities/account.yaml` through `PUT /api/files` | `GET /api/surface` is 502, `error` is `project surface failed`, `detail` contains `account.api.includes.find_by_id: 'nonexistent' names no relation at 'nonexistent'` and is not the JSON envelope; `GET /api/graph` still answers 200 with 4 edges; after the file is restored, the surface's entities are exactly the three again |
 | 9b, after the relationship YAML is written | `unmodelled`'s `{ name, kind }` are exactly `[{ name: 'contact_opportunity', kind: 'relationship' }]` |
 
 The stage was mutation-checked: changing the expected shadow path to another value turns `just test-studio` red,
 naming that expectation.
 
-**UI unit tests (A4, A5).** Pure-logic tests of the view model the tab and edge panel render from, in
-`tools/studio/src/__tests__/`.
+**UI typecheck (A5, Doug's S2/E3).** `just test-studio` runs `bun run typecheck` in `tools/studio` before the unit
+tests, so a type error in a component fails CI.
 
-**Not proven.** No test renders the tab or the panel — nothing in CI renders any Studio pane (STUDIO-0 §6.3). A
-person looks at it at sign-off.
+**UI unit tests (A4, A5).** Tests of the view models the tab and edge panel render from, in
+`tools/studio/src/__tests__/`. One renders: `surface-error.test.tsx` drives a 502 through the real client, the error
+description and `ApiTab` (`react-dom/server`), and asserts the markup carries the CLI's message and not "not
+responding".
+
+**Not proven.** Nothing renders the canvas or the edge panel, and no browser runs in CI. A person looks at them at
+sign-off.
 
 ---
 
@@ -201,7 +241,8 @@ person looks at it at sign-off.
 
 ## 10. Open questions
 
-- Should a `pattern: Junction` pairing be a selectable edge? Not in v1; revisit with #679.
+- Should a `pattern: Junction` pairing be a selectable relation? Not in v1: its two halves are selectable edges and
+  say they have no relation surface. Revisit with #679.
 - Does a shadowed declaration deserve a warning in the YAML editor, not only a line in the API tab?
 - A link from a row to the generated file in the diff drawer.
 

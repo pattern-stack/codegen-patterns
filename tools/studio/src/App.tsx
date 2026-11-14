@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import type { GraphNodeData } from '@pattern-stack/graph-components';
 import type { HealthResponse, RunStepName, StudioFile } from '@studio-shared';
 
-import { api, ApiError, streamRun } from './api/client';
+import { api, streamRun } from './api/client';
+import { describeError } from './api/describe-error';
 import { adaptDomainGraph } from './adapters/schema-adapter';
 import type { AdaptedGraph } from './adapters/schema-adapter';
+import type { StudioEdgeData } from './graph/edge-kinds';
+import type { Selection } from './graph/selection';
 import { GraphPane } from './graph/GraphPane';
 import { Inspector } from './inspector/Inspector';
 import type { InspectorTab } from './inspector/Inspector';
@@ -44,7 +47,7 @@ export function App() {
   const [graph, setGraph] = useState<GraphState>({ data: EMPTY_GRAPH, counts: null, loading: true });
   const [surface, setSurface] = useState<SurfaceState>({ status: 'loading' });
   const [files, setFiles] = useState<StudioFile[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<Selection | null>(null);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('detail');
   const [inspectorWidth, setInspectorWidth] = useState(420);
   const [dirty, setDirty] = useState(false);
@@ -76,7 +79,7 @@ export function App() {
         });
       })
       .catch((err: unknown) => {
-        setGraph({ data: EMPTY_GRAPH, counts: null, loading: false, error: describe(err, 'Could not load the model') });
+        setGraph({ data: EMPTY_GRAPH, counts: null, loading: false, error: describeError(err, 'Could not load the model') });
       });
   }, []);
 
@@ -88,7 +91,7 @@ export function App() {
       .surface()
       .then((res) => setSurface({ status: 'ready', surface: res.surface }))
       .catch((err: unknown) =>
-        setSurface({ status: 'error', error: describe(err, 'Could not derive the API surface') }),
+        setSurface({ status: 'error', error: describeError(err, 'Could not derive the API surface') }),
       );
   }, []);
 
@@ -112,7 +115,7 @@ export function App() {
         reload();
       })
       .catch((err: unknown) => {
-        const described = describe(err, 'Could not reach the Studio server');
+        const described = describeError(err, 'Could not reach the Studio server');
         setHealthError(described.title);
         setGraph({ data: EMPTY_GRAPH, counts: null, loading: false, error: described });
         setSurface({ status: 'error', error: described });
@@ -161,7 +164,7 @@ export function App() {
         });
       })
       .catch((err: unknown) => {
-        const described = describe(err, 'Could not start the run');
+        const described = describeError(err, 'Could not start the run');
         dispatch({
           type: 'failed',
           message: described.detail != null ? `${described.title} — ${described.detail}` : described.title,
@@ -172,8 +175,13 @@ export function App() {
   // ── Derived ──────────────────────────────────────────────────────────────
 
   const selectedNode: GraphNodeData | null = useMemo(
-    () => graph.data.nodes.find((n) => n.id === selectedId) ?? null,
-    [graph.data.nodes, selectedId],
+    () => (selection?.kind === 'node' ? (graph.data.nodes.find((n) => n.id === selection.id) ?? null) : null),
+    [graph.data.nodes, selection],
+  );
+
+  const selectedEdge: StudioEdgeData | null = useMemo(
+    () => (selection?.kind === 'edge' ? (graph.data.edges.find((e) => e.id === selection.id) ?? null) : null),
+    [graph.data.edges, selection],
   );
 
   const entityNames = useMemo(
@@ -182,10 +190,13 @@ export function App() {
   );
 
   // Selecting a node is a request to look at it; the inspector follows.
-  const select = useCallback((id: string | null) => {
-    setSelectedId(id);
+  // An edge has one thing to show — what its relation generates — so
+  // selecting one opens the API tab.
+  const select = useCallback((next: Selection | null) => {
+    setSelection(next);
+    if (next?.kind === 'edge') setInspectorTab('api');
     // The API tab stays put too, so clicking through entities compares their surfaces.
-    if (id != null) setInspectorTab((tab) => (tab === 'relate' || tab === 'api' ? tab : 'detail'));
+    else if (next != null) setInspectorTab((tab) => (tab === 'relate' || tab === 'api' ? tab : 'detail'));
   }, []);
 
   const startInspectorDrag = (event: React.PointerEvent) => {
@@ -311,7 +322,7 @@ export function App() {
             edges={graph.data.edges}
             loading={graph.loading}
             error={graph.error}
-            selectedId={selectedId}
+            selection={selection}
             onSelect={select}
             onRetry={reload}
           />
@@ -328,6 +339,7 @@ export function App() {
         <div style={{ flex: `0 0 ${inspectorWidth}px`, minWidth: 0 }}>
           <Inspector
             node={selectedNode}
+            edge={selectedEdge}
             files={files}
             entities={entityNames}
             tab={inspectorTab}
@@ -356,16 +368,4 @@ export function App() {
 /** `1 relationship`, `2 relationships` — the header reads as prose, not a table. */
 function count(n: number, singular: string, plural = `${singular}s`): string {
   return `${n} ${n === 1 ? singular : plural}`;
-}
-
-function describe(err: unknown, fallback: string): { title: string; detail?: string } {
-  if (err instanceof ApiError) {
-    return {
-      title: err.isOffline
-        ? 'The Studio server is not responding — is `just studio` running?'
-        : err.message || fallback,
-      detail: err.detail,
-    };
-  }
-  return { title: fallback, detail: err instanceof Error ? err.message : String(err) };
 }

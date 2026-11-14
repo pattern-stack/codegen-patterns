@@ -17,6 +17,8 @@ import { SchemaEdge } from './SchemaEdge';
 import { Legend } from './Legend';
 import { EDGE_MARKERS } from './edge-kinds';
 import type { StudioEdgeData } from './edge-kinds';
+import { edgeHighlight, toggleSelection } from './selection';
+import type { Selection } from './selection';
 import { elkLayout } from '../layout/elk-layout';
 import { LoadingState } from '../ui/primitives';
 
@@ -39,8 +41,8 @@ const edgeTypes: EdgeTypes = { schemaEdge: SchemaEdge };
 export interface SchemaCanvasProps {
   nodes: GraphNodeData[];
   edges: StudioEdgeData[];
-  selectedId: string | null;
-  onSelect: (id: string | null) => void;
+  selection: Selection | null;
+  onSelect: (selection: Selection | null) => void;
 }
 
 /**
@@ -48,9 +50,10 @@ export interface SchemaCanvasProps {
  *
  * Layout runs off the semantic graph; selection is applied on top of the laid
  * out nodes rather than by re-running elk, so clicking a node dims its
- * unrelated neighbours without anything moving.
+ * unrelated neighbours without anything moving. Clicking an edge does the
+ * same for the edge: it and its two endpoints stay lit (`selection.ts`).
  */
-export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selectedId, onSelect }: SchemaCanvasProps) {
+export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selection, onSelect }: SchemaCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [laidOut, setLaidOut] = useState(false);
@@ -92,12 +95,21 @@ export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selectedId,
     return () => observer.disconnect();
   }, []);
 
-  const { connectedNodeIds, connectedEdgeIds } = useGraphSelection(selectedId, graphNodes, graphEdges);
+  const selectedNodeId = selection?.kind === 'node' ? selection.id : null;
+  const selectedEdgeId = selection?.kind === 'edge' ? selection.id : null;
+  const nodeLit = useGraphSelection(selectedNodeId, graphNodes, graphEdges);
+  const lit = useMemo(
+    () =>
+      selectedEdgeId != null
+        ? edgeHighlight(selectedEdgeId, graphEdges)
+        : { nodeIds: nodeLit.connectedNodeIds, edgeIds: nodeLit.connectedEdgeIds },
+    [selectedEdgeId, graphEdges, nodeLit.connectedNodeIds, nodeLit.connectedEdgeIds],
+  );
 
   // Selection is projected onto the laid out graph: `dimmed` rides in the node
   // and edge data, and positions are untouched.
   const shownNodes = useMemo<Node[]>(() => {
-    if (selectedId == null) {
+    if (selection == null) {
       return nodes.map((n) =>
         (n.data as { dimmed?: boolean }).dimmed === true || n.selected === true
           ? { ...n, selected: false, data: { ...n.data, dimmed: false } }
@@ -106,28 +118,34 @@ export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selectedId,
     }
     return nodes.map((n) => ({
       ...n,
-      selected: n.id === selectedId,
-      data: { ...n.data, dimmed: !connectedNodeIds.has(n.id) },
+      selected: n.id === selectedNodeId,
+      data: { ...n.data, dimmed: !lit.nodeIds.has(n.id) },
     }));
-  }, [nodes, selectedId, connectedNodeIds]);
+  }, [nodes, selection, selectedNodeId, lit]);
 
   const shownEdges = useMemo<Edge[]>(() => {
-    if (selectedId == null) {
+    if (selection == null) {
       return edges.map((e) =>
-        (e.data as { dimmed?: boolean }).dimmed === true
-          ? { ...e, data: { ...e.data, dimmed: false } }
+        (e.data as { dimmed?: boolean }).dimmed === true || e.selected === true
+          ? { ...e, selected: false, data: { ...e.data, dimmed: false } }
           : e,
       );
     }
     return edges.map((e) => ({
       ...e,
-      data: { ...e.data, dimmed: !connectedEdgeIds.has(e.id) },
+      selected: e.id === selectedEdgeId,
+      data: { ...e.data, dimmed: !lit.edgeIds.has(e.id) },
     }));
-  }, [edges, selectedId, connectedEdgeIds]);
+  }, [edges, selection, selectedEdgeId, lit]);
 
   const handleNodeClick = useCallback(
-    (_: unknown, node: Node) => onSelect(node.id === selectedId ? null : node.id),
-    [onSelect, selectedId],
+    (_: unknown, node: Node) => onSelect(toggleSelection(selection, { kind: 'node', id: node.id })),
+    [onSelect, selection],
+  );
+
+  const handleEdgeClick = useCallback(
+    (_: unknown, edge: Edge) => onSelect(toggleSelection(selection, { kind: 'edge', id: edge.id })),
+    [onSelect, selection],
   );
 
   const miniMapColor = useCallback(
@@ -174,6 +192,7 @@ export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selectedId,
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
+        onEdgeClick={handleEdgeClick}
         onPaneClick={() => onSelect(null)}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}

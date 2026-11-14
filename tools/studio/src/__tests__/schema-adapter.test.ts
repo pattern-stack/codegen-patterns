@@ -3,7 +3,7 @@
  * derived from, so a regression here is a silently wrong picture of the model.
  */
 import { describe, expect, test } from 'bun:test';
-import type { SerializedDomainGraph } from '@studio-shared';
+import type { ProjectApiSurface, SerializedDomainGraph } from '@studio-shared';
 import {
   adaptDomainGraph,
   buildEdges,
@@ -13,6 +13,8 @@ import {
   relationshipToNode,
   sourcePathOf,
 } from '../adapters/schema-adapter';
+
+import demoSurface from './fixtures/demo-surface-with-relationship.json';
 
 type Entity = SerializedDomainGraph['entities'][string];
 type RelDef = SerializedDomainGraph['relationshipDefinitions'][string];
@@ -229,6 +231,8 @@ describe('buildEdges', () => {
       type: 'fk',
       source: 'message',
       target: 'person',
+      // The derivation keys a role-derived relation `<entity>.roles.<role>`.
+      relationId: 'message.roles.sender',
     });
   });
 
@@ -396,5 +400,26 @@ describe('the canvas counts differently from the API, on purpose', () => {
     // …and the API's own N:M entry is not additionally drawn between the two
     // endpoints, which would show the same association twice.
     expect(edges.some((e) => e.source === 'contact' && e.target === 'opportunity')).toBe(false);
+  });
+
+  test('each inline edge carries its relation id; a junction half carries none', () => {
+    const { edges } = adaptDomainGraph(SHAPE);
+    expect(edges.map((e) => [e.source, e.target, e.relationId])).toEqual([
+      ['contact', 'account', 'contact.relationships.account'],
+      ['account', 'contact', 'account.relationships.contacts'],
+      ['opportunity', 'account', 'opportunity.relationships.account'],
+      ['account', 'opportunity', 'account.relationships.opportunities'],
+      ['contact', 'contact_opportunity', undefined],
+      ['contact_opportunity', 'opportunity', undefined],
+    ]);
+  });
+
+  test("every inline edge's relation id is a relation the demo's derived surface lists", () => {
+    // The real `project surface --json` of this same shape: the edge panel
+    // looks each line's methods up by exactly these keys.
+    const surface = demoSurface.surface as ProjectApiSurface;
+    const { edges } = adaptDomainGraph(SHAPE);
+    const ids = edges.flatMap((e) => (e.relationId != null ? [e.relationId] : [])).sort();
+    expect(ids).toEqual(surface.relations.map((r) => r.id).sort());
   });
 });

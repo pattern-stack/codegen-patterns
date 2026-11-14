@@ -8,6 +8,7 @@ import { YamlEditor } from './YamlEditor';
 import { RelationshipForm } from './RelationshipForm';
 import { ApiTab } from './ApiTab';
 import type { SurfaceState } from './ApiTab';
+import type { StudioEdgeData } from '../graph/edge-kinds';
 import { formatIssuePath, locatePath } from './yaml-issues';
 import {
   Button,
@@ -25,6 +26,8 @@ export type InspectorTab = 'detail' | 'api' | 'yaml' | 'relate';
 export interface InspectorProps {
   /** The graph node the canvas has selected, if any. */
   node: GraphNodeData | null;
+  /** The edge the canvas has selected, if any — shown on the API tab. */
+  edge: StudioEdgeData | null;
   files: StudioFile[];
   entities: string[];
   tab: InspectorTab;
@@ -58,6 +61,7 @@ function fileForNode(files: StudioFile[], node: GraphNodeData | null): StudioFil
 
 export function Inspector({
   node,
+  edge,
   files,
   entities,
   tab,
@@ -187,7 +191,7 @@ export function Inspector({
 
   const tabs = [
     { id: 'detail' as const, label: 'Detail', disabled: node == null },
-    { id: 'api' as const, label: 'API', disabled: node == null },
+    { id: 'api' as const, label: 'API', disabled: node == null && edge == null },
     {
       id: 'yaml' as const,
       label: 'YAML',
@@ -237,6 +241,7 @@ export function Inspector({
         {tab === 'api' && (
           <ApiTab
             nodeId={node?.id ?? null}
+            edge={edge}
             surface={surface}
             onRetry={onRetrySurface}
             onReveal={revealYaml}

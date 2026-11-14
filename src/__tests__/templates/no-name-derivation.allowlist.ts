@@ -47,5 +47,5 @@ export const NO_NAME_DERIVATION_ALLOWLIST: readonly AllowlistEntry[] = [
 	{ file: 'templates/relationship/new/prompt.js', pattern: 'local-case-helper', count: 2, issue: '#679' },
 
 	// ── Elsewhere ──────────────────────────────────────────────────────────
-	{ file: 'templates/broadcast/new/bridge-listener.ejs.t', pattern: 'charat-upper-case', count: 2, issue: 'unfiled (drafted at S1)' },
+	{ file: 'templates/broadcast/new/bridge-listener.ejs.t', pattern: 'charat-upper-case', count: 2, issue: '#884' },
 ];
