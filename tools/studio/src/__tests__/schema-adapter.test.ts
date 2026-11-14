@@ -300,6 +300,173 @@ describe('buildEdges', () => {
   });
 });
 
+describe('one line per foreign key (#778)', () => {
+  /** `from` belongs_to `to` on `column`. */
+  function belongsTo(from: string, name: string, to: string, column: string): Edge {
+    return {
+      from,
+      to,
+      relationship: relationship({ name, target: to, foreignKey: column }),
+      cardinality: 'N:1',
+      bidirectional: true,
+    };
+  }
+
+  /** `from` has_many (or has_one) `to`, whose `column` points back at `from`. */
+  function inverse(from: string, name: string, to: string, column: string, type: 'has_many' | 'has_one' = 'has_many'): Edge {
+    return {
+      from,
+      to,
+      relationship: relationship({ name, type, target: to, foreignKey: column }),
+      cardinality: type === 'has_many' ? '1:N' : '1:1',
+      bidirectional: true,
+    };
+  }
+
+  test('a belongs_to and its inverse has_many draw as one line', () => {
+    const edges = buildEdges(
+      graph({
+        edges: [
+          belongsTo('contact', 'account', 'account', 'account_id'),
+          inverse('account', 'contacts', 'contact', 'account_id'),
+        ],
+      }),
+    );
+
+    expect(edges.length, 'expected 1 edge').toBe(1);
+    expect(edges[0]).toMatchObject({
+      // Drawn as the belongs_to: FK holder → referenced entity.
+      source: 'contact',
+      target: 'account',
+      studioKind: 'belongs_to',
+      label: 'account ⇄ contacts',
+      relationId: 'contact.relationships.account',
+      inverseRelationId: 'account.relationships.contacts',
+      parent: 'account',
+      child: 'contact',
+    });
+  });
+
+  test('the order the two halves arrive in does not matter', () => {
+    const edges = buildEdges(
+      graph({
+        edges: [
+          inverse('account', 'contacts', 'contact', 'account_id'),
+          belongsTo('contact', 'account', 'account', 'account_id'),
+        ],
+      }),
+    );
+    expect(edges.length, 'expected 1 edge').toBe(1);
+    expect(edges[0]).toMatchObject({ source: 'contact', target: 'account', label: 'account ⇄ contacts' });
+  });
+
+  test('a has_one inverse pairs the same way', () => {
+    const edges = buildEdges(
+      graph({
+        edges: [
+          belongsTo('profile', 'owner', 'member', 'owner_id'),
+          inverse('member', 'profile', 'profile', 'owner_id', 'has_one'),
+        ],
+      }),
+    );
+    expect(edges.length, 'expected 1 edge').toBe(1);
+    expect(edges[0]).toMatchObject({ label: 'owner ⇄ profile', inverseRelationId: 'member.relationships.profile' });
+  });
+
+  test('two foreign keys onto one table stay two lines, each with its own inverse', () => {
+    // Paired on the column, not on the entity pair: both FKs join the same two
+    // entities, and an entity-pair key would merge them or mis-pair them.
+    const edges = buildEdges(
+      graph({
+        edges: [
+          belongsTo('order', 'billing_address', 'address', 'billing_address_id'),
+          belongsTo('order', 'shipping_address', 'address', 'shipping_address_id'),
+          inverse('address', 'shipped_orders', 'order', 'shipping_address_id'),
+          inverse('address', 'billed_orders', 'order', 'billing_address_id'),
+        ],
+      }),
+    );
+
+    expect(edges.length, 'expected 2 edges').toBe(2);
+    expect(edges.map((e) => [e.label, e.relationId, e.inverseRelationId])).toEqual([
+      ['billing_address ⇄ billed_orders', 'order.relationships.billing_address', 'address.relationships.billed_orders'],
+      ['shipping_address ⇄ shipped_orders', 'order.relationships.shipping_address', 'address.relationships.shipped_orders'],
+    ]);
+  });
+
+  test('a has_many with no matching belongs_to still draws, pointing parent → child', () => {
+    const edges = buildEdges(graph({ edges: [inverse('account', 'contacts', 'contact', 'account_id')] }));
+
+    expect(edges.length, 'expected 1 edge').toBe(1);
+    expect(edges[0]).toMatchObject({
+      source: 'account',
+      target: 'contact',
+      studioKind: 'has_many',
+      label: 'contacts',
+      relationId: 'account.relationships.contacts',
+      parent: 'account',
+      child: 'contact',
+    });
+    expect(edges[0]!.inverseRelationId).toBeUndefined();
+  });
+
+  test('a has_many on a different column between the same two entities is not absorbed', () => {
+    const edges = buildEdges(
+      graph({
+        edges: [
+          belongsTo('contact', 'account', 'account', 'account_id'),
+          inverse('account', 'referrals', 'contact', 'referred_by_account_id'),
+        ],
+      }),
+    );
+    expect(edges.map((e) => [e.studioKind, e.label])).toEqual([
+      ['belongs_to', 'account'],
+      ['has_many', 'referrals'],
+    ]);
+  });
+
+  test('a role-derived foreign key pairs with its inverse and keeps the role label', () => {
+    const edges = buildEdges(
+      graph({
+        edges: [
+          { ...belongsTo('message', 'sender', 'person', 'sender_id'), relationship: { ...relationship({ name: 'sender', target: 'person', foreignKey: 'sender_id' }), role: 'sender' } },
+          inverse('person', 'sent_messages', 'message', 'sender_id'),
+        ],
+      }),
+    );
+    expect(edges.length, 'expected 1 edge').toBe(1);
+    expect(edges[0]).toMatchObject({
+      studioKind: 'role',
+      label: 'sender ⇄ sent_messages',
+      relationId: 'message.roles.sender',
+      inverseRelationId: 'person.relationships.sent_messages',
+    });
+  });
+
+  test('a self-referential foreign key and its inverse are one line from the entity to itself', () => {
+    const edges = buildEdges(
+      graph({
+        edges: [
+          belongsTo('category', 'parent', 'category', 'parent_id'),
+          inverse('category', 'children', 'category', 'parent_id'),
+        ],
+      }),
+    );
+    expect(edges.length, 'expected 1 edge').toBe(1);
+    expect(edges[0]).toMatchObject({ source: 'category', target: 'category', label: 'parent ⇄ children' });
+  });
+
+  test('junction halves rank the junction below both of its ends', () => {
+    const edges = buildEdges(
+      graph({ relationshipDefinitions: { person_org: relDef('person_org', 'person', 'organization') } }),
+    );
+    expect(edges.map((e) => [e.parent, e.child])).toEqual([
+      ['person', 'person_org'],
+      ['organization', 'person_org'],
+    ]);
+  });
+});
+
 describe('adaptDomainGraph', () => {
   test('produces one node per entity and per junction', () => {
     const result = adaptDomainGraph(
@@ -323,9 +490,11 @@ describe('adaptDomainGraph', () => {
 describe('the canvas counts differently from the API, on purpose', () => {
   // A first-class relationship is ONE `N:M` entry in `graph.edges`, but a node
   // plus two edges on the canvas — it carries its own fields, types and
-  // temporal/sourced flags, and a line has nowhere to put them. Comparing the
-  // two numbers and "fixing" the difference would break the canvas, so the
-  // exact counts are pinned here rather than left to be rediscovered.
+  // temporal/sourced flags, and a line has nowhere to put them. And a
+  // `belongs_to` with its inverse `has_many` is TWO entries in `graph.edges`
+  // but one line on the canvas (#778). Comparing the two numbers and "fixing"
+  // the difference would break the canvas, so the exact counts are pinned here
+  // rather than left to be rediscovered.
   const SHAPE = graph({
     entities: {
       account: entity('account'),
@@ -375,12 +544,15 @@ describe('the canvas counts differently from the API, on purpose', () => {
     ],
   });
 
-  test('3 entities and 5 API edges draw as 4 nodes and 6 edges', () => {
+  test('3 entities and 5 API edges draw as 4 nodes and 4 edges', () => {
+    // Was 6 edges until #778: each `belongs_to` and its inverse `has_many` drew
+    // as two lines. They are one foreign key, so they now draw as one — the two
+    // inline pairs are 2 lines, plus the junction's 2 halves.
     const { nodes, edges } = adaptDomainGraph(SHAPE);
     expect(Object.keys(SHAPE.entities)).toHaveLength(3);
     expect(SHAPE.edges).toHaveLength(5);
     expect(nodes).toHaveLength(4);
-    expect(edges).toHaveLength(6);
+    expect(edges).toHaveLength(4);
   });
 
   test('the extra node is the relationship, and it is not an entity', () => {
@@ -403,14 +575,14 @@ describe('the canvas counts differently from the API, on purpose', () => {
   });
 
   test('each inline edge carries its relation id; a junction half carries none', () => {
+    // Since #778 a paired line carries its `belongs_to`'s id and its inverse's
+    // as `inverseRelationId` — every relation is still on exactly one line.
     const { edges } = adaptDomainGraph(SHAPE);
-    expect(edges.map((e) => [e.source, e.target, e.relationId])).toEqual([
-      ['contact', 'account', 'contact.relationships.account'],
-      ['account', 'contact', 'account.relationships.contacts'],
-      ['opportunity', 'account', 'opportunity.relationships.account'],
-      ['account', 'opportunity', 'account.relationships.opportunities'],
-      ['contact', 'contact_opportunity', undefined],
-      ['contact_opportunity', 'opportunity', undefined],
+    expect(edges.map((e) => [e.source, e.target, e.relationId, e.inverseRelationId])).toEqual([
+      ['contact', 'account', 'contact.relationships.account', 'account.relationships.contacts'],
+      ['opportunity', 'account', 'opportunity.relationships.account', 'account.relationships.opportunities'],
+      ['contact', 'contact_opportunity', undefined, undefined],
+      ['contact_opportunity', 'opportunity', undefined, undefined],
     ]);
   });
 
@@ -419,7 +591,8 @@ describe('the canvas counts differently from the API, on purpose', () => {
     // looks each line's methods up by exactly these keys.
     const surface = demoSurface.surface as ProjectApiSurface;
     const { edges } = adaptDomainGraph(SHAPE);
-    const ids = edges.flatMap((e) => (e.relationId != null ? [e.relationId] : [])).sort();
+    // A paired line (#778) draws two relations: its own and its inverse.
+    const ids = edges.flatMap((e) => [e.relationId, e.inverseRelationId].filter((id) => id != null)).sort();
     expect(ids).toEqual(surface.relations.map((r) => r.id).sort());
   });
 });

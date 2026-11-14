@@ -9,11 +9,13 @@
  * Mappings:
  *  - SerializedEntity                 → GraphNodeData (kind: 'entity')
  *  - SerializedRelationshipDefinition → GraphNodeData (kind: 'relationship')
- *  - graph.edges                      → StudioEdgeData, classified by kind
+ *  - graph.edges                      → StudioEdgeData, classified by kind,
+ *                                       one line per foreign key
  *  - each relationship definition      → a pair of junction edges through it
  */
 import type { GraphNodeData } from '@pattern-stack/graph-components';
 import type { SerializedDomainGraph } from '@studio-shared';
+import { pairedLabel } from '../graph/edge-kinds';
 import type { StudioEdgeData, StudioEdgeKind } from '../graph/edge-kinds';
 import { RELATIONSHIPS_KEY, ROLES_KEY } from '../inspector/surface-kinds';
 
@@ -160,6 +162,23 @@ function libraryType(kind: StudioEdgeKind): StudioEdgeData['type'] {
 }
 
 /**
+ * The foreign key an inline edge draws, as one string — `<holder>|<column>|<referenced>`.
+ *
+ * A `belongs_to` names the column on its own entity (`from`); its inverse
+ * `has_many` / `has_one` names the same column on the entity it points at
+ * (`to`). Keying on the column, not on the entity pair, is the point (#778):
+ * two foreign keys onto one table are two relations and stay two lines.
+ * `undefined` when the edge names no column — nothing to pair it on.
+ */
+function foreignKeyOf(edge: SerializedEdge): string | undefined {
+  const column = edge.relationship.foreignKey;
+  if (column == null || column === '') return undefined;
+  return edge.relationship.type === 'belongs_to'
+    ? `${edge.from}|${column}|${edge.to}`
+    : `${edge.to}|${column}|${edge.from}`;
+}
+
+/**
  * Build edges from a serialized graph.
  *
  * Two families:
@@ -167,20 +186,31 @@ function libraryType(kind: StudioEdgeKind): StudioEdgeData['type'] {
  * 2. Junction edges — each relationship definition becomes a node with an
  *    edge in from its `from` entity and an edge out to its `to` entity.
  *
+ * **One line per foreign key (#778).** A `belongs_to` and the `has_many` /
+ * `has_one` that inverts it are one relationship, so they draw as one line:
+ * the `belongs_to`'s (FK holder → referenced entity), labelled with both ends
+ * and carrying the inverse's id as `inverseRelationId`. They are paired on the
+ * foreign key (`foreignKeyOf`), never on the entity pair. A `has_many` with no
+ * matching `belongs_to` still draws on its own.
+ *
  * An `N:M` edge whose relationship names a junction is skipped: the junction
  * node pair already expresses it, and keeping both draws the edge twice.
  *
  * **The canvas therefore counts differently from the API, on purpose.** One
  * first-class relationship is a single `N:M` entry in `graph.edges`, but a node
  * plus two edges here — because the relationship carries its own fields, types
- * and temporal/sourced flags, and a line has nowhere to put them. A graph the
- * API reports as 3 entities and 5 edges draws as 4 nodes and 6 edges. That is
- * not drift between the two; do not "fix" it by keeping the skipped edge or by
- * dropping the junction node.
+ * and temporal/sourced flags, and a line has nowhere to put them — and an
+ * inverse pair is two entries in `graph.edges` but one line here. A graph the
+ * API reports as 3 entities and 5 edges (two `belongs_to`, their two inverse
+ * `has_many`, one junction) draws as 4 nodes and 4 edges. That is not drift
+ * between the two; do not "fix" it by keeping the skipped edge, by dropping the
+ * junction node, or by drawing each inverse again.
  *
  * An inline edge carries `relationId`, the key the edge panel looks its
- * methods up by. A junction half carries none — it is half of a pairing, not
- * a declared relation — and the panel says so rather than showing nothing.
+ * methods up by — for a paired line, the `belongs_to`'s, whose `inverseOf` the
+ * panel follows to show the other side. A junction half carries none — it is
+ * half of a pairing, not a declared relation — and the panel says so rather
+ * than showing nothing.
  */
 export function buildEdges(graph: SerializedDomainGraph): StudioEdgeData[] {
   const edges: StudioEdgeData[] = [];
@@ -195,31 +225,61 @@ export function buildEdges(graph: SerializedDomainGraph): StudioEdgeData[] {
     edges.push(edge);
   };
 
-  for (const e of graph.edges) {
-    if (e.cardinality === 'N:M' && junctionNames.has(e.relationship.name)) continue;
+  const inline = graph.edges.filter(
+    (e) => !(e.cardinality === 'N:M' && junctionNames.has(e.relationship.name)),
+  );
+
+  // The inverse each `belongs_to` absorbs, found before anything is drawn so
+  // the order the two halves arrive in does not matter.
+  const owners = new Map<string, SerializedEdge>();
+  for (const e of inline) {
+    const fk = foreignKeyOf(e);
+    if (e.relationship.type === 'belongs_to' && fk != null && !owners.has(fk)) owners.set(fk, e);
+  }
+  const inverses = new Map<SerializedEdge, SerializedEdge>();
+  for (const e of inline) {
+    if (e.relationship.type === 'belongs_to') continue;
+    const fk = foreignKeyOf(e);
+    const owner = fk != null ? owners.get(fk) : undefined;
+    if (owner != null && !inverses.has(owner)) inverses.set(owner, e);
+  }
+  const absorbed = new Set(inverses.values());
+
+  for (const e of inline) {
+    if (absorbed.has(e)) continue;
 
     const kind = classifyEdge(e);
     const roleName = roleOf(e.relationship);
+    const ownLabel = roleName ?? e.relationship.name;
+    const inverse = inverses.get(e);
+    // A `belongs_to` points at its parent; an unpaired inverse points away from it.
+    const pointsAtParent = e.relationship.type === 'belongs_to';
 
     push({
       id: `${kind}-${e.from}-${e.relationship.name}-${e.to}`,
       source: e.from,
       target: e.to,
+      parent: pointsAtParent ? e.to : e.from,
+      child: pointsAtParent ? e.from : e.to,
       cardinality: e.cardinality,
-      label: roleName ?? e.relationship.name,
+      label: inverse ? pairedLabel(ownLabel, inverse.relationship.name) : ownLabel,
       type: libraryType(kind),
       bidirectional: e.bidirectional,
       studioKind: kind,
       roleName,
       relationId: relationIdOf(e),
+      ...(inverse ? { inverseRelationId: relationIdOf(inverse) } : {}),
     });
   }
 
   for (const relDef of Object.values(graph.relationshipDefinitions)) {
+    // The junction row holds both foreign keys, so it ranks below both ends.
     push({
       id: `junction-${relDef.from}-${relDef.name}`,
       source: relDef.from,
       target: relDef.name,
+      parent: relDef.from,
+      child: relDef.name,
       cardinality: '1:N',
       type: 'junction',
       studioKind: 'junction',
@@ -228,6 +288,8 @@ export function buildEdges(graph: SerializedDomainGraph): StudioEdgeData[] {
       id: `junction-${relDef.name}-${relDef.to}`,
       source: relDef.name,
       target: relDef.to,
+      parent: relDef.to,
+      child: relDef.name,
       cardinality: 'N:1',
       type: 'junction',
       studioKind: 'junction',

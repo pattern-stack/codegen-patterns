@@ -149,16 +149,21 @@ node is selected (as `relate` does). The tab is `inspector/ApiTab.tsx`; the pure
 - **Edge selection.** Selection is `{ kind: 'node' | 'edge'; id } | null` (`graph/selection.ts`), held by `App.tsx`.
   The canvas has `onEdgeClick`; a second click on the selected node or edge clears it (`toggleSelection`). Node
   selection lights what it did before (the library's `useGraphSelection`). Edge selection is computed in Studio
-  (`edgeHighlight`): the edge and its two endpoints stay lit, everything else dims — including the reverse edge
-  between the same two nodes, which is a different relation. The selected edge draws one step wider.
+  (`edgeHighlight`): the edge and its two endpoints stay lit, everything else dims. The selected edge draws one step
+  wider.
+- **One line per foreign key (A6, #778).** A `belongs_to` and its inverse `has_many` / `has_one` are drawn as one
+  line, paired on the foreign key (holder + column + referenced entity), labelled `account ⇄ contacts`
+  (`pairedLabel`, `graph/edge-kinds.ts`). The line carries the `belongs_to`'s `relationId` and the inverse's as
+  `inverseRelationId`; selecting it opens the panel on the `belongs_to`, whose **inverse** group is the other side.
+  An unpaired `has_many` is its own line with its own `relationId`.
 - **Where the panel shows.** Selecting an edge opens the inspector's API tab, which renders `inspector/EdgePanel.tsx`
   in place of the entity surface. The API tab is enabled for a node or an edge; Detail stays node-only. The tab's
   failure and loading states apply to the edge panel unchanged — an error still outranks the selection.
 - **`relationId`.** `StudioEdgeData.relationId` is set where the edge is built (`relationIdOf` in
   `adapters/schema-adapter.ts`) from the edge's own fields: `<from>.relationships.<name>`, or `<from>.roles.<role>`
   for a role-derived edge — the derivation's spelling for both. Nothing parses an edge id. A junction's two halves
-  carry none. `schema-adapter.test.ts` pins every demo edge's `relationId` and asserts the set equals the ids in a real
-  `project surface --json` payload of the same graph.
+  carry none. `schema-adapter.test.ts` pins every demo edge's `relationId` / `inverseRelationId` and asserts the set of
+  both equals the ids in a real `project surface --json` payload of the same graph.
 - **Panel** (`inspector/edge-view.ts`, pure). A heading chip — the relation's id, in its edge kind's colour, linked to
   its declaration (read off the provenance of a method it generates on the declaring entity, never rebuilt from the
   id). Then four groups, in `EDGE_GROUPS` order (`surface-kinds.ts`):

@@ -39,6 +39,7 @@ export function estimateNodeSize(node: GraphNodeData): { width: number; height: 
 }
 
 export interface LayoutOptions {
+  /** Where children sit relative to their parents. Parents-above (`DOWN`) by default (#778). */
   direction?: 'RIGHT' | 'DOWN';
   /** Gap between layers. */
   spacing?: number;
@@ -54,6 +55,11 @@ export interface LayoutResult {
 /**
  * Position the graph with elk and hand ReactFlow the result.
  *
+ * Parents rank above their children: elk sees each edge as `parent` → `child`
+ * (`StudioEdgeData`), not as it is drawn. ReactFlow draws the edges, not elk —
+ * their connection points are chosen from the laid-out geometry
+ * (`../graph/edge-geometry`), so no route of elk's is used.
+ *
  * Falls back to a grid if elk throws: a readable-but-ugly graph beats a blank
  * canvas, and the caller has no better recovery than this one.
  */
@@ -62,7 +68,7 @@ export async function elkLayout(
   graphEdges: StudioEdgeData[],
   options: LayoutOptions = {},
 ): Promise<LayoutResult> {
-  const { direction = 'RIGHT', spacing = 110, nodeSpacing = 46 } = options;
+  const { direction = 'DOWN', spacing = 110, nodeSpacing = 46 } = options;
 
   const sizes = new Map(graphNodes.map((n) => [n.id, estimateNodeSize(n)]));
   const present = new Set(graphNodes.map((n) => n.id));
@@ -105,7 +111,10 @@ export async function elkLayout(
         'elk.edgeRouting': 'ORTHOGONAL',
       },
       children: graphNodes.map((n) => ({ id: n.id, ...sizes.get(n.id)! })),
-      edges: drawable.map((e) => ({ id: e.id, sources: [e.source], targets: [e.target] })),
+      // Ranking runs parent → child, whatever way the line is drawn (#778). A
+      // `belongs_to` is drawn FK holder → referenced entity; fed to `layered`
+      // that way, every parent would rank *after* its children.
+      edges: drawable.map((e) => ({ id: e.id, sources: [e.parent], targets: [e.child] })),
     });
 
     const byId = new Map(graphNodes.map((n) => [n.id, n]));
