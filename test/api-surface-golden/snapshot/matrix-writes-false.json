@@ -1,0 +1,508 @@
+{
+	"case": "matrix-writes-false",
+	"covers": "`generate.writes: false` — no write use cases or routes; a search beside it",
+	"entities": {
+		"task": {
+			"entity": "task",
+			"plural": "tasks",
+			"className": "Task",
+			"repository": {
+				"className": "TaskRepository",
+				"baseClass": "BaseRepository",
+				"typedInclude": true,
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "find_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "find_by_ids",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "list",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "count",
+						"kind": "count",
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByTitle",
+						"kind": "finder",
+						"emitted": true,
+						"params": [
+							{
+								"name": "title",
+								"field": "title"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "task"
+								},
+								"path": [
+									"queries",
+									0
+								]
+							}
+						}
+					},
+					{
+						"name": "findByProjectId",
+						"kind": "fk_finder",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id",
+								"field": "project_id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"limit": true,
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "task"
+								},
+								"path": [
+									"relationships",
+									"project"
+								]
+							}
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "upsertMany",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"service": {
+				"className": "TaskService",
+				"baseClass": "BaseService",
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "task",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "task",
+							"layer": "repository",
+							"method": "findByIds"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "listOptions"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "task",
+							"layer": "repository",
+							"method": "list"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByTitle",
+						"kind": "finder",
+						"emitted": true,
+						"params": [
+							{
+								"name": "title",
+								"field": "title"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "task",
+							"layer": "repository",
+							"method": "findByTitle"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "task"
+								},
+								"path": [
+									"queries",
+									0
+								]
+							}
+						}
+					},
+					{
+						"name": "project",
+						"kind": "relation_one",
+						"emitted": true,
+						"params": [
+							{
+								"name": "taskId"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "project",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "task"
+								},
+								"path": [
+									"relationships",
+									"project"
+								]
+							}
+						}
+					},
+					{
+						"name": "count",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"useCases": [
+				{
+					"className": "FindTaskByIdUseCase",
+					"kind": "find_by_id",
+					"calls": {
+						"entity": "task",
+						"layer": "service",
+						"method": "findById"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "ListTasksUseCase",
+					"kind": "list",
+					"calls": {
+						"entity": "task",
+						"layer": "service",
+						"method": "list"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "FindTaskByTitleUseCase",
+					"kind": "query",
+					"calls": {
+						"entity": "task",
+						"layer": "service",
+						"method": "findByTitle"
+					},
+					"origin": {
+						"from": "yaml",
+						"at": {
+							"doc": {
+								"kind": "entity",
+								"name": "task"
+							},
+							"path": [
+								"queries",
+								0
+							]
+						}
+					}
+				},
+				{
+					"className": "SearchTasksUseCase",
+					"kind": "search",
+					"calls": {
+						"entity": "task",
+						"layer": "service",
+						"method": "list"
+					},
+					"origin": {
+						"from": "yaml",
+						"at": {
+							"doc": {
+								"kind": "entity",
+								"name": "task"
+							},
+							"path": [
+								"queries",
+								1
+							]
+						}
+					}
+				}
+			],
+			"http": {
+				"enabled": true,
+				"routes": [
+					{
+						"verb": "GET",
+						"path": "/tasks",
+						"controller": "TaskController",
+						"handler": "getAll",
+						"operationId": "listTasks",
+						"useCase": "ListTasksUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "GET",
+						"path": "/tasks/:id",
+						"controller": "TaskController",
+						"handler": "getById",
+						"operationId": "findTaskById",
+						"useCase": "FindTaskByIdUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "GET",
+						"path": "/tasks/search",
+						"controller": "TaskSearchController",
+						"handler": "search",
+						"useCase": "SearchTasksUseCase",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "task"
+								},
+								"path": [
+									"queries",
+									1
+								]
+							}
+						}
+					}
+				],
+				"includeRoutes": [],
+				"includesConst": "TASKS_API_INCLUDES"
+			}
+		}
+	}
+}

@@ -1,0 +1,418 @@
+{
+	"entity": "deal_state",
+	"plural": "deal_states",
+	"className": "DealState",
+	"repository": {
+		"className": "DealStateRepository",
+		"baseClass": "BaseRepository",
+		"typedInclude": true,
+		"methods": [
+			{
+				"name": "findById",
+				"kind": "find_by_id",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findByIds",
+				"kind": "find_by_ids",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "list",
+				"kind": "list",
+				"emitted": true,
+				"params": [
+					{
+						"name": "query"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "count",
+				"kind": "count",
+				"emitted": true,
+				"params": [
+					{
+						"name": "where"
+					}
+				],
+				"returns": "count",
+				"readOptions": "none",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "exists",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "create",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "update",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "delete",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "upsertMany",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			}
+		]
+	},
+	"service": {
+		"className": "DealStateService",
+		"baseClass": "BaseService",
+		"methods": [
+			{
+				"name": "findById",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "deal_state",
+					"layer": "repository",
+					"method": "findById"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findByIds",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "deal_state",
+					"layer": "repository",
+					"method": "findByIds"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "list",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "listOptions"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "deal_state",
+					"layer": "repository",
+					"method": "list"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "opportunities",
+				"kind": "relation_many",
+				"emitted": true,
+				"params": [
+					{
+						"name": "dealStateId"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "opportunity",
+					"layer": "repository",
+					"method": "findByStateId"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "deal_state"
+						},
+						"path": [
+							"relationships",
+							"opportunities"
+						]
+					}
+				}
+			},
+			{
+				"name": "count",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "exists",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "create",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "update",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "delete",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			}
+		]
+	},
+	"useCases": [
+		{
+			"className": "FindDealStateByIdUseCase",
+			"kind": "find_by_id",
+			"calls": {
+				"entity": "deal_state",
+				"layer": "service",
+				"method": "findById"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "ListDealStatesUseCase",
+			"kind": "list",
+			"calls": {
+				"entity": "deal_state",
+				"layer": "service",
+				"method": "list"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "CreateDealStateUseCase",
+			"kind": "create",
+			"calls": {
+				"entity": "deal_state",
+				"layer": "service",
+				"method": "create"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "UpdateDealStateUseCase",
+			"kind": "update",
+			"calls": {
+				"entity": "deal_state",
+				"layer": "service",
+				"method": "update"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "DeleteDealStateUseCase",
+			"kind": "delete",
+			"calls": {
+				"entity": "deal_state",
+				"layer": "service",
+				"method": "delete"
+			},
+			"origin": {
+				"from": "base"
+			}
+		}
+	],
+	"http": {
+		"enabled": true,
+		"routes": [
+			{
+				"verb": "GET",
+				"path": "/deal_states",
+				"controller": "DealStateController",
+				"handler": "getAll",
+				"operationId": "listDealStates",
+				"useCase": "ListDealStatesUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "GET",
+				"path": "/deal_states/:id",
+				"controller": "DealStateController",
+				"handler": "getById",
+				"operationId": "findDealStateById",
+				"useCase": "FindDealStateByIdUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "POST",
+				"path": "/deal_states",
+				"controller": "DealStateController",
+				"handler": "create",
+				"operationId": "createDealState",
+				"useCase": "CreateDealStateUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "PATCH",
+				"path": "/deal_states/:id",
+				"controller": "DealStateController",
+				"handler": "update",
+				"operationId": "updateDealState",
+				"useCase": "UpdateDealStateUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "DELETE",
+				"path": "/deal_states/:id",
+				"controller": "DealStateController",
+				"handler": "remove",
+				"operationId": "deleteDealState",
+				"useCase": "DeleteDealStateUseCase",
+				"origin": {
+					"from": "base"
+				}
+			}
+		],
+		"includeRoutes": [],
+		"includesConst": "DEAL_STATES_API_INCLUDES"
+	}
+}

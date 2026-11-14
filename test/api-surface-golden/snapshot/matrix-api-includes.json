@@ -1,0 +1,488 @@
+{
+	"case": "matrix-api-includes",
+	"covers": "`api.includes` on both read routes; a has_many onto a wired target",
+	"entities": {
+		"project": {
+			"entity": "project",
+			"plural": "projects",
+			"className": "Project",
+			"repository": {
+				"className": "ProjectRepository",
+				"baseClass": "BaseRepository",
+				"typedInclude": true,
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "find_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "find_by_ids",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "list",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "count",
+						"kind": "count",
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByAccountId",
+						"kind": "fk_finder",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id",
+								"field": "account_id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"limit": true,
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "project"
+								},
+								"path": [
+									"relationships",
+									"account"
+								]
+							}
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "upsertMany",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"service": {
+				"className": "ProjectService",
+				"baseClass": "BaseService",
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "project",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "project",
+							"layer": "repository",
+							"method": "findByIds"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "listOptions"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "project",
+							"layer": "repository",
+							"method": "list"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "account",
+						"kind": "relation_one",
+						"emitted": true,
+						"params": [
+							{
+								"name": "projectId"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "account",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "project"
+								},
+								"path": [
+									"relationships",
+									"account"
+								]
+							}
+						}
+					},
+					{
+						"name": "tasks",
+						"kind": "relation_many",
+						"emitted": true,
+						"params": [
+							{
+								"name": "projectId"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "task",
+							"layer": "repository",
+							"method": "findByProjectId"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "project"
+								},
+								"path": [
+									"relationships",
+									"tasks"
+								]
+							}
+						}
+					},
+					{
+						"name": "count",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"useCases": [
+				{
+					"className": "FindProjectByIdUseCase",
+					"kind": "find_by_id",
+					"calls": {
+						"entity": "project",
+						"layer": "service",
+						"method": "findById"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "ListProjectsUseCase",
+					"kind": "list",
+					"calls": {
+						"entity": "project",
+						"layer": "service",
+						"method": "list"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "CreateProjectUseCase",
+					"kind": "create",
+					"calls": {
+						"entity": "project",
+						"layer": "service",
+						"method": "create"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "UpdateProjectUseCase",
+					"kind": "update",
+					"calls": {
+						"entity": "project",
+						"layer": "service",
+						"method": "update"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "DeleteProjectUseCase",
+					"kind": "delete",
+					"calls": {
+						"entity": "project",
+						"layer": "service",
+						"method": "delete"
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"http": {
+				"enabled": true,
+				"routes": [
+					{
+						"verb": "GET",
+						"path": "/projects",
+						"controller": "ProjectController",
+						"handler": "getAll",
+						"operationId": "listProjects",
+						"useCase": "ListProjectsUseCase",
+						"includeRoute": "list",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "GET",
+						"path": "/projects/:id",
+						"controller": "ProjectController",
+						"handler": "getById",
+						"operationId": "findProjectById",
+						"useCase": "FindProjectByIdUseCase",
+						"includeRoute": "find_by_id",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "POST",
+						"path": "/projects",
+						"controller": "ProjectController",
+						"handler": "create",
+						"operationId": "createProject",
+						"useCase": "CreateProjectUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "PATCH",
+						"path": "/projects/:id",
+						"controller": "ProjectController",
+						"handler": "update",
+						"operationId": "updateProject",
+						"useCase": "UpdateProjectUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "DELETE",
+						"path": "/projects/:id",
+						"controller": "ProjectController",
+						"handler": "remove",
+						"operationId": "deleteProject",
+						"useCase": "DeleteProjectUseCase",
+						"origin": {
+							"from": "base"
+						}
+					}
+				],
+				"includeRoutes": [
+					"list",
+					"find_by_id"
+				],
+				"includesConst": "PROJECTS_API_INCLUDES"
+			}
+		}
+	}
+}

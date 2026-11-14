@@ -1,0 +1,620 @@
+{
+	"case": "matrix-eav",
+	"covers": "`eav: true` — paired reads, with-fields routes and use cases",
+	"entities": {
+		"lead": {
+			"entity": "lead",
+			"plural": "leads",
+			"className": "Lead",
+			"repository": {
+				"className": "LeadRepository",
+				"baseClass": "IntegratedEntityRepository",
+				"typedInclude": false,
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "find_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "find_by_ids",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "list",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "count",
+						"kind": "count",
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					},
+					{
+						"name": "upsertMany",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					},
+					{
+						"name": "findByExternalId",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					},
+					{
+						"name": "findManyByExternalIds",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					},
+					{
+						"name": "integrationUpsertOne",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					},
+					{
+						"name": "findByExternalIdProjected",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					},
+					{
+						"name": "softDeleteByExternalId",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					},
+					{
+						"name": "integrationUpsert",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					}
+				]
+			},
+			"service": {
+				"className": "LeadService",
+				"baseClass": "IntegratedEntityService",
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "lead",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "lead",
+							"layer": "repository",
+							"method": "findByIds"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "listOptions"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "lead",
+							"layer": "repository",
+							"method": "list"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIdWithFields",
+						"kind": "eav_read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "lead",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "lead"
+								},
+								"path": [
+									"eav"
+								]
+							}
+						}
+					},
+					{
+						"name": "listWithFields",
+						"kind": "eav_read",
+						"emitted": true,
+						"params": [],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "lead",
+							"layer": "repository",
+							"method": "list"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "lead"
+								},
+								"path": [
+									"eav"
+								]
+							}
+						}
+					},
+					{
+						"name": "count",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					},
+					{
+						"name": "findByExternalId",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					},
+					{
+						"name": "findManyByExternalIds",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Integrated"
+						}
+					}
+				]
+			},
+			"useCases": [
+				{
+					"className": "FindLeadByIdUseCase",
+					"kind": "find_by_id",
+					"calls": {
+						"entity": "lead",
+						"layer": "service",
+						"method": "findById"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "ListLeadsUseCase",
+					"kind": "list",
+					"calls": {
+						"entity": "lead",
+						"layer": "service",
+						"method": "list"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "FindLeadByIdWithFieldsUseCase",
+					"kind": "find_by_id_with_fields",
+					"calls": {
+						"entity": "lead",
+						"layer": "service",
+						"method": "findByIdWithFields"
+					},
+					"origin": {
+						"from": "yaml",
+						"at": {
+							"doc": {
+								"kind": "entity",
+								"name": "lead"
+							},
+							"path": [
+								"eav"
+							]
+						}
+					}
+				},
+				{
+					"className": "ListLeadsWithFieldsUseCase",
+					"kind": "list_with_fields",
+					"calls": {
+						"entity": "lead",
+						"layer": "service",
+						"method": "listWithFields"
+					},
+					"origin": {
+						"from": "yaml",
+						"at": {
+							"doc": {
+								"kind": "entity",
+								"name": "lead"
+							},
+							"path": [
+								"eav"
+							]
+						}
+					}
+				},
+				{
+					"className": "CreateLeadUseCase",
+					"kind": "create",
+					"calls": {
+						"entity": "lead",
+						"layer": "service",
+						"method": "create"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "UpdateLeadUseCase",
+					"kind": "update",
+					"calls": {
+						"entity": "lead",
+						"layer": "service",
+						"method": "update"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "DeleteLeadUseCase",
+					"kind": "delete",
+					"calls": {
+						"entity": "lead",
+						"layer": "service",
+						"method": "delete"
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"http": {
+				"enabled": true,
+				"routes": [
+					{
+						"verb": "GET",
+						"path": "/leads",
+						"controller": "LeadController",
+						"handler": "getAll",
+						"operationId": "listLeads",
+						"useCase": "ListLeadsUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "GET",
+						"path": "/leads/with-fields",
+						"controller": "LeadController",
+						"handler": "getAllWithFields",
+						"operationId": "listLeadsWithFields",
+						"useCase": "ListLeadsWithFieldsUseCase",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "lead"
+								},
+								"path": [
+									"eav"
+								]
+							}
+						}
+					},
+					{
+						"verb": "GET",
+						"path": "/leads/:id",
+						"controller": "LeadController",
+						"handler": "getById",
+						"operationId": "findLeadById",
+						"useCase": "FindLeadByIdUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "GET",
+						"path": "/leads/:id/with-fields",
+						"controller": "LeadController",
+						"handler": "getByIdWithFields",
+						"operationId": "findLeadByIdWithFields",
+						"useCase": "FindLeadByIdWithFieldsUseCase",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "lead"
+								},
+								"path": [
+									"eav"
+								]
+							}
+						}
+					},
+					{
+						"verb": "POST",
+						"path": "/leads",
+						"controller": "LeadController",
+						"handler": "create",
+						"operationId": "createLead",
+						"useCase": "CreateLeadUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "PATCH",
+						"path": "/leads/:id",
+						"controller": "LeadController",
+						"handler": "update",
+						"operationId": "updateLead",
+						"useCase": "UpdateLeadUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "DELETE",
+						"path": "/leads/:id",
+						"controller": "LeadController",
+						"handler": "remove",
+						"operationId": "deleteLead",
+						"useCase": "DeleteLeadUseCase",
+						"origin": {
+							"from": "base"
+						}
+					}
+				],
+				"includeRoutes": [],
+				"includesConst": "LEADS_API_INCLUDES"
+			}
+		}
+	}
+}
