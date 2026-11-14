@@ -1,8 +1,8 @@
 # RFC-0006 — Joined-table inheritance: `inherits:` in entity YAML
 
 **Status:** Draft, revision 3 — Doug's answers of 2026-11-13 are recorded in §11, including OQ-11 (the part-kind
-rule is a composite FK on the part's own discriminator; the user-facing `checks:` key leaves this build). Nothing is
-built.
+rule is a composite FK on the part's own discriminator; the user-facing `checks:` key leaves this build). S1
+(schema and validation) is built; nothing else is. §13.2 S1 says what the build settled.
 **Issue:** #875
 **Date:** 2026-11-12, revised 2026-11-13
 **Owner:** Doug
@@ -1118,6 +1118,52 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   can be emitted.
 - Gates: `bun run typecheck`, `just test-unit`. `just test-baseline` is byte-identical.
 - Closes: A1.
+
+**S1 as built (2026-11-13).** What the build settled, beyond the plan above:
+
+- **Where each rule runs.** Single-file rules (R1's own-file half, R3's discriminator half, R5, R9, R11, §8's
+  refusals, M1's "belongs_to only") are a refinement on `EntityDefinitionSchema` through
+  `src/schema/inheritance.ts`. Cross-entity rules (R1's `choices_of:` target, R2, R3's base half, R4, R6, R7, R8,
+  R10, M1–M5) are `validateInheritance` in `src/parser/validate-inheritance.ts`, called from `entity new`'s
+  pre-flight (`preflightEntityTargets`, so `--all`, a single target and `junction new` all see it) and from
+  `analyzeDomain` (so `entity validate` and `project inspect --kind analyze` report the same errors). The
+  validator reads definitions, not `ParsedEntity`, which does not carry these keys.
+- **R10 and a child's tenancy** are in `src/schema/tenancy.ts`: `baseTenantColumnIssue` and `resolveChildTenancy`
+  (column, `tenantScoped`, strict enforcement, all from the base). `lifecycleBehaviorsDeclared` is R5's behavior
+  half and counts a behavior a pattern implies (`Integrated` implies `external_id_tracking`).
+- **R1 and `choices_from:`.** A discriminator lists literal `choices:` or `choices_of:`. A `choices_from:` file is
+  refused on it, because the kinds must be known when the family is validated. `choices_of:` follows exactly one
+  hop: its target is an existing entity's `type: enum` field with literal `choices:`, never another `choices_of:`
+  or a `choices_from:`, and never the entity's own field.
+- **R6** is checked on the child's `entity.config`: any string value naming a column the base owns (and the child
+  does not) is an error, and so is `Activity` on a child with no `occurredAt:` configured when the base owns
+  `occurred_at`, since the pattern would read the default column.
+- **R7** covers `by`, `select`, `order` and a search query's `filters` / `search`.
+- **R8** is "declare the same `entity.sync` on every member, or on none". A mode declared on one side only is an
+  error: an undeclared mode resolves through the global `frontend.sync.mode`, which a child's own YAML cannot see.
+- **R11** adds two refusals the rule implies: a `natural_key` entry may not have `where` (a partial index is not an
+  `ON CONFLICT` target without its predicate), and its columns must be declared fields or `belongs_to` foreign
+  key columns. `natural_key:` on an entity outside a family is legal.
+- **§8's key refusals** include a field named `id` on a child (its key is the base row's id) and a non-`uuid` `id`
+  on a base.
+- **M1** takes target columns from the target's declared fields and `belongs_to` FK columns only; a behavior or
+  emitted tenant column is not a match target (the tenant column is emitted nullable unless declared).
+- **M4** is a write-path rule (S4). S1 enforces its one static corollary: `on_delete: set_null` on a `match:`
+  relationship is refused, because Postgres would null every column of the composite key, including the matched
+  one.
+- **M5** surfaces two ways. The discriminator exception names a different enum than the target column's
+  (`choices_of` pointing elsewhere); or one local column is matched by two relationships whose target enums are
+  different Postgres types (reported as M5, not M3). A discriminator with no `choices_of:` at all is M2's
+  exception unmet.
+- **Generation refusal.** Until S2, `entity new` (single and `--all`) refuses an entity that uses `inherits:`,
+  `discriminator:`, `match:` or `choices_of:`, with "not implemented until S2 of #875", and emits nothing for it;
+  the rest of the directory still generates. `natural_key:` alone is accepted: no emitter reads the key, and
+  `src/__tests__/cli/inheritance-refusal.test.ts` asserts the generated tree is byte-identical with and without
+  it.
+- **`checks:`** is not a key (OQ-11). The schema is `.strict()`, so writing it is an unknown-key error.
+- **The editor JSON schema.** `src/schema/generate-json-schema.ts` is a hand-kept mirror of the entity schema (it
+  did not run: it imported Zod 3's root export, which has no `toJSONSchema`; it now imports `zod/v4`). It gains the
+  five keys and `entity-definition.schema.json` is regenerated from it.
 
 **S2 — DDL: shared key, composite FKs, the child's kind CHECK.**
 

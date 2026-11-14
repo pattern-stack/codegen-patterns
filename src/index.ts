@@ -7,6 +7,11 @@
 
 import { loadEntities, loadRelationships, resolveReferences, resolveRelationshipReferences } from './parser';
 import { validateSemanticModel } from './parser/validate-semantic.js';
+import { resolve as resolvePath } from 'node:path';
+import { validateInheritance } from './parser/validate-inheritance.js';
+import type { EntityDefinition } from './schema/entity-definition.schema.js';
+import { loadEntitiesFromYaml } from './utils/yaml-loader.js';
+import { findYamlFiles } from './utils/find-yaml-files.js';
 import { buildDomainGraph, checkConsistency, computeStatistics } from './analyzer';
 import { validatePatternComposition } from './patterns/validate-composition.js';
 import { validateOrchestrationProject } from './patterns/validate-orchestration.js';
@@ -105,6 +110,22 @@ export async function analyzeDomain(
 	// measure catalog is one flat namespace: metric legs may name measures on
 	// another entity, and both names must be unique across entities.
 	const semanticIssues = validateSemanticModel(entities);
+	// RFC-0006 (#875) — joined-table inheritance. Reads two YAML files per rule (a
+	// child against its base, a `match:` against its target), so it runs over the
+	// whole set, from the definitions: `ParsedEntity` does not carry these keys.
+	// `entity validate` and `project inspect --kind analyze` both come through here.
+	let inheritanceSet: Array<{ definition: EntityDefinition; filePath: string }> = [];
+	try {
+		inheritanceSet = loadEntitiesFromYaml(findYamlFiles(resolvePath(entitiesDir))).successes.map((s) => ({
+			definition: s.definition,
+			filePath: s.filePath,
+		}));
+	} catch {
+		// An unreadable directory is already a load issue from `loadEntities`.
+	}
+	const inheritanceIssues = validateInheritance(inheritanceSet, {
+		tenancyColumn: TenancyConfigSchema.parse({ column: opts.tenancyColumn }).column,
+	});
 	// CAP-2 — role targets must be Actors; many-roles must name a junction
 	// between the two entities.
 	const rolesProjectIssues = validateRolesProject({
@@ -138,6 +159,7 @@ export async function analyzeDomain(
 		...patternIssues,
 		...orchestrationProjectIssues,
 		...semanticIssues,
+		...inheritanceIssues,
 		...rolesProjectIssues,
 		...tableCollisionIssues,
 	];

@@ -23,6 +23,9 @@ import type { Context } from './context.js';
 import { invokeEntityNew } from './hygen.js';
 import { collectMergedEvents } from './event-codegen-generator.js';
 import { validateEntityEmits } from '../../parser/validate-emits.js';
+import { validateInheritance } from '../../parser/validate-inheritance.js';
+import { notGeneratedYetMessage, unemittedInheritanceKeys } from '../../schema/inheritance.js';
+import { TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
 import {
 	loadProviderSet,
 	resolveTsconfigAliases,
@@ -238,21 +241,53 @@ export async function preflightEntityTargets(
 		junctions: junctionSet.junctions,
 	});
 
-	// An entity with an `emits:` or `roles:` error is not generated: the
-	// hygen prompt assumes both blocks are valid.
+	// RFC-0006 (#875): joined-table inheritance. The cross-entity rules (R1-R10,
+	// M1-M5) run over every entity in the directory, because a child is checked
+	// against its base. Then, until S2 emits the DDL, a target that uses
+	// `inherits:` / `discriminator:` / `match:` / `choices_of:` is refused
+	// outright — nothing half-built is generated.
+	const inheritanceSet = loadEntitiesFromYaml(
+		listEntityYamls(entitiesDirForEmits, projectLayout(ctx.cwd, ctx.config).providers),
+	).successes.map((s) => ({ definition: s.definition, filePath: s.filePath }));
+	const inheritanceErrors = validateInheritance(inheritanceSet, {
+		tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
+	}).filter((i) => i.severity === 'error');
+	const unemitted = new Map(
+		inheritanceSet.flatMap(({ definition }) => {
+			const keys = unemittedInheritanceKeys(definition);
+			return keys.length > 0 ? [[definition.entity.name, keys] as const] : [];
+		}),
+	);
+
+	// An entity with an `emits:`, `roles:` or inheritance error is not generated:
+	// the hygen prompt assumes those blocks are valid.
 	for (let i = validated.length - 1; i >= 0; i--) {
 		const v = validated[i]!;
 		const ownEmits = emitsErrors.filter((e) => e.entity === v.name);
 		const ownRoles = roleErrors.filter((e) => e.entity === v.name);
-		if (ownEmits.length === 0 && ownRoles.length === 0) continue;
+		const ownInheritance = inheritanceErrors.filter((e) => e.entity === v.name);
+		const ownUnemitted = unemitted.get(v.name);
+		if (
+			ownEmits.length === 0 &&
+			ownRoles.length === 0 &&
+			ownInheritance.length === 0 &&
+			ownUnemitted === undefined
+		) {
+			continue;
+		}
 		const blocks = [
 			...(ownEmits.length > 0 ? ['emits:'] : []),
 			...(ownRoles.length > 0 ? ['roles:'] : []),
+			...(ownInheritance.length > 0 ? ['inheritance'] : []),
+			...(ownUnemitted !== undefined ? ['inherits:/discriminator:/match:/choices_of: (not implemented until S2 of #875)'] : []),
 		];
 		invalid.push({
 			file: v.file,
 			message: `${blocks.join(' and ')} validation failed`,
-			details: [...ownEmits, ...ownRoles].map((e) => e.message),
+			details: [
+				...[...ownEmits, ...ownRoles, ...ownInheritance].map((e) => e.message),
+				...(ownUnemitted !== undefined ? [notGeneratedYetMessage(v.name, ownUnemitted)] : []),
+			],
 		});
 		validated.splice(i, 1);
 	}
