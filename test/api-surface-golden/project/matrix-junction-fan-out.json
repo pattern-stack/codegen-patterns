@@ -1,0 +1,143 @@
+{
+	"case": "matrix-junction-fan-out",
+	"covers": "junction fan-out on both parents; a hidden side; a junction without is_primary",
+	"relations": [
+		{
+			"id": "junction member_skill",
+			"from": "member",
+			"to": "skill",
+			"kind": "junction",
+			"generates": [
+				{
+					"entity": "member",
+					"layer": "service",
+					"method": "attachSkill"
+				},
+				{
+					"entity": "member",
+					"layer": "service",
+					"method": "detachSkill"
+				},
+				{
+					"entity": "member",
+					"layer": "service",
+					"method": "skillsList"
+				},
+				{
+					"entity": "member",
+					"layer": "service",
+					"method": "skillsSetPrimary"
+				},
+				{
+					"entity": "skill",
+					"layer": "service",
+					"method": "addToMember"
+				},
+				{
+					"entity": "skill",
+					"layer": "service",
+					"method": "removeFromMember"
+				},
+				{
+					"entity": "skill",
+					"layer": "service",
+					"method": "membersList"
+				},
+				{
+					"entity": "skill",
+					"layer": "service",
+					"method": "membersSetPrimary"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "members",
+					"key": "memberSkills"
+				},
+				{
+					"table": "members",
+					"key": "skills"
+				},
+				{
+					"table": "memberSkills",
+					"key": "member"
+				},
+				{
+					"table": "memberSkills",
+					"key": "skill"
+				},
+				{
+					"table": "skills",
+					"key": "members"
+				},
+				{
+					"table": "skills",
+					"key": "memberSkills"
+				}
+			]
+		},
+		{
+			"id": "junction workspace_member",
+			"from": "member",
+			"to": "workspace",
+			"kind": "junction",
+			"generates": [
+				{
+					"entity": "workspace",
+					"layer": "service",
+					"method": "attachMember"
+				},
+				{
+					"entity": "workspace",
+					"layer": "service",
+					"method": "detachMember"
+				},
+				{
+					"entity": "workspace",
+					"layer": "service",
+					"method": "membersList"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "members",
+					"key": "workspaceMembers"
+				},
+				{
+					"table": "members",
+					"key": "workspaces"
+				},
+				{
+					"table": "workspaceMembers",
+					"key": "member"
+				},
+				{
+					"table": "workspaceMembers",
+					"key": "workspace"
+				},
+				{
+					"table": "workspaces",
+					"key": "members"
+				},
+				{
+					"table": "workspaces",
+					"key": "workspaceMembers"
+				}
+			]
+		}
+	],
+	"unmodelled": [
+		{
+			"name": "member_skill",
+			"kind": "junction",
+			"reason": "a junction's own module (repository, service, use cases) is not derived yet — #679 folds `pattern: Junction` and `relationship:` into one concept first; its fan-out onto each parent is derived"
+		},
+		{
+			"name": "workspace_member",
+			"kind": "junction",
+			"reason": "a junction's own module (repository, service, use cases) is not derived yet — #679 folds `pattern: Junction` and `relationship:` into one concept first; its fan-out onto each parent is derived"
+		}
+	],
+	"warnings": [],
+	"includes": {}
+}
