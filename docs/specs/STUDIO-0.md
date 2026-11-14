@@ -110,6 +110,7 @@ bundle.
 |---|---|---|---|
 | `GET /api/health` | — | `HealthResponse` | `{ok, projectDir, cliVersion}` |
 | `GET /api/graph` | — | `GraphResponse` | `{graph, entities, junctions, relationships}` — the counts are **siblings** of `graph`, because `SerializedDomainGraph.entities` is already the entity map |
+| `GET /api/surface` | — | `SurfaceResponse` | `{surface}` — the generator's derived API surface, shelled from `project surface --json`; its own route so a failure cannot blank the canvas (STUDIO-2, ADR-046) |
 | `GET /api/files` | — | `StudioFile[]` | `{kind: 'entity'\|'junction'\|'relationship'\|'config', path, name}` |
 | `GET /api/files/:path` | — | `FileReadResponse` | `:path` is the URL-encoded project-relative path |
 | `PUT /api/files/:path` | `{content}` | `{ok:true}` or **422** `{issues}` | see §3.1 |
