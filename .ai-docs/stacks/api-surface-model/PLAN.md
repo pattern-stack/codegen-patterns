@@ -1,6 +1,6 @@
 # PLAN — backend API-surface derivation (slice 1) + Studio API view
 
-**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · A0, A1 built
+**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · A0, A1, A2 built · S1 signed off 2026-11-14
 **Basis:** `main` @ `c1ceeefd`. READ-1 merged 2026-11-12 (#859 and the ten PRs under it). Every `path:line`
 below was taken at the READ-1 tip `e9fe6f5f`; every cited file is byte-identical on `main` (checked one by one
 with `git diff --quiet e9fe6f5f c1ceeefd -- <file>`), so the line numbers hold.
@@ -150,9 +150,17 @@ is the row the API tab shows and the record the template prints from.
   compiles — only the generated "inherited" comment and the ADR-041 collision vocabulary are wrong. Recorded as a
   named expectation in the parity test (`METADATA_INHERITED_EXPECTATION`: case `matrix-eav-value-table`, exactly
   two messages, asserted present and sole), which fails once the pattern is corrected and must then be deleted.
-- **Possible F7-class shape, not yet confirmed by running it:** an `eav_value_table: true` entity whose pattern is
-  not `Metadata` gets a service that calls `repository.findByEntityIdAndType`, which only the Metadata repository
-  supplies. Parity compares names, not delegate targets, so it cannot see this; A2's `delegatesTo` pass can.
+- **D4 — an F7-class shape, confirmed by running it (2026-11-14, `d4-preflight/`):** an `eav_value_table: true`
+  entity whose pattern is not `Metadata` validates clean, generates with exit 0, and fails `tsc`:
+  `field-value.service.ts: error TS2339: Property 'findByEntityIdAndType' does not exist on type
+  'FieldValueRepository'` (+3 cascades). Its service's `findMergedByEntity` calls a method only the Metadata
+  repository supplies. Parity compares names, not delegate targets, so it cannot see this; A2's link pass warns on
+  it with F7's V1 rule. Issue drafted at S2, not filed.
+- **A `cardinality: one` role has no edge in REL-1's relations manifest** (the CAP-2 seam in `build-graph.ts` is
+  unbuilt), although hygen emits the role's FK finder and to-one service method. So `?include=` cannot reach a
+  role; the derived role relation shows `includeKeys: []`.
+- A `has_many … through:` would derive a `relation_many` whose delegate the link pass checks; no fixture declares
+  one, so that path is untested.
 
 Byte-identical output is Phase B's gate, so none of these change in slice 1. Each becomes a one-place edit
 afterwards; file one issue per oddity at S4.
@@ -321,6 +329,29 @@ already-merged definition — so the CLI's zod path cannot skip it; a role-deriv
 3. pairs declarations into `RelationApiSurface`s (`A.belongs_to(B, fk)` ↔ `B.has_many|has_one(A, foreign_key:
    fk)`, or an explicit `inverse:`) and indexes `generates` from the origins;
 4. lists junction and `relationship:` definitions under `unmodelled`.
+
+*As built (A2):*
+- **Input.** `deriveProjectApiSurface({ relations, relationships })`: `relations` is REL-1's
+  `RelationsEmitContext`; `relationships` the `relationship:` definitions by name (REL-1's context does not load
+  them). `loadProjectApiContext(cwd, config, { entitiesDir?, junctionsDir, relationshipsDir })` builds both; the
+  two dirs are required arguments (`path-defaults.test.ts` rejects a defaulted path), and the CLI passes
+  `junctionsDirFor(cwd)` and `<cwd>/relationships`, as `entity new` does.
+- **Pattern composition is restated** in `project.ts` (~15 lines over the same `composePatterns` / `getPattern`):
+  `src/` cannot import `templates/…/entity-locals.js`. A test holds it equal to the hygen function for every
+  baseline and matrix entity. Temporary: B2 moves `resolvePatternComposition` into `src/` and deletes the copy.
+- **Two delegate rules.** Rule 1: every service `delegatesTo` resolves to a method its target lists, emitted or
+  inherited, else a warning ``<origin>: `<Service>.<method>` calls `<Target>.<method>`, which <target> does not
+  emit`` (F7 V1 and D4). Rule 2: a `relation_many` must reach an `fk_finder` (F7 V2/V3). A delegate into a
+  junction is skipped, keyed on exactly the junctions listed in `unmodelled` (#679): any other missing target still
+  warns.
+- **Relations.** Every relation comes from REL-1's edge origins except roles: REL-1 has no role edge, so a role
+  relation (`<entity>.roles.<role>`, kind `role`, `includeKeys: []`) comes from the definitions' `roles:` blocks,
+  already loaded in REL-1's context. Junction relations are `junction <name>`, with REL-1's keys and the fan-out
+  from both parents in `generates`. `through:` relationships and targets with no YAML are skipped, as REL-1 skips
+  them; REL-1's own warnings are not copied. Pairing: an explicit `inverse:` (either side) wins; otherwise
+  `belongs_to` ↔ `has_many` / `has_one` on the same foreign key, only when exactly one candidate matches.
+- **The verb.** `--entity` narrows only `entities`; `relations`, `warnings`, `unmodelled` stay project-wide. It
+  finds the project like `project graph` (`--cwd`).
 
 **Types stay where they are.** Finder param types and return types keep coming from `processQueries`
 (`EL:1291-1317`). In Phase B that output is re-keyed by the derived method name (a `queryTypes` local), so a
@@ -493,6 +524,10 @@ Message: ``api-surface golden: `<entity>` differs from test/api-surface-golden/s
 (`{ case, covers, entities }`; the prefix keeps a case from colliding with an entity name). Regenerate only with
 `UPDATE_API_SURFACE_GOLDEN=1`. The matrix itself is `src/__tests__/derived/_render-matrix.ts`, which B1 reuses.
 
+*As built (A2):* the extension is a sibling directory, `test/api-surface-golden/project/` (`baseline.json` + one
+per matrix case, each `{ relations, unmodelled, warnings, includes }`), so `snapshot/` and its test are untouched.
+A test also holds every `project.entities[e]` (less `http.includes`) equal to `deriveEntityApiSurface`.
+
 The golden is created in A1, extended in A2 (`relations`, `warnings`), and **frozen for all of Phase B** —
 templates move, the derivation does not.
 
@@ -559,7 +594,7 @@ Two `gh stack`s; each lands as one atomic merge, by you (§14.8). Sizes are roug
 | **A4** | API tab, `surface-kinds.ts`, provenance → YAML line | `tools/studio/src/inspector/**`, `api/client.ts`, tests | M · 1d |
 | **A5** | Edge selection + edge method panel | `tools/studio/src/App.tsx`, `graph/**`, `adapters/schema-adapter.ts`, `inspector/EdgePanel.tsx`, tests | S–M · 1d |
 | **B1** | Byte goldens over the render matrix (reuses A1's cases) | `test/render-golden/**`, one test file | S–M · 0.5–1d |
-| **B2** | `repository.ejs.t` prints. `deriveQueryMethodName` deleted from `entity-locals.js`, `query-routes.ts` (file deleted), `relationship/new/prompt.js`; `build-includes.ts` reads `names.ts`; `queryTypes` local; `package.json` `files`. Closes #711. | templates, `EL`, `src/schema/query-routes.ts`, the finder half of `route-name-parity.test.ts` | M · 1d |
+| **B2** | `repository.ejs.t` prints. `deriveQueryMethodName` deleted from `entity-locals.js`, `query-routes.ts` (file deleted), `relationship/new/prompt.js`; `build-includes.ts` reads `names.ts`; `queryTypes` local; `package.json` `files`; `resolvePatternComposition` moves into `src/` and `project.ts`'s restated copy is deleted (A2). Closes #711. | templates, `EL`, `src/schema/query-routes.ts`, the finder half of `route-name-parity.test.ts` | M · 1d |
 | **B3** | Controller, search controller, `index` / `module` flags print. One reader each for `apiEnabled`, typed-include, includes const. | templates, `EL`, `emit-includes.ts`, `build-includes.ts`, the rest of `route-name-parity.test.ts` | M · 1d |
 | **B4** | `service.ejs.t` + `declarative-queries.ejs.t` print; fan-out names from `names.ts`; entity-backend allowlist empty; CLAUDE.md clause removed; ADR and specs to post-implementation truth | templates, `EL`, `_shared/junction-fan-out.mjs`, `prompt.js` | M · 1–1.5d |
 
@@ -629,7 +664,7 @@ Decide on slice 2 after Phase B. Do slice 3 only after REL-3.
 |---|---|---|
 | N1 | Directory name: `src/derived/api/` instead of `src/surface/api/` (§4.2). | **Decided 2026-11-13: `src/derived/api/`.** |
 | Q4 | What `project surface` answers for a `has_many` whose target was never generated (F3). | "What `entity new --all` emits." Single-entity `entity new` keeps today's disk check, passed in explicitly. |
-| Q5 | F7 is real (§14.4). Warning or error? | **Warning in A2**, as you framed it. All three shapes already fail the consumer's `tsc`, so promoting it to an `entity validate` error would break no working project — file that as its own issue at S4; REL-3 probably removes the need. |
+| Q5 | F7 is real (§14.4). Warning or error? | **Warning in A2**, as you framed it — and D4 (§3.4) warns by the same rule. All three shapes already fail the consumer's `tsc`, so promoting it to an `entity validate` error would break no working project — file that as its own issue at S4; REL-3 probably removes the need. |
 | Q8 | Should the frontend client (`emit-api.ts`) read `http.routes` (F6)? | Follow-up issue filed at S4; no derivation change. |
 | Q9 | `pattern: Junction` pairings as selectable edges? | Not in v1; revisit with #679. |
 
@@ -748,7 +783,7 @@ Run `just studio-demo` first (no Docker, no network; writes the git-ignored `.st
 | `S '.surface.entities.account.service.methods[] \| select(.name=="contacts") \| "\(.kind) \(.delegatesTo.entity).\(.delegatesTo.method)"'` | `relation_many contact.findByAccountId` |
 | `S '.surface.warnings \| length'` and `S '.surface.unmodelled \| length'` | `0` and `0` |
 | `bun src/cli/index.ts project surface --cwd .studio-demo; echo $?` | a table per entity; `0` |
-| **F7 regression** — `U derived/has-many-delegate.test.ts`, four in-memory cases matching `f7-preflight/run-f7.ts` | V0: `warnings` is `[]`. V1: ``account.relationships.contacts: `AccountService.contacts` calls `ContactRepository.findByAccountId`, which contact does not emit``. V2 and V3: ``…calls `ContactRepository.findByAccountId`, which is a `queries:` finder, not an FK finder`` |
+| **F7 regression** — `U derived/has-many-delegate.test.ts`, four in-memory cases matching `f7-preflight/run-f7.ts`, plus D4's three (`d4-preflight/run-d4.ts`: W0 Metadata → `[]`; W1 no pattern and W2 Integrated → ``field_value.eav_value_table: `FieldValueService.findMergedByEntity` calls `FieldValueRepository.findByEntityIdAndType`, which field_value does not emit``) | V0: `warnings` is `[]`. V1: ``account.relationships.contacts: `AccountService.contacts` calls `ContactRepository.findByAccountId`, which contact does not emit``. V2 and V3: ``…calls `ContactRepository.findByAccountId`, which is a `queries:` finder, not an FK finder`` |
 | F7 on the CLI: V1's two YAMLs in a scratch dir, `project surface --json` | exit **0** (a warning, not an error); `.surface.warnings \| length` → `1` |
 | `U derived/api-surface-golden.test.ts` | exit 0 — the golden now also holds `relations` and `warnings` |
 
@@ -849,7 +884,7 @@ again by the reviewer; a non-empty result is a stop (§14.6), not something to e
 | Silence the type checker. | `git diff $BASE..HEAD -- src/derived src/studio tools/studio/src \| grep -nE '^\+.*(@ts-ignore\|@ts-expect-error\|as any\|as unknown as)'` |
 | Edit `templates/` or `package.json` in Phase A. | `git diff --stat $BASE_A..HEAD -- templates package.json` |
 | Change the derivation in Phase B to make a template pass. | `git diff --stat $B1..HEAD -- test/api-surface-golden` (frozen); any change to `src/derived/api/` in Phase B must leave it green **and** be named in the PR body |
-| Leave a mutation behind. | after each mutation check, `git status --porcelain` equals its pre-mutation output; no mutation string (`findSpurious`, `findByIdz`, `existz`, `findByX`, `:key`) in `git diff $BASE..HEAD`. (M1 first added `findRecent`, which is a real Activity-pattern inherited method and so appears in three matrix goldens; renamed in A1.) |
+| Leave a mutation behind. | after each mutation check, `git status --porcelain` equals its pre-mutation output; and `git diff $BASE..HEAD -- test/baseline test/fixtures runtime templates src/derived \| grep -nE '^\+.*(findSpurious\|findByIdz\|existz\|findByX\|:key)'` prints nothing. (Scoped at S1, 2026-11-14: the whole-diff grep matched this plan's own mutation table and a `:key` route fixture in the comparator's unit test. M1 first added `findRecent`, a real Activity-pattern method in three matrix goldens; renamed in A1.) |
 | Let the unit count fall. | G2's `N pass` never below the previous PR's, less only the enumerated deletions |
 | Report a gate from before the last edit. | each PR body states `git rev-parse HEAD` beside every gate output; it must equal the PR head |
 
@@ -932,7 +967,7 @@ Halt and ask. Do not push on.
 ## Appendix A — ADR-046 (draft; lands in A0 as `docs/adrs/ADR-046-derived-once-templates-print.md`)
 
 **Title:** Generated API names are derived once; templates print them
-**Status:** Proposed · **Owner:** Doug · **Related:** ADR-038 (whole-set emitter), ADR-044 §5 (both sides project
+**Status:** Accepted (S1, 2026-11-14) · **Owner:** Doug · **Related:** ADR-038 (whole-set emitter), ADR-044 §5 (both sides project
 from one declared graph), ADR-041 (capability forwarders), ADR-045 (the *semantic model* — a different thing;
 this ADR does not use the word "model" for its subject), charter I1 / I7 / I9, #711
 
