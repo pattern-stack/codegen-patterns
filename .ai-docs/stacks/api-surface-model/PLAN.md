@@ -1,6 +1,6 @@
 # PLAN — backend API-surface derivation (slice 1) + Studio API view
 
-**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · A0–A3 built · S1 signed off 2026-11-14
+**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · A0–A4 built · S1 signed off 2026-11-14
 **Basis:** `main` @ `c1ceeefd`. READ-1 merged 2026-11-12 (#859 and the ten PRs under it). Every `path:line`
 below was taken at the READ-1 tip `e9fe6f5f`; every cited file is byte-identical on `main` (checked one by one
 with `git diff --quiet e9fe6f5f c1ceeefd -- <file>`), so the line numbers hold.
@@ -447,6 +447,12 @@ export interface SurfaceResponse { surface: ProjectApiSurface }
 | **Methods on an edge** | each drawn edge carries `relationId` = `<from>.relationships.<name>`, set where the id is built (`adapters/schema-adapter.ts:187`) — never parsed back out. The panel lists `relations[id].generates` by side, then `inverseOf`'s, then `includeKeys`. | `graph/edge-kinds.ts:17-21`; new `inspector/EdgePanel.tsx` |
 | **One vocabulary table** | `inspector/surface-kinds.ts`: per method kind and origin kind — label, section, order. Tab and edge panel render from it, as `relationship-kinds.ts` and `edge-kinds.ts` do. REL-3 and #679 become edits to this table. | new |
 | **Colour** | existing tokens only (`index.css:50-86`). A relation-origin chip reuses `edgeColor(edgeStyle(kind))` (`edge-kinds.ts:99-109`). No literal in a component. | — |
+
+*As built (A4), detail in STUDIO-2 §4:* uniqueness is a row flag, not chip text (`← queries[1]`); rows sort by the
+kind table's order; inherited entries sit in a collapsed group; the tab stays open across selections; an error
+outranks "Nothing selected"; `locatePath` falls back to the nearest ancestor (`exact: false`); the inspector
+re-syncs the open file only when the selection changes. The canvas stays intact when the surface route fails on its
+own; with the whole server down a header Reload empties it too, so S2's failure shot fails the route alone.
 
 v1 edge view covers inline relationship edges. Junction-origin methods appear on both parents' API tabs.
 Whether a `pattern: Junction` pairing is a selectable edge is an open item for STUDIO-2.

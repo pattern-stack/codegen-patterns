@@ -1,0 +1,2196 @@
+{
+  "command": "project surface",
+  "entities": 3,
+  "surface": {
+    "entities": {
+      "account": {
+        "entity": "account",
+        "plural": "accounts",
+        "className": "Account",
+        "repository": {
+          "className": "AccountRepository",
+          "baseClass": "IntegratedEntityRepository",
+          "typedInclude": true,
+          "methods": [
+            {
+              "name": "findById",
+              "kind": "find_by_id",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "id"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "one",
+              "readOptions": "columns+with",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "findByIds",
+              "kind": "find_by_ids",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "ids"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "many",
+              "readOptions": "columns+with",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "list",
+              "kind": "list",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "query"
+                }
+              ],
+              "returns": "many",
+              "readOptions": "columns+with",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "count",
+              "kind": "count",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "where"
+                }
+              ],
+              "returns": "count",
+              "readOptions": "none",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "findByDomain",
+              "kind": "finder",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "domain",
+                  "field": "domain"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "one",
+              "readOptions": "columns+with",
+              "origin": {
+                "from": "yaml",
+                "at": {
+                  "doc": {
+                    "kind": "entity",
+                    "name": "account"
+                  },
+                  "path": [
+                    "queries",
+                    0
+                  ]
+                }
+              },
+              "unique": true
+            },
+            {
+              "name": "findByTier",
+              "kind": "finder",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "tier",
+                  "field": "tier"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "many",
+              "readOptions": "columns+with",
+              "origin": {
+                "from": "yaml",
+                "at": {
+                  "doc": {
+                    "kind": "entity",
+                    "name": "account"
+                  },
+                  "path": [
+                    "queries",
+                    1
+                  ]
+                }
+              }
+            },
+            {
+              "name": "exists",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "create",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "update",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "delete",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "upsertMany",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "findByExternalId",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "findManyByExternalIds",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "integrationUpsertOne",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "findByExternalIdProjected",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "softDeleteByExternalId",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "integrationUpsert",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            }
+          ]
+        },
+        "service": {
+          "className": "AccountService",
+          "baseClass": "IntegratedEntityService",
+          "methods": [
+            {
+              "name": "findById",
+              "kind": "read",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "id"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "one",
+              "delegatesTo": {
+                "entity": "account",
+                "layer": "repository",
+                "method": "findById"
+              },
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "findByIds",
+              "kind": "read",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "ids"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "many",
+              "delegatesTo": {
+                "entity": "account",
+                "layer": "repository",
+                "method": "findByIds"
+              },
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "list",
+              "kind": "read",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "listOptions"
+                }
+              ],
+              "returns": "many",
+              "delegatesTo": {
+                "entity": "account",
+                "layer": "repository",
+                "method": "list"
+              },
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "findByDomain",
+              "kind": "finder",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "domain",
+                  "field": "domain"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "one",
+              "delegatesTo": {
+                "entity": "account",
+                "layer": "repository",
+                "method": "findByDomain"
+              },
+              "origin": {
+                "from": "yaml",
+                "at": {
+                  "doc": {
+                    "kind": "entity",
+                    "name": "account"
+                  },
+                  "path": [
+                    "queries",
+                    0
+                  ]
+                }
+              }
+            },
+            {
+              "name": "findByTier",
+              "kind": "finder",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "tier",
+                  "field": "tier"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "many",
+              "delegatesTo": {
+                "entity": "account",
+                "layer": "repository",
+                "method": "findByTier"
+              },
+              "origin": {
+                "from": "yaml",
+                "at": {
+                  "doc": {
+                    "kind": "entity",
+                    "name": "account"
+                  },
+                  "path": [
+                    "queries",
+                    1
+                  ]
+                }
+              }
+            },
+            {
+              "name": "contacts",
+              "kind": "relation_many",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "accountId"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "many",
+              "delegatesTo": {
+                "entity": "contact",
+                "layer": "repository",
+                "method": "findByAccountId"
+              },
+              "origin": {
+                "from": "yaml",
+                "at": {
+                  "doc": {
+                    "kind": "entity",
+                    "name": "account"
+                  },
+                  "path": [
+                    "relationships",
+                    "contacts"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "opportunities",
+              "kind": "relation_many",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "accountId"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "many",
+              "delegatesTo": {
+                "entity": "opportunity",
+                "layer": "repository",
+                "method": "findByAccountId"
+              },
+              "origin": {
+                "from": "yaml",
+                "at": {
+                  "doc": {
+                    "kind": "entity",
+                    "name": "account"
+                  },
+                  "path": [
+                    "relationships",
+                    "opportunities"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "count",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "exists",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "create",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "update",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "delete",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "findByExternalId",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "findManyByExternalIds",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            }
+          ]
+        },
+        "useCases": [
+          {
+            "className": "FindAccountByIdUseCase",
+            "kind": "find_by_id",
+            "calls": {
+              "entity": "account",
+              "layer": "service",
+              "method": "findById"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "className": "ListAccountsUseCase",
+            "kind": "list",
+            "calls": {
+              "entity": "account",
+              "layer": "service",
+              "method": "list"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "className": "CreateAccountUseCase",
+            "kind": "create",
+            "calls": {
+              "entity": "account",
+              "layer": "service",
+              "method": "create"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "className": "UpdateAccountUseCase",
+            "kind": "update",
+            "calls": {
+              "entity": "account",
+              "layer": "service",
+              "method": "update"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "className": "DeleteAccountUseCase",
+            "kind": "delete",
+            "calls": {
+              "entity": "account",
+              "layer": "service",
+              "method": "delete"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "className": "FindAccountByDomainUseCase",
+            "kind": "query",
+            "calls": {
+              "entity": "account",
+              "layer": "service",
+              "method": "findByDomain"
+            },
+            "origin": {
+              "from": "yaml",
+              "at": {
+                "doc": {
+                  "kind": "entity",
+                  "name": "account"
+                },
+                "path": [
+                  "queries",
+                  0
+                ]
+              }
+            }
+          },
+          {
+            "className": "FindAccountByTierUseCase",
+            "kind": "query",
+            "calls": {
+              "entity": "account",
+              "layer": "service",
+              "method": "findByTier"
+            },
+            "origin": {
+              "from": "yaml",
+              "at": {
+                "doc": {
+                  "kind": "entity",
+                  "name": "account"
+                },
+                "path": [
+                  "queries",
+                  1
+                ]
+              }
+            }
+          }
+        ],
+        "http": {
+          "enabled": true,
+          "routes": [
+            {
+              "verb": "GET",
+              "path": "/accounts",
+              "controller": "AccountController",
+              "handler": "getAll",
+              "operationId": "listAccounts",
+              "useCase": "ListAccountsUseCase",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "verb": "GET",
+              "path": "/accounts/:id",
+              "controller": "AccountController",
+              "handler": "getById",
+              "operationId": "findAccountById",
+              "useCase": "FindAccountByIdUseCase",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "verb": "POST",
+              "path": "/accounts",
+              "controller": "AccountController",
+              "handler": "create",
+              "operationId": "createAccount",
+              "useCase": "CreateAccountUseCase",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "verb": "PATCH",
+              "path": "/accounts/:id",
+              "controller": "AccountController",
+              "handler": "update",
+              "operationId": "updateAccount",
+              "useCase": "UpdateAccountUseCase",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "verb": "DELETE",
+              "path": "/accounts/:id",
+              "controller": "AccountController",
+              "handler": "remove",
+              "operationId": "deleteAccount",
+              "useCase": "DeleteAccountUseCase",
+              "origin": {
+                "from": "base"
+              }
+            }
+          ],
+          "includeRoutes": [],
+          "includesConst": "ACCOUNTS_API_INCLUDES"
+        }
+      },
+      "contact": {
+        "entity": "contact",
+        "plural": "contacts",
+        "className": "Contact",
+        "repository": {
+          "className": "ContactRepository",
+          "baseClass": "IntegratedEntityRepository",
+          "typedInclude": true,
+          "methods": [
+            {
+              "name": "findById",
+              "kind": "find_by_id",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "id"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "one",
+              "readOptions": "columns+with",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "findByIds",
+              "kind": "find_by_ids",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "ids"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "many",
+              "readOptions": "columns+with",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "list",
+              "kind": "list",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "query"
+                }
+              ],
+              "returns": "many",
+              "readOptions": "columns+with",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "count",
+              "kind": "count",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "where"
+                }
+              ],
+              "returns": "count",
+              "readOptions": "none",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "findByEmail",
+              "kind": "finder",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "email",
+                  "field": "email"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "one",
+              "readOptions": "columns+with",
+              "origin": {
+                "from": "yaml",
+                "at": {
+                  "doc": {
+                    "kind": "entity",
+                    "name": "contact"
+                  },
+                  "path": [
+                    "queries",
+                    1
+                  ]
+                }
+              },
+              "unique": true
+            },
+            {
+              "name": "findByAccountId",
+              "kind": "fk_finder",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "id",
+                  "field": "account_id"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "many",
+              "readOptions": "columns+with",
+              "limit": true,
+              "origin": {
+                "from": "yaml",
+                "at": {
+                  "doc": {
+                    "kind": "entity",
+                    "name": "contact"
+                  },
+                  "path": [
+                    "relationships",
+                    "account"
+                  ]
+                },
+                "shadows": [
+                  {
+                    "doc": {
+                      "kind": "entity",
+                      "name": "contact"
+                    },
+                    "path": [
+                      "queries",
+                      0
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "exists",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "create",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "update",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "delete",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "upsertMany",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "findByExternalId",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "findManyByExternalIds",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "integrationUpsertOne",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "findByExternalIdProjected",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "softDeleteByExternalId",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "integrationUpsert",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            }
+          ]
+        },
+        "service": {
+          "className": "ContactService",
+          "baseClass": "IntegratedEntityService",
+          "methods": [
+            {
+              "name": "findById",
+              "kind": "read",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "id"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "one",
+              "delegatesTo": {
+                "entity": "contact",
+                "layer": "repository",
+                "method": "findById"
+              },
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "findByIds",
+              "kind": "read",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "ids"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "many",
+              "delegatesTo": {
+                "entity": "contact",
+                "layer": "repository",
+                "method": "findByIds"
+              },
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "list",
+              "kind": "read",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "listOptions"
+                }
+              ],
+              "returns": "many",
+              "delegatesTo": {
+                "entity": "contact",
+                "layer": "repository",
+                "method": "list"
+              },
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "findByAccountId",
+              "kind": "finder",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "accountId",
+                  "field": "account_id"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "many",
+              "delegatesTo": {
+                "entity": "contact",
+                "layer": "repository",
+                "method": "findByAccountId"
+              },
+              "origin": {
+                "from": "yaml",
+                "at": {
+                  "doc": {
+                    "kind": "entity",
+                    "name": "contact"
+                  },
+                  "path": [
+                    "queries",
+                    0
+                  ]
+                }
+              }
+            },
+            {
+              "name": "findByEmail",
+              "kind": "finder",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "email",
+                  "field": "email"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "one",
+              "delegatesTo": {
+                "entity": "contact",
+                "layer": "repository",
+                "method": "findByEmail"
+              },
+              "origin": {
+                "from": "yaml",
+                "at": {
+                  "doc": {
+                    "kind": "entity",
+                    "name": "contact"
+                  },
+                  "path": [
+                    "queries",
+                    1
+                  ]
+                }
+              }
+            },
+            {
+              "name": "account",
+              "kind": "relation_one",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "contactId"
+                }
+              ],
+              "returns": "one",
+              "delegatesTo": {
+                "entity": "account",
+                "layer": "repository",
+                "method": "findById"
+              },
+              "origin": {
+                "from": "yaml",
+                "at": {
+                  "doc": {
+                    "kind": "entity",
+                    "name": "contact"
+                  },
+                  "path": [
+                    "relationships",
+                    "account"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "count",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "exists",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "create",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "update",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "delete",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "findByExternalId",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "findManyByExternalIds",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            }
+          ]
+        },
+        "useCases": [
+          {
+            "className": "FindContactByIdUseCase",
+            "kind": "find_by_id",
+            "calls": {
+              "entity": "contact",
+              "layer": "service",
+              "method": "findById"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "className": "ListContactsUseCase",
+            "kind": "list",
+            "calls": {
+              "entity": "contact",
+              "layer": "service",
+              "method": "list"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "className": "CreateContactUseCase",
+            "kind": "create",
+            "calls": {
+              "entity": "contact",
+              "layer": "service",
+              "method": "create"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "className": "UpdateContactUseCase",
+            "kind": "update",
+            "calls": {
+              "entity": "contact",
+              "layer": "service",
+              "method": "update"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "className": "DeleteContactUseCase",
+            "kind": "delete",
+            "calls": {
+              "entity": "contact",
+              "layer": "service",
+              "method": "delete"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "className": "FindContactByAccountIdUseCase",
+            "kind": "query",
+            "calls": {
+              "entity": "contact",
+              "layer": "service",
+              "method": "findByAccountId"
+            },
+            "origin": {
+              "from": "yaml",
+              "at": {
+                "doc": {
+                  "kind": "entity",
+                  "name": "contact"
+                },
+                "path": [
+                  "queries",
+                  0
+                ]
+              }
+            }
+          },
+          {
+            "className": "FindContactByEmailUseCase",
+            "kind": "query",
+            "calls": {
+              "entity": "contact",
+              "layer": "service",
+              "method": "findByEmail"
+            },
+            "origin": {
+              "from": "yaml",
+              "at": {
+                "doc": {
+                  "kind": "entity",
+                  "name": "contact"
+                },
+                "path": [
+                  "queries",
+                  1
+                ]
+              }
+            }
+          }
+        ],
+        "http": {
+          "enabled": true,
+          "routes": [
+            {
+              "verb": "GET",
+              "path": "/contacts",
+              "controller": "ContactController",
+              "handler": "getAll",
+              "operationId": "listContacts",
+              "useCase": "ListContactsUseCase",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "verb": "GET",
+              "path": "/contacts/:id",
+              "controller": "ContactController",
+              "handler": "getById",
+              "operationId": "findContactById",
+              "useCase": "FindContactByIdUseCase",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "verb": "POST",
+              "path": "/contacts",
+              "controller": "ContactController",
+              "handler": "create",
+              "operationId": "createContact",
+              "useCase": "CreateContactUseCase",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "verb": "PATCH",
+              "path": "/contacts/:id",
+              "controller": "ContactController",
+              "handler": "update",
+              "operationId": "updateContact",
+              "useCase": "UpdateContactUseCase",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "verb": "DELETE",
+              "path": "/contacts/:id",
+              "controller": "ContactController",
+              "handler": "remove",
+              "operationId": "deleteContact",
+              "useCase": "DeleteContactUseCase",
+              "origin": {
+                "from": "base"
+              }
+            }
+          ],
+          "includeRoutes": [],
+          "includesConst": "CONTACTS_API_INCLUDES"
+        }
+      },
+      "opportunity": {
+        "entity": "opportunity",
+        "plural": "opportunities",
+        "className": "Opportunity",
+        "repository": {
+          "className": "OpportunityRepository",
+          "baseClass": "IntegratedEntityRepository",
+          "typedInclude": true,
+          "methods": [
+            {
+              "name": "findById",
+              "kind": "find_by_id",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "id"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "one",
+              "readOptions": "columns+with",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "findByIds",
+              "kind": "find_by_ids",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "ids"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "many",
+              "readOptions": "columns+with",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "list",
+              "kind": "list",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "query"
+                }
+              ],
+              "returns": "many",
+              "readOptions": "columns+with",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "count",
+              "kind": "count",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "where"
+                }
+              ],
+              "returns": "count",
+              "readOptions": "none",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "findByStage",
+              "kind": "finder",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "stage",
+                  "field": "stage"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "many",
+              "readOptions": "columns+with",
+              "origin": {
+                "from": "yaml",
+                "at": {
+                  "doc": {
+                    "kind": "entity",
+                    "name": "opportunity"
+                  },
+                  "path": [
+                    "queries",
+                    1
+                  ]
+                }
+              }
+            },
+            {
+              "name": "findByAccountId",
+              "kind": "fk_finder",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "id",
+                  "field": "account_id"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "many",
+              "readOptions": "columns+with",
+              "limit": true,
+              "origin": {
+                "from": "yaml",
+                "at": {
+                  "doc": {
+                    "kind": "entity",
+                    "name": "opportunity"
+                  },
+                  "path": [
+                    "relationships",
+                    "account"
+                  ]
+                },
+                "shadows": [
+                  {
+                    "doc": {
+                      "kind": "entity",
+                      "name": "opportunity"
+                    },
+                    "path": [
+                      "queries",
+                      0
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "exists",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "create",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "update",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "delete",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "upsertMany",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "findByExternalId",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "findManyByExternalIds",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "integrationUpsertOne",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "findByExternalIdProjected",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "softDeleteByExternalId",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "integrationUpsert",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "readOptions": "none",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            }
+          ]
+        },
+        "service": {
+          "className": "OpportunityService",
+          "baseClass": "IntegratedEntityService",
+          "methods": [
+            {
+              "name": "findById",
+              "kind": "read",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "id"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "one",
+              "delegatesTo": {
+                "entity": "opportunity",
+                "layer": "repository",
+                "method": "findById"
+              },
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "findByIds",
+              "kind": "read",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "ids"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "many",
+              "delegatesTo": {
+                "entity": "opportunity",
+                "layer": "repository",
+                "method": "findByIds"
+              },
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "list",
+              "kind": "read",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "listOptions"
+                }
+              ],
+              "returns": "many",
+              "delegatesTo": {
+                "entity": "opportunity",
+                "layer": "repository",
+                "method": "list"
+              },
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "name": "findByAccountId",
+              "kind": "finder",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "accountId",
+                  "field": "account_id"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "many",
+              "delegatesTo": {
+                "entity": "opportunity",
+                "layer": "repository",
+                "method": "findByAccountId"
+              },
+              "origin": {
+                "from": "yaml",
+                "at": {
+                  "doc": {
+                    "kind": "entity",
+                    "name": "opportunity"
+                  },
+                  "path": [
+                    "queries",
+                    0
+                  ]
+                }
+              }
+            },
+            {
+              "name": "findByStage",
+              "kind": "finder",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "stage",
+                  "field": "stage"
+                },
+                {
+                  "name": "opts"
+                }
+              ],
+              "returns": "many",
+              "delegatesTo": {
+                "entity": "opportunity",
+                "layer": "repository",
+                "method": "findByStage"
+              },
+              "origin": {
+                "from": "yaml",
+                "at": {
+                  "doc": {
+                    "kind": "entity",
+                    "name": "opportunity"
+                  },
+                  "path": [
+                    "queries",
+                    1
+                  ]
+                }
+              }
+            },
+            {
+              "name": "account",
+              "kind": "relation_one",
+              "emitted": true,
+              "params": [
+                {
+                  "name": "opportunityId"
+                }
+              ],
+              "returns": "one",
+              "delegatesTo": {
+                "entity": "account",
+                "layer": "repository",
+                "method": "findById"
+              },
+              "origin": {
+                "from": "yaml",
+                "at": {
+                  "doc": {
+                    "kind": "entity",
+                    "name": "opportunity"
+                  },
+                  "path": [
+                    "relationships",
+                    "account"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "count",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "exists",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "create",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "update",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "delete",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "findByExternalId",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            },
+            {
+              "name": "findManyByExternalIds",
+              "kind": "inherited",
+              "emitted": false,
+              "params": [],
+              "returns": "forwarded",
+              "origin": {
+                "from": "pattern",
+                "pattern": "Integrated"
+              }
+            }
+          ]
+        },
+        "useCases": [
+          {
+            "className": "FindOpportunityByIdUseCase",
+            "kind": "find_by_id",
+            "calls": {
+              "entity": "opportunity",
+              "layer": "service",
+              "method": "findById"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "className": "ListOpportunitiesUseCase",
+            "kind": "list",
+            "calls": {
+              "entity": "opportunity",
+              "layer": "service",
+              "method": "list"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "className": "CreateOpportunityUseCase",
+            "kind": "create",
+            "calls": {
+              "entity": "opportunity",
+              "layer": "service",
+              "method": "create"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "className": "UpdateOpportunityUseCase",
+            "kind": "update",
+            "calls": {
+              "entity": "opportunity",
+              "layer": "service",
+              "method": "update"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "className": "DeleteOpportunityUseCase",
+            "kind": "delete",
+            "calls": {
+              "entity": "opportunity",
+              "layer": "service",
+              "method": "delete"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "className": "FindOpportunityByAccountIdUseCase",
+            "kind": "query",
+            "calls": {
+              "entity": "opportunity",
+              "layer": "service",
+              "method": "findByAccountId"
+            },
+            "origin": {
+              "from": "yaml",
+              "at": {
+                "doc": {
+                  "kind": "entity",
+                  "name": "opportunity"
+                },
+                "path": [
+                  "queries",
+                  0
+                ]
+              }
+            }
+          },
+          {
+            "className": "FindOpportunityByStageUseCase",
+            "kind": "query",
+            "calls": {
+              "entity": "opportunity",
+              "layer": "service",
+              "method": "findByStage"
+            },
+            "origin": {
+              "from": "yaml",
+              "at": {
+                "doc": {
+                  "kind": "entity",
+                  "name": "opportunity"
+                },
+                "path": [
+                  "queries",
+                  1
+                ]
+              }
+            }
+          }
+        ],
+        "http": {
+          "enabled": true,
+          "routes": [
+            {
+              "verb": "GET",
+              "path": "/opportunities",
+              "controller": "OpportunityController",
+              "handler": "getAll",
+              "operationId": "listOpportunitys",
+              "useCase": "ListOpportunitiesUseCase",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "verb": "GET",
+              "path": "/opportunities/:id",
+              "controller": "OpportunityController",
+              "handler": "getById",
+              "operationId": "findOpportunityById",
+              "useCase": "FindOpportunityByIdUseCase",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "verb": "POST",
+              "path": "/opportunities",
+              "controller": "OpportunityController",
+              "handler": "create",
+              "operationId": "createOpportunity",
+              "useCase": "CreateOpportunityUseCase",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "verb": "PATCH",
+              "path": "/opportunities/:id",
+              "controller": "OpportunityController",
+              "handler": "update",
+              "operationId": "updateOpportunity",
+              "useCase": "UpdateOpportunityUseCase",
+              "origin": {
+                "from": "base"
+              }
+            },
+            {
+              "verb": "DELETE",
+              "path": "/opportunities/:id",
+              "controller": "OpportunityController",
+              "handler": "remove",
+              "operationId": "deleteOpportunity",
+              "useCase": "DeleteOpportunityUseCase",
+              "origin": {
+                "from": "base"
+              }
+            }
+          ],
+          "includeRoutes": [],
+          "includesConst": "OPPORTUNITIES_API_INCLUDES"
+        }
+      }
+    },
+    "relations": [
+      {
+        "id": "account.relationships.contacts",
+        "from": "account",
+        "to": "contact",
+        "kind": "has_many",
+        "inverseOf": "contact.relationships.account",
+        "generates": [
+          {
+            "entity": "account",
+            "layer": "service",
+            "method": "contacts"
+          }
+        ],
+        "includeKeys": [
+          {
+            "table": "accounts",
+            "key": "contacts"
+          }
+        ]
+      },
+      {
+        "id": "account.relationships.opportunities",
+        "from": "account",
+        "to": "opportunity",
+        "kind": "has_many",
+        "inverseOf": "opportunity.relationships.account",
+        "generates": [
+          {
+            "entity": "account",
+            "layer": "service",
+            "method": "opportunities"
+          }
+        ],
+        "includeKeys": [
+          {
+            "table": "accounts",
+            "key": "opportunities"
+          }
+        ]
+      },
+      {
+        "id": "contact.relationships.account",
+        "from": "contact",
+        "to": "account",
+        "kind": "belongs_to",
+        "inverseOf": "account.relationships.contacts",
+        "generates": [
+          {
+            "entity": "contact",
+            "layer": "repository",
+            "method": "findByAccountId"
+          },
+          {
+            "entity": "contact",
+            "layer": "service",
+            "method": "account"
+          }
+        ],
+        "includeKeys": [
+          {
+            "table": "contacts",
+            "key": "account"
+          }
+        ]
+      },
+      {
+        "id": "opportunity.relationships.account",
+        "from": "opportunity",
+        "to": "account",
+        "kind": "belongs_to",
+        "inverseOf": "account.relationships.opportunities",
+        "generates": [
+          {
+            "entity": "opportunity",
+            "layer": "repository",
+            "method": "findByAccountId"
+          },
+          {
+            "entity": "opportunity",
+            "layer": "service",
+            "method": "account"
+          }
+        ],
+        "includeKeys": [
+          {
+            "table": "opportunities",
+            "key": "account"
+          }
+        ]
+      }
+    ],
+    "unmodelled": [],
+    "warnings": []
+  }
+}

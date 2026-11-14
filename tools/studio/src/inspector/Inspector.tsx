@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GraphNodeData } from '@pattern-stack/graph-components';
 import { DetailPanel } from '@pattern-stack/graph-components';
-import type { StudioFile, ZodIssueLike } from '@studio-shared';
+import type { StudioFile, YamlRef, ZodIssueLike } from '@studio-shared';
 
 import { api, ApiError, FileValidationError } from '../api/client';
 import { YamlEditor } from './YamlEditor';
 import { RelationshipForm } from './RelationshipForm';
+import { ApiTab } from './ApiTab';
+import type { SurfaceState } from './ApiTab';
+import { formatIssuePath, locatePath } from './yaml-issues';
 import {
   Button,
   CountBadge,
@@ -17,7 +20,7 @@ import {
   Tabs,
 } from '../ui/primitives';
 
-export type InspectorTab = 'detail' | 'yaml' | 'relate';
+export type InspectorTab = 'detail' | 'api' | 'yaml' | 'relate';
 
 export interface InspectorProps {
   /** The graph node the canvas has selected, if any. */
@@ -26,6 +29,9 @@ export interface InspectorProps {
   entities: string[];
   tab: InspectorTab;
   onTabChange: (tab: InspectorTab) => void;
+  /** The derived API surface, fetched apart from the graph. */
+  surface: SurfaceState;
+  onRetrySurface: () => void;
   /** Raised when the YAML or a relationship was written — the graph reloads. */
   onProjectChanged: () => void;
   /** Reported upward so the window's beforeunload guard can see it. */
@@ -56,11 +62,17 @@ export function Inspector({
   entities,
   tab,
   onTabChange,
+  surface,
+  onRetrySurface,
   onProjectChanged,
   onDirtyChange,
 }: InspectorProps) {
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [file, setFile] = useState<FileState | null>(null);
+  /** A declaration to show once its file is open — set by an origin chip. */
+  const [pendingReveal, setPendingReveal] = useState<{ path: string; yamlPath: YamlRef['path'] } | null>(null);
+  const [reveal, setReveal] = useState<{ line: number; seq: number } | undefined>(undefined);
+  const [revealNote, setRevealNote] = useState<string | null>(null);
 
   const dirty = file != null && file.draft !== file.saved;
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
@@ -87,12 +99,57 @@ export function Inspector({
 
   // Selecting a node opens its file, unless the open one has unsaved edits —
   // silently discarding them on a stray click is worse than staying put.
+  // It follows the *selection*, not the open file: once an origin chip has
+  // opened another file (a junction's), that file stays open until the
+  // selection changes.
   const nodeFile = useMemo(() => fileForNode(files, node), [files, node]);
+  const syncedNodePath = useRef<string | null>(null);
   useEffect(() => {
-    if (!nodeFile || nodeFile.path === openPath) return;
+    if (!nodeFile || nodeFile.path === syncedNodePath.current) return;
+    if (nodeFile.path === openPath) {
+      syncedNodePath.current = nodeFile.path;
+      return;
+    }
     if (dirty) return;
+    syncedNodePath.current = nodeFile.path;
     load(nodeFile.path);
   }, [nodeFile, openPath, dirty, load]);
+
+  const fileForRef = useCallback(
+    (ref: YamlRef) => files.find((f) => f.kind === ref.doc.kind && f.name === ref.doc.name),
+    [files],
+  );
+
+  // An origin chip: open the YAML that declared it, then put the cursor on the
+  // declaration. The line is located in the file as it is *now*, by the same
+  // walker the validation markers use.
+  const revealYaml = useCallback(
+    (ref: YamlRef) => {
+      const target = fileForRef(ref);
+      if (!target) return;
+      if (target.path !== openPath) {
+        if (dirty && !window.confirm('Discard unsaved changes to this file?')) return;
+        load(target.path);
+      }
+      setRevealNote(null);
+      setPendingReveal({ path: target.path, yamlPath: ref.path });
+      onTabChange('yaml');
+    },
+    [fileForRef, openPath, dirty, load, onTabChange],
+  );
+
+  useEffect(() => {
+    if (!pendingReveal || !file || file.path !== pendingReveal.path || file.status !== 'ready') return;
+    const location = locatePath(file.draft, pendingReveal.yamlPath);
+    const where = formatIssuePath(pendingReveal.yamlPath);
+    if (location) {
+      setReveal((prev) => ({ line: location.line, seq: (prev?.seq ?? 0) + 1 }));
+      setRevealNote(location.exact ? null : `${where} is no longer in this file — showing its nearest ancestor.`);
+    } else {
+      setRevealNote(`${where} is not in this file any more.`);
+    }
+    setPendingReveal(null);
+  }, [pendingReveal, file]);
 
   const save = useCallback(() => {
     if (!file || file.status === 'saving') return;
@@ -130,6 +187,7 @@ export function Inspector({
 
   const tabs = [
     { id: 'detail' as const, label: 'Detail', disabled: node == null },
+    { id: 'api' as const, label: 'API', disabled: node == null },
     {
       id: 'yaml' as const,
       label: 'YAML',
@@ -175,6 +233,16 @@ export function Inspector({
               body="Click an entity or junction in the graph to inspect it."
             />
           ))}
+
+        {tab === 'api' && (
+          <ApiTab
+            nodeId={node?.id ?? null}
+            surface={surface}
+            onRetry={onRetrySurface}
+            onReveal={revealYaml}
+            canReveal={(ref) => fileForRef(ref) != null}
+          />
+        )}
 
         {tab === 'yaml' && (
           <>
@@ -237,6 +305,18 @@ export function Inspector({
                 />
               ) : (
                 <>
+                  {revealNote != null && (
+                    <div
+                      style={{
+                        padding: 'var(--sp-2) var(--sp-3)',
+                        background: 'var(--s-raised)',
+                        color: 'var(--t-secondary)',
+                        fontSize: 11.5,
+                      }}
+                    >
+                      {revealNote}
+                    </div>
+                  )}
                   {file.error != null && (
                     <div
                       style={{
@@ -258,6 +338,7 @@ export function Inspector({
                     issues={file.issues}
                     onSave={save}
                     readOnly={file.status === 'saving'}
+                    revealLine={reveal}
                   />
                 </>
               )}
