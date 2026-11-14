@@ -59,6 +59,16 @@ function makeLookup(load, where) {
   const get = () => (maps ??= load());
   const lookup = (name) => get().byName.get(name) ?? null;
   lookup.byTable = (table) => get().byTable.get(table) ?? null;
+  /**
+   * The WHOLE YAML document of `name` (its `fields:`, `relationships:`,
+   * `inherits:` …), not just the `entity:` block. Inheritance (RFC-0006) is the
+   * reader: a child's table is rendered from its base's document, a target's
+   * from its `match:` referrers'. `null` when the lookup was built from
+   * `entity:` blocks alone (`entityLookupFrom` without `definitions`).
+   */
+  lookup.definition = (name) => get().defs.get(name) ?? null;
+  /** Every document, in directory-walk order (see {@link lookup.definition}). */
+  lookup.definitions = () => [...get().defs.values()];
   /** Why `name` did not resolve: the directory searched and the file expected. */
   lookup.missingEntity = (name) =>
     where.dir
@@ -83,10 +93,12 @@ function makeLookup(load, where) {
 function indexBlocks(entries, tablePrefix) {
   const byName = new Map();
   const byTable = new Map();
+  const defs = new Map();
   const pluralSource = new Map();
   const tableSource = new Map();
-  for (const { block, source } of entries) {
+  for (const { block, source, doc } of entries) {
     byName.set(block.name, block);
+    if (doc) defs.set(block.name, doc);
     const plural = entityModuleNaming(block, '').plural;
     if (pluralSource.has(plural)) {
       throw new Error(
@@ -106,7 +118,7 @@ function indexBlocks(entries, tablePrefix) {
     tableSource.set(table, source);
     byTable.set(table, block);
   }
-  return { byName, byTable };
+  return { byName, byTable, defs };
 }
 
 /**
@@ -140,7 +152,7 @@ export function createEntityLookup(entitiesDir, { candidates = [], tablePrefix }
             continue;
           }
           if (doc && doc.entity && typeof doc.entity.name === 'string') {
-            entries.push({ block: doc.entity, source: file });
+            entries.push({ block: doc.entity, source: file, doc });
           }
         }
       }
@@ -175,9 +187,14 @@ export function projectEntityLookup(cwd) {
  * without an entities directory (unit tests). `tablePrefix` defaults to the
  * schema default `''`, the same default hand-built locals get.
  */
-export function entityLookupFrom(entityBlocks, { tablePrefix = '' } = {}) {
+export function entityLookupFrom(entityBlocks, { tablePrefix = '', definitions = [] } = {}) {
+  const docs = new Map(definitions.map((d) => [d.entity.name, d]));
   return makeLookup(
-    () => indexBlocks(entityBlocks.map((block) => ({ block, source: `<${block.name}>` })), tablePrefix),
+    () =>
+      indexBlocks(
+        entityBlocks.map((block) => ({ block, source: `<${block.name}>`, doc: docs.get(block.name) })),
+        tablePrefix,
+      ),
     { dir: '<in-memory>', candidates: [], tablePrefix },
   );
 }

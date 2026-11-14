@@ -2,7 +2,7 @@
 
 **Status:** Draft, revision 3 — Doug's answers of 2026-11-13 are recorded in §11, including OQ-11 (the part-kind
 rule is a composite FK on the part's own discriminator; the user-facing `checks:` key leaves this build). S1
-(schema and validation) is built; nothing else is. §13.2 S1 says what the build settled.
+(schema and validation) and S2 (the DDL) are built; nothing else is. §13.2 S1 and S2 say what each build settled.
 **Issue:** #875
 **Date:** 2026-11-12, revised 2026-11-13
 **Owner:** Doug
@@ -1121,12 +1121,15 @@ Where they live, and when:
 | Location | Contents | Added in |
 |---|---|---|
 | `test/fixtures/inheritance/entities/` (new) | The whole family. Loaded by unit tests through the real loader. Never generated from. | S1 |
-| `test/fixtures/entities/` (baseline) | `communication`, `meeting`, `email` | S2 |
+| `test/fixtures/entities/` (baseline) | `communication`, `meeting`, `email`, and the two plain entities they need: `email_thread`, `meeting_transcript` (a `has_many` onto a missing entity types a `with` the manifest does not have) | S2 |
 | `test/scaffold/entities/*-scaffold.yaml` (integration) | The whole family | S2 |
+| `test/smoke/fixtures/` (`just test-smoke`, default scenario) | The whole family. The smoke sets `tenancy.column: organization_id` project-wide, so its three tenant-scoped entities spell `tenant_scoped: { column: tenant_id }` | S2 |
 | `test/smoke/fixtures-frontend/entities/` | `communication`, `meeting`, both `sync: electric` | S6 |
 
-The harness sets are separate directories by design. Keep the copies field-identical, and add one unit test in S2
-that parses the three locations and fails when a shared entity differs.
+The harness sets are separate directories by design. Keep the copies field-identical.
+`src/__tests__/fixtures/inheritance-fixtures-agree.test.ts` parses all four locations and fails when a shared
+entity differs (it normalises `tenant_scoped` away, the one difference the smoke needs). The fixture family's
+plain target entity is `party`, not `person`: the baseline set already has a different `person`.
 
 ### 13.2 Slices
 
@@ -1241,6 +1244,54 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
 - Gates: `just test-baseline` (the snapshot diff is new modules and barrel lines only; the #680 expectation is
   untouched), `just test-smoke`, `just test-integration`.
 - Closes: A2 (tables), A3, A4, A5.
+
+**S2 as built (2026-11-13).** What the build settled, beyond the plan above:
+
+- **Where the cross-entity reads live.** `templates/_shared/inheritance.mjs` reads whole YAML documents through
+  `projectEntityLookup` (`lookup.definition(name)` / `lookup.definitions()`, added in `entity-naming.mjs`; the
+  lookup used to keep only the `entity:` block). It returns data: a child's base, kind enum and tenant column
+  (`resolveChildTenancy`, S1's), the `unique(id, …)` column sets a table must offer, the derived columns and
+  composite FKs of its `match:` relationships, and enum references (`choices_of:` resolves one hop, to the owner's
+  `pgEnum` and the path to import it). `entity-locals.js` turns that into `tableConstraints` entries and
+  imports, so naming, `assertDistinctConstraints` and the by-use drizzle imports all apply to them.
+- **A base or `match:` target is rendered by its own template** from its referrers' YAML. A `unique(id, kind)` is
+  emitted for every discriminator, whether or not a child exists; `unique(id, <tenant>)` for a tenant-scoped base;
+  one `unique(id, <cols>)` per column set a `match:` points at (deduplicated by set, so the base's `(id, kind)` is
+  shared with the discriminator's). `natural_key:` needed no new emitter: it is the unique index it already was.
+- **Rendering a child, or a `match:` referrer, alone also renders its base / target.**
+  `inheritanceCounterparts` (`validate-inheritance.ts`) names them and `preflightEntityTargets` appends them to
+  the validated targets, so `entity new meeting.yaml` and `junction new`'s parent re-render both bring a stale base
+  current. The reverse needs nothing: a base's own render already reads its children.
+- **S1's generation refusal is gone** (`unemittedInheritanceKeys`, `notGeneratedYetMessage`). A cross-entity rule
+  violation (R1-R10, M1-M5) stays a run-level rejection.
+- **Names.** Constraint names: `<table>_<base>_<discriminator column>_fk`, `<table>_<base>_tenant_fk`,
+  `<table>_<discriminator column>_check`, `<table>_<relationship>_match_fk`, `<table>_id_<cols>_uniq`. All use the
+  SQL table name. A name over Postgres's 63 bytes is a generation error (Postgres would truncate it silently and
+  two long names could collide).
+- **A child's columns** come right after `id`: the kind (the base's `pgEnum`, imported, `.$type<'<as>'>()`), then
+  the tenant column when the base is tenant-scoped. The tenant index is emitted first, like any tenant-scoped
+  table's. The CHECK is `check(name, sql`${t.kind} = '<as>'`)` through the internal builder; `as` must be a plain
+  identifier. A child that is a base's child by `as:` of a `choices_of:` discriminator (`communication_part`'s
+  children) imports the enum from its owner (`communications`), the base table from the base.
+- **`match:` columns.** The relationship's own column loses its single-column `.references()` and its unused
+  `AnyPgColumn` import. A derived column takes the target column's type (enums: the target's `pgEnum`, imported),
+  is NOT NULL unless the FK resolves nullable, and is emitted once per local name (M3). It is not a field, so it is
+  absent from the create and update DTOs and from the entity's own `processedFields`; it is in the table type.
+  M2's exception derives nothing and the FK uses the declared discriminator column.
+- **The `(t) => [...]` callback parameter is `tCols` in a table with a composite FK.** A composite FK reads the
+  other table's export inside the callback, and the emitted-name hygiene rule (#813) forbids a plural-shaped binding
+  in such a function. Every other table keeps `t`, so no existing module changed.
+- **Imports.** One statement per module: a base-table import absorbs the enum names from the same file.
+- **No writes for a child.** `generateWrites` is false for every child: no create, update or delete use case,
+  route or provider. Its repository still inherits `create`. S4 re-enables writes.
+- **Not done, and where it lands.** The child is not yet scoped by its tenant column in its repository or in the
+  relations manifest (`tableScope(schema.meetings, UNSCOPED)`), and has no edges: S3. A table with a derived
+  `match:` column cannot be created through its generated `create` until S4: the column is NOT NULL, absent from
+  the DTO, and filled by the repository's scalar subquery, which is A5's "the matched column is filled by the
+  insert" and lands in S4. S2's integration test covers A5's two rejections and the derived column's NOT NULL.
+- **Gates.** `test/scaffold/tests/inheritance-ddl.test.ts` asserts by SQLSTATE and constraint name, with a
+  succeeding control for each rejection. A15, first half: with the kind FK left out of the template, the A4 cases
+  (insert under another kind, update of the base kind) and the part-over-another-kind case went red; restored.
 
 **S3 — Relations, scope and reads.**
 

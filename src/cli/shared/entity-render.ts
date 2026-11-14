@@ -23,11 +23,7 @@ import type { Context } from './context.js';
 import { invokeEntityNew } from './hygen.js';
 import { collectMergedEvents } from './event-codegen-generator.js';
 import { validateEntityEmits } from '../../parser/validate-emits.js';
-import {
-	notGeneratedYetMessage,
-	unemittedInheritanceKeys,
-	validateInheritance,
-} from '../../parser/validate-inheritance.js';
+import { inheritanceCounterparts, validateInheritance } from '../../parser/validate-inheritance.js';
 import { FrontendConfigSchema, TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
 import {
 	loadProviderSet,
@@ -218,11 +214,8 @@ export async function preflightEntityTargets(
 
 	// RFC-0006 (#875): joined-table inheritance. A family is an input to the
 	// barrels (`schema.ts`, `modules.ts`) and the relations manifest, which read
-	// the WHOLE directory — so a violation, or a key the generator cannot emit
-	// yet, in ANY entity is a run-level rejection (the #666 posture), not one
-	// target's: refusing only that entity's own files would still emit exports of
-	// modules that were never written. Until S2 emits the DDL, an entity using
-	// `inherits:` / `discriminator:` / `match:` / `choices_of:` stops the run.
+	// the WHOLE directory — so a cross-entity violation (R1–R10, M1–M5) in ANY
+	// entity is a run-level rejection (the #666 posture), not one target's.
 	const frontendSync = FrontendConfigSchema.parse(ctx.config?.frontend ?? {}).sync.mode;
 	for (const issue of validateInheritance(allEntitiesForEmits, {
 		tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
@@ -230,10 +223,17 @@ export async function preflightEntityTargets(
 	})) {
 		runRejections.push({ file: issue.path ?? entitiesDirForEmits, message: `inheritance: ${issue.message}` });
 	}
-	for (const e of allEntitiesForEmits) {
-		const keys = unemittedInheritanceKeys(e);
-		if (keys.length > 0) {
-			runRejections.push({ file: e.sourcePath, message: notGeneratedYetMessage(e.name, keys) });
+
+	// A child's table is rendered from its base's YAML, and a `match:` target's
+	// from its referrers' (the base carries the unique every child's composite
+	// FK points at). Rendering a child or a referrer alone therefore re-renders
+	// its base / target, as `junction new` re-renders a junction's parents —
+	// otherwise a newly added child leaves the base's table stale.
+	const rendered = new Set(validated.map((v) => v.name));
+	for (const name of inheritanceCounterparts(allEntitiesForEmits, rendered)) {
+		const counterpart = allEntitiesForEmits.find((e) => e.name === name);
+		if (counterpart !== undefined) {
+			validated.push({ file: counterpart.sourcePath, name });
 		}
 	}
 

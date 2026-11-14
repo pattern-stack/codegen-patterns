@@ -14,6 +14,14 @@ import {
 } from '../../../_shared/entity-naming.mjs';
 import { junctionFanOutFor, junctionNaming } from '../../../_shared/junction-fan-out.mjs';
 import { renderSqlPredicate } from '../../../_shared/sql-predicate.mjs';
+import {
+  checkedIdentifier,
+  enumTypeNames,
+  inheritanceFor,
+  matchColumns,
+  matchPairsOf,
+  resolveEnumField,
+} from '../../../_shared/inheritance.mjs';
 // The patterns barrel has the side effect of pre-registering the five
 // library-shipped patterns (Base / Integrated / Activity / Knowledge /
 // Metadata). App-defined patterns are loaded separately in the parent
@@ -43,6 +51,7 @@ import {
   timestampColumn,
 } from '../../../../src/schema/field-timestamp.js';
 import { resolveTenancy } from '../../../../src/schema/tenancy.js';
+import { inheritsOf } from '../../../../src/schema/inheritance.js';
 import { sqlTableName } from '../../../../src/config/table-naming.js';
 import { rewriteSharedImport, subsystemsImport } from '../../../../src/config/runtime-mode.mjs';
 import { DEFAULT_CODEGEN_CONFIG } from '../../../../src/config/project-config.js';
@@ -516,7 +525,7 @@ export function renderColumnDefault(value, drizzleType) {
  * at the DB level (a real migration conflict). Namespacing yields
  * `field_config_role` (pg type) / `fieldConfigRoleEnum` (export) instead.
  */
-export function processFields(fields, entityName = '') {
+export function processFields(fields, entityName = '', enumResolver = null) {
   const processed = [];
 
   for (const [fieldName, field] of Object.entries(fields)) {
@@ -528,7 +537,10 @@ export function processFields(fields, entityName = '') {
     const nullable = fieldColumnNullable(field);
     const required = field.required ?? false;
     const hasDefault = hasColumnDefault(field);
-    const choices = field.choices;
+    // `choices_of: <entity>.<field>` (RFC-0006 §2.4): the column is typed with
+    // ANOTHER entity's pgEnum, which this file imports and never redeclares.
+    const imported = field.choices_of !== undefined && enumResolver ? enumResolver(fieldName, field) : null;
+    const choices = imported ? imported.choices : field.choices;
     const hasChoices = Array.isArray(choices) && choices.length > 0;
 
     // Enum-typed fields (or any field with a `choices` list) emit a
@@ -547,9 +559,11 @@ export function processFields(fields, entityName = '') {
     // The COLUMN name keeps the bare snake field name (`role`); only the const
     // (`fieldConfigRoleEnum`) and pg type (`field_config_role`) are namespaced.
     const enumDbName = hasChoices
-      ? (entityName ? `${entityName}_${fieldName}` : fieldName)
+      ? (imported ? imported.dbName : enumTypeNames(entityName, fieldName).dbName)
       : null;
-    const enumName = hasChoices ? camelCase(enumDbName) + 'Enum' : null;
+    const enumName = hasChoices
+      ? (imported ? imported.enumName : enumTypeNames(entityName, fieldName).enumName)
+      : null;
     const elementTsType = hasChoices
       ? choices.map((c) => `'${c}'`).join(' | ')
       : (TS_TYPE_MAP[elementType] || 'unknown');
@@ -576,6 +590,8 @@ export function processFields(fields, entityName = '') {
       hasChoices,
       enumName,
       enumDbName,
+      // Set when the pgEnum is another entity's (`choices_of:`): imported, not declared.
+      enumImport: imported ? { enumName: imported.enumName, importPath: imported.importPath } : null,
       minLength,
       maxLength,
     });
@@ -779,6 +795,11 @@ function processBelongsTo(relationships, naming, fields = {}) {
       isSelfFk,
       onDelete,
       onDeleteYaml,
+      // `match:` (RFC-0006 §2.4): `[local, targetColumn]` pairs. A relationship
+      // that has one is ONE composite FK (emitted in the extra-config list), so
+      // its column carries no single-column `.references()`.
+      match: matchPairsOf(rel).length > 0 ? matchPairsOf(rel) : null,
+      relName,
     });
   }
 
@@ -955,8 +976,9 @@ function entityTableColumns({
   tenancy,
   hasTimestamps,
   hasSoftDelete,
+  extraColumns = [],
 }) {
-  const cols = [{ column: 'id', prop: 'id' }];
+  const cols = [{ column: 'id', prop: 'id' }, ...extraColumns];
   for (const rel of belongsTo) cols.push({ column: rel.field, prop: rel.camelField });
   for (const f of nonFkFields) cols.push({ column: f.name, prop: f.camelName });
   if (hasExternalIdTracking) {
@@ -1121,7 +1143,8 @@ function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSof
     if (field.drizzleType === 'enum') {
       // Enum columns reference a `pgEnum` declaration emitted at the top
       // of the entity file; the helper itself comes from drizzle-orm/pg-core.
-      imports.add('pgEnum');
+      // An IMPORTED enum (`choices_of:`) declares nothing here.
+      if (!field.enumImport) imports.add('pgEnum');
       continue;
     }
     const importName = DRIZZLE_IMPORT_MAP[field.drizzleType];
@@ -1617,7 +1640,12 @@ export function buildBackendLocals(definition, baseLocals) {
   // Set `generate.writes: false` in YAML to suppress write-side emission
   // (use cases, controller routes, module providers).
   const generateBlock = definition.generate || {};
-  const generateWrites = generateBlock.writes !== false;
+  // RFC-0006 (#875): a child's inherited `create` would insert a row with no
+  // `id` (its key is the base row's), so until the pair write lands (S4) a child
+  // gets no write use cases, routes or providers — the existing
+  // `generate.writes: false` path, applied to every child.
+  const inheritsDeclaration = inheritsOf(definition);
+  const generateWrites = generateBlock.writes !== false && inheritsDeclaration === null;
 
   // EAV (ADR-13) — when true, emit paired reads + transactional compound
   // writes. Consumer must provide `@shared/eav-helpers` and `FieldValueService`.
@@ -1765,7 +1793,9 @@ export function buildBackendLocals(definition, baseLocals) {
   // Process entity fields. Pass the entity name so enum fields namespace their
   // pg type + exported const by entity (prevents same-named enum collisions
   // across entities — TS2308 / duplicate CREATE TYPE).
-  const processedFields = processFields(fields, entityName);
+  const processedFields = processFields(fields, entityName, (fieldName, field) =>
+    resolveEnumField({ lookup: entityLookup, modulesDir, fromNaming: ownNaming, entityName, fieldName, field }),
+  );
 
   // Behavior flags (re-read from behaviors array for backend use).
   //
@@ -2015,6 +2045,91 @@ export function buildBackendLocals(definition, baseLocals) {
     belongsToTableImports.push({ relatedTable: rel.relatedTable, importPath: rel.importPath });
   }
 
+  // ==========================================================================
+  // Joined-table inheritance and `match:` (RFC-0006 §2, #875). Cross-entity:
+  // a child's table reads its base's discriminator + tenant column, and a base /
+  // `match:` target carries the unique(id, …) its referrers' composite FKs
+  // point at — each rendered by this entity's OWN template from the other
+  // side's YAML (`_shared/inheritance.mjs`).
+  // ==========================================================================
+  const projectTablePrefix = baseLocals.tablePrefix ?? DEFAULT_CODEGEN_CONFIG.tables.prefix;
+  const inheritance = inheritanceFor({
+    entityName,
+    definition,
+    lookup: entityLookup,
+    ownNaming,
+    modulesDir,
+    tablePrefix: projectTablePrefix,
+    tenancyColumn: baseLocals.tenancyColumn ?? DEFAULT_CODEGEN_CONFIG.tenancy.column,
+    tableName: entityTableName,
+  });
+  const inheritedChild = inheritance.child;
+  const isChild = inheritedChild !== null;
+
+  // The columns a child carries from its base, right after `id`: the kind (the
+  // base's own pgEnum, fixed by DEFAULT + CHECK) and the tenant column (NOT
+  // NULL). Both are copies the base row owns, pinned by the two composite FKs.
+  const inheritedKeyColumns = [];
+  if (isChild) {
+    inheritedKeyColumns.push({
+      column: inheritedChild.kind.column,
+      prop: inheritedChild.kind.prop,
+      line:
+        `${inheritedChild.kind.prop}: ${inheritedChild.kind.enumName}('${inheritedChild.kind.column}')` +
+        `.$type<'${inheritedChild.as}'>().notNull().default('${inheritedChild.as}')`,
+      drizzleType: 'enum',
+      enumImport: { enumName: inheritedChild.kind.enumName, importPath: inheritedChild.kind.importPath },
+    });
+    if (inheritedChild.tenant) {
+      inheritedKeyColumns.push({
+        column: inheritedChild.tenant.column,
+        prop: inheritedChild.tenant.prop,
+        line: `${inheritedChild.tenant.prop}: uuid('${inheritedChild.tenant.column}').notNull()`,
+        drizzleType: 'uuid',
+        enumImport: null,
+      });
+    }
+  }
+
+  // `match:` — one derived local column per distinct local name, unless the
+  // table already has that column (its own discriminator: M2's exception; a
+  // child's carried kind / tenant column).
+  const existingMatchColumns = new Set(inheritedKeyColumns.map((c) => c.column));
+  if (typeof definition.discriminator === 'string') existingMatchColumns.add(definition.discriminator);
+  for (const f of Object.keys(fields)) existingMatchColumns.add(f);
+  const matched = matchColumns({
+    entityName,
+    relationships,
+    lookup: entityLookup,
+    existing: existingMatchColumns,
+    nullableByRel: new Map(belongsTo.map((r) => [r.relName, r.nullable])),
+    modulesDir,
+    fromNaming: ownNaming,
+  });
+  const matchDerivedColumns = matched.derived.map((d) => {
+    let chain;
+    let drizzleType;
+    let enumImport = null;
+    if (d.kind === 'fk') {
+      drizzleType = 'uuid';
+      chain = `uuid('${d.column}')${d.nullable ? '' : '.notNull()'}`;
+    } else if (d.enumRef) {
+      drizzleType = 'enum';
+      enumImport = { enumName: d.enumRef.enumName, importPath: d.enumRef.importPath };
+      chain = `${d.enumRef.enumName}('${d.column}')${d.nullable ? '' : '.notNull()'}`;
+    } else {
+      // The target column's own type, none of its constraints (default / unique / index / FK).
+      const { type, max_length, min_length, timezone } = d.field;
+      const [pf] = processFields(
+        { [d.column]: { type, max_length, min_length, timezone, ...(d.nullable ? {} : { required: true }) } },
+        d.targetEntity,
+      );
+      drizzleType = pf.drizzleType;
+      chain = pf.drizzleChain;
+    }
+    return { column: d.column, prop: camelCase(d.column), line: `${camelCase(d.column)}: ${chain}`, drizzleType, enumImport };
+  });
+
   // Field-level `unique: true` (#511) and composite unique indexes (#356),
   // through one builder.
   const tableColumns = entityTableColumns({
@@ -2024,6 +2139,7 @@ export function buildBackendLocals(definition, baseLocals) {
     tenancy,
     hasTimestamps,
     hasSoftDelete,
+    extraColumns: [...inheritedKeyColumns, ...matchDerivedColumns].map((c) => ({ column: c.column, prop: c.prop })),
   });
   const uniqueIndexExpressions = processUniqueIndexes(
     [
@@ -2101,6 +2217,109 @@ export function buildBackendLocals(definition, baseLocals) {
     );
   }
 
+  // RFC-0006 constraints (§2.1, §2.2, §2.4), appended after every other entry.
+  const propOf = (column) => camelCase(column);
+  const fkExpr = (name, columns, targetTable, targetColumns, onDelete) =>
+    `foreignKey({\n` +
+    `      name: '${name}',\n` +
+    `      columns: [${columns.map((c) => `t.${propOf(c)}`).join(', ')}],\n` +
+    `      foreignColumns: [${targetColumns.map((c) => `${targetTable}.${propOf(c)}`).join(', ')}],\n` +
+    `    }).onDelete('${onDelete}')`;
+  // The targets of other tables' composite FKs: unique(id, <cols>), one per column set.
+  const tenantForUnique = tenantScoped && typeof definition.discriminator === 'string' ? tenancy : null;
+  for (const u of inheritance.uniqueTargets) {
+    const name = checkedIdentifier(`${entityTableName}_id_${u.columns.join('_')}_uniq`, entityName, 'unique constraint');
+    tableConstraints.push({
+      comment: `inherits / match: the target of a composite FK (id, ${u.columns.join(', ')})`,
+      expr: `unique('${name}').on(t.id, ${u.columns.map((c) => `t.${propOf(c)}`).join(', ')})`,
+      name,
+      builder: 'unique',
+      partial: false,
+      columns: ['id', ...u.columns],
+      source: `inherits / match: unique(id, ${u.columns.join(', ')})`,
+    });
+  }
+  if (tenantForUnique) {
+    const name = checkedIdentifier(`${entityTableName}_id_${tenantForUnique.column}_uniq`, entityName, 'unique constraint');
+    tableConstraints.push({
+      comment: 'inherits: the target of every child tenant FK (id, tenant)',
+      expr: `unique('${name}').on(t.id, t.${tenantForUnique.prop})`,
+      name,
+      builder: 'unique',
+      partial: false,
+      columns: ['id', tenantForUnique.column],
+      source: 'inherits: unique(id, tenant)',
+    });
+  }
+  // `match:` — one composite FK per relationship, in place of the column's single-column FK.
+  for (const fk of matched.fks) {
+    const rel = belongsTo.find((r) => r.relName === fk.relName);
+    const name = checkedIdentifier(`${entityTableName}_${fk.relName}_match_fk`, entityName, 'foreign key');
+    tableConstraints.push({
+      comment: `match: (${[rel.field, ...fk.pairs.map(([l]) => l)].join(', ')}) → ${rel.relatedEntity}(id, ${fk.pairs.map(([, t]) => t).join(', ')})`,
+      expr: fkExpr(name, [rel.field, ...fk.pairs.map(([l]) => l)], rel.relatedTable, ['id', ...fk.pairs.map(([, t]) => t)], rel.onDelete),
+      name,
+      builder: 'foreignKey',
+      readsTable: true,
+      source: `match: on relationship '${fk.relName}'`,
+    });
+  }
+  // A child: tenant index, the two composite FKs to the base row, the kind CHECK.
+  if (isChild) {
+    const baseName = inheritedChild.base;
+    const disc = inheritedChild.discriminator;
+    if (inheritedChild.tenant) {
+      const t = inheritedChild.tenant;
+      tableConstraints.unshift({
+        comment: `inherits: the tenant column comes from the base (${baseName}), indexed like any tenant-scoped table`,
+        expr: `index('${entityTableName}_${t.column}_idx').on(t.${t.prop})`,
+        name: `${entityTableName}_${t.column}_idx`,
+        builder: 'index',
+        source: 'inherits: tenant column',
+      });
+    }
+    const kindFk = checkedIdentifier(`${entityTableName}_${baseName}_${disc}_fk`, entityName, 'foreign key');
+    tableConstraints.push({
+      comment: `inherits ${baseName}: this row sits only under a ${baseName} row whose ${disc} is ${inheritedChild.as}`,
+      expr: fkExpr(kindFk, ['id', disc], inheritedChild.baseTable, ['id', disc], 'cascade'),
+      name: kindFk,
+      builder: 'foreignKey',
+      readsTable: true,
+      source: 'inherits: kind FK',
+    });
+    if (inheritedChild.tenant) {
+      const t = inheritedChild.tenant;
+      const tenantFk = checkedIdentifier(`${entityTableName}_${baseName}_tenant_fk`, entityName, 'foreign key');
+      tableConstraints.push({
+        comment: `inherits ${baseName}: the tenant of this row is the tenant of its ${baseName} row`,
+        expr: fkExpr(tenantFk, ['id', t.column], inheritedChild.baseTable, ['id', t.column], 'cascade'),
+        name: tenantFk,
+        builder: 'foreignKey',
+        readsTable: true,
+        source: 'inherits: tenant FK',
+      });
+    }
+    const checkName = checkedIdentifier(`${entityTableName}_${disc}_check`, entityName, 'check constraint');
+    tableConstraints.push({
+      comment: `inherits ${baseName}: the kind is fixed (DEFAULT + CHECK, not a generated column)`,
+      expr: `check('${checkName}', sql\`\${t.${inheritedChild.kind.prop}} = '${inheritedChild.as}'\`)`,
+      name: checkName,
+      builder: 'check',
+      source: 'inherits: kind CHECK',
+    });
+  }
+
+  // Emitted-name hygiene (#813): a function that reads a table export by name
+  // declares no binding a plural could equal, and every plural is all-lowercase
+  // snake_case. A composite FK reads the OTHER table's export inside the
+  // `(t) => [...]` callback, so a table that has one names its parameter in
+  // camelCase (`tCols`) and every entry follows. Every other table keeps `t`.
+  const readsForeignTable = tableConstraints.some((c) => c.readsTable === true);
+  const tableCallbackParam = readsForeignTable ? 'tCols' : 't';
+  if (readsForeignTable) {
+    for (const c of tableConstraints) c.expr = c.expr.replace(/\bt\./g, `${tableCallbackParam}.`);
+  }
+
   for (const c of tableConstraints) {
     if (!c.name || !c.builder) {
       throw new Error(
@@ -2121,19 +2340,58 @@ export function buildBackendLocals(definition, baseLocals) {
   // name and is carried by the column reference (`f.name`) in the entity
   // template, not here.
   const enumFields = processedFields
-    .filter((f) => f.hasChoices && f.enumName)
+    .filter((f) => f.hasChoices && f.enumName && !f.enumImport)
     .map((f) => ({
       enumName: f.enumName,
       dbName: f.enumDbName,
       choices: f.choices,
     }));
 
+  // Imports of other entities' exports the inheritance DDL needs: a child's base
+  // table + the base's kind pgEnum, an IMPORTED enum (`choices_of:`, a `match:`
+  // local typed by the target's enum). One statement per module, and never a
+  // name the belongs_to / field-FK imports already bring (TS2300).
+  const alreadyImported = new Set([
+    entityNamePlural,
+    ...belongsToTableImports.map((i) => i.relatedTable),
+    ...fieldFkImports.map((i) => i.relatedTable),
+  ]);
+  const inheritanceImportMap = new Map();
+  const wantImport = (importPath, name) => {
+    if (alreadyImported.has(name)) return;
+    // One statement per module: fold into a belongs_to table import from the same file.
+    const sameModule = belongsToTableImports.find((imp) => imp.importPath === importPath);
+    if (sameModule) {
+      sameModule.extraNames = [...new Set([...(sameModule.extraNames ?? []), name])].sort();
+      return;
+    }
+    if (!inheritanceImportMap.has(importPath)) inheritanceImportMap.set(importPath, new Set());
+    inheritanceImportMap.get(importPath).add(name);
+  };
+  if (isChild) wantImport(inheritedChild.baseImportPath, inheritedChild.baseTable);
+  for (const c of [...inheritedKeyColumns, ...matchDerivedColumns]) {
+    if (c.enumImport) wantImport(c.enumImport.importPath, c.enumImport.enumName);
+  }
+  for (const f of processedFields) {
+    if (f.enumImport) wantImport(f.enumImport.importPath, f.enumImport.enumName);
+  }
+  const inheritanceImports = [...inheritanceImportMap.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([importPath, names]) => ({ importPath, names: [...names].sort() }));
+
   // Drizzle imports needed, derived by use (#784): the pg-core builders the
   // extra-config callback actually calls, plus `sql` (drizzle-orm) when a
   // partial entry renders a predicate.
   const extraDrizzleImports = [...new Set(tableConstraints.map((c) => c.builder))];
-  const drizzleOrmImports = uniqueIndexExpressions.some((u) => u.partial) ? ['sql'] : [];
-  const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraDrizzleImports);
+  const drizzleOrmImports = [
+    ...(uniqueIndexExpressions.some((u) => u.partial) || tableConstraints.some((c) => c.builder === 'check') ? ['sql'] : []),
+  ];
+  // The columns this file renders beyond `processedFields`: the child's kind and tenant, `match:` locals.
+  const inheritanceColumnFields = [...inheritedKeyColumns, ...matchDerivedColumns].map((c) => ({
+    drizzleType: c.drizzleType,
+    enumImport: c.enumImport,
+  }));
+  const drizzleEntityImports = collectDrizzleImports([...processedFields, ...inheritanceColumnFields], belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraDrizzleImports);
 
   // Output paths
   const outputPaths = {
@@ -2584,7 +2842,8 @@ export function buildBackendLocals(definition, baseLocals) {
     // (circular initializer). Annotating every callback is one rule with no
     // cycle detection; the annotation is type-only and does not change the
     // column's inferred type. `true` whenever this table has an FK column.
-    hasFk: belongsTo.length > 0 || fieldFeatures.hasFieldFk,
+    // A `match:` relationship is a composite `foreignKey(...)`, not a `.references()`.
+    hasFk: belongsTo.some((r) => !r.match) || fieldFeatures.hasFieldFk,
     enumFields,
 
     // Field-level foreign_key imports (#354) and pgTable extra-config
@@ -2594,6 +2853,13 @@ export function buildBackendLocals(definition, baseLocals) {
     fieldFkImports,
     belongsToTableImports,
     tableConstraints,
+    tableCallbackParam,
+
+    // RFC-0006 (#875): joined-table inheritance and `match:` DDL.
+    inheritanceImports,
+    inheritedKeyColumns,
+    matchDerivedColumns,
+    isInheritanceChild: isChild,
 
     // ADR-046: the derived API surface, and the finder type text keyed by it
     apiSurface,
