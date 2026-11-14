@@ -28,9 +28,8 @@ import {
 	type RelationsConfigInput,
 } from '../../emitters/relations/load-context.js';
 import type { RelationEdge, RelationsEmitContext } from '../../emitters/relations/types.js';
-import { composePatterns, declaredPatternNames, type PatternDeclaringEntity } from '../../patterns/compose.js';
-import { getPattern } from '../../patterns/registry.js';
-import '../../patterns/library/index.js';
+import type { PatternDeclaringEntity } from '../../patterns/compose.js';
+import { resolvePatternComposition } from '../../patterns/resolve-composition.js';
 import type { EntityDefinition } from '../../schema/entity-definition.schema.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import { detectYamlType, loadRelationshipFromYaml } from '../../utils/yaml-loader.js';
@@ -90,31 +89,19 @@ function loadRelationshipNames(dir: string): { name: string }[] {
 }
 
 /**
- * The resolved pattern composition, as `entity-locals.js`'s `resolvePatternComposition` returns it — the same
- * `composePatterns` over the same registry. `src/` cannot import a template module (it is outside the build), so
- * the mapping is restated here; `project-api-surface.test.ts` holds the two equal for every fixture entity.
+ * The resolved pattern composition, narrowed to what the derivation reads. The composition itself is
+ * `resolvePatternComposition` (`src/patterns/resolve-composition.ts`) — the one function hygen's `entity-locals.js`
+ * calls too, so the CLI and the generator cannot disagree about an entity's spine or capabilities.
  */
 export function patternComposition(entity: PatternDeclaringEntity & { name: string }): PatternCompositionInput {
-	const composed = composePatterns(declaredPatternNames(entity), getPattern, { entity: entity.name });
-	if (composed.errors.length > 0) {
-		throw new Error(
-			`[codegen] pattern composition failed for '${entity.name}':\n  ` +
-				composed.errors.map((e) => e.message).join('\n  '),
-		);
-	}
-	const def = composed.spine;
-	if (!def) {
-		throw new Error(
-			`Pattern '${composed.spineName}' is not registered, and the library 'Base' pattern is also missing.`,
-		);
-	}
+	const resolved = resolvePatternComposition(entity);
 	return {
-		patternName: def.name,
-		repositoryBaseClass: def.repositoryClass ?? '',
-		serviceBaseClass: def.serviceClass ?? '',
-		repositoryInheritedMethods: def.repositoryInheritedMethods ?? [],
-		serviceInheritedMethods: def.serviceInheritedMethods ?? [],
-		capabilities: composed.capabilities,
+		patternName: resolved.patternName,
+		repositoryBaseClass: resolved.repositoryBaseClass ?? '',
+		serviceBaseClass: resolved.serviceBaseClass ?? '',
+		repositoryInheritedMethods: resolved.repositoryInheritedMethods,
+		serviceInheritedMethods: resolved.serviceInheritedMethods,
+		capabilities: resolved.capabilities,
 	};
 }
 

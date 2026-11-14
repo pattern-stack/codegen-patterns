@@ -24,17 +24,11 @@ export interface AllowlistEntry {
 
 export const NO_NAME_DERIVATION_ALLOWLIST: readonly AllowlistEntry[] = [
 	// ── The entity backend — ADR-046 Phase B empties these ─────────────────
-	{ file: 'templates/entity/new/backend/entity-locals.js', pattern: 'string-built-finder', count: 2, issue: 'ADR-046 Phase B' },
 	{ file: 'templates/entity/new/backend/entity-locals.js', pattern: 'local-case-helper', count: 1, issue: 'ADR-046 Phase B' },
-	{ file: 'templates/entity/new/backend/repository.ejs.t', pattern: 'charat-upper-case', count: 3, issue: 'ADR-046 Phase B' },
-	{ file: 'templates/entity/new/backend/repository.ejs.t', pattern: 'string-built-finder', count: 3, issue: 'ADR-046 Phase B' },
 	{ file: 'templates/entity/new/backend/service.ejs.t', pattern: 'inline-camel-case', count: 4, issue: 'ADR-046 Phase B' },
 	{ file: 'templates/entity/new/backend/service.ejs.t', pattern: 'string-built-finder', count: 2, issue: 'ADR-046 Phase B' },
 	{ file: 'templates/entity/new/prompt.js', pattern: 'inline-camel-case', count: 1, issue: 'ADR-046 Phase B' },
 	{ file: 'templates/entity/new/prompt.js', pattern: 'local-case-helper', count: 1, issue: 'ADR-046 Phase B' },
-
-	// `relationship new`'s copy of the `queries:` finder name — B2 deletes it (#711).
-	{ file: 'templates/relationship/new/prompt.js', pattern: 'string-built-finder', count: 1, issue: 'ADR-046 Phase B (B2, #711)' },
 
 	// ── Junction and relationship pipelines — converge under #679 ──────────
 	{ file: 'templates/_shared/junction-fan-out.mjs', pattern: 'inline-camel-case', count: 1, issue: '#679' },

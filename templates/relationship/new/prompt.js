@@ -19,6 +19,7 @@ import {
   relativeModuleDir,
 } from "../../_shared/entity-naming.mjs";
 import { emittedStem } from "../../../src/config/file-naming.js";
+import { finderName } from "../../../src/derived/api/names.js";
 import { loadRuntimeMode, runtimeImport } from "../../../src/config/runtime-mode.mjs";
 import { configOrDefaults, loadProjectConfig } from "../../../src/config/project-config.js";
 import {
@@ -300,20 +301,6 @@ function zodChainForOutput(field) {
 // Query Processing
 // ============================================================================
 
-function deriveQueryMethodName(query) {
-  const byFields = Array.isArray(query.by) ? query.by : [];
-  const selectFields = Array.isArray(query.select) ? query.select : [];
-
-  const byPart = byFields.map((f) => pascalCase(f)).join("And");
-
-  if (selectFields.length > 0) {
-    const selectPart = selectFields.map((f) => pascalCase(f)).join("And") + "s";
-    return `find${selectPart}By${byPart}`;
-  }
-
-  return `findBy${byPart}`;
-}
-
 function processQueries(queriesBlock, allFieldsMap, entityNamePascal) {
   if (!queriesBlock || !Array.isArray(queriesBlock) || queriesBlock.length === 0) {
     return [];
@@ -338,7 +325,8 @@ function processQueries(queriesBlock, allFieldsMap, entityNamePascal) {
       orderDirection = parts[1] || "asc";
     }
 
-    const methodName = deriveQueryMethodName(q);
+    // The finder's name is the derivation's (ADR-046, #711) — `src/derived/api/names.ts`.
+    const methodName = finderName({ by: byFields, select: selectFields });
 
     let returnType;
     if (isUnique) {
