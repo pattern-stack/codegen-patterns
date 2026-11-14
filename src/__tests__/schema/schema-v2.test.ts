@@ -6,11 +6,8 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import {
-	apiEnabled,
-	apiIncludes,
-	EntityDefinitionSchema,
-} from '../../schema/entity-definition.schema';
+import { apiIncludes, EntityDefinitionSchema } from '../../schema/entity-definition.schema';
+import { apiEnabled } from '../../derived/api/entity';
 import { GenerateConfigSchema } from '../../schema/codegen-config.schema';
 import { loadEntityFromYaml } from '../../utils/yaml-loader';
 import { loadEntities } from '../../parser/load-entities';

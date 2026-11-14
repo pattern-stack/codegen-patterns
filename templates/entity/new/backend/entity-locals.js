@@ -1552,40 +1552,9 @@ export function buildBackendLocals(definition, baseLocals) {
   const relationships = definition.relationships || {};
   const behaviors = definition.behaviors || [];
   const queriesBlock = definition.queries || null;
-  // ADR-043 §6: `api: false` suppresses the HTTP surface (controller + search
-  // controller + their module wiring) while keeping the entity/repository/
-  // service/use-cases in-process reachable. Defaults to true.
-  // ADR-043 §6 + REL-2 §5: `api:` is either a boolean or a block. One reader for
-  // both forms, so `api: false` and `api: { enabled: false }` cannot diverge.
-  const apiBlock = definition.api;
-  const apiIsBlock = typeof apiBlock === 'object' && apiBlock !== null;
-  const apiEnabled = apiBlock === false
-    ? false
-    : apiIsBlock
-      ? apiBlock.enabled !== false
-      : true;
-  // Which read routes this entity exposes an include allowlist on. Read from
-  // THIS entity's YAML only — resolving the paths needs the whole relation graph,
-  // which is the TS emitter's job (`src/emitters/relations/build-includes.ts`).
-  const apiIncludeRoutes = apiIsBlock && apiBlock.includes
-    ? Object.keys(apiBlock.includes)
-    : [];
-
-  // REL-2 (#587): does this entity's table carry at least one relation in the
-  // generated manifest? Only then can its repository name a `with` at all —
-  // `DBQueryConfig` has no `with` slot for a relation-less table, so mentioning
-  // one is a compile error in the consumer project (measured; see REL-2 §2.5).
-  //
-  // Answered from THIS entity's own `relationships:` block, minus transitive
-  // ones, which REL-1 emits no edge for (#614). It deliberately does NOT try to
-  // re-derive the graph: a junction-only entity (edges contributed by a junction
-  // YAML) gets no typed include from this pipeline, which loses a feature rather
-  // than breaking a build. #679's junction/relationship convergence is where that
-  // is decided, and this PR does not prejudge it.
-  const includableRelations = Object.entries(relationships || {}).filter(
-    ([, rel]) => !rel.through,
-  );
-  const includes = includableRelations.length > 0;
+  // ADR-043 §6 `api: false` and REL-2 §2.5's typed include are decided once, in
+  // the derivation (`apiEnabled` / `declaresOwnRelation`, `src/derived/api/
+  // entity.ts`); the `apiEnabled` and `includes` locals below are its answers.
 
   // The module tree's root: the resolved `paths.modules_dir` (PATH-1, #645) —
   // prompt.js threads BASE_PATHS.modulesDir here. Callers that build locals by
@@ -2504,8 +2473,10 @@ export function buildBackendLocals(definition, baseLocals) {
     // TABLE-0: the SQL table name (pgTable argument); never a TS identifier.
     entityTableName,
 
-    // ADR-043 §6: HTTP surface gate (controller + search controller + wiring)
-    apiEnabled,
+    // ADR-043 §6: HTTP surface gate — the derivation's answer (ADR-046). The
+    // backend templates read `apiSurface.http.enabled`; this local is for
+    // callers of `buildBackendLocals` that ask the question directly.
+    apiEnabled: apiSurface.http.enabled,
 
     // Pattern — registry-driven (ADR-031)
     patternName,
@@ -2584,14 +2555,12 @@ export function buildBackendLocals(definition, baseLocals) {
     relationsImport,
     apiIncludesImport,
     typedEventBusImport,
-    // The read routes with an allowlist, and the name of the emitted map. The
-    // name is derived exactly as `emit-includes.ts#includesConstName` derives it;
-    // a unit test pins the two together.
-    apiIncludeRoutes,
-    includes,
-    apiIncludesConst: `${entityNamePlural
-      .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-      .toUpperCase()}_API_INCLUDES`,
+    // REL-2 §2.5: does this entity carry a typed include (a `with`)? The
+    // derivation's `typedInclude` — read by the service and use-case templates
+    // until they print from `apiSurface` too. The include routes and the
+    // allowlist constant's name are `apiSurface.http.includeRoutes` /
+    // `.includesConst` (one owner: `includesConstName`, `src/derived/api/names.ts`).
+    includes: apiSurface.repository.typedInclude,
 
     // Output paths
     outputPaths: outputPaths,

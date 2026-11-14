@@ -1574,17 +1574,8 @@ export const fieldTypeToZod: Record<FieldType, string> = {
 // `api:` accessors (REL-2 §5)
 // ============================================================================
 
-/**
- * Is this entity's HTTP data plane emitted at all? (ADR-043 §6.)
- *
- * One reader for both forms of the key, so `api: false` and
- * `api: { enabled: false }` can never diverge.
- */
-export function apiEnabled(def: Pick<EntityDefinition, 'api'>): boolean {
-	const api = def.api;
-	if (typeof api === 'boolean') return api;
-	return api.enabled;
-}
+// Whether the HTTP data plane is emitted at all (`api: false` / `api: { enabled: false }`) has one reader,
+// `apiEnabled` in `src/derived/api/entity.ts` (ADR-046) — it accepts raw YAML as well as this schema's output.
 
 /** The declared include allowlist, keyed by route. Absent ⇒ nothing exposed. */
 export function apiIncludes(

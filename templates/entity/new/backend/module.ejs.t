@@ -3,6 +3,17 @@ to: "<%= outputPaths.module %>"
 force: true
 ---
 <%- generatedBanner %>
+<%_
+// ADR-046 — what this module wires is read from the derivation
+// (`src/derived/api/`): whether HTTP is on, and which use cases and routes
+// exist. The provider list itself is slice 3.
+const _useCase = (kind) => apiSurface.useCases.find((u) => u.kind === kind);
+const _api = apiSurface.http.enabled;
+const _eav = !!_useCase('find_by_id_with_fields');
+const _writes = !!_useCase('create');
+const _searchUseCase = _useCase('search');
+const _searchRoute = !!_searchUseCase && apiSurface.http.routes.some((r) => r.useCase === _searchUseCase.className);
+_%>
 <% if (hasEmits) { -%>
 /**
  * EVT-7: This entity emits typed domain events. Use-cases depend on
@@ -21,7 +32,7 @@ import { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.fileSte
 <%_ junctionFanOut.forEach(fan => { _%>
 import { <%= fan.junction.moduleClass %> } from '<%= fan.junctionModuleImport %>';
 <%_ }) _%>
-<% if (eavEnabled) { -%>
+<% if (_eav) { -%>
 import { <%= eavFieldValueModulePascal %>Module } from '<%= eavFieldValueImportDir %>/<%= eavFieldValuePluralStem %>.module';
 <% } -%>
 <% if (eavValueTable) { -%>
@@ -30,7 +41,7 @@ import { <%= eavDefinitionPluralPascal %>Module } from '<%= eavDefinitionImportD
 
 import { <%= classNames.repository %> } from './<%= entityFileStem %>.repository';
 import { <%= classNames.service %> } from './<%= entityFileStem %>.service';
-<% if (apiEnabled) { -%>
+<% if (_api) { -%>
 import { <%= classNames.controller %> } from './<%= entityFileStem %>.controller';
 <% } -%>
 // OPENAPI-2: Zod schemas registered with OpenApiRegistry at module init.
@@ -39,11 +50,11 @@ import { <%= classNames.updateSchema %> } from './dto/update-<%= entityFileStem 
 import { <%= classNames.outputSchema %> } from './dto/<%= entityFileStem %>-output.dto';
 import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= entityFileStem %>-by-id.use-case';
 import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityPluralFileStem %>.use-case';
-<% if (eavEnabled) { -%>
+<% if (_eav) { -%>
 import { <%= classNames.findByIdWithFieldsUseCase %> } from './use-cases/find-<%= entityFileStem %>-by-id-with-fields.use-case';
 import { <%= classNames.listWithFieldsUseCase %> } from './use-cases/list-<%= entityPluralFileStem %>-with-fields.use-case';
 <% } -%>
-<% if (generateWrites) { -%>
+<% if (_writes) { -%>
 import { <%= classNames.createUseCase %> } from './use-cases/create-<%= entityFileStem %>.use-case';
 import { <%= classNames.updateUseCase %> } from './use-cases/update-<%= entityFileStem %>.use-case';
 import { <%= classNames.deleteUseCase %> } from './use-cases/delete-<%= entityFileStem %>.use-case';
@@ -51,9 +62,9 @@ import { <%= classNames.deleteUseCase %> } from './use-cases/delete-<%= entityFi
 <% if (hasDeclarativeQueries) { -%>
 import { declarativeQueryClasses } from './use-cases/declarative-queries';
 <% } -%>
-<% if (hasSearchQuery) { -%>
+<% if (_searchUseCase) { -%>
 import { <%= searchQuery.useCaseClassName %> } from './use-cases/search-<%= entityPluralFileStem %>.use-case';
-<% if (apiEnabled) { -%>
+<% if (_searchRoute) { -%>
 import { <%= classNames.searchController %> } from './<%= entityFileStem %>-search.controller';
 <% } -%>
 <% } -%>
@@ -65,7 +76,7 @@ import { <%= classNames.searchController %> } from './<%= entityFileStem %>-sear
 <%_ junctionFanOut.forEach(fan => { _%>
     forwardRef(() => <%= fan.junction.moduleClass %>),
 <%_ }) _%>
-<% if (eavEnabled) { -%>
+<% if (_eav) { -%>
     <%= eavFieldValueModulePascal %>Module,
 <% } -%>
 <% if (eavValueTable) { -%>
@@ -77,7 +88,7 @@ import { <%= classNames.searchController %> } from './<%= entityFileStem %>-sear
     // <%= rel.relatedEntityPascal %>sModule,
 <%_ }) _%>
   ],
-  controllers: [<% if (apiEnabled) { %><%= classNames.controller %><% if (hasSearchQuery) { %>, <%= classNames.searchController %><% } %><% } %>],
+  controllers: [<% if (_api) { %><%= classNames.controller %><% if (_searchRoute) { %>, <%= classNames.searchController %><% } %><% } %>],
   providers: [
     <%= classNames.repository %>,
     <%= classNames.service %>,
@@ -87,11 +98,11 @@ import { <%= classNames.searchController %> } from './<%= entityFileStem %>-sear
 <%_ }) _%>
     <%= classNames.findByIdUseCase %>,
     <%= classNames.listUseCase %>,
-<% if (eavEnabled) { -%>
+<% if (_eav) { -%>
     <%= classNames.findByIdWithFieldsUseCase %>,
     <%= classNames.listWithFieldsUseCase %>,
 <% } -%>
-<% if (generateWrites) { -%>
+<% if (_writes) { -%>
     <%= classNames.createUseCase %>,
     <%= classNames.updateUseCase %>,
     <%= classNames.deleteUseCase %>,
@@ -99,7 +110,7 @@ import { <%= classNames.searchController %> } from './<%= entityFileStem %>-sear
 <% if (hasDeclarativeQueries) { -%>
     ...declarativeQueryClasses,
 <% } -%>
-<% if (hasSearchQuery) { -%>
+<% if (_searchUseCase) { -%>
     <%= searchQuery.useCaseClassName %>,
 <% } -%>
   ],

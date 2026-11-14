@@ -149,6 +149,35 @@ function pluralOf(block: EntityBlockInput): string {
 }
 
 // ============================================================================
+// The readers other halves share — one each (PLAN §3.2)
+// ============================================================================
+
+/**
+ * Is this entity's HTTP data plane emitted at all? (ADR-043 §6.) One reader for both forms of the key, so
+ * `api: false` and `api: { enabled: false }` cannot diverge — and for both spellings of the input: raw YAML with
+ * no `api:` key, and the zod-parsed definition whose default filled it in (§4.3). Absent ⇒ enabled.
+ */
+export function apiEnabled(def: Pick<EntityDefinitionInput, 'api'>): boolean {
+	const api = def.api;
+	if (api === false) return false;
+	if (typeof api === 'object' && api !== null) return api.enabled !== false;
+	return true;
+}
+
+/**
+ * Does this entity declare a relationship that becomes an edge ON ITS OWN TABLE? Only then can its repository
+ * name a `with` (REL-2 §2.5: `DBQueryConfig` has no `with` slot for a relation-less table), so this decides
+ * whether a typed include surface is emitted at all — and `build-includes.ts` rejects an allowlist on an entity
+ * where it is false. Transitive (`through:`) relationships are excluded because REL-1 emits no edge for them
+ * (#614).
+ */
+export function declaresOwnRelation(def: {
+	relationships?: Readonly<Record<string, Pick<RelationshipInput, 'through'>>> | null;
+}): boolean {
+	return Object.values(def.relationships ?? {}).some((rel) => !rel.through);
+}
+
+// ============================================================================
 // The derivation
 // ============================================================================
 
@@ -175,7 +204,7 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 		rel.role ? ['roles', rel.role] : ['relationships', name];
 
 	// REL-2 §2.5 — a `with` exists only when this entity's own table carries an edge.
-	const typedInclude = Object.values(relationships).some((rel) => !rel.through);
+	const typedInclude = declaresOwnRelation({ relationships });
 	const readOptions: ReadOptionsShape = typedInclude ? 'columns+with' : 'columns';
 
 	const belongsTo = Object.entries(relationships)
@@ -560,7 +589,7 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 	// ── HTTP ────────────────────────────────────────────────────────────────
 	const api = definition.api;
 	const apiBlock = typeof api === 'object' && api !== null ? api : null;
-	const enabled = api === false ? false : apiBlock ? apiBlock.enabled !== false : true;
+	const enabled = apiEnabled(definition);
 	const disabledBy: YamlRef | undefined =
 		api === false ? ref(['api']) : apiBlock && apiBlock.enabled === false ? ref(['api', 'enabled']) : undefined;
 	const includeRoutes = apiBlock?.includes ? Object.keys(apiBlock.includes) : [];
