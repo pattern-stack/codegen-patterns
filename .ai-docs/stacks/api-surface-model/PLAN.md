@@ -1,6 +1,6 @@
 # PLAN — backend API-surface derivation (slice 1) + Studio API view
 
-**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · A0–A6 built · S1 and S2 signed off 2026-11-14 · A6 (#778) added to Phase A by Doug 2026-11-14
+**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · A0–A6 and B1 built · S1 and S2 signed off 2026-11-14 · A6 (#778) added to Phase A by Doug 2026-11-14
 **Basis:** `main` @ `c1ceeefd`. READ-1 merged 2026-11-12 (#859 and the ten PRs under it). Every `path:line`
 below was taken at the READ-1 tip `e9fe6f5f`; every cited file is byte-identical on `main` (checked one by one
 with `git diff --quiet e9fe6f5f c1ceeefd -- <file>`), so the line numbers hold.
@@ -866,6 +866,17 @@ two layers share one horizontal y, so unselected segments can overlap; selecting
 | `api: false` case: `ls test/render-golden/<case>/` | no `*.controller.ts` |
 | `generate.writes: false` case | no `create-*.use-case.ts` |
 | Mutation: `perl -pi -e 's/async findByIdWithFields/async findByIdWithFieldz/' templates/entity/new/backend/service.ejs.t` → `U backend/render-golden.test.ts` | exit 1; the EAV case named in the failure |
+
+*As built (B1):* `test/render-golden/<case>/` holds **every** file **every** backend template renders
+(`templates/entity/new/backend/**`, DTOs included) for **every** entity of each matrix case — 439 files — via a
+new `renderAllBackendFiles` added beside `renderEntities` in `src/__tests__/derived/_render.ts` (additive: 0 lines
+deleted; `renderEntities` and its template list unchanged, so the parity gate reads what it did). The test compares
+both ways (rendered but not snapshotted fails; snapshotted but not rendered fails), fails a case that renders zero
+files, and checks a second render is byte-identical. Because companion entities are rendered too, the `api: false`
+and `generate.writes: false` rows above hold for the **disabled entities' folders**, not the whole case directory.
+`integration-source.ejs.t` renders nothing in any case (no matrix case has detection) and is not byte-pinned; no
+Phase B PR edits it. Mutations added: a `module.ejs.t` import line → every module file named; a deleted snapshot →
+named.
 
 **B2**
 
