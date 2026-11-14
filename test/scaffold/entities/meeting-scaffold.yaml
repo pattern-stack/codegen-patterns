@@ -1,0 +1,28 @@
+# RFC-0006 (#875) fixture family — scaffold copy. Keep field-identical with test/fixtures/inheritance/entities/meeting.yaml (src/__tests__/fixtures/inheritance-fixtures-agree.test.ts).
+# A child: short form, the kind value is the entity name.
+
+entity:
+  name: meeting
+  plural: meetings
+
+inherits: communication
+
+fields:
+  title:
+    type: string
+    required: true
+  starts_at:
+    type: datetime
+    required: true
+  ends_at:
+    type: datetime
+    nullable: true
+  link:
+    type: string
+    nullable: true
+
+relationships:
+  transcripts:
+    type: has_many
+    target: meeting_transcript
+    foreign_key: meeting_id

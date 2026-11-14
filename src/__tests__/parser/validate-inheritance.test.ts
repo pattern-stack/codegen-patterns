@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'bun:test';
 
 import { registerLibraryPattern, _unregisterLibraryPatternForTests } from '../../patterns/registry';
-import { validateInheritance } from '../../parser/validate-inheritance';
+import { inheritanceCounterparts, validateInheritance } from '../../parser/validate-inheritance';
 import { familyWith, loadFamily, type Mutations } from './inheritance-family';
 
 const OPTS = { tenancyColumn: 'tenant_id', syncMode: 'electric' } as const;
@@ -48,7 +48,7 @@ describe('the fixture family', () => {
 			'email_thread',
 			'meeting',
 			'meeting_transcript',
-			'person',
+			'party',
 			'transcript_communication_part',
 		].sort());
 	});
@@ -250,11 +250,11 @@ describe('R4 — match-derived and role-derived columns', () => {
 
 	it('R4: a child role whose derived FK column the base declares', () => {
 		const msg = errorMessages({
-			communication: (r) => (r.fields.attendee_person_id = { type: 'uuid', nullable: true }),
-			meeting: (r) => (r.roles = { attendee: { target: 'person', cardinality: 'one' } }),
+			communication: (r) => (r.fields.attendee_party_id = { type: 'uuid', nullable: true }),
+			meeting: (r) => (r.roles = { attendee: { target: 'party', cardinality: 'one' } }),
 		});
-		expect(msg).toContain("'meeting' declares foreign key 'attendee_person_id' (role 'attendee')");
-		expect(msg).toContain("'communication' declares field 'attendee_person_id'");
+		expect(msg).toContain("'meeting' declares foreign key 'attendee_party_id' (role 'attendee')");
+		expect(msg).toContain("'communication' declares field 'attendee_party_id'");
 	});
 });
 
@@ -280,7 +280,7 @@ describe('R6 — a child declares a pattern only over its own columns', () => {
 	it('R6: Activity reads its derived subject column (subject: owner -> owner_id), which the base owns', () => {
 		const msg = errorMessages({
 			communication: (r) => {
-				r.relationships = { owner: { type: 'belongs_to', target: 'person', foreign_key: 'owner_id' } };
+				r.relationships = { owner: { type: 'belongs_to', target: 'party', foreign_key: 'owner_id' } };
 			},
 			meeting: (r) => {
 				r.entity.patterns = ['Activity'];
@@ -294,7 +294,7 @@ describe('R6 — a child declares a pattern only over its own columns', () => {
 	it('R6: an explicit subjectColumn the base owns', () => {
 		const msg = errorMessages({
 			communication: (r) => {
-				r.relationships = { owner: { type: 'belongs_to', target: 'person', foreign_key: 'owner_id' } };
+				r.relationships = { owner: { type: 'belongs_to', target: 'party', foreign_key: 'owner_id' } };
 			},
 			meeting: (r) => {
 				r.entity.patterns = ['Activity'];
@@ -507,7 +507,7 @@ describe('R10 — a tenant_scoped base declares its tenant column NOT NULL', () 
 		const msg = errorMessages({
 			communication: (r) => {
 				delete r.fields.tenant_id;
-				r.relationships = { tenant: { type: 'belongs_to', target: 'person', foreign_key: 'tenant_id', nullable: true } };
+				r.relationships = { tenant: { type: 'belongs_to', target: 'party', foreign_key: 'tenant_id', nullable: true } };
 			},
 		});
 		expect(msg).toContain("adopts 'tenant_id' from its belongs_to 'tenant'");
@@ -519,7 +519,7 @@ describe('R10 — a tenant_scoped base declares its tenant column NOT NULL', () 
 			errorsFor({
 				communication: (r) => {
 					delete r.fields.tenant_id;
-					r.relationships = { tenant: { type: 'belongs_to', target: 'person', foreign_key: 'tenant_id' } };
+					r.relationships = { tenant: { type: 'belongs_to', target: 'party', foreign_key: 'tenant_id' } };
 				},
 			}),
 		).toEqual([]);
@@ -709,11 +709,11 @@ describe('M2 — a child\'s derived columns are not available to a match', () =>
 	it('a role-derived FK column is not available either', () => {
 		const msg = errorMessages({
 			communication_participant: (r) => {
-				r.roles = { attendee: { target: 'person', cardinality: 'one' } };
-				r.relationships.communication.match = { attendee_person_id: 'kind' };
+				r.roles = { attendee: { target: 'party', cardinality: 'one' } };
+				r.relationships.communication.match = { attendee_party_id: 'kind' };
 			},
 		});
-		expect(msg).toContain("local column 'attendee_person_id' is already a declared foreign key column");
+		expect(msg).toContain("local column 'attendee_party_id' is already a declared foreign key column");
 	});
 });
 
@@ -777,5 +777,21 @@ describe('M5 — one Postgres enum type on both sides', () => {
 		expect(msg).toContain("'communication_part.kind'");
 		expect(msg).toContain("'communication_participant_role.kind'");
 		expect(msg).toContain("'communication.kind'");
+	});
+});
+
+describe('inheritanceCounterparts — what a render must also re-render', () => {
+	const entities = () => loadFamily();
+	it('a child brings its base; a match: referrer brings its targets', () => {
+		expect(inheritanceCounterparts(entities(), new Set(['meeting']))).toEqual(['communication']);
+		expect(inheritanceCounterparts(entities(), new Set(['communication_participant'])).sort()).toEqual([
+			'communication',
+			'communication_participant_role',
+		]);
+	});
+	it('a base or a plain entity brings nothing, and what is already rendered is not repeated', () => {
+		expect(inheritanceCounterparts(entities(), new Set(['communication']))).toEqual([]);
+		expect(inheritanceCounterparts(entities(), new Set(['email_thread']))).toEqual([]);
+		expect(inheritanceCounterparts(entities(), new Set(['meeting', 'communication']))).toEqual([]);
 	});
 });

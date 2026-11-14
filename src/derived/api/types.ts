@@ -139,6 +139,12 @@ export interface EntityApiSurface {
 	repository: { className: string; baseClass: string; typedInclude: boolean; methods: RepositoryMethod[] };
 	service: { className: string; baseClass: string; methods: ServiceMethod[] };
 	useCases: UseCase[];
+	/**
+	 * The declaration that turned the write side off: no `create` / `update` / `delete` use case, route or
+	 * provider. `generate.writes: false`, or a child's `inherits:` (RFC-0006, until S4's pair write). Absent when
+	 * the entity emits writes.
+	 */
+	writesDisabledBy?: YamlRef;
 	http: {
 		enabled: boolean;
 		/** The declaration that turned HTTP off (`api: false` / `api: { enabled: false }`). */

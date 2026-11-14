@@ -1,0 +1,358 @@
+{
+	"entity": "meeting",
+	"plural": "meetings",
+	"className": "Meeting",
+	"repository": {
+		"className": "MeetingRepository",
+		"baseClass": "BaseRepository",
+		"typedInclude": true,
+		"methods": [
+			{
+				"name": "findById",
+				"kind": "find_by_id",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findByIds",
+				"kind": "find_by_ids",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "list",
+				"kind": "list",
+				"emitted": true,
+				"params": [
+					{
+						"name": "query"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "count",
+				"kind": "count",
+				"emitted": true,
+				"params": [
+					{
+						"name": "where"
+					}
+				],
+				"returns": "count",
+				"readOptions": "none",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "exists",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "create",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "update",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "delete",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "upsertMany",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			}
+		]
+	},
+	"service": {
+		"className": "MeetingService",
+		"baseClass": "BaseService",
+		"methods": [
+			{
+				"name": "findById",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "findById"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findByIds",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "findByIds"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "list",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "listOptions"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "list"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "transcripts",
+				"kind": "relation_many",
+				"emitted": true,
+				"params": [
+					{
+						"name": "meetingId"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "meeting_transcript",
+					"layer": "repository",
+					"method": "findByMeetingId"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "meeting"
+						},
+						"path": [
+							"relationships",
+							"transcripts"
+						]
+					}
+				}
+			},
+			{
+				"name": "count",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "exists",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "create",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "update",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "delete",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			}
+		]
+	},
+	"useCases": [
+		{
+			"className": "FindMeetingByIdUseCase",
+			"kind": "find_by_id",
+			"calls": {
+				"entity": "meeting",
+				"layer": "service",
+				"method": "findById"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "ListMeetingsUseCase",
+			"kind": "list",
+			"calls": {
+				"entity": "meeting",
+				"layer": "service",
+				"method": "list"
+			},
+			"origin": {
+				"from": "base"
+			}
+		}
+	],
+	"http": {
+		"enabled": true,
+		"routes": [
+			{
+				"verb": "GET",
+				"path": "/meetings",
+				"controller": "MeetingController",
+				"handler": "getAll",
+				"operationId": "listMeetings",
+				"useCase": "ListMeetingsUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "GET",
+				"path": "/meetings/:id",
+				"controller": "MeetingController",
+				"handler": "getById",
+				"operationId": "findMeetingById",
+				"useCase": "FindMeetingByIdUseCase",
+				"origin": {
+					"from": "base"
+				}
+			}
+		],
+		"includeRoutes": [],
+		"includesConst": "MEETINGS_API_INCLUDES"
+	},
+	"writesDisabledBy": {
+		"doc": {
+			"kind": "entity",
+			"name": "meeting"
+		},
+		"path": [
+			"inherits"
+		]
+	}
+}

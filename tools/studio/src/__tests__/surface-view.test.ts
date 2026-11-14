@@ -229,6 +229,28 @@ describe('HTTP', () => {
     expect(http.off?.origin?.yaml).toEqual({ doc: { kind: 'entity', name: 'opportunity' }, path: ['api'] });
   });
 
+  test('a child (#875) reads as writes off, credited to its inherits:', () => {
+    // The derivation's own shape for a child: no create/update/delete use case or route, `writesDisabledBy`
+    // on the `inherits:` declaration (test/api-surface-golden/snapshot/email.json).
+    const child = structuredClone(DEMO);
+    const contact = child.entities.contact!;
+    const isWrite = (name: string) => /^(Create|Update|Delete)/.test(name);
+    contact.useCases = contact.useCases.filter((u) => !isWrite(u.className));
+    contact.http.routes = contact.http.routes.filter((r) => !['POST', 'PATCH', 'DELETE'].includes(r.verb));
+    contact.writesDisabledBy = { doc: { kind: 'entity', name: 'contact' }, path: ['inherits'] };
+
+    const http = sectionOf(child, 'contact', 'http');
+    expect(http.rows.map((r) => r.name)).toEqual(['GET /contacts', 'GET /contacts/:id']);
+    expect(http.off?.text).toBe('Writes off — no POST, PATCH or DELETE route');
+    expect(http.off?.origin?.text).toBe('← inherits');
+    expect(http.off?.origin?.yaml).toEqual({ doc: { kind: 'entity', name: 'contact' }, path: ['inherits'] });
+    const useCases = sectionOf(child, 'contact', 'useCases');
+    expect(useCases.off?.text).toBe('Writes off — no create, update or delete use case');
+    expect(useCases.off?.origin?.text).toBe('← inherits');
+    // An entity that emits writes carries no such note.
+    expect(sectionOf(DEMO, 'contact', 'useCases').off).toBeUndefined();
+  });
+
   test('a route that resolves ?include= says against which allowlist', () => {
     const http = sectionOf(VARIANTS, 'account', 'http');
     expect(row(http, 'GET /accounts/:id').flags).toEqual(['operationId findAccountById', '?include= find_by_id']);

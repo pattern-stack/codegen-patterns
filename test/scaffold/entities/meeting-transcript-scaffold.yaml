@@ -1,0 +1,16 @@
+# RFC-0006 (#875) fixture family — scaffold copy. Keep field-identical with test/fixtures/inheritance/entities/meeting_transcript.yaml (src/__tests__/fixtures/inheritance-fixtures-agree.test.ts).
+entity:
+  name: meeting_transcript
+  plural: meeting_transcripts
+
+fields:
+  language:
+    type: string
+    nullable: true
+
+relationships:
+  meeting:
+    type: belongs_to
+    target: meeting
+    foreign_key: meeting_id
+    on_delete: cascade

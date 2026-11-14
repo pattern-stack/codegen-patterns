@@ -81,14 +81,16 @@ describe('backend write templates — prompt-extension wiring', () => {
     expect(locals.outputPaths.deleteUseCase).toBe(
       'src/modules/contacts/use-cases/delete-contact.use-case.ts',
     );
-    expect(locals.generateWrites).toBe(true);
+    expect(locals.apiSurface.useCases.map((u: { kind: string }) => u.kind)).toEqual(
+      expect.arrayContaining(['create', 'update', 'delete']),
+    );
   });
 
   it('nulls write use-case output paths when generate.writes is false', () => {
     const def = { ...baseEntity, generate: { writes: false } };
     const locals = buildBackendLocals(def, withEntities());
 
-    expect(locals.generateWrites).toBe(false);
+    expect(locals.apiSurface.useCases.some((u: { kind: string }) => u.kind === 'create')).toBe(false);
     expect(locals.outputPaths.createUseCase).toBeNull();
     expect(locals.outputPaths.updateUseCase).toBeNull();
     expect(locals.outputPaths.deleteUseCase).toBeNull();

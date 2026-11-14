@@ -53,8 +53,8 @@ describe('api-surface golden', () => {
 		return;
 	}
 
-	it('covers the 9 baseline entities and every matrix case, and nothing else', () => {
-		expect(snapshots.size).toBe(9 + RENDER_MATRIX.length);
+	it('covers the 14 baseline entities and every matrix case, and nothing else', () => {
+		expect(snapshots.size).toBe(14 + RENDER_MATRIX.length);
 		const onDisk = existsSync(SNAPSHOT_DIR) ? readdirSync(SNAPSHOT_DIR).sort() : [];
 		expect(onDisk).toEqual([...snapshots.keys()].map((n) => `${n}.json`).sort());
 	});

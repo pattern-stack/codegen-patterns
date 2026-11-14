@@ -15,6 +15,7 @@
 
 import { entityModuleNaming } from '../../config/module-tree.js';
 import { junctionName } from '../../config/junction-naming.js';
+import { inheritsOf } from '../../schema/inheritance.js';
 import { deriveRoleRelationships, type RoleDefinition } from '../../roles/derive.js';
 import {
 	controllerClassName,
@@ -91,8 +92,31 @@ export interface EntityDefinitionInput {
 	queries?: readonly QueryInput[] | null;
 	api?: boolean | { enabled?: boolean; includes?: Readonly<Record<string, unknown>> } | null;
 	generate?: { writes?: boolean } | null;
+	/** `inherits:` (RFC-0006) — a bare base name or `{ base, as? }`. */
+	inherits?: string | { base: string; as?: string };
 	eav?: boolean;
 	eav_value_table?: boolean;
+}
+
+/**
+ * The YAML declaration that turns the write side off — create / update / delete use cases, their routes and
+ * their module providers — or `null` when writes are emitted (RFC-0006 §13.2, #875).
+ *
+ * Two causes, `generate.writes: false` and a child's `inherits:` (a child's inherited `create` would insert a row
+ * with no `id`: its key is the base row's, and the pair write lands in S4). The ONE owner of this decision —
+ * `deriveEntityApiSurface` reads it for the use cases and routes, and the templates read those — so a third
+ * cause is one edit here.
+ */
+export function writesDisabledBy(definition: {
+	entity: { name: string };
+	// Required keys (their values may be undefined): a narrowed call that leaves one out does not compile,
+	// instead of silently turning a child's writes on.
+	generate: EntityDefinitionInput['generate'];
+	inherits: EntityDefinitionInput['inherits'];
+}): YamlPath | null {
+	if (inheritsOf(definition) !== null) return ['inherits'];
+	if (definition.generate?.writes === false) return ['generate', 'writes'];
+	return null;
 }
 
 /** A junction YAML (`pattern: Junction`). */
@@ -526,7 +550,12 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 	}
 
 	// ── Use cases ───────────────────────────────────────────────────────────
-	const generateWrites = definition.generate?.writes !== false;
+	const writesOff = writesDisabledBy({
+		entity: definition.entity,
+		generate: definition.generate,
+		inherits: definition.inherits,
+	});
+	const generateWrites = writesOff === null;
 	const useCases: UseCase[] = [
 		{
 			className: useCaseClassName('find_by_id', entityName, plural),
@@ -691,6 +720,8 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 		service: { className: serviceClassName(entityName), baseClass: composition.serviceBaseClass, methods: service },
 		useCases,
 		http,
+		// Recorded only when writes are off, so an entity that emits them carries no new key.
+		...(writesOff ? { writesDisabledBy: ref(writesOff) } : {}),
 	};
 }
 

@@ -141,6 +141,75 @@
 			]
 		},
 		{
+			"id": "email.relationships.thread",
+			"from": "email",
+			"to": "email_thread",
+			"kind": "belongs_to",
+			"generates": [
+				{
+					"entity": "email",
+					"layer": "repository",
+					"method": "findByThreadId"
+				},
+				{
+					"entity": "email",
+					"layer": "service",
+					"method": "thread"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "emails",
+					"key": "thread"
+				}
+			]
+		},
+		{
+			"id": "meeting_transcript.relationships.meeting",
+			"from": "meeting_transcript",
+			"to": "meeting",
+			"kind": "belongs_to",
+			"inverseOf": "meeting.relationships.transcripts",
+			"generates": [
+				{
+					"entity": "meeting_transcript",
+					"layer": "repository",
+					"method": "findByMeetingId"
+				},
+				{
+					"entity": "meeting_transcript",
+					"layer": "service",
+					"method": "meeting"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "meeting_transcripts",
+					"key": "meeting"
+				}
+			]
+		},
+		{
+			"id": "meeting.relationships.transcripts",
+			"from": "meeting",
+			"to": "meeting_transcript",
+			"kind": "has_many",
+			"inverseOf": "meeting_transcript.relationships.meeting",
+			"generates": [
+				{
+					"entity": "meeting",
+					"layer": "service",
+					"method": "transcripts"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "meetings",
+					"key": "transcripts"
+				}
+			]
+		},
+		{
 			"id": "opportunity.relationships.organization",
 			"from": "opportunity",
 			"to": "organization",

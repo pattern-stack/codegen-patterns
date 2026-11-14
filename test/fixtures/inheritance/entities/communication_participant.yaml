@@ -26,6 +26,6 @@ relationships:
     match: { communication_kind: kind }
   person:
     type: belongs_to
-    target: person
+    target: party
     foreign_key: person_id
     nullable: true

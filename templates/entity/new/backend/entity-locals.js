@@ -1635,17 +1635,6 @@ export function buildBackendLocals(definition, baseLocals) {
   const relationsImport = relativeFromModule(`${generatedDirRel}/relations`);
   const apiIncludesImport = relativeFromModule(`${generatedDirRel}/api-includes`);
 
-  // Generation toggles — `generate.writes` defaults to true so consumers who
-  // regenerate pick up create/update/delete use cases without YAML changes.
-  // Set `generate.writes: false` in YAML to suppress write-side emission
-  // (use cases, controller routes, module providers).
-  const generateBlock = definition.generate || {};
-  // RFC-0006 (#875): a child's inherited `create` would insert a row with no
-  // `id` (its key is the base row's), so until the pair write lands (S4) a child
-  // gets no write use cases, routes or providers — the existing
-  // `generate.writes: false` path, applied to every child.
-  const inheritsDeclaration = inheritsOf(definition);
-  const generateWrites = generateBlock.writes !== false && inheritsDeclaration === null;
 
   // EAV (ADR-13) — when true, emit paired reads + transactional compound
   // writes. Consumer must provide `@shared/eav-helpers` and `FieldValueService`.
@@ -2394,6 +2383,21 @@ export function buildBackendLocals(definition, baseLocals) {
   const drizzleEntityImports = collectDrizzleImports([...processedFields, ...inheritanceColumnFields], belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraDrizzleImports);
 
   // Output paths
+  // ADR-046 — the generated API surface, derived once (`src/derived/api/`). Every
+  // method name the repository prints, and whether it is emitted at all, comes
+  // from here; the templates loop over it and choose a body by `kind`. Built
+  // from what this function already holds: the definition, the junction set,
+  // the resolved composition, the has_many targets that will exist, and the
+  // cross-entity lookup.
+  const apiSurface = deriveEntityApiSurface({
+    definition,
+    junctions: baseLocals.junctions ?? [],
+    composition: patternBase,
+    wiredTargets: hasMany.filter((r) => r.targetExists).map((r) => r.target),
+    entityLookup: (name) => (entityLookup ? entityLookup(name) : null),
+  });  // Whether writes are emitted is the derivation's answer (ADR-046): `generate.writes: false`, or a child (RFC-0006).
+  const hasUseCase = (kind) => apiSurface.useCases.some((u) => u.kind === kind);
+
   const outputPaths = {
     entity: `${ownNaming.entityFile}.ts`,
     repository: ownNaming.repositoryFile,
@@ -2409,13 +2413,13 @@ export function buildBackendLocals(definition, baseLocals) {
     listWithFieldsUseCase: eavEnabled
       ? `${useCasesDir}/${emittedStem('list', entityNamePlural, 'with-fields')}.use-case.ts`
       : null,
-    createUseCase: generateWrites
+    createUseCase: hasUseCase('create')
       ? `${useCasesDir}/${emittedStem('create', entityName)}.use-case.ts`
       : null,
-    updateUseCase: generateWrites
+    updateUseCase: hasUseCase('update')
       ? `${useCasesDir}/${emittedStem('update', entityName)}.use-case.ts`
       : null,
-    deleteUseCase: generateWrites
+    deleteUseCase: hasUseCase('delete')
       ? `${useCasesDir}/${emittedStem('delete', entityName)}.use-case.ts`
       : null,
     createDto: `${moduleDir}/dto/${emittedStem('create', entityName)}.dto.ts`,
@@ -2671,19 +2675,7 @@ export function buildBackendLocals(definition, baseLocals) {
     );
   }
 
-  // ADR-046 — the generated API surface, derived once (`src/derived/api/`). Every
-  // method name the repository prints, and whether it is emitted at all, comes
-  // from here; the templates loop over it and choose a body by `kind`. Built
-  // from what this function already holds: the definition, the junction set,
-  // the resolved composition, the has_many targets that will exist, and the
-  // cross-entity lookup.
-  const apiSurface = deriveEntityApiSurface({
-    definition,
-    junctions: baseLocals.junctions ?? [],
-    composition: patternBase,
-    wiredTargets: hasMany.filter((r) => r.targetExists).map((r) => r.target),
-    entityLookup: (name) => (entityLookup ? entityLookup(name) : null),
-  });
+
   // The TS text a `queries:` finder prints beside the derivation's names (PLAN
   // §4.3), keyed by the DERIVED method name: per `by:` column its param type, the
   // return type, and the `order:` the body sorts by. Type text, not names —
@@ -2780,9 +2772,6 @@ export function buildBackendLocals(definition, baseLocals) {
     tenantColumnName: tenancy ? tenancy.column : null,
     tenantColumnProp: tenancy ? tenancy.prop : null,
     behaviorTenantColumn,
-
-    // Generation toggles
-    generateWrites,
 
     // EAV (ADR-13)
     eavEnabled,

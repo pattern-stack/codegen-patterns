@@ -1,0 +1,386 @@
+{
+	"entity": "email_thread",
+	"plural": "email_threads",
+	"className": "EmailThread",
+	"repository": {
+		"className": "EmailThreadRepository",
+		"baseClass": "BaseRepository",
+		"typedInclude": false,
+		"methods": [
+			{
+				"name": "findById",
+				"kind": "find_by_id",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"readOptions": "columns",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findByIds",
+				"kind": "find_by_ids",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "list",
+				"kind": "list",
+				"emitted": true,
+				"params": [
+					{
+						"name": "query"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "count",
+				"kind": "count",
+				"emitted": true,
+				"params": [
+					{
+						"name": "where"
+					}
+				],
+				"returns": "count",
+				"readOptions": "none",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "exists",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "create",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "update",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "delete",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "upsertMany",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			}
+		]
+	},
+	"service": {
+		"className": "EmailThreadService",
+		"baseClass": "BaseService",
+		"methods": [
+			{
+				"name": "findById",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "email_thread",
+					"layer": "repository",
+					"method": "findById"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findByIds",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "email_thread",
+					"layer": "repository",
+					"method": "findByIds"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "list",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "listOptions"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "email_thread",
+					"layer": "repository",
+					"method": "list"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "count",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "exists",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "create",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "update",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "delete",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			}
+		]
+	},
+	"useCases": [
+		{
+			"className": "FindEmailThreadByIdUseCase",
+			"kind": "find_by_id",
+			"calls": {
+				"entity": "email_thread",
+				"layer": "service",
+				"method": "findById"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "ListEmailThreadsUseCase",
+			"kind": "list",
+			"calls": {
+				"entity": "email_thread",
+				"layer": "service",
+				"method": "list"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "CreateEmailThreadUseCase",
+			"kind": "create",
+			"calls": {
+				"entity": "email_thread",
+				"layer": "service",
+				"method": "create"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "UpdateEmailThreadUseCase",
+			"kind": "update",
+			"calls": {
+				"entity": "email_thread",
+				"layer": "service",
+				"method": "update"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "DeleteEmailThreadUseCase",
+			"kind": "delete",
+			"calls": {
+				"entity": "email_thread",
+				"layer": "service",
+				"method": "delete"
+			},
+			"origin": {
+				"from": "base"
+			}
+		}
+	],
+	"http": {
+		"enabled": true,
+		"routes": [
+			{
+				"verb": "GET",
+				"path": "/email_threads",
+				"controller": "EmailThreadController",
+				"handler": "getAll",
+				"operationId": "listEmailThreads",
+				"useCase": "ListEmailThreadsUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "GET",
+				"path": "/email_threads/:id",
+				"controller": "EmailThreadController",
+				"handler": "getById",
+				"operationId": "findEmailThreadById",
+				"useCase": "FindEmailThreadByIdUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "POST",
+				"path": "/email_threads",
+				"controller": "EmailThreadController",
+				"handler": "create",
+				"operationId": "createEmailThread",
+				"useCase": "CreateEmailThreadUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "PATCH",
+				"path": "/email_threads/:id",
+				"controller": "EmailThreadController",
+				"handler": "update",
+				"operationId": "updateEmailThread",
+				"useCase": "UpdateEmailThreadUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "DELETE",
+				"path": "/email_threads/:id",
+				"controller": "EmailThreadController",
+				"handler": "remove",
+				"operationId": "deleteEmailThread",
+				"useCase": "DeleteEmailThreadUseCase",
+				"origin": {
+					"from": "base"
+				}
+			}
+		],
+		"includeRoutes": [],
+		"includesConst": "EMAIL_THREADS_API_INCLUDES"
+	}
+}

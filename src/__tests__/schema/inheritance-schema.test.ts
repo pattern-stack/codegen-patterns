@@ -7,7 +7,6 @@
 import { describe, expect, it } from 'bun:test';
 
 import { EntityDefinitionSchema } from '../../schema/entity-definition.schema';
-import { notGeneratedYetMessage, unemittedInheritanceKeys } from '../../parser/validate-inheritance';
 import { inheritsOf } from '../../schema/inheritance';
 import { loadFamily, parseRaw, rawFixture, schemaIssues } from '../parser/inheritance-family';
 
@@ -163,7 +162,7 @@ describe('R9 — no EAV or junction in a family', () => {
 		).toContain("R9 — 'communication' is the base of a family");
 	});
 	it('R9: eav on an entity outside any family is untouched', () => {
-		expect(schemaIssues(rawFixture('person', (r) => (r.eav = true)))).toEqual([]);
+		expect(schemaIssues(rawFixture('party', (r) => (r.eav = true)))).toEqual([]);
 	});
 });
 
@@ -245,34 +244,7 @@ describe('R11 — the natural key', () => {
 	});
 	it('R11: natural_key on an entity outside any family is legal (a single-row upsert target)', () => {
 		expect(
-			schemaIssues(rawFixture('person', (r) => (r.unique_indexes = [{ fields: ['name'], natural_key: true }]))),
+			schemaIssues(rawFixture('party', (r) => (r.unique_indexes = [{ fields: ['name'], natural_key: true }]))),
 		).toEqual([]);
-	});
-});
-
-describe('generation refusal (until S2 of #875)', () => {
-	it('lists the unemitted keys an entity uses', () => {
-		const keys = (name: string) => unemittedInheritanceKeys(parseRaw(rawFixture(name)));
-		expect(keys('meeting')).toEqual(["'inherits:'"]);
-		expect(keys('communication')).toEqual(["'discriminator:'"]);
-		expect(keys('communication_participant')).toEqual([
-			"'match:' on relationship 'communication'",
-			"'match:' on relationship 'role'",
-		]);
-		expect(keys('communication_participant_role')).toEqual(["'choices_of:' on field 'kind'"]);
-		expect(keys('communication_part')).toEqual(["'discriminator:'", "'match:' on relationship 'communication'", "'choices_of:' on field 'kind'"]);
-	});
-	it('natural_key alone is not refused: no emitter reads it', () => {
-		const person = parseRaw(rawFixture('person', (r) => (r.unique_indexes = [{ fields: ['name'], natural_key: true }])));
-		expect(unemittedInheritanceKeys(person)).toEqual([]);
-	});
-	it('a plain entity uses none', () => {
-		expect(unemittedInheritanceKeys(parseRaw(rawFixture('email_thread')))).toEqual([]);
-	});
-	it('the message names the entity, the keys and S2', () => {
-		const msg = notGeneratedYetMessage('meeting', ["'inherits:'"]);
-		expect(msg).toContain("'meeting'");
-		expect(msg).toContain("'inherits:'");
-		expect(msg).toContain('not implemented until S2 of #875');
 	});
 });
