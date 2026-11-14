@@ -180,6 +180,9 @@ export function originSubject(origin: Origin): string {
 /** The YAML section a `relationships.<name>` origin lives under. */
 export const RELATIONSHIPS_KEY = 'relationships';
 
+/** The YAML section a role-derived relation (`<entity>.roles.<role>`) lives under. */
+export const ROLES_KEY = 'roles';
+
 // ── Nodes the derivation does not describe yet ──────────────────────────────
 
 export interface UnmodelledDescriptor {
@@ -193,3 +196,55 @@ export const UNMODELLED_KINDS: Record<UnmodelledKind, UnmodelledDescriptor> = {
   relationship: { label: 'relationship', headline: 'not modelled yet (#679)' },
   junction: { label: 'junction', headline: 'not modelled yet (#679)' },
 };
+
+// ── The edge panel (STUDIO-2 §5) ────────────────────────────────────────────
+
+/**
+ * The edge panel's groups, in the order they are listed: what the relation
+ * generates on the entity that declares it, then on the other entity, then
+ * what its inverse generates, then the include keys both expose.
+ */
+export type EdgeGroupId = 'declaring' | 'other' | 'inverse' | 'includes';
+
+export interface EdgeGroupDescriptor {
+  id: EdgeGroupId;
+  /** Words before the group's subject — `on contact`; the inverse's id rides in its chip. */
+  label: string;
+  order: number;
+  /** What the group says when it has no rows. */
+  empty: string;
+}
+
+export const EDGE_GROUPS: Record<EdgeGroupId, EdgeGroupDescriptor> = {
+  declaring: { id: 'declaring', label: 'on', order: 0, empty: 'Nothing on the declaring entity.' },
+  other: { id: 'other', label: 'on', order: 1, empty: 'Nothing on the other entity from this declaration.' },
+  inverse: { id: 'inverse', label: 'inverse', order: 2, empty: 'No inverse declared.' },
+  includes: {
+    id: 'includes',
+    label: 'Include keys',
+    order: 3,
+    empty: 'No include keys — neither side can be reached with `?include=`.',
+  },
+};
+
+/** The inverse group's sentence when `inverseOf` names a relation the surface does not list. */
+export const EDGE_INVERSE_MISSING = 'is not in the derived surface.';
+
+/** A `generates` entry whose method the entity's own surface does not list — a derivation gap, said plainly. */
+export const EDGE_METHOD_MISSING = 'not on the entity surface';
+
+/** What the panel says instead of a method list, per state. Never an empty list. */
+export const EDGE_PANEL_STATES = {
+  /** A junction half: half of a pairing, not a declared relation. */
+  noRelation: {
+    title: 'No relation surface for this edge',
+    body:
+      'This line is one half of a junction pairing, not a declared relation, so the derivation lists nothing for it. ' +
+      "The junction's methods are on both parents' API tabs.",
+  },
+  /** An inline edge whose `relationId` the surface does not list. */
+  undescribed: {
+    title: 'is not in the derived surface',
+    body: 'The surface does not describe this relation. That is a gap in the derivation, not a relation that generates nothing.',
+  },
+} as const;

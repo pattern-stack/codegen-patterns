@@ -221,9 +221,11 @@ test-listen-notify-leak-integration:
 typecheck:
     bun run typecheck
 
-# Studio UI unit tests — the pure bits of `tools/studio`: the graph → xyflow
-# adapter, the Zod-issue → editor-line mapping, the unified-diff parser and the
-# run reducer. No browser, no server, no Docker (~100ms).
+# Studio UI gate — `tsc` over `tools/studio` first, then its unit tests (the
+# graph → xyflow adapter, the Zod-issue → editor-line mapping, the API-surface
+# and edge-panel view models, the unified-diff parser, the run reducer, and the
+# API tab's error state rendered to markup), then the server e2e. No browser,
+# no Docker.
 #
 # `bun install` is conditional because `tools/` is outside the root workspace:
 # the app resolves its own deps, so a fresh checkout has none.
@@ -232,6 +234,9 @@ test-studio:
     set -euo pipefail
     ui="{{justfile_directory()}}/tools/studio"
     [ -d "$ui/node_modules" ] || (cd "$ui" && bun install)
+    # The UI is typechecked first (S2/E3): `tsc` over the app, its tests and the
+    # shared contract — a type error in a component fails the gate, not the browser.
+    cd "$ui" && bun run typecheck
     cd "$ui" && bun test src/__tests__
     # End-to-end (STUDIO-0 §6): boots the real server against a real demo
     # project and drives the whole loop over HTTP. Sets its own private TMPDIR

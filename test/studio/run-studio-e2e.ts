@@ -13,6 +13,9 @@
  *   5. PUT  same path, deliberate schema error  → 422 with the exact Zod issue
  *   6.      …and the file on disk is untouched
  *   7. PUT  same path, corrected               → 200
+ *  7b. PUT  entities/account.yaml with an `api.includes` path that names no
+ *           relation → GET /api/surface is 502 with the CLI's own message as
+ *           its detail, the graph still loads; restored → the surface is back
  *   8. POST /api/relationships                 → preview only, nothing written
  *   9. PUT  /api/relationships                 → relationships/contact_opportunity.yaml
  *  9b. GET  /api/surface                      → the relationship is listed as unmodelled
@@ -136,6 +139,20 @@ const CONTACT_ROUTES = [
 	'DELETE /contacts/:id',
 ];
 const CONTACT_ACCOUNT_RELATION = 'contact.relationships.account';
+
+/**
+ * A real surface failure (STUDIO-2 §4, Doug's S2/E2): an `api.includes` path
+ * that names no relation is a generation error, so `project surface` fails —
+ * the canvas must not, and the API tab must show what the CLI said.
+ */
+const ACCOUNT_YAML_PATH = 'entities/account.yaml';
+const INVALID_INCLUDES =
+	'api:\n  includes:\n    find_by_id:\n      max_depth: 1\n      paths: [nonexistent]\n';
+const SURFACE_FAILURE_STATUS = 502;
+const SURFACE_FAILURE_ERROR = 'project surface failed';
+/** The CLI's own words, from the relations emitter's allowlist compiler. */
+const SURFACE_FAILURE_CLI_TEXT =
+	"account.api.includes.find_by_id: 'nonexistent' names no relation at 'nonexistent'";
 
 const GENERATE_STEPS: RunStepName[] = ['generate'];
 
@@ -537,6 +554,52 @@ async function main(): Promise<number> {
 			reads(CONTACT_YAML_PATH),
 			read.content,
 			'the accepted write restored the valid YAML',
+		);
+
+		// ── 7b. the surface fails for real, then recovers ────────────────────
+		// Through the server's own file route, as the YAML tab would write it:
+		// the schema accepts the path (it is a string), and only the whole-set
+		// derivation knows `account` has no `nonexistent` relation.
+		step(`PUT /api/files/${ACCOUNT_YAML_PATH} — an include path that names no relation`);
+		const accountYaml = reads(ACCOUNT_YAML_PATH);
+		assert(
+			!accountYaml.includes('\napi:'),
+			'account.yaml declares no api: block yet',
+			'the demo fixture shape changed — the appended block would be a duplicate key',
+		);
+		await expectApi('PUT', `/api/files/${filePath(ACCOUNT_YAML_PATH)}`, 200, {
+			content: `${accountYaml}${INVALID_INCLUDES}`,
+		});
+
+		step('GET /api/surface — fails with the CLI\'s message');
+		const failed = await api<{ error?: string; detail?: string }>('GET', '/api/surface');
+		assertEqual(failed.status, SURFACE_FAILURE_STATUS, `the surface route answers ${SURFACE_FAILURE_STATUS}`);
+		assertEqual(failed.body.error, SURFACE_FAILURE_ERROR, `its error is '${SURFACE_FAILURE_ERROR}'`);
+		assertIncludes(
+			failed.body.detail ?? '',
+			SURFACE_FAILURE_CLI_TEXT,
+			"its detail is the CLI's own message",
+		);
+		assert(
+			!(failed.body.detail ?? '').trimStart().startsWith('{'),
+			'the detail is the message, not the JSON envelope it came in',
+			`detail: ${(failed.body.detail ?? '').slice(0, 200)}`,
+		);
+		const graphDuring = await expectApi<GraphResponse>('GET', '/api/graph', 200);
+		assertEqual(
+			graphDuring.graph.edges.length,
+			EXPECTED_EDGES_BEFORE,
+			'the graph still loads while the surface fails — the canvas is unaffected',
+		);
+
+		step(`PUT /api/files/${ACCOUNT_YAML_PATH} — restored`);
+		await expectApi('PUT', `/api/files/${filePath(ACCOUNT_YAML_PATH)}`, 200, { content: accountYaml });
+		assertEqual(reads(ACCOUNT_YAML_PATH), accountYaml, 'account.yaml is back to the demo fixture');
+		const recovered = (await expectApi<SurfaceResponse>('GET', '/api/surface', 200)).surface;
+		assertDeepEqual(
+			Object.keys(recovered.entities).sort(),
+			[...DEMO_ENTITY_NAMES].sort(),
+			'the surface is back: exactly account, contact, opportunity',
 		);
 
 		// ── 8. preview the relationship ──────────────────────────────────────

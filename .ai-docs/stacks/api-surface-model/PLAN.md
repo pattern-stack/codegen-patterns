@@ -1,6 +1,6 @@
 # PLAN — backend API-surface derivation (slice 1) + Studio API view
 
-**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · A0–A4 built · S1 signed off 2026-11-14
+**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · A0–A5 built · S1 and S2 signed off 2026-11-14
 **Basis:** `main` @ `c1ceeefd`. READ-1 merged 2026-11-12 (#859 and the ten PRs under it). Every `path:line`
 below was taken at the READ-1 tip `e9fe6f5f`; every cited file is byte-identical on `main` (checked one by one
 with `git diff --quiet e9fe6f5f c1ceeefd -- <file>`), so the line numbers hold.
@@ -155,7 +155,8 @@ is the row the API tab shows and the record the template prints from.
   `field-value.service.ts: error TS2339: Property 'findByEntityIdAndType' does not exist on type
   'FieldValueRepository'` (+3 cascades). Its service's `findMergedByEntity` calls a method only the Metadata
   repository supplies. Parity compares names, not delegate targets, so it cannot see this; A2's link pass warns on
-  it with F7's V1 rule. Issue drafted at S2, not filed.
+  it with F7's V1 rule. **Parked by Doug at S2 (2026-11-14): no issue is filed; the `eav_*` kinds, the EAV matrix
+  cases and A2's warning stay as they are.**
 - **A `cardinality: one` role has no edge in REL-1's relations manifest** (the CAP-2 seam in `build-graph.ts` is
   unbuilt), although hygen emits the role's FK finder and to-one service method. So `?include=` cannot reach a
   role; the derived role relation shows `includeKeys: []`.
@@ -453,6 +454,18 @@ kind table's order; inherited entries sit in a collapsed group; the tab stays op
 outranks "Nothing selected"; `locatePath` falls back to the nearest ancestor (`exact: false`); the inspector
 re-syncs the open file only when the selection changes. The canvas stays intact when the surface route fails on its
 own; with the whole server down a header Reload empties it too, so S2's failure shot fails the route alone.
+
+*As built (A5), detail in STUDIO-2 §5:* the edge panel lives in the API tab (selecting an edge switches to it;
+Detail stays node-only); only the selected edge stays lit; a role edge's `relationId` is `<from>.roles.<role>`, the
+derivation's own spelling; include keys list the relation's, then its inverse's; the relation chip's YAML link comes
+from the provenance of a method the relation generates, so the id is never parsed; a junction half reads "no relation
+surface for this edge". Row and chip components are shared (`inspector/surface-rows.tsx`). **S2/E2:** when
+`project surface` itself fails, the tab shows the CLI's own text — `project surface --json` now prints the #669
+error envelope `{ command, status: 'error', error }` on every failure path (it printed nothing before), and
+`getSurface` passes that `error` on as the 502's detail. `project graph --json` has the same empty-stdout flaw on
+its one failure path — noted, not fixed. **S2/E3:** `just test-studio` runs `tsc` over `tools/studio` first.
+`surface-error.test.tsx` renders the API tab with `react-dom/server`, so §"Not gated" below is no longer true for
+that state.
 
 v1 edge view covers inline relationship edges. Junction-origin methods appear on both parents' API tabs.
 Whether a `pattern: Junction` pairing is a selectable edge is an open item for STUDIO-2.
@@ -881,7 +894,7 @@ again by the reviewer; a non-empty result is a stop (§14.6), not something to e
 |---|---|
 | Edit a snapshot to match. Phase A changes no existing snapshot; Phase B changes none at all after B1. | Phase A: `git diff --stat $BASE_A..HEAD -- test/baseline test/junction/__snapshots__ test/relations-golden test/frontend-golden test/frontend-graph-golden test/semantic-golden test/integration-emit`. Phase B: the same list plus `test/render-golden test/api-surface-golden`, from `$B1`. |
 | Run `just baseline` or `bun test --update-snapshots` in Phase B. | same diff; plus `git status --porcelain test/` empty after every gate run |
-| Add to the lint allowlist. It only shrinks. | `git diff --numstat <A1>..HEAD -- src/__tests__/templates/no-name-derivation.allowlist.ts \| cut -f1` → `0` |
+| Add to the lint allowlist. It only shrinks. | `git diff --numstat <A1>..HEAD -- src/__tests__/templates/no-name-derivation.allowlist.ts \| cut -f1` → `0`, **except** one approved label edit: the `bridge-listener.ejs.t` entry's `issue` became `#884` in A5 (Doug, S2, 2026-11-14) — same file, pattern and count, so `1` added line that widens nothing |
 | Loosen the lint or the parity comparison after S1 signed them off. | `git diff --stat <A1>..HEAD -- src/__tests__/derived/api-surface-parity.test.ts src/__tests__/derived/_parity-compare.ts src/__tests__/templates/no-name-derivation-in-templates.test.ts` |
 | Skip or narrow a test. | `git diff $BASE..HEAD \| grep -nE '^\+.*\b(it\|test\|describe)\.(skip\|todo\|only)\b\|^\+.*\b(xit\|xdescribe)\('` |
 | Delete or weaken an assertion in an existing test. | `git diff $BASE..HEAD -- src/__tests__ test tools/studio/src/__tests__ \| grep -c '^-.*expect('` → `0`, **except** in the two enumerated deletions: `src/__tests__/emitters/relations/route-name-parity.test.ts` (B2 its finder half, B3 the rest); and one enumerated update: `src/__tests__/cli/project.test.ts`'s `expect(projectNoun.commandClasses.length).toBe(<n>)`, whose count changes only when a command is added and is never deleted or loosened (A2: `8` → `9` for `project surface`; approved by Doug 2026-11-14 after it tripped this detection) |

@@ -15,6 +15,7 @@
 import type { GraphNodeData } from '@pattern-stack/graph-components';
 import type { SerializedDomainGraph } from '@studio-shared';
 import type { StudioEdgeData, StudioEdgeKind } from '../graph/edge-kinds';
+import { RELATIONSHIPS_KEY, ROLES_KEY } from '../inspector/surface-kinds';
 
 type Entities = SerializedDomainGraph['entities'];
 type RelDefs = SerializedDomainGraph['relationshipDefinitions'];
@@ -138,6 +139,19 @@ export function classifyEdge(edge: SerializedEdge): StudioEdgeKind {
   return edge.relationship.type;
 }
 
+/**
+ * The relation an inline edge draws, spelled as REL-1 spells its origin and
+ * the derived surface keys `relations` — `<from>.relationships.<name>`, or
+ * `<from>.roles.<role>` for a role-derived edge. Built from the edge's own
+ * fields so nothing downstream ever has to take an id apart.
+ */
+export function relationIdOf(edge: SerializedEdge): string {
+  const role = roleOf(edge.relationship);
+  return role != null
+    ? `${edge.from}.${ROLES_KEY}.${role}`
+    : `${edge.from}.${RELATIONSHIPS_KEY}.${edge.relationship.name}`;
+}
+
 /** The library's coarse renderer hint for a Studio edge kind. */
 function libraryType(kind: StudioEdgeKind): StudioEdgeData['type'] {
   if (kind === 'junction') return 'junction';
@@ -163,6 +177,10 @@ function libraryType(kind: StudioEdgeKind): StudioEdgeData['type'] {
  * API reports as 3 entities and 5 edges draws as 4 nodes and 6 edges. That is
  * not drift between the two; do not "fix" it by keeping the skipped edge or by
  * dropping the junction node.
+ *
+ * An inline edge carries `relationId`, the key the edge panel looks its
+ * methods up by. A junction half carries none — it is half of a pairing, not
+ * a declared relation — and the panel says so rather than showing nothing.
  */
 export function buildEdges(graph: SerializedDomainGraph): StudioEdgeData[] {
   const edges: StudioEdgeData[] = [];
@@ -193,6 +211,7 @@ export function buildEdges(graph: SerializedDomainGraph): StudioEdgeData[] {
       bidirectional: e.bidirectional,
       studioKind: kind,
       roleName,
+      relationId: relationIdOf(e),
     });
   }
 

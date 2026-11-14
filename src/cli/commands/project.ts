@@ -922,6 +922,20 @@ export class ProjectGraphCommand extends Command {
 // ProjectSurfaceCommand
 // ---------------------------------------------------------------------------
 
+/**
+ * A `project surface` failure. Text mode prints it; JSON mode gets `{ command, status: 'error', error }`, never an
+ * empty stdout (#669) — Studio's `GET /api/surface` forwards `error` as the 502's detail, so the API tab shows the
+ * CLI's own reason (an invalid `api.includes` path is a generation error).
+ */
+function reportSurfaceError(error: string): 1 {
+	if (isJsonMode()) {
+		printJson({ command: 'project surface', status: 'error', error });
+	} else {
+		printError(error);
+	}
+	return 1;
+}
+
 export class ProjectSurfaceCommand extends Command {
 	static paths = [['project', 'surface']];
 	static usage = Command.Usage({
@@ -949,19 +963,17 @@ export class ProjectSurfaceCommand extends Command {
 
 		const entitiesDir = projectLayout(ctx.cwd, ctx.config).entities;
 		if (!fs.existsSync(entitiesDir)) {
-			printError(`Entity directory not found: ${entitiesDir}`);
-			return 1;
+			return reportSurfaceError(`Entity directory not found: ${entitiesDir}`);
 		}
 
 		// App patterns decide an entity's base classes and inherited methods — load them first, as every
 		// whole-set step does, or an app pattern's entity derives against `Base`.
 		const loadErrors = await loadAppPatternsForCli(ctx);
 		if (loadErrors.length > 0) {
-			printError(
+			return reportSurfaceError(
 				'app patterns could not be loaded, so the surface they contribute cannot be derived:\n' +
 					loadErrors.map((e) => `  ${e.file}: ${e.message}`).join('\n'),
 			);
-			return 1;
 		}
 
 		let surface: ProjectApiSurface;
@@ -975,15 +987,13 @@ export class ProjectSurfaceCommand extends Command {
 				}),
 			);
 		} catch (err) {
-			printError(err instanceof Error ? err.message : String(err));
-			return 1;
+			return reportSurfaceError(err instanceof Error ? err.message : String(err));
 		}
 
 		if (this.entity) {
 			const one = surface.entities[this.entity];
 			if (!one) {
-				printError(`No entity '${this.entity}' in ${entitiesDir}`);
-				return 1;
+				return reportSurfaceError(`No entity '${this.entity}' in ${entitiesDir}`);
 			}
 			surface = { ...surface, entities: { [this.entity]: one } };
 		}

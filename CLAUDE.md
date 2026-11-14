@@ -223,8 +223,8 @@ syntax) stores `{ light, dark }` per row and renders it through `cssColor()`.
 Never add a colour literal to a component — it will be right in one theme only.
 
 `tools/` is outside the root workspace, so the app resolves its own deps;
-`just test-studio` installs them if absent and runs the pure-logic unit tests
-(graph adapter, YAML-issue line mapping, diff parser, run reducer).
+`just test-studio` installs them if absent, typechecks the app (`bun run typecheck`), and runs its unit tests
+(graph adapter, YAML-issue line mapping, surface and edge-panel view models, diff parser, run reducer).
 
 `tools/studio/tsconfig.json` deliberately leaves `noUnusedLocals` /
 `noUnusedParameters` off and sets `experimentalDecorators`: importing

@@ -18,6 +18,13 @@ export interface StudioEdgeData extends GraphEdgeData {
   studioKind: StudioEdgeKind;
   /** The `roles:` entry this edge was derived from, when `studioKind` is `role`. */
   roleName?: string;
+  /**
+   * The relation this line draws, as REL-1 spells its origin and the derived
+   * surface keys it — `contact.relationships.account`. Set where the edge is
+   * built (`adapters/schema-adapter.ts`), never parsed back out of `id`.
+   * Absent on a junction's two halves: neither is a declared relation.
+   */
+  relationId?: string;
 }
 
 export interface EdgeKindStyle {

@@ -3,6 +3,7 @@ import type { GraphNodeData } from '@pattern-stack/graph-components';
 import { useGraphFilter } from '@pattern-stack/graph-components';
 import { SchemaCanvas } from './SchemaCanvas';
 import type { StudioEdgeData } from './edge-kinds';
+import type { Selection } from './selection';
 import { Button, EmptyState, ErrorState, LoadingState } from '../ui/primitives';
 
 export interface GraphPaneProps {
@@ -10,8 +11,8 @@ export interface GraphPaneProps {
   edges: StudioEdgeData[];
   loading: boolean;
   error?: { title: string; detail?: string };
-  selectedId: string | null;
-  onSelect: (id: string | null) => void;
+  selection: Selection | null;
+  onSelect: (selection: Selection | null) => void;
   onRetry: () => void;
 }
 
@@ -32,7 +33,7 @@ export function GraphPane({
   edges,
   loading,
   error,
-  selectedId,
+  selection,
   onSelect,
   onRetry,
 }: GraphPaneProps) {
@@ -81,7 +82,7 @@ export function GraphPane({
       <SchemaCanvas
         nodes={filteredNodes}
         edges={shownEdges}
-        selectedId={selectedId}
+        selection={selection}
         onSelect={onSelect}
       />
     );
