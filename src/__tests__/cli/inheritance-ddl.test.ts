@@ -14,7 +14,10 @@
  * Projects live under `test/tmp/` (gitignored).
  */
 
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from 'bun:test';
+
+// Each case spawns the real CLI over a whole family (~2.5s); the 5s default trips under a loaded machine.
+setDefaultTimeout(60_000);
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -86,7 +89,8 @@ describe('the family generates (S2: the DDL)', () => {
 		expect(meeting).toContain("name: 'meetings_communication_kind_fk'");
 		expect(meeting).toContain("name: 'meetings_communication_tenant_fk'");
 		expect(meeting).toContain("check('meetings_kind_check'");
-		expect(meeting).toContain("import { communicationKindEnum, communications } from '../communications/communication.entity';");
+		expect(meeting).toContain("import { communications } from '../communications/communication.entity';");
+		expect(meeting).toContain("import { communicationKindEnum } from '../communications/communication.enums';");
 		// the base's enum is imported, never redeclared
 		expect(meeting).not.toContain('pgEnum');
 
@@ -96,7 +100,13 @@ describe('the family generates (S2: the DDL)', () => {
 		expect(meeting).toContain('(tCols) => [');
 		expect(base).toContain('(tCols) => [');
 		expect(base).toContain("unique('communications_id_tenant_id_uniq').on(tCols.id, tCols.tenantId)");
-		expect(base).toContain("export const communicationKindEnum = pgEnum('communication_kind'");
+		// the enum is declared in a leaf module (imports only pg-core) and re-exported, so the barrel / drizzle-kit see it
+		expect(base).not.toContain('pgEnum');
+		expect(base).toContain("import { communicationKindEnum } from './communication.enums';");
+		expect(base).toContain('export { communicationKindEnum };');
+		const enums = read(root, 'communications/communication.enums.ts');
+		expect(enums).toContain("export const communicationKindEnum = pgEnum('communication_kind'");
+		expect(enums.match(/^import /gm)).toHaveLength(1);
 
 		// a child gets no write use cases or routes until S4 (its inherited create would insert without an id)
 		expect(fs.existsSync(path.join(root, 'src/modules/meetings/use-cases/create-meeting.use-case.ts'))).toBe(false);
@@ -118,12 +128,12 @@ describe('the family generates (S2: the DDL)', () => {
 		// the single-column FK is gone, and so is its now-unused import
 		expect(participant).not.toContain('.references((): AnyPgColumn => communications');
 		expect(participant).not.toContain('.references((): AnyPgColumn => communication_participant_roles');
-		// one import statement per module
-		expect(participant).toContain("import { communications, communicationKindEnum } from '../communications/communication.entity';");
+		expect(participant).toContain("import { communications } from '../communications/communication.entity';");
+		expect(participant).toContain("import { communicationKindEnum } from '../communications/communication.enums';");
 		const role = read(root, 'communication-participant-roles/communication-participant-role.entity.ts');
 		expect(role).toContain("unique('communication_participant_roles_id_kind_uniq').on(tCols.id, tCols.kind)");
 		expect(role).not.toContain('pgEnum'); // choices_of: the owner's type, imported
-		expect(role).toContain("import { communicationKindEnum } from '../communications/communication.entity';");
+		expect(role).toContain("import { communicationKindEnum } from '../communications/communication.enums';");
 	});
 
 	it('a string literal in a raw-SQL predicate is not rewritten (the callback parameter is passed, never patched in)', () => {
@@ -137,6 +147,28 @@ describe('the family generates (S2: the DDL)', () => {
 		expect(participant).toContain("'https://t.co'");
 		expect(participant).not.toContain('https://tCols.co');
 		expect(participant).toContain('${tCols.note}');
+	});
+
+	it('every generated entity module loads at runtime, whichever is imported first (no enum TDZ across a base/child cycle)', () => {
+		// communication -> organizer (a participant) while a participant -> communication: a cycle between two entity
+		// modules. tsc cannot see a top-level `pgEnum` call run before its module finished loading; only importing can.
+		const root = familyProject('inh-tdz', (f) => {
+			f['communication.yaml'] = f['communication.yaml']!.concat(
+				'\nrelationships:\n  organizer:\n    type: belongs_to\n    target: communication_participant\n    foreign_key: organizer_id\n    nullable: true\n',
+			);
+		});
+		expect(run(root, ['entity', 'new', '--all', '--force']).status).toBe(0);
+		const modulesDir = path.join(root, 'src/modules');
+		const files = fs
+			.readdirSync(modulesDir)
+			.flatMap((d) => fs.readdirSync(path.join(modulesDir, d)).filter((f) => f.endsWith('.entity.ts')).map((f) => path.join(modulesDir, d, f)));
+		expect(files.length).toBeGreaterThan(8);
+		const failures: string[] = [];
+		for (const file of files) {
+			const r = spawnSync('bun', ['-e', `await import(${JSON.stringify(file)})`], { cwd: REPO, encoding: 'utf8' });
+			if (r.status !== 0) failures.push(`${path.relative(modulesDir, file)}: ${(r.stderr || r.stdout).split('\n').find((l) => /Error/.test(l)) ?? 'failed'}`);
+		}
+		expect(failures).toEqual([]);
 	});
 
 	it("M2's exception: the discriminator is the matched column, so nothing is derived", () => {

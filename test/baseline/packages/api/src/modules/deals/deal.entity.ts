@@ -5,7 +5,6 @@ import {
   integer,
   jsonb,
   numeric,
-  pgEnum,
   pgTable,
   timestamp,
   uniqueIndex,
@@ -16,8 +15,9 @@ import {
 import { type InferSelectModel } from 'drizzle-orm';
 import { users } from '../users/user.entity';
 import { accounts } from '../accounts/account.entity';
+import { dealStageEnum } from './deal.enums';
 
-export const dealStageEnum = pgEnum('deal_stage', ['prospecting', 'qualification', 'proposal', 'negotiation', 'closed_won', 'closed_lost']);
+export { dealStageEnum };
 
 export const deals = pgTable(
   'deals',

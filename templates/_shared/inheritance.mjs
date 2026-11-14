@@ -67,9 +67,13 @@ function moduleRef(lookup, fromNaming, modulesDir, name, why) {
     throw new Error(`[codegen] ${why}: '${name}' has no entity YAML — ${missing}.`);
   }
   const naming = entityModuleNaming(block, modulesDir);
+  const dir = relativeModuleDir(fromNaming.moduleDir, naming.moduleDir);
   return {
     plural: naming.plural,
-    importPath: `${relativeModuleDir(fromNaming.moduleDir, naming.moduleDir)}/${emittedStem(name)}.entity`,
+    importPath: `${dir}/${emittedStem(name)}.entity`,
+    // The owner's enum LEAF module (imports only pg-core): an enum is called at module top level, so it is never
+    // imported from the entity file, which sits in a cycle with its children and referrers.
+    enumsImportPath: `${dir}/${emittedStem(name)}.enums`,
   };
 }
 
@@ -77,7 +81,7 @@ function moduleRef(lookup, fromNaming, modulesDir, name, why) {
  * The enum a field's column is typed with: this entity's own `pgEnum`, or — for
  * `choices_of: <entity>.<field>` — the OWNER's (Postgres will not build an FK
  * between two enum types, RFC-0006 §2.4). `null` when the field is not an enum.
- * `importPath` is the owner's `.entity` file as seen from `fromNaming`'s folder.
+ * `importPath` is the owner's `.enums` leaf module as seen from `fromNaming`'s folder.
  *
  * `choices_of:` follows exactly one hop (S1 refuses a chain).
  */
@@ -99,7 +103,7 @@ export function resolveEnumField({ lookup, modulesDir, fromNaming, entityName, f
       choices: ownerFieldDef.choices,
       enumName: names.enumName,
       dbName: names.dbName,
-      importPath: ref.importPath,
+      importPath: ref.enumsImportPath,
     };
   }
   if (Array.isArray(field.choices) && field.choices.length > 0) {
@@ -110,7 +114,7 @@ export function resolveEnumField({ lookup, modulesDir, fromNaming, entityName, f
       choices: field.choices,
       enumName: names.enumName,
       dbName: names.dbName,
-      importPath: ref.importPath,
+      importPath: ref.enumsImportPath,
     };
   }
   return null;

@@ -9,7 +9,8 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { sql, type InferSelectModel } from 'drizzle-orm';
-import { communicationKindEnum, communications } from '../communications/communication.entity';
+import { communications } from '../communications/communication.entity';
+import { communicationKindEnum } from '../communications/communication.enums';
 
 export const meetings = pgTable(
   'meetings',

@@ -10,7 +10,8 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql, type InferSelectModel } from 'drizzle-orm';
 import { email_threads } from '../email-threads/email-thread.entity';
-import { communicationKindEnum, communications } from '../communications/communication.entity';
+import { communications } from '../communications/communication.entity';
+import { communicationKindEnum } from '../communications/communication.enums';
 
 export const emails = pgTable(
   'emails',

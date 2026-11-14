@@ -40,6 +40,13 @@ export interface EntityModuleNaming {
 	moduleDir: string;
 	/** The entity (+ Drizzle table) module, without extension. */
 	entityFile: string;
+	/**
+	 * The entity's `pgEnum` declarations, without extension: a leaf module that
+	 * imports nothing but `drizzle-orm/pg-core`, so another entity file can import an
+	 * enum from it at module top level without joining an import cycle (a base and
+	 * its children, or a `match:` and its target, import each other).
+	 */
+	enumsFile: string;
 	/** `<moduleDir>/<plural>.module.ts`. */
 	moduleFile: string;
 	/** `<moduleDir>/<name>.repository.ts`. */
@@ -59,6 +66,7 @@ export function entityModuleNaming(entity: ModuleTreeEntity, modulesDir: string)
 		plural,
 		moduleDir,
 		entityFile: `${moduleDir}/${emittedStem(entity.name)}.entity`,
+		enumsFile: `${moduleDir}/${emittedStem(entity.name)}.enums`,
 		moduleFile: `${moduleDir}/${emittedStem(plural)}.module.ts`,
 		repositoryFile: `${moduleDir}/${emittedStem(entity.name)}.repository.ts`,
 	};

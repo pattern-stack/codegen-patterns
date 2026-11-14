@@ -1142,10 +1142,9 @@ function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSof
 
   for (const field of processedFields) {
     if (field.drizzleType === 'enum') {
-      // Enum columns reference a `pgEnum` declaration emitted at the top
-      // of the entity file; the helper itself comes from drizzle-orm/pg-core.
-      // An IMPORTED enum (`choices_of:`) declares nothing here.
-      if (!field.enumImport) imports.add('pgEnum');
+      // An enum column calls a `pgEnum` that lives in the entity's `.enums` leaf
+      // module (or the owner's, for `choices_of:`); this file imports it and
+      // needs no `pgEnum` import of its own.
       continue;
     }
     const importName = DRIZZLE_IMPORT_MAP[field.drizzleType];
@@ -2392,6 +2391,8 @@ export function buildBackendLocals(definition, baseLocals) {
     controller: `${moduleDir}/${emittedStem(entityName)}.controller.ts`,
     module: ownNaming.moduleFile,
     index: `${moduleDir}/index.ts`,
+    // The `pgEnum` declarations — a leaf module with no entity imports; null when the entity declares none.
+    enums: enumFields.length > 0 ? `${ownNaming.enumsFile}.ts` : null,
     findByIdUseCase: `${useCasesDir}/${emittedStem('find', entityName, 'by-id')}.use-case.ts`,
     listUseCase: `${useCasesDir}/${emittedStem('list', entityNamePlural)}.use-case.ts`,
     findByIdWithFieldsUseCase: eavEnabled
@@ -2821,6 +2822,9 @@ export function buildBackendLocals(definition, baseLocals) {
     // A `match:` relationship is a composite `foreignKey(...)`, not a `.references()`.
     hasFk: belongsTo.some((r) => !r.match) || fieldFeatures.hasFieldFk,
     enumFields,
+    // The entity file imports its own enums from the leaf module and re-exports them (the schema barrel and
+    // drizzle-kit read the entity file's exports).
+    enumsImportSpecifier: `./${emittedStem(entityName)}.enums`,
 
     // Field-level foreign_key imports (#354) and pgTable extra-config
     // entries: single-column indexes (#355) + unique constraints (#356, #511,

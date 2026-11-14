@@ -23,10 +23,10 @@ import { <%= imp.relatedTable %> } from '<%= imp.importPath %>';
 import { <%- imp.names.join(', ') %> } from '<%= imp.importPath %>';
 <%_ }) _%>
 <%_ if (enumFields.length > 0) { _%>
+<%_ /* The pgEnum declarations live in a leaf module that imports only pg-core, so another entity can import an enum without an import cycle. Re-exported: the schema barrel and drizzle-kit read this file. */ _%>
+import { <%- enumFields.map(ef => ef.enumName).join(', ') %> } from '<%= enumsImportSpecifier %>';
 
-<%_ enumFields.forEach(ef => { _%>
-export const <%= ef.enumName %> = pgEnum('<%= ef.dbName %>', [<%- ef.choices.map(c => `'${c}'`).join(', ') %>]);
-<%_ }) _%>
+export { <%- enumFields.map(ef => ef.enumName).join(', ') %> };
 <%_ } _%>
 
 export const <%= entityNamePlural %> = pgTable(
