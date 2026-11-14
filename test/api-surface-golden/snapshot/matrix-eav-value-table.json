@@ -1,0 +1,559 @@
+{
+	"case": "matrix-eav-value-table",
+	"covers": "`eav_value_table: true` — upsertCurrentValues and the compound write",
+	"entities": {
+		"field_value": {
+			"entity": "field_value",
+			"plural": "field_values",
+			"className": "FieldValue",
+			"repository": {
+				"className": "FieldValueRepository",
+				"baseClass": "MetadataEntityRepository",
+				"typedInclude": false,
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "find_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "find_by_ids",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "list",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "count",
+						"kind": "count",
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "upsertCurrentValues",
+						"kind": "eav_upsert",
+						"emitted": true,
+						"params": [
+							{
+								"name": "inputs"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "many",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "field_value"
+								},
+								"path": [
+									"eav_value_table"
+								]
+							}
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Metadata"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Metadata"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Metadata"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Metadata"
+						}
+					},
+					{
+						"name": "upsertMany",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Metadata"
+						}
+					},
+					{
+						"name": "findByEntityIdAndType",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Metadata"
+						}
+					},
+					{
+						"name": "listByEntityId",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Metadata"
+						}
+					},
+					{
+						"name": "listHistoryByEntityId",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Metadata"
+						}
+					}
+				]
+			},
+			"service": {
+				"className": "FieldValueService",
+				"baseClass": "MetadataEntityService",
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "field_value",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "field_value",
+							"layer": "repository",
+							"method": "findByIds"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "listOptions"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "field_value",
+							"layer": "repository",
+							"method": "list"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "upsertFieldsTransactional",
+						"kind": "eav_write",
+						"emitted": true,
+						"params": [
+							{
+								"name": "entityType"
+							},
+							{
+								"name": "entityId"
+							},
+							{
+								"name": "userId"
+							},
+							{
+								"name": "fields"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "none",
+						"delegatesTo": {
+							"entity": "field_value",
+							"layer": "repository",
+							"method": "upsertCurrentValues"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "field_value"
+								},
+								"path": [
+									"eav_value_table"
+								]
+							}
+						}
+					},
+					{
+						"name": "findMergedByEntity",
+						"kind": "eav_read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "entityType"
+							},
+							{
+								"name": "entityId"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "field_value",
+							"layer": "repository",
+							"method": "findByEntityIdAndType"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "field_value"
+								},
+								"path": [
+									"eav_value_table"
+								]
+							}
+						}
+					},
+					{
+						"name": "count",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Metadata"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Metadata"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Metadata"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Metadata"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Metadata"
+						}
+					},
+					{
+						"name": "findByEntityIdAndType",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Metadata"
+						}
+					},
+					{
+						"name": "listByEntityId",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Metadata"
+						}
+					},
+					{
+						"name": "listHistoryByEntityId",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Metadata"
+						}
+					}
+				]
+			},
+			"useCases": [
+				{
+					"className": "FindFieldValueByIdUseCase",
+					"kind": "find_by_id",
+					"calls": {
+						"entity": "field_value",
+						"layer": "service",
+						"method": "findById"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "ListFieldValuesUseCase",
+					"kind": "list",
+					"calls": {
+						"entity": "field_value",
+						"layer": "service",
+						"method": "list"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "CreateFieldValueUseCase",
+					"kind": "create",
+					"calls": {
+						"entity": "field_value",
+						"layer": "service",
+						"method": "create"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "UpdateFieldValueUseCase",
+					"kind": "update",
+					"calls": {
+						"entity": "field_value",
+						"layer": "service",
+						"method": "update"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "DeleteFieldValueUseCase",
+					"kind": "delete",
+					"calls": {
+						"entity": "field_value",
+						"layer": "service",
+						"method": "delete"
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"http": {
+				"enabled": true,
+				"routes": [
+					{
+						"verb": "GET",
+						"path": "/field_values",
+						"controller": "FieldValueController",
+						"handler": "getAll",
+						"operationId": "listFieldValues",
+						"useCase": "ListFieldValuesUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "GET",
+						"path": "/field_values/:id",
+						"controller": "FieldValueController",
+						"handler": "getById",
+						"operationId": "findFieldValueById",
+						"useCase": "FindFieldValueByIdUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "POST",
+						"path": "/field_values",
+						"controller": "FieldValueController",
+						"handler": "create",
+						"operationId": "createFieldValue",
+						"useCase": "CreateFieldValueUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "PATCH",
+						"path": "/field_values/:id",
+						"controller": "FieldValueController",
+						"handler": "update",
+						"operationId": "updateFieldValue",
+						"useCase": "UpdateFieldValueUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "DELETE",
+						"path": "/field_values/:id",
+						"controller": "FieldValueController",
+						"handler": "remove",
+						"operationId": "deleteFieldValue",
+						"useCase": "DeleteFieldValueUseCase",
+						"origin": {
+							"from": "base"
+						}
+					}
+				],
+				"includeRoutes": [],
+				"includesConst": "FIELD_VALUES_API_INCLUDES"
+			}
+		}
+	}
+}

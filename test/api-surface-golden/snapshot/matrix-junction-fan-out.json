@@ -1,0 +1,1525 @@
+{
+	"case": "matrix-junction-fan-out",
+	"covers": "junction fan-out on both parents; a hidden side; a junction without is_primary",
+	"entities": {
+		"member": {
+			"entity": "member",
+			"plural": "members",
+			"className": "Member",
+			"repository": {
+				"className": "MemberRepository",
+				"baseClass": "BaseRepository",
+				"typedInclude": false,
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "find_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "find_by_ids",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "list",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "count",
+						"kind": "count",
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "upsertMany",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"service": {
+				"className": "MemberService",
+				"baseClass": "BaseService",
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "member",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "member",
+							"layer": "repository",
+							"method": "findByIds"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "listOptions"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "member",
+							"layer": "repository",
+							"method": "list"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "attachSkill",
+						"kind": "junction_attach",
+						"emitted": true,
+						"params": [
+							{
+								"name": "memberId"
+							},
+							{
+								"name": "skillId"
+							},
+							{
+								"name": "link"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "member_skill",
+							"layer": "service",
+							"method": "attach"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "junction",
+									"name": "member_skill"
+								},
+								"path": [
+									"between",
+									0
+								]
+							}
+						}
+					},
+					{
+						"name": "detachSkill",
+						"kind": "junction_detach",
+						"emitted": true,
+						"params": [
+							{
+								"name": "memberId"
+							},
+							{
+								"name": "skillId"
+							}
+						],
+						"returns": "none",
+						"delegatesTo": {
+							"entity": "member_skill",
+							"layer": "service",
+							"method": "detach"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "junction",
+									"name": "member_skill"
+								},
+								"path": [
+									"between",
+									0
+								]
+							}
+						}
+					},
+					{
+						"name": "skillsList",
+						"kind": "junction_list",
+						"emitted": true,
+						"params": [
+							{
+								"name": "memberId"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "member_skill",
+							"layer": "service",
+							"method": "listAssoc"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "junction",
+									"name": "member_skill"
+								},
+								"path": [
+									"between",
+									0
+								]
+							}
+						}
+					},
+					{
+						"name": "skillsSetPrimary",
+						"kind": "junction_set_primary",
+						"emitted": true,
+						"params": [
+							{
+								"name": "memberId"
+							},
+							{
+								"name": "skillId"
+							}
+						],
+						"returns": "none",
+						"delegatesTo": {
+							"entity": "member_skill",
+							"layer": "service",
+							"method": "setPrimary"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "junction",
+									"name": "member_skill"
+								},
+								"path": [
+									"between",
+									0
+								]
+							}
+						}
+					},
+					{
+						"name": "count",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"useCases": [
+				{
+					"className": "FindMemberByIdUseCase",
+					"kind": "find_by_id",
+					"calls": {
+						"entity": "member",
+						"layer": "service",
+						"method": "findById"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "ListMembersUseCase",
+					"kind": "list",
+					"calls": {
+						"entity": "member",
+						"layer": "service",
+						"method": "list"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "CreateMemberUseCase",
+					"kind": "create",
+					"calls": {
+						"entity": "member",
+						"layer": "service",
+						"method": "create"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "UpdateMemberUseCase",
+					"kind": "update",
+					"calls": {
+						"entity": "member",
+						"layer": "service",
+						"method": "update"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "DeleteMemberUseCase",
+					"kind": "delete",
+					"calls": {
+						"entity": "member",
+						"layer": "service",
+						"method": "delete"
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"http": {
+				"enabled": true,
+				"routes": [
+					{
+						"verb": "GET",
+						"path": "/members",
+						"controller": "MemberController",
+						"handler": "getAll",
+						"operationId": "listMembers",
+						"useCase": "ListMembersUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "GET",
+						"path": "/members/:id",
+						"controller": "MemberController",
+						"handler": "getById",
+						"operationId": "findMemberById",
+						"useCase": "FindMemberByIdUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "POST",
+						"path": "/members",
+						"controller": "MemberController",
+						"handler": "create",
+						"operationId": "createMember",
+						"useCase": "CreateMemberUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "PATCH",
+						"path": "/members/:id",
+						"controller": "MemberController",
+						"handler": "update",
+						"operationId": "updateMember",
+						"useCase": "UpdateMemberUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "DELETE",
+						"path": "/members/:id",
+						"controller": "MemberController",
+						"handler": "remove",
+						"operationId": "deleteMember",
+						"useCase": "DeleteMemberUseCase",
+						"origin": {
+							"from": "base"
+						}
+					}
+				],
+				"includeRoutes": [],
+				"includesConst": "MEMBERS_API_INCLUDES"
+			}
+		},
+		"skill": {
+			"entity": "skill",
+			"plural": "skills",
+			"className": "Skill",
+			"repository": {
+				"className": "SkillRepository",
+				"baseClass": "BaseRepository",
+				"typedInclude": false,
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "find_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "find_by_ids",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "list",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "count",
+						"kind": "count",
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "upsertMany",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"service": {
+				"className": "SkillService",
+				"baseClass": "BaseService",
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "skill",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "skill",
+							"layer": "repository",
+							"method": "findByIds"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "listOptions"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "skill",
+							"layer": "repository",
+							"method": "list"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "addToMember",
+						"kind": "junction_attach",
+						"emitted": true,
+						"params": [
+							{
+								"name": "skillId"
+							},
+							{
+								"name": "memberId"
+							},
+							{
+								"name": "link"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "member_skill",
+							"layer": "service",
+							"method": "attach"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "junction",
+									"name": "member_skill"
+								},
+								"path": [
+									"between",
+									1
+								]
+							}
+						}
+					},
+					{
+						"name": "removeFromMember",
+						"kind": "junction_detach",
+						"emitted": true,
+						"params": [
+							{
+								"name": "skillId"
+							},
+							{
+								"name": "memberId"
+							}
+						],
+						"returns": "none",
+						"delegatesTo": {
+							"entity": "member_skill",
+							"layer": "service",
+							"method": "detach"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "junction",
+									"name": "member_skill"
+								},
+								"path": [
+									"between",
+									1
+								]
+							}
+						}
+					},
+					{
+						"name": "membersList",
+						"kind": "junction_list",
+						"emitted": true,
+						"params": [
+							{
+								"name": "skillId"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "member_skill",
+							"layer": "service",
+							"method": "listAssoc"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "junction",
+									"name": "member_skill"
+								},
+								"path": [
+									"between",
+									1
+								]
+							}
+						}
+					},
+					{
+						"name": "membersSetPrimary",
+						"kind": "junction_set_primary",
+						"emitted": true,
+						"params": [
+							{
+								"name": "skillId"
+							},
+							{
+								"name": "memberId"
+							}
+						],
+						"returns": "none",
+						"delegatesTo": {
+							"entity": "member_skill",
+							"layer": "service",
+							"method": "setPrimary"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "junction",
+									"name": "member_skill"
+								},
+								"path": [
+									"between",
+									1
+								]
+							}
+						}
+					},
+					{
+						"name": "count",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"useCases": [
+				{
+					"className": "FindSkillByIdUseCase",
+					"kind": "find_by_id",
+					"calls": {
+						"entity": "skill",
+						"layer": "service",
+						"method": "findById"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "ListSkillsUseCase",
+					"kind": "list",
+					"calls": {
+						"entity": "skill",
+						"layer": "service",
+						"method": "list"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "CreateSkillUseCase",
+					"kind": "create",
+					"calls": {
+						"entity": "skill",
+						"layer": "service",
+						"method": "create"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "UpdateSkillUseCase",
+					"kind": "update",
+					"calls": {
+						"entity": "skill",
+						"layer": "service",
+						"method": "update"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "DeleteSkillUseCase",
+					"kind": "delete",
+					"calls": {
+						"entity": "skill",
+						"layer": "service",
+						"method": "delete"
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"http": {
+				"enabled": true,
+				"routes": [
+					{
+						"verb": "GET",
+						"path": "/skills",
+						"controller": "SkillController",
+						"handler": "getAll",
+						"operationId": "listSkills",
+						"useCase": "ListSkillsUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "GET",
+						"path": "/skills/:id",
+						"controller": "SkillController",
+						"handler": "getById",
+						"operationId": "findSkillById",
+						"useCase": "FindSkillByIdUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "POST",
+						"path": "/skills",
+						"controller": "SkillController",
+						"handler": "create",
+						"operationId": "createSkill",
+						"useCase": "CreateSkillUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "PATCH",
+						"path": "/skills/:id",
+						"controller": "SkillController",
+						"handler": "update",
+						"operationId": "updateSkill",
+						"useCase": "UpdateSkillUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "DELETE",
+						"path": "/skills/:id",
+						"controller": "SkillController",
+						"handler": "remove",
+						"operationId": "deleteSkill",
+						"useCase": "DeleteSkillUseCase",
+						"origin": {
+							"from": "base"
+						}
+					}
+				],
+				"includeRoutes": [],
+				"includesConst": "SKILLS_API_INCLUDES"
+			}
+		},
+		"workspace": {
+			"entity": "workspace",
+			"plural": "workspaces",
+			"className": "Workspace",
+			"repository": {
+				"className": "WorkspaceRepository",
+				"baseClass": "BaseRepository",
+				"typedInclude": false,
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "find_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "find_by_ids",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "list",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "count",
+						"kind": "count",
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "upsertMany",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"service": {
+				"className": "WorkspaceService",
+				"baseClass": "BaseService",
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "workspace",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "workspace",
+							"layer": "repository",
+							"method": "findByIds"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "listOptions"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "workspace",
+							"layer": "repository",
+							"method": "list"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "attachMember",
+						"kind": "junction_attach",
+						"emitted": true,
+						"params": [
+							{
+								"name": "workspaceId"
+							},
+							{
+								"name": "memberId"
+							},
+							{
+								"name": "link"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "workspace_member",
+							"layer": "service",
+							"method": "attach"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "junction",
+									"name": "workspace_member"
+								},
+								"path": [
+									"between",
+									0
+								]
+							}
+						}
+					},
+					{
+						"name": "detachMember",
+						"kind": "junction_detach",
+						"emitted": true,
+						"params": [
+							{
+								"name": "workspaceId"
+							},
+							{
+								"name": "memberId"
+							}
+						],
+						"returns": "none",
+						"delegatesTo": {
+							"entity": "workspace_member",
+							"layer": "service",
+							"method": "detach"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "junction",
+									"name": "workspace_member"
+								},
+								"path": [
+									"between",
+									0
+								]
+							}
+						}
+					},
+					{
+						"name": "membersList",
+						"kind": "junction_list",
+						"emitted": true,
+						"params": [
+							{
+								"name": "workspaceId"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "workspace_member",
+							"layer": "service",
+							"method": "listAssoc"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "junction",
+									"name": "workspace_member"
+								},
+								"path": [
+									"between",
+									0
+								]
+							}
+						}
+					},
+					{
+						"name": "count",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"useCases": [
+				{
+					"className": "FindWorkspaceByIdUseCase",
+					"kind": "find_by_id",
+					"calls": {
+						"entity": "workspace",
+						"layer": "service",
+						"method": "findById"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "ListWorkspacesUseCase",
+					"kind": "list",
+					"calls": {
+						"entity": "workspace",
+						"layer": "service",
+						"method": "list"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "CreateWorkspaceUseCase",
+					"kind": "create",
+					"calls": {
+						"entity": "workspace",
+						"layer": "service",
+						"method": "create"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "UpdateWorkspaceUseCase",
+					"kind": "update",
+					"calls": {
+						"entity": "workspace",
+						"layer": "service",
+						"method": "update"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "DeleteWorkspaceUseCase",
+					"kind": "delete",
+					"calls": {
+						"entity": "workspace",
+						"layer": "service",
+						"method": "delete"
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"http": {
+				"enabled": true,
+				"routes": [
+					{
+						"verb": "GET",
+						"path": "/workspaces",
+						"controller": "WorkspaceController",
+						"handler": "getAll",
+						"operationId": "listWorkspaces",
+						"useCase": "ListWorkspacesUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "GET",
+						"path": "/workspaces/:id",
+						"controller": "WorkspaceController",
+						"handler": "getById",
+						"operationId": "findWorkspaceById",
+						"useCase": "FindWorkspaceByIdUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "POST",
+						"path": "/workspaces",
+						"controller": "WorkspaceController",
+						"handler": "create",
+						"operationId": "createWorkspace",
+						"useCase": "CreateWorkspaceUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "PATCH",
+						"path": "/workspaces/:id",
+						"controller": "WorkspaceController",
+						"handler": "update",
+						"operationId": "updateWorkspace",
+						"useCase": "UpdateWorkspaceUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "DELETE",
+						"path": "/workspaces/:id",
+						"controller": "WorkspaceController",
+						"handler": "remove",
+						"operationId": "deleteWorkspace",
+						"useCase": "DeleteWorkspaceUseCase",
+						"origin": {
+							"from": "base"
+						}
+					}
+				],
+				"includeRoutes": [],
+				"includesConst": "WORKSPACES_API_INCLUDES"
+			}
+		}
+	}
+}

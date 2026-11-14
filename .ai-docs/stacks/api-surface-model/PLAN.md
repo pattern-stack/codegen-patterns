@@ -1,6 +1,6 @@
 # PLAN — backend API-surface derivation (slice 1) + Studio API view
 
-**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · A0 built
+**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · A0, A1 built
 **Basis:** `main` @ `c1ceeefd`. READ-1 merged 2026-11-12 (#859 and the ten PRs under it). Every `path:line`
 below was taken at the READ-1 tip `e9fe6f5f`; every cited file is byte-identical on `main` (checked one by one
 with `git diff --quiet e9fe6f5f c1ceeefd -- <file>`), so the line numbers hold.
@@ -143,6 +143,16 @@ is the row the API tab shows and the record the template prints from.
   FK finder with no such ordering (`test/baseline/packages/api/src/modules/contacts/contact.repository.ts:284-297`).
   The skip rule ignores `hasOrder` (`repository.ejs.t:359`).
 - F7 (§14.4).
+- **The Metadata pattern names two service methods its base class does not have** (found by A1's parity gate).
+  `src/patterns/library/metadata.pattern.ts` lists `findByEntityIdAndType, listByEntityId, listHistoryByEntityId`
+  as `serviceInheritedMethods`; `runtime/base-classes/metadata-entity-service.ts` declares `findByEntityIdAndType`,
+  `listByEntity`, `listHistory`, `upsertValues` (the two `…ById` names live on `MetadataEntityRepository`). It
+  compiles — only the generated "inherited" comment and the ADR-041 collision vocabulary are wrong. Recorded as a
+  named expectation in the parity test (`METADATA_INHERITED_EXPECTATION`: case `matrix-eav-value-table`, exactly
+  two messages, asserted present and sole), which fails once the pattern is corrected and must then be deleted.
+- **Possible F7-class shape, not yet confirmed by running it:** an `eav_value_table: true` entity whose pattern is
+  not `Metadata` gets a service that calls `repository.findByEntityIdAndType`, which only the Metadata repository
+  supplies. Parity compares names, not delegate targets, so it cannot see this; A2's `delegatesTo` pass can.
 
 Byte-identical output is Phase B's gate, so none of these change in slice 1. Each becomes a one-place edit
 afterwards; file one issue per oddity at S4.
@@ -170,7 +180,10 @@ export type Origin =
   | { from: 'yaml'; at: YamlRef; shadows?: YamlRef[] };
 
 export interface Param { name: string; field?: string }        // `field` = the YAML field it binds; no TS type
-export type Shape = 'one' | 'many' | 'count' | 'projection' | 'none';   // `none`: detach / setPrimary return nothing
+                                                               // a capability forwarder's params: one, `...args`
+export type Shape = 'one' | 'many' | 'count' | 'projection' | 'none'   // `none`: detach / setPrimary return nothing
+                  | 'forwarded';   // A1: a capability forwarder / inherited entry returns what its callee does,
+                                   // which codegen does not see — an explicit answer, never an omitted one
 export interface MethodRef { entity: string; layer: 'repository' | 'service'; method: string }
 
 export interface RepositoryMethod {
@@ -288,6 +301,14 @@ local is `apiSurface`. The approved verb stays `codegen project surface`.
 definition (post role-merge, `prompt.js:346-351`), the junction set (`prompt.js:425`), the resolved pattern
 composition (`EL:285-314`), and `wiredTargets` — the `has_many` targets that will exist (render set ∪ on disk;
 F3). No new file reads, no second input channel into hygen.
+
+*As built (A1):* one more input, `entityLookup(name) → entity: block | null` — the cross-entity lookup
+(NAME-0) the locals already hold, so a junction counterparty's plural comes from its own YAML through
+`entityModuleNaming` and `src/derived` never pluralises. And the derivation merges `roles:` into
+`relationships` itself, with `src/roles/derive.ts`'s own `deriveRoleRelationships` — idempotent on an
+already-merged definition — so the CLI's zod path cannot skip it; a role-derived edge's origin is
+`['roles', <role>]`. Imports: `config/file-naming`, `config/module-tree`, `config/junction-naming`,
+`roles/derive` — all in `files`.
 
 **Whole set (`deriveProjectApiSurface`)** calls the per-entity function for every entity with
 `wiredTargets = all` — the answer is "what `entity new --all` emits" — then:
@@ -443,6 +464,14 @@ collision, junction fan-out — rendered in-process with `ejs.render` as
 | inherited method missing | ``api-surface parity: <Class> lists `<method>` as inherited, but no class in its base chain (<A → B>) declares it`` |
 | absent input | ``api-surface parity: no generated file for `<entity>` at <file>`` |
 | empty parse | ``api-surface parity: <file> parsed to 0 classes`` |
+| generated use case not derived *(A1)* | ``api-surface parity: <file> declares use case `<Class>`, which the derived API surface does not list`` |
+| derived use case not generated *(A1)* | ``api-surface parity: the derived API surface lists use case `<Class>`, which <use-cases dir> does not declare`` |
+| HTTP off but a controller exists *(A1)* | ``api-surface parity: the derived API surface has HTTP off for `<entity>`, but <file> exists`` |
+
+Inherited methods are checked against the capability mixins first (rightmost capability outermost), then the
+spine's runtime chain; an inherited entry leaves out anything the class body emits, so `findById` is not listed
+twice. A use case of kind `search` records `calls` = `service.list` (it pages through the list path; `MethodRef`
+has no use-case layer).
 
 How it fails when someone adds a method in a template without the derivation: the template edit changes the
 baseline output, `just test-baseline` is red until the snapshot is regenerated, and once it is the parity test
@@ -459,6 +488,10 @@ every baseline fixture entity and every matrix case; `src/__tests__/derived/api-
 compares. Same shape as `test/relations-golden`.
 
 Message: ``api-surface golden: `<entity>` differs from test/api-surface-golden/snapshot/<entity>.json``
+
+*As built (A1):* 20 files — the 9 baseline fixture entities, and 11 matrix cases as `matrix-<case>.json`
+(`{ case, covers, entities }`; the prefix keeps a case from colliding with an entity name). Regenerate only with
+`UPDATE_API_SURFACE_GOLDEN=1`. The matrix itself is `src/__tests__/derived/_render-matrix.ts`, which B1 reuses.
 
 The golden is created in A1, extended in A2 (`relations`, `warnings`), and **frozen for all of Phase B** —
 templates move, the derivation does not.
@@ -485,6 +518,12 @@ Raw `grep` counts at `c1ceeefd` (comment lines included; the test computes the r
 | inline camel-case | `service.ejs.t` ×4; `prompt.js:367` | `junction/new/prompt.js:44`, `relationship/new/prompt.js:52`, `_shared/junction-fan-out.mjs:32` → #679 |
 | `charAt(0).toUpperCase()` | `repository.ejs.t` ×3 | `broadcast/new/bridge-listener.ejs.t` ×2 → own issue |
 | string-built `findBy` | `repository.ejs.t` ×3, `service.ejs.t` ×2 | `junction/new/service.ejs.t` ×9, `junction/new/repository.ejs.t` ×2 → #679 |
+
+*As built (A1):* pattern ids `inline-camel-case`, `charat-upper-case`, `string-built-finder`,
+`local-case-helper`; 18 entries. A comment line containing `<%` is emitted text and is scanned (that is what
+makes the counts above come out). Beyond the table: `entity-locals.js` ×2 string-built finders (the second is
+`deriveQueryMethodName`'s) and ×1 local case helper, `prompt.js` ×1 local case helper (Phase B); the
+`relationship/new/prompt.js` finder copy is tagged Phase B (B2 deletes it), its other two sites #679.
 
 Its limit, stated: a regex catches the known spellings (#864 says the same of READ-1's line-based gates). The
 parity gate catches what the regex misses.
@@ -679,7 +718,7 @@ it names. After a Phase B mutation (which regenerates), re-run G3 once reverted 
 
 | # | Mutation (exact) | Command | Expected: exit 1 and this text |
 |---|---|---|---|
-| M1 | `perl -0pi -e 's/\n\}\n\z/\n  async findRecent(): Promise<void> {}\n}\n/' $C/contact.repository.ts` | `U derived/api-surface-parity.test.ts` | ``ContactRepository declares `findRecent`, which the derived API surface does not list`` |
+| M1 | `perl -0pi -e 's/\n\}\n\z/\n  async findSpurious(): Promise<void> {}\n}\n/' $C/contact.repository.ts` | `U derived/api-surface-parity.test.ts` | ``ContactRepository declares `findSpurious`, which the derived API surface does not list`` |
 | M2 | `perl -pi -e 's/override async findByIds</override async findByIdz</' $C/contact.repository.ts` | same | ``ContactRepository declares `findByIdz` `` **and** ``the derived API surface lists `ContactRepository.findByIds` `` |
 | M3 | `perl -pi -e "s/\@Get\(':id'\)/\@Get(':key')/" $C/contact.controller.ts` | same | ``ContactController declares route `GET /contacts/:key` `` **and** ``lists route `GET /contacts/:id` `` |
 | M4 | `perl -pi -e 's/  async exists\(id: string\)/  async existz(id: string)/' runtime/base-classes/base-repository.ts` | same | ``ContactRepository lists `exists` as inherited, but no class in its base chain (IntegratedEntityRepository → BaseRepository) declares it`` |
@@ -810,7 +849,7 @@ again by the reviewer; a non-empty result is a stop (§14.6), not something to e
 | Silence the type checker. | `git diff $BASE..HEAD -- src/derived src/studio tools/studio/src \| grep -nE '^\+.*(@ts-ignore\|@ts-expect-error\|as any\|as unknown as)'` |
 | Edit `templates/` or `package.json` in Phase A. | `git diff --stat $BASE_A..HEAD -- templates package.json` |
 | Change the derivation in Phase B to make a template pass. | `git diff --stat $B1..HEAD -- test/api-surface-golden` (frozen); any change to `src/derived/api/` in Phase B must leave it green **and** be named in the PR body |
-| Leave a mutation behind. | after each mutation check, `git status --porcelain` equals its pre-mutation output; no mutation string (`findRecent`, `findByIdz`, `existz`, `findByX`, `:key`) in `git diff $BASE..HEAD` |
+| Leave a mutation behind. | after each mutation check, `git status --porcelain` equals its pre-mutation output; no mutation string (`findSpurious`, `findByIdz`, `existz`, `findByX`, `:key`) in `git diff $BASE..HEAD`. (M1 first added `findRecent`, which is a real Activity-pattern inherited method and so appears in three matrix goldens; renamed in A1.) |
 | Let the unit count fall. | G2's `N pass` never below the previous PR's, less only the enumerated deletions |
 | Report a gate from before the last edit. | each PR body states `git rev-parse HEAD` beside every gate output; it must equal the PR head |
 
