@@ -381,3 +381,14 @@ definition entity, a junction or `relationship new` endpoint, a group Actor's me
 `projectEntityLookup(cwd)` reads the target's own YAML (the entities-dir rule is the CLI's, `src/config/entities-dir.ts`), `entityModuleNaming` turns it into the
 table export + module folder (`plural:`, `context:`), `relativeModuleDir` into the import path. Never
 `pluralize(target)` or a hand-built `'../<plural>/'` (NAME-0, `docs/specs/NAME-0.md`).
+
+### Templates print (ADR-046)
+
+A fact about the generated API surface — a method name, a class name, a route, or whether something is
+emitted at all — is derived once, in `src/derived/api/`, and carries the YAML path that caused it. A template
+loops over `apiSurface` and branches on its flags. It never builds a name, never changes a name's case, and
+never decides existence. A new generated method starts as an entry there; the parity gate
+(`api-surface-parity.test.ts`) fails a template that emits one it does not list, and the golden
+(`test/api-surface-golden/`) pins its provenance. Studio and `codegen project surface` read the same
+derivation. Derivations not yet migrated are named in `no-name-derivation.allowlist.ts`; that list only
+shrinks.

@@ -1,0 +1,47 @@
+# F7 pre-flight — run 2026-11-12 against main @ c1ceeefd (READ-1 merged)
+# Command: bun run-f7.ts <repoRoot> <scratch dir outside the repo>
+# Scaffold: bun init + the smoke harness pins + `project init --yes --with-tsconfig --runtime vendored`
+
+## V0 — control — contact declares belongs_to account (FK finder emitted)
+  entity validate: exit 0 · valid=true errors=0 warnings=0
+  entity new --all --force: exit 0
+  AccountService (the has_many method):
+      async contacts(accountId: string, opts?: { limit?: number }): Promise<Contact[]> {
+      return this.contactRepo.findByAccountId(accountId, opts);
+  ContactRepository finders emitted:
+      async findByAccountId<W extends ContactInclude = ContactNoInclude, C extends ContactColumns | undefined = undefined>(
+  tsc --noEmit --skipLibCheck: exit 0 · 0 error(s) in the project
+
+## V1 — F7 — account_id is a plain field; contact declares no belongs_to and no query
+  entity validate: exit 0 · valid=true errors=0 warnings=0
+  entity new --all --force: exit 0
+  AccountService (the has_many method):
+      async contacts(accountId: string, opts?: { limit?: number }): Promise<Contact[]> {
+      return this.contactRepo.findByAccountId(accountId, opts);
+  ContactRepository finders emitted:
+      <none>
+  tsc --noEmit --skipLibCheck: exit 2 · 1 error(s) in the project
+      src/modules/accounts/account.service.ts(83,29): error TS2339: Property 'findByAccountId' does not exist on type 'ContactRepository'.
+
+## V2 — plain field + a plain `queries: by [account_id]` finder (no belongs_to)
+  entity validate: exit 0 · valid=true errors=0 warnings=0
+  entity new --all --force: exit 0
+  AccountService (the has_many method):
+      async contacts(accountId: string, opts?: { limit?: number }): Promise<Contact[]> {
+      return this.contactRepo.findByAccountId(accountId, opts);
+  ContactRepository finders emitted:
+      async findByAccountId<C extends ContactColumns | undefined = undefined>(
+  tsc --noEmit --skipLibCheck: exit 2 · 1 error(s) in the project
+      src/modules/accounts/account.service.ts(83,56): error TS2345: Argument of type '{ limit?: number | undefined; } | undefined' is not assignable to parameter of type 'ReadOptions<never, undefined> | undefined'.
+
+## V3 — belongs_to + a UNIQUE `queries: by [account_id]` (the declarative finder wins the name)
+  entity validate: exit 0 · valid=true errors=0 warnings=0
+  entity new --all --force: exit 0
+  AccountService (the has_many method):
+      async contacts(accountId: string, opts?: { limit?: number }): Promise<Contact[]> {
+      return this.contactRepo.findByAccountId(accountId, opts);
+  ContactRepository finders emitted:
+      async findByAccountId<W extends ContactInclude = ContactNoInclude, C extends ContactColumns | undefined = undefined>(
+  tsc --noEmit --skipLibCheck: exit 2 · 2 error(s) in the project
+      src/modules/accounts/account.service.ts(83,5): error TS2322: Type '{ id: string; createdAt: Date; updatedAt: Date; accountId: string; email: string; } | null' is not assignable to type '{ id: string; createdAt: Date; updatedAt: Date; accountId: string; email: string; }[]'.
+      src/modules/accounts/account.service.ts(83,56): error TS2345: Argument of type '{ limit?: number | undefined; } | undefined' is not assignable to parameter of type 'ReadOptions<ContactNoInclude, undefined> | undefined'.
