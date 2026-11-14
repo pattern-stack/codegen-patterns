@@ -42,6 +42,7 @@ import {
 } from '../shared/api.js';
 import { CliFailureError, getGraph, validateProject } from './graph.js';
 import { getDiff } from './diff.js';
+import { getSurface } from './surface.js';
 import {
 	FileNotFoundError,
 	UnknownFileKindError,
@@ -472,6 +473,13 @@ export function createStudioServer(options: StudioServerOptions): Promise<Studio
 			// --- graph ----------------------------------------------------
 			if (pathname === '/api/graph' && method === 'GET') {
 				sendJson(res, 200, await getGraph(projectDir));
+				return;
+			}
+
+			// --- surface --------------------------------------------------
+			// Its own route, so a surface failure cannot blank the canvas.
+			if (pathname === '/api/surface' && method === 'GET') {
+				sendJson(res, 200, await getSurface(projectDir));
 				return;
 			}
 

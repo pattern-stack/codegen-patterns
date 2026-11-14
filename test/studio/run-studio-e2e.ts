@@ -7,6 +7,7 @@
  *
  *   1. GET  /api/health                     server is up, pointed at the demo
  *   2. GET  /api/graph                      3 entities, 4 edges, no relationships
+ *  2b. GET  /api/surface                    contact's generated API, by exact value
  *   3. GET  /api/files                      the demo's YAML is listed
  *   4. GET  /api/files/entities%2Fcontact.yaml
  *   5. PUT  same path, deliberate schema error  → 422 with the exact Zod issue
@@ -14,6 +15,7 @@
  *   7. PUT  same path, corrected               → 200
  *   8. POST /api/relationships                 → preview only, nothing written
  *   9. PUT  /api/relationships                 → relationships/contact_opportunity.yaml
+ *  9b. GET  /api/surface                      → the relationship is listed as unmodelled
  *  10. POST /api/generate + GET /api/runs/:id/stream, consumed to `done`
  *  11.      the run's diff carries the new module
  *  12. GET  /api/graph                        → 5 edges, the N:M edge is there
@@ -61,6 +63,7 @@ import type {
 	RelationshipWriteResponse,
 	RunEvent,
 	RunStepName,
+	SurfaceResponse,
 } from '../../src/studio/shared/api.js';
 
 // ---------------------------------------------------------------------------
@@ -110,6 +113,29 @@ const RELATIONSHIP_REQUEST: RelationshipRequest = {
 	kind: 'many_to_many',
 	options: { name: RELATIONSHIP_NAME },
 };
+
+/**
+ * The demo's generated API surface (STUDIO-2, ADR-046) — PLAN §14.2's A2 table,
+ * asserted over HTTP. `contact` declares `queries: [{ by: [account_id] },
+ * { by: [email], unique: true }]` and `belongs_to account`, so the first query
+ * resolves to the same name as the FK finder and is shadowed by it.
+ */
+const CONTACT_EMITTED_REPOSITORY_METHODS = [
+	'count',
+	'findByAccountId',
+	'findByEmail',
+	'findById',
+	'findByIds',
+	'list',
+];
+const CONTACT_ROUTES = [
+	'GET /contacts',
+	'GET /contacts/:id',
+	'POST /contacts',
+	'PATCH /contacts/:id',
+	'DELETE /contacts/:id',
+];
+const CONTACT_ACCOUNT_RELATION = 'contact.relationships.account';
 
 const GENERATE_STEPS: RunStepName[] = ['generate'];
 
@@ -353,6 +379,69 @@ async function main(): Promise<number> {
 			'there is no contact → opportunity edge yet',
 		);
 
+		// ── 2b. the API surface before ───────────────────────────────────────
+		step('GET /api/surface — the demo set, before');
+		const surface = (await expectApi<SurfaceResponse>('GET', '/api/surface', 200)).surface;
+		assertDeepEqual(
+			Object.keys(surface.entities).sort(),
+			[...DEMO_ENTITY_NAMES].sort(),
+			'surface entities are exactly account, contact, opportunity',
+		);
+		const contactRepo = surface.entities.contact?.repository.methods ?? [];
+		assertDeepEqual(
+			contactRepo
+				.filter((m) => m.emitted)
+				.map((m) => m.name)
+				.sort(),
+			CONTACT_EMITTED_REPOSITORY_METHODS,
+			'contact emits exactly count, findByAccountId, findByEmail, findById, findByIds, list',
+		);
+		const fkFinder = contactRepo.find((m) => m.name === 'findByAccountId');
+		const fkOrigin = fkFinder?.origin.from === 'yaml' ? fkFinder.origin : undefined;
+		assertEqual(
+			fkOrigin?.at.path.join('.'),
+			'relationships.account',
+			'findByAccountId comes from relationships.account',
+		);
+		assertDeepEqual(
+			fkOrigin?.shadows?.map((ref) => ref.path.join('.')),
+			['queries.0'],
+			'findByAccountId shadows exactly queries.0',
+		);
+		const byEmail = contactRepo.find((m) => m.name === 'findByEmail');
+		const byEmailOrigin = byEmail?.origin.from === 'yaml' ? byEmail.origin : undefined;
+		assertEqual(
+			`${byEmailOrigin?.at.path.join('.')} ${byEmail?.unique} ${byEmail?.returns}`,
+			'queries.1 true one',
+			'findByEmail comes from queries.1, is unique, returns one',
+		);
+		assertDeepEqual(
+			surface.entities.contact?.http.routes.map((r) => `${r.verb} ${r.path}`),
+			CONTACT_ROUTES,
+			'contact serves exactly the five CRUD routes',
+		);
+		const contactAccount = surface.relations.find((r) => r.id === CONTACT_ACCOUNT_RELATION);
+		assertEqual(
+			contactAccount?.inverseOf,
+			'account.relationships.contacts',
+			`${CONTACT_ACCOUNT_RELATION} is the inverse of account.relationships.contacts`,
+		);
+		assertDeepEqual(
+			contactAccount?.generates.map((g) => `${g.entity}.${g.layer}.${g.method}`).sort(),
+			['contact.repository.findByAccountId', 'contact.service.account'],
+			`${CONTACT_ACCOUNT_RELATION} generates exactly the FK finder and the service accessor`,
+		);
+		const accountContacts = surface.entities.account?.service.methods.find(
+			(m) => m.name === 'contacts',
+		);
+		assertEqual(
+			`${accountContacts?.kind} ${accountContacts?.delegatesTo?.entity}.${accountContacts?.delegatesTo?.method}`,
+			'relation_many contact.findByAccountId',
+			'AccountService.contacts is relation_many, delegating to contact.findByAccountId',
+		);
+		assertDeepEqual(surface.warnings, [], 'the surface has no warnings');
+		assertDeepEqual(surface.unmodelled, [], 'the surface has nothing unmodelled');
+
 		// ── 3. the file list ─────────────────────────────────────────────────
 		step('GET /api/files');
 		const files = await expectApi<FileListResponse>('GET', '/api/files', 200);
@@ -496,6 +585,16 @@ async function main(): Promise<number> {
 			fs.existsSync(path.join(projectDir, RELATIONSHIP_YAML_PATH)),
 			true,
 			'the relationship YAML is on disk',
+		);
+
+		// ── 9b. the API surface names the relationship as unmodelled ─────────
+		step('GET /api/surface — the relationship is unmodelled');
+		const surfaceAfter = (await expectApi<SurfaceResponse>('GET', '/api/surface', 200))
+			.surface;
+		assertDeepEqual(
+			surfaceAfter.unmodelled.map(({ name, kind }) => ({ name, kind })),
+			[{ name: RELATIONSHIP_NAME, kind: 'relationship' }],
+			`unmodelled is exactly { name: '${RELATIONSHIP_NAME}', kind: 'relationship' }`,
 		);
 
 		// ── 10. generate ─────────────────────────────────────────────────────
