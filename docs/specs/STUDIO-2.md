@@ -156,6 +156,10 @@ node is selected (as `relate` does). The tab is `inspector/ApiTab.tsx`; the pure
   (`pairedLabel`, `graph/edge-kinds.ts`). The line carries the `belongs_to`'s `relationId` and the inverse's as
   `inverseRelationId`; selecting it opens the panel on the `belongs_to`, whose **inverse** group is the other side.
   An unpaired `has_many` is its own line with its own `relationId`.
+- **Spine or secondary (STUDIO-3).** Every line is one or the other (`treeRole`), and the panel's first line prints
+  why, exactly as the adapter wrote it on the line (`treeReason`): `spine: unique FK (1:1)`, or
+  `secondary: chart's spine is catalog (first declared)`. The line's tooltip prints the same string. Selection is
+  unchanged by the role: a secondary line selects its relation and shows both sides like any other.
 - **Where the panel shows.** Selecting an edge opens the inspector's API tab, which renders `inspector/EdgePanel.tsx`
   in place of the entity surface. The API tab is enabled for a node or an edge; Detail stays node-only. The tab's
   failure and loading states apply to the edge panel unchanged — an error still outranks the selection.

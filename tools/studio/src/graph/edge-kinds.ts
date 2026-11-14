@@ -41,7 +41,61 @@ export interface StudioEdgeData extends GraphEdgeData {
    */
   parent: string;
   child: string;
+  /**
+   * The line's place in the tree (STUDIO-3, `spine.ts`): `spine` is the one
+   * parent the child hangs under and the only kind of line the layout reads;
+   * `secondary` is every other foreign key, drawn lighter and never ranked.
+   */
+  treeRole: TreeRole;
+  /** Why — `spine: unique FK (1:1)`, `secondary: chart's spine is catalog (…)`. Shown on the line. */
+  treeReason: string;
+  /**
+   * The y of this line's horizontal run, in flow coordinates (#890): each line
+   * between the same two rows gets its own channel, so no two share one bar.
+   * Set by the layout; absent before it, or for a line between cards in one row.
+   */
+  channelY?: number;
 }
+
+export type TreeRole = 'spine' | 'secondary';
+
+export interface TreeRoleStyle {
+  role: TreeRole;
+  /** Legend text. */
+  label: string;
+  description: string;
+  /** Stroke opacity at rest — a secondary line sits back from the tree. */
+  opacity: number;
+  /** Multiplies the kind's stroke width. */
+  widthScale: number;
+  /** The label's opacity — a secondary line's label recedes with it. */
+  labelOpacity: number;
+}
+
+/**
+ * How a line's tree role modifies its kind's stroke. The colour stays the
+ * kind's — a role changes weight, never hue — so this table holds no colour.
+ */
+export const TREE_ROLE_STYLES: Record<TreeRole, TreeRoleStyle> = {
+  spine: {
+    role: 'spine',
+    label: 'spine',
+    description: 'The parent this card hangs under — the only lines the layout reads',
+    opacity: 0.85,
+    widthScale: 1,
+    labelOpacity: 1,
+  },
+  secondary: {
+    role: 'secondary',
+    label: 'secondary',
+    description: 'Every other foreign key — drawn lighter, ignored by the layout',
+    opacity: 0.38,
+    widthScale: 0.7,
+    labelOpacity: 0.7,
+  },
+};
+
+export const TREE_ROLE_ORDER: TreeRole[] = ['spine', 'secondary'];
 
 /**
  * The label of a line that draws a relation and its inverse — `account ⇄

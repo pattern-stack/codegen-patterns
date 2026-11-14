@@ -61,7 +61,8 @@ CLI flattens to strings.
 
 `packages/graph-components` was built (graph-component-library spec) to serve **two** views from one set of
 components — the schema graph and a future instance graph. The Studio's graph pane is the schema view of exactly those
-components on an `@xyflow/react` canvas with `elkjs` layout, the same composition `tools/schema-graph-viewer` uses.
+components on an `@xyflow/react` canvas, the composition `tools/schema-graph-viewer` uses — laid out as a tree on spine
+lines by Studio's own `layout/tree-layout.ts` since STUDIO-3 (the viewer keeps `elkjs`; see CLAUDE.md § Studio).
 When slice 3 adds the data explorer, its instance graph is the second view of the same components, not a new library.
 
 ### Theming — one palette table, two columns (2026-10-04)
@@ -135,6 +136,13 @@ edges become 4 nodes and 4 edges, the extra node is the relationship rather than
 `contact → opportunity` edge is drawn *alongside* the junction's two. So the divergence is gated from both sides:
 anyone "fixing" it meets a test that explains why it is deliberate, rather than one that looks like a stale
 expectation to bump.
+
+**The graph payload's spine signals (STUDIO-3, 2026-11-14).** `SerializedRelationship` carries `onDelete` (the parsed
+`on_delete:`, `restrict` by default; absent only on a junction's synthesized `N:M` edge) and, on a `belongs_to`,
+`fkUnique` — its FK column is unique through a field `unique: true` or a single-column `unique_indexes:` entry (a
+composite entry does not count; the tenant column a `tenant_scoped` entity prefixes does not change the answer). The
+canvas reads both to choose each node's spine parent. The header labels each count by its unit: `entities`,
+`junction files`, `relationship files` and the canvas's `lines (N spine, M secondary)`.
 
 Files are addressed **generically by path**, not per noun (`/api/files/entities%2Fcontact.yaml`, not
 `/api/entities/contact`). That is deliberate: the editor pane is one editor over four kinds of YAML, and a per-noun

@@ -19,8 +19,7 @@ import { EDGE_MARKERS } from './edge-kinds';
 import type { StudioEdgeData } from './edge-kinds';
 import { edgeHighlight, toggleSelection } from './selection';
 import type { Selection } from './selection';
-import { elkLayout } from '../layout/elk-layout';
-import { LoadingState } from '../ui/primitives';
+import { treeLayout } from '../layout/tree-layout';
 
 const nodeTypes: NodeTypes = { schemaNode: SchemaNode };
 
@@ -48,34 +47,22 @@ export interface SchemaCanvasProps {
 /**
  * The model graph.
  *
- * Layout runs off the semantic graph; selection is applied on top of the laid
- * out nodes rather than by re-running elk, so clicking a node dims its
+ * Layout runs off the semantic graph — a tree on the spine lines only
+ * (`../layout/tree-layout`); selection is applied on top of the laid
+ * out nodes rather than by re-running the layout, so clicking a node dims its
  * unrelated neighbours without anything moving. Clicking an edge does the
  * same for the edge: it and its two endpoints stay lit (`selection.ts`).
  */
 export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selection, onSelect }: SchemaCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const [laidOut, setLaidOut] = useState(false);
-  /** Guards against a slow layout landing after a newer one. */
-  const generation = useRef(0);
 
+  // The tree layout is pure and synchronous (`../layout/tree-layout`): a new
+  // graph is laid out in the same pass, so there is no stale layout to guard.
   useEffect(() => {
-    const mine = ++generation.current;
-    if (graphNodes.length === 0) {
-      setNodes([]);
-      setEdges([]);
-      setLaidOut(true);
-      return;
-    }
-
-    setLaidOut(false);
-    void elkLayout(graphNodes, graphEdges).then((result) => {
-      if (generation.current !== mine) return;
-      setNodes(result.nodes);
-      setEdges(result.edges);
-      setLaidOut(true);
-    });
+    const result = treeLayout(graphNodes, graphEdges);
+    setNodes(result.nodes);
+    setEdges(result.edges);
   }, [graphNodes, graphEdges, setNodes, setEdges]);
 
   // Measured, not derived from the window: the inspector and the drawer both
@@ -179,12 +166,6 @@ export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selection, 
           ))}
         </defs>
       </svg>
-
-      {!laidOut && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 10, background: 'var(--s-canvas)' }}>
-          <LoadingState label="Laying out the graph…" />
-        </div>
-      )}
 
       <ReactFlow
         nodes={shownNodes}

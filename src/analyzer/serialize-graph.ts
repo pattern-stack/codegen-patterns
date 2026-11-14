@@ -53,6 +53,16 @@ export interface SerializedRelationship {
   resolved: boolean;
   /** CAP-2 — set when this relationship was derived from a `roles:` entry. */
   role?: string;
+  /** The parsed `on_delete:` (ADR-021); `restrict` by default. Absent on a junction's synthesized edge. */
+  onDelete?: 'restrict' | 'cascade' | 'set_null' | 'no_action';
+  /**
+   * On a `belongs_to` only: its FK column is unique — the field says
+   * `unique: true`, or a `unique_indexes:` entry lists that column and nothing
+   * else. A composite entry does not make the column unique; the tenant column
+   * a `tenant_scoped` entity prefixes onto every unique does not change the
+   * answer (unique per tenant is still one row per parent). See `fkColumnUnique`.
+   */
+  fkUnique?: boolean;
 }
 
 export interface SerializedRelationshipDefinition {
@@ -105,7 +115,10 @@ function serializeFields(fields: Map<string, ParsedField>): Record<string, Seria
  * through this — they used to carry separate field-by-field copies, and the
  * edge copy silently dropped `role` (#698).
  */
-function serializeRelationship(r: ParsedRelationship): SerializedRelationship {
+function serializeRelationship(
+  r: ParsedRelationship,
+  holder: ParsedEntity | undefined,
+): SerializedRelationship {
   return {
     name: r.name,
     type: r.type,
@@ -115,15 +128,33 @@ function serializeRelationship(r: ParsedRelationship): SerializedRelationship {
     through: r.through,
     resolved: r.resolved,
     role: r.role,
+    onDelete: r.onDelete,
+    ...(r.type === 'belongs_to' && holder !== undefined
+      ? { fkUnique: fkColumnUnique(holder, r.foreignKey) }
+      : {}),
   };
 }
 
-function serializeRelationships(
-  rels: Map<string, ParsedRelationship>,
-): Record<string, SerializedRelationship> {
+/**
+ * Whether `column` on `entity` is unique: its field declares `unique: true`, or
+ * a `unique_indexes:` entry lists it alone.
+ *
+ * **A temporary duplicate.** The generator decides the same thing where it
+ * emits the constraints — `fieldUniqueEntries` + `processUniqueIndexes` in
+ * `templates/entity/new/backend/entity-locals.js`, over the raw YAML — and no
+ * function under `src/` owns the rule yet. Until one does, the parity test
+ * (`src/__tests__/analyzer/serialize-graph-fk-unique-parity.test.ts`) holds
+ * this copy equal to what the generator emits.
+ */
+export function fkColumnUnique(entity: ParsedEntity, column: string): boolean {
+  if (entity.fields.get(column)?.unique === true) return true;
+  return entity.uniqueIndexes.some((ui) => ui.fields.length === 1 && ui.fields[0] === column);
+}
+
+function serializeRelationships(entity: ParsedEntity): Record<string, SerializedRelationship> {
   const result: Record<string, SerializedRelationship> = {};
-  for (const [key, r] of rels) {
-    result[key] = serializeRelationship(r);
+  for (const [key, r] of entity.relationships) {
+    result[key] = serializeRelationship(r, entity);
   }
   return result;
 }
@@ -142,7 +173,7 @@ export function serializeDomainGraph(graph: DomainGraph): SerializedDomainGraph 
       patterns: entity.patterns,
       patternConfig: entity.patternConfig,
       fields: serializeFields(entity.fields),
-      relationships: serializeRelationships(entity.relationships),
+      relationships: serializeRelationships(entity),
       behaviors: entity.behaviors,
       queries: entity.queries?.map((q) => ({
         by: q.by,
@@ -186,7 +217,7 @@ export function serializeDomainGraph(graph: DomainGraph): SerializedDomainGraph 
     edges: graph.edges.map((e) => ({
       from: e.from,
       to: e.to,
-      relationship: serializeRelationship(e.relationship),
+      relationship: serializeRelationship(e.relationship, graph.entities.get(e.from)),
       cardinality: e.cardinality,
       bidirectional: e.bidirectional,
     })),
