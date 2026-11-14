@@ -9,7 +9,7 @@
  *
  * This test renders templates/junction/new/entity.ejs.t directly with
  * controlled locals and asserts the emitted composite primary key:
- *   - role-bearing junction → PK includes `table.role`, role column is .notNull()
+ *   - role-bearing junction → PK includes `tCols.role`, role column is .notNull()
  *   - role-less junction    → PK is exactly (leftId, rightId), no role column
  *
  * The full-file snapshots in test/junction/ lock the surrounding shape; this
@@ -65,6 +65,7 @@ function localsFor({ hasRole }: { hasRole: boolean }): Record<string, unknown> {
     name: 'opportunity_contact',
     tableName: 'opportunity_contacts',
     tableVarName: 'opportunityContacts',
+    tableCallbackParam: 'tCols',
     leftEntity: 'opportunity',
     rightEntity: 'contact',
     leftTable: 'opportunities',
@@ -103,10 +104,10 @@ describe('junction identity uniqueness — composite PK includes role discrimina
   it('role-bearing junction: PK is (leftId, rightId, role)', () => {
     const out = render(localsFor({ hasRole: true }));
     expect(out).toContain(
-      'primaryKey({ columns: [table.opportunityId, table.contactId, table.role] })',
+      'primaryKey({ columns: [tCols.opportunityId, tCols.contactId, tCols.role] })',
     );
     // The two-column PK must NOT be emitted for a role-bearing junction.
-    expect(out).not.toContain('primaryKey({ columns: [table.opportunityId, table.contactId] })');
+    expect(out).not.toContain('primaryKey({ columns: [tCols.opportunityId, tCols.contactId] })');
   });
 
   it('role-bearing junction: role column is NOT NULL (it is part of the PK)', () => {
@@ -116,8 +117,8 @@ describe('junction identity uniqueness — composite PK includes role discrimina
 
   it('role-less junction: PK stays (leftId, rightId), no role column', () => {
     const out = render(localsFor({ hasRole: false }));
-    expect(out).toContain('primaryKey({ columns: [table.opportunityId, table.contactId] })');
-    expect(out).not.toContain('table.role');
+    expect(out).toContain('primaryKey({ columns: [tCols.opportunityId, tCols.contactId] })');
+    expect(out).not.toContain('tCols.role');
     expect(out).not.toContain("role:");
   });
 });

@@ -25,15 +25,15 @@ export const communications = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
-  (t) => [
+  (tCols) => [
     // tenant_scoped behavior (ADR-042) — every scoped read filters on tenant_id
-    index('communications_tenant_id_idx').on(t.tenantId),
+    index('communications_tenant_id_idx').on(tCols.tenantId),
     // tenant_scoped — unique per tenant; NULLS NOT DISTINCT, so the NULL tenant is one partition (ADR-042)
-    unique('communications_tenant_id_source_external_id_uniq').on(t.tenantId, t.source, t.externalId).nullsNotDistinct(),
+    unique('communications_tenant_id_source_external_id_uniq').on(tCols.tenantId, tCols.source, tCols.externalId).nullsNotDistinct(),
     // inherits / match: the target of a composite FK (id, kind)
-    unique('communications_id_kind_uniq').on(t.id, t.kind),
+    unique('communications_id_kind_uniq').on(tCols.id, tCols.kind),
     // inherits: the target of every child tenant FK (id, tenant)
-    unique('communications_id_tenant_id_uniq').on(t.id, t.tenantId),
+    unique('communications_id_tenant_id_uniq').on(tCols.id, tCols.tenantId),
   ],
 );
 

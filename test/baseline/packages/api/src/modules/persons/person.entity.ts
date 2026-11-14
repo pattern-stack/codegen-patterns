@@ -24,9 +24,9 @@ export const persons = pgTable(
     nicknames: text('nicknames').array(),
     preferredChannels: personPreferredChannelsEnum('preferred_channels').array().notNull().default(['email']),
   },
-  (t) => [
-    index('persons_tenant_id_idx').on(t.tenantId),
-    index('persons_email_idx').on(t.email),
+  (tCols) => [
+    index('persons_tenant_id_idx').on(tCols.tenantId),
+    index('persons_email_idx').on(tCols.email),
   ],
 );
 

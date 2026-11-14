@@ -91,11 +91,11 @@ describe('the family generates (S2: the DDL)', () => {
 		expect(meeting).not.toContain('pgEnum');
 
 		const base = read(root, 'communications/communication.entity.ts');
-		expect(base).toContain("unique('communications_id_kind_uniq').on(t.id, t.kind)");
-		// a table whose callback reads another table's export names its parameter in camelCase (#813)
+		expect(base).toContain("unique('communications_id_kind_uniq').on(tCols.id, tCols.kind)");
+		// one callback parameter name for every table, camelCase so no plural can equal it (#813)
 		expect(meeting).toContain('(tCols) => [');
-		expect(base).toContain('(t) => [');
-		expect(base).toContain("unique('communications_id_tenant_id_uniq').on(t.id, t.tenantId)");
+		expect(base).toContain('(tCols) => [');
+		expect(base).toContain("unique('communications_id_tenant_id_uniq').on(tCols.id, tCols.tenantId)");
 		expect(base).toContain("export const communicationKindEnum = pgEnum('communication_kind'");
 
 		// a child gets no write use cases or routes until S4 (its inherited create would insert without an id)
@@ -121,9 +121,22 @@ describe('the family generates (S2: the DDL)', () => {
 		// one import statement per module
 		expect(participant).toContain("import { communications, communicationKindEnum } from '../communications/communication.entity';");
 		const role = read(root, 'communication-participant-roles/communication-participant-role.entity.ts');
-		expect(role).toContain("unique('communication_participant_roles_id_kind_uniq').on(t.id, t.kind)");
+		expect(role).toContain("unique('communication_participant_roles_id_kind_uniq').on(tCols.id, tCols.kind)");
 		expect(role).not.toContain('pgEnum'); // choices_of: the owner's type, imported
 		expect(role).toContain("import { communicationKindEnum } from '../communications/communication.entity';");
+	});
+
+	it('a string literal in a raw-SQL predicate is not rewritten (the callback parameter is passed, never patched in)', () => {
+		const root = familyProject('inh-literal', (f) => {
+			f['communication_participant.yaml'] = f['communication_participant.yaml']!
+				.replace('fields:\n', 'fields:\n  note:\n    type: string\n    nullable: true\n')
+				.concat("\nunique_indexes:\n  - name: participant_note_uniq\n    fields: [person_id]\n    where: \"note <> 'https://t.co'\"\n");
+		});
+		expect(run(root, ['entity', 'new', '--all', '--force']).status).toBe(0);
+		const participant = read(root, 'communication-participants/communication-participant.entity.ts');
+		expect(participant).toContain("'https://t.co'");
+		expect(participant).not.toContain('https://tCols.co');
+		expect(participant).toContain('${tCols.note}');
 	});
 
 	it("M2's exception: the discriminator is the matched column, so nothing is derived", () => {

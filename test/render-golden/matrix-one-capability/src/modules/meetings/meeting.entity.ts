@@ -19,8 +19,8 @@ export const meetings = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
-  (t) => [
-    index('meetings_host_contact_id_idx').on(t.hostContactId),
+  (tCols) => [
+    index('meetings_host_contact_id_idx').on(tCols.hostContactId),
   ],
 );
 

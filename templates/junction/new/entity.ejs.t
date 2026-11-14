@@ -87,20 +87,20 @@ export const <%= tableVarName %> = pgTable(
     updatedAt: <%- timestampColumn('updated_at', generatedTimeWithTimezone) %>.notNull().defaultNow(),
 <%_ } _%>
   },
-  (table) => [
+  (<%= tableCallbackParam %>) => [
 <%_ if (hasRole) { _%>
     // Composite primary key on the two FK columns PLUS role (Q4 resolution: no
     // surrogate id). Role is part of the junction's identity — the same pair
     // with two different roles is two distinct rows (e.g. a contact who is both
     // `champion` and `decision_maker` on one opportunity). This is the
     // ON CONFLICT target for integrationUpsert on role-bearing junctions.
-    primaryKey({ columns: [table.<%= leftColumnCamel %>, table.<%= rightColumnCamel %>, table.role] }),
+    primaryKey({ columns: [<%= tableCallbackParam %>.<%= leftColumnCamel %>, <%= tableCallbackParam %>.<%= rightColumnCamel %>, <%= tableCallbackParam %>.role] }),
 <%_ } else { _%>
     // Composite primary key on the two FK columns (Q4 resolution: no surrogate id)
-    primaryKey({ columns: [table.<%= leftColumnCamel %>, table.<%= rightColumnCamel %>] }),
+    primaryKey({ columns: [<%= tableCallbackParam %>.<%= leftColumnCamel %>, <%= tableCallbackParam %>.<%= rightColumnCamel %>] }),
 <%_ } _%>
 <%_ payloadIndexes.forEach(ix => { _%>
-    <%- ix.expr.replace(/\bt\./g, 'table.') %>,
+    <%- ix.expr %>,
 <%_ }) _%>
   ],
 );

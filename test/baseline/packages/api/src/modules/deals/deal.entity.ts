@@ -51,11 +51,11 @@ export const deals = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
   },
-  (t) => [
-    index('deals_owner_id_idx').on(t.ownerId),
-    index('deals_account_id_idx').on(t.accountId),
+  (tCols) => [
+    index('deals_owner_id_idx').on(tCols.ownerId),
+    index('deals_account_id_idx').on(tCols.accountId),
     // external_id_tracking behavior — ON CONFLICT target for integrationUpsert
-    uniqueIndex('uq_deals_provider_external_id').on(t.provider, t.externalId),
+    uniqueIndex('uq_deals_provider_external_id').on(tCols.provider, tCols.externalId),
   ],
 );
 

@@ -14,6 +14,7 @@ import {
 } from '../../../_shared/entity-naming.mjs';
 import { junctionFanOutFor, junctionNaming } from '../../../_shared/junction-fan-out.mjs';
 import { renderSqlPredicate } from '../../../_shared/sql-predicate.mjs';
+import { TABLE_CALLBACK_PARAM as T } from '../../../_shared/table-callback.mjs';
 import {
   checkedIdentifier,
   enumTypeNames,
@@ -952,7 +953,7 @@ export function processFieldFeatures(renderedFields, fields, naming, ownedTables
     if (field.index === true && !(suppressedIndexNames && suppressedIndexNames.has(pf.name))) {
       indexExpressions.push({
         comment: null,
-        expr: `index('${entityTableName}_${pf.name}_idx').on(t.${pf.camelName})`,
+        expr: `index('${entityTableName}_${pf.name}_idx').on(${T}.${pf.camelName})`,
         name: `${entityTableName}_${pf.name}_idx`,
         builder: 'index',
         source: `field '${pf.name}' (index: true)`,
@@ -1052,7 +1053,7 @@ function processUniqueIndexes(
     const nnd = partial ? false : (ui.nulls_not_distinct ?? tenantScoped);
     const cols = tenantScoped ? [tenancy.column, ...ui.fields] : ui.fields;
     const name = ui.name || `${tableName}_${cols.join('_')}_uniq`;
-    const onCols = cols.map((c) => `t.${propByColumn.get(c)}`).join(', ');
+    const onCols = cols.map((c) => `${T}.${propByColumn.get(c)}`).join(', ');
 
     let expr;
     let builder;
@@ -1060,7 +1061,7 @@ function processUniqueIndexes(
     if (partial) {
       let body;
       try {
-        body = renderSqlPredicate(ui.where, lowerColumns);
+        body = renderSqlPredicate(ui.where, lowerColumns, T);
       } catch (err) {
         throw new Error(`${label} where: ${err.message}`);
       }
@@ -2146,7 +2147,7 @@ export function buildBackendLocals(definition, baseLocals) {
     .filter((rel) => rel.hasIndex && !suppressedIndexNames.has(rel.field))
     .map((rel) => ({
       comment: null,
-      expr: `index('${entityTableName}_${rel.field}_idx').on(t.${rel.camelField})`,
+      expr: `index('${entityTableName}_${rel.field}_idx').on(${T}.${rel.camelField})`,
       name: `${entityTableName}_${rel.field}_idx`,
       builder: 'index',
       source: `belongs_to '${rel.field}' index`,
@@ -2167,7 +2168,7 @@ export function buildBackendLocals(definition, baseLocals) {
     // Every scoped read filters on this column, so it is indexed unconditionally.
     tableConstraints.unshift({
       comment: `tenant_scoped behavior (ADR-042) — every scoped read filters on ${tenancy.column}`,
-      expr: `index('${entityTableName}_${tenancy.column}_idx').on(t.${tenancy.prop})`,
+      expr: `index('${entityTableName}_${tenancy.column}_idx').on(${T}.${tenancy.prop})`,
       name: `${entityTableName}_${tenancy.column}_idx`,
       builder: 'index',
       source: 'tenant_scoped',
@@ -2187,7 +2188,7 @@ export function buildBackendLocals(definition, baseLocals) {
               'external_id_tracking + tenant_scoped — per-tenant ON CONFLICT target for integrationUpsert',
             expr:
               `unique('uq_${entityTableName}_tenant_provider_external_id')` +
-              `.on(t.${tenancy.prop}, t.provider, t.externalId).nullsNotDistinct()`,
+              `.on(${T}.${tenancy.prop}, ${T}.provider, ${T}.externalId).nullsNotDistinct()`,
             name: `uq_${entityTableName}_tenant_provider_external_id`,
             builder: 'unique',
             partial: false,
@@ -2196,7 +2197,7 @@ export function buildBackendLocals(definition, baseLocals) {
           }
         : {
             comment: 'external_id_tracking behavior — ON CONFLICT target for integrationUpsert',
-            expr: `uniqueIndex('uq_${entityTableName}_provider_external_id').on(t.provider, t.externalId)`,
+            expr: `uniqueIndex('uq_${entityTableName}_provider_external_id').on(${T}.provider, ${T}.externalId)`,
             name: `uq_${entityTableName}_provider_external_id`,
             builder: 'uniqueIndex',
             partial: false,
@@ -2211,7 +2212,7 @@ export function buildBackendLocals(definition, baseLocals) {
   const fkExpr = (name, columns, targetTable, targetColumns, onDelete) =>
     `foreignKey({\n` +
     `      name: '${name}',\n` +
-    `      columns: [${columns.map((c) => `t.${propOf(c)}`).join(', ')}],\n` +
+    `      columns: [${columns.map((c) => `${T}.${propOf(c)}`).join(', ')}],\n` +
     `      foreignColumns: [${targetColumns.map((c) => `${targetTable}.${propOf(c)}`).join(', ')}],\n` +
     `    }).onDelete('${onDelete}')`;
   // The targets of other tables' composite FKs: unique(id, <cols>), one per column set.
@@ -2220,7 +2221,7 @@ export function buildBackendLocals(definition, baseLocals) {
     const name = checkedIdentifier(`${entityTableName}_id_${u.columns.join('_')}_uniq`, entityName, 'unique constraint');
     tableConstraints.push({
       comment: `inherits / match: the target of a composite FK (id, ${u.columns.join(', ')})`,
-      expr: `unique('${name}').on(t.id, ${u.columns.map((c) => `t.${propOf(c)}`).join(', ')})`,
+      expr: `unique('${name}').on(${T}.id, ${u.columns.map((c) => `${T}.${propOf(c)}`).join(', ')})`,
       name,
       builder: 'unique',
       partial: false,
@@ -2232,7 +2233,7 @@ export function buildBackendLocals(definition, baseLocals) {
     const name = checkedIdentifier(`${entityTableName}_id_${tenantForUnique.column}_uniq`, entityName, 'unique constraint');
     tableConstraints.push({
       comment: 'inherits: the target of every child tenant FK (id, tenant)',
-      expr: `unique('${name}').on(t.id, t.${tenantForUnique.prop})`,
+      expr: `unique('${name}').on(${T}.id, ${T}.${tenantForUnique.prop})`,
       name,
       builder: 'unique',
       partial: false,
@@ -2249,7 +2250,6 @@ export function buildBackendLocals(definition, baseLocals) {
       expr: fkExpr(name, [rel.field, ...fk.pairs.map(([l]) => l)], rel.relatedTable, ['id', ...fk.pairs.map(([, t]) => t)], rel.onDelete),
       name,
       builder: 'foreignKey',
-      readsTable: true,
       source: `match: on relationship '${fk.relName}'`,
     });
   }
@@ -2261,7 +2261,7 @@ export function buildBackendLocals(definition, baseLocals) {
       const t = inheritedChild.tenant;
       tableConstraints.unshift({
         comment: `inherits: the tenant column comes from the base (${baseName}), indexed like any tenant-scoped table`,
-        expr: `index('${entityTableName}_${t.column}_idx').on(t.${t.prop})`,
+        expr: `index('${entityTableName}_${t.column}_idx').on(${T}.${t.prop})`,
         name: `${entityTableName}_${t.column}_idx`,
         builder: 'index',
         source: 'inherits: tenant column',
@@ -2273,7 +2273,6 @@ export function buildBackendLocals(definition, baseLocals) {
       expr: fkExpr(kindFk, ['id', disc], inheritedChild.baseTable, ['id', disc], 'cascade'),
       name: kindFk,
       builder: 'foreignKey',
-      readsTable: true,
       source: 'inherits: kind FK',
     });
     if (inheritedChild.tenant) {
@@ -2284,29 +2283,17 @@ export function buildBackendLocals(definition, baseLocals) {
         expr: fkExpr(tenantFk, ['id', t.column], inheritedChild.baseTable, ['id', t.column], 'cascade'),
         name: tenantFk,
         builder: 'foreignKey',
-        readsTable: true,
-        source: 'inherits: tenant FK',
+          source: 'inherits: tenant FK',
       });
     }
     const checkName = checkedIdentifier(`${entityTableName}_${disc}_check`, entityName, 'check constraint');
     tableConstraints.push({
       comment: `inherits ${baseName}: the kind is fixed (DEFAULT + CHECK, not a generated column)`,
-      expr: `check('${checkName}', sql\`\${t.${inheritedChild.kind.prop}} = '${inheritedChild.as}'\`)`,
+      expr: `check('${checkName}', sql\`\${${T}.${inheritedChild.kind.prop}} = '${inheritedChild.as}'\`)`,
       name: checkName,
       builder: 'check',
       source: 'inherits: kind CHECK',
     });
-  }
-
-  // Emitted-name hygiene (#813): a function that reads a table export by name
-  // declares no binding a plural could equal, and every plural is all-lowercase
-  // snake_case. A composite FK reads the OTHER table's export inside the
-  // `(t) => [...]` callback, so a table that has one names its parameter in
-  // camelCase (`tCols`) and every entry follows. Every other table keeps `t`.
-  const readsForeignTable = tableConstraints.some((c) => c.readsTable === true);
-  const tableCallbackParam = readsForeignTable ? 'tCols' : 't';
-  if (readsForeignTable) {
-    for (const c of tableConstraints) c.expr = c.expr.replace(/\bt\./g, `${tableCallbackParam}.`);
   }
 
   for (const c of tableConstraints) {
@@ -2842,7 +2829,7 @@ export function buildBackendLocals(definition, baseLocals) {
     fieldFkImports,
     belongsToTableImports,
     tableConstraints,
-    tableCallbackParam,
+    tableCallbackParam: T,
 
     // RFC-0006 (#875): joined-table inheritance and `match:` DDL.
     inheritanceImports,

@@ -18,10 +18,10 @@ export const organizations = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     domain: varchar('domain', { length: 255 }),
   },
-  (t) => [
-    index('organizations_parent_id_idx').on(t.parentId),
-    index('organizations_tenant_id_idx').on(t.tenantId),
-    index('organizations_domain_idx').on(t.domain),
+  (tCols) => [
+    index('organizations_parent_id_idx').on(tCols.parentId),
+    index('organizations_tenant_id_idx').on(tCols.tenantId),
+    index('organizations_domain_idx').on(tCols.domain),
   ],
 );
 

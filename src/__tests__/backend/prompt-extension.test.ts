@@ -1014,7 +1014,7 @@ describe('roles: → belongs_to emission (CAP-2)', () => {
     expect(host.nullable).toBe(false);
     expect(
       locals.tableConstraints.map((c: { expr: string }) => c.expr),
-    ).toContain("index('meetings_host_contact_id_idx').on(t.hostContactId)");
+    ).toContain("index('meetings_host_contact_id_idx').on(tCols.hostContactId)");
   });
 
   it('two one-roles to the same target get two distinct relation keys', async () => {

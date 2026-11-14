@@ -34,6 +34,7 @@ import { loadRuntimeMode, runtimeImport } from "../../../src/config/runtime-mode
 import { processFieldFeatures, processFields } from "../../entity/new/backend/entity-locals.js";
 import { loadOwnedTableNames } from "../../entity/new/prompt.js";
 import { configOrDefaults, loadProjectConfig } from "../../../src/config/project-config.js";
+import { TABLE_CALLBACK_PARAM } from "../../_shared/table-callback.mjs";
 import { junctionTableName } from "../../../src/config/junction-naming.js";
 
 // ============================================================================
@@ -479,6 +480,7 @@ export default {
       entityNamePluralPascal,
       tableName,
       tableVarName,
+      tableCallbackParam: TABLE_CALLBACK_PARAM,
 
       // Pairing endpoints
       between: config.between,

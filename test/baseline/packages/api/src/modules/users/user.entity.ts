@@ -18,9 +18,9 @@ export const users = pgTable(
     tenantId: uuid('tenant_id').notNull().references((): AnyPgColumn => tenants.id),
     email: varchar('email', { length: 255 }).notNull(),
   },
-  (t) => [
-    index('users_tenant_id_idx').on(t.tenantId),
-    index('users_email_idx').on(t.email),
+  (tCols) => [
+    index('users_tenant_id_idx').on(tCols.tenantId),
+    index('users_email_idx').on(tCols.email),
   ],
 );
 

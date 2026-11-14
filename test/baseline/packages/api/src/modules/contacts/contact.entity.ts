@@ -41,11 +41,11 @@ export const contacts = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
   },
-  (t) => [
-    index('contacts_account_id_idx').on(t.accountId),
-    index('contacts_user_id_idx').on(t.userId),
+  (tCols) => [
+    index('contacts_account_id_idx').on(tCols.accountId),
+    index('contacts_user_id_idx').on(tCols.userId),
     // external_id_tracking behavior — ON CONFLICT target for integrationUpsert
-    uniqueIndex('uq_contacts_provider_external_id').on(t.provider, t.externalId),
+    uniqueIndex('uq_contacts_provider_external_id').on(tCols.provider, tCols.externalId),
   ],
 );
 

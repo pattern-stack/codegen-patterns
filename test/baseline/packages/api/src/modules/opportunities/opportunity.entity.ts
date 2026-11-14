@@ -29,11 +29,11 @@ export const opportunities = pgTable(
     expectedCloseDate: date('expected_close_date', { mode: 'date' }),
     closedAt: timestamp('closed_at', { withTimezone: true, mode: 'date' }),
   },
-  (t) => [
-    index('opportunities_organization_id_idx').on(t.organizationId),
-    index('opportunities_owner_id_idx').on(t.ownerId),
-    index('opportunities_state_id_idx').on(t.stateId),
-    index('opportunities_tenant_id_idx').on(t.tenantId),
+  (tCols) => [
+    index('opportunities_organization_id_idx').on(tCols.organizationId),
+    index('opportunities_owner_id_idx').on(tCols.ownerId),
+    index('opportunities_state_id_idx').on(tCols.stateId),
+    index('opportunities_tenant_id_idx').on(tCols.tenantId),
   ],
 );
 

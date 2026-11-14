@@ -22,9 +22,9 @@ export const leads = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
-  (t) => [
+  (tCols) => [
     // external_id_tracking behavior — ON CONFLICT target for integrationUpsert
-    uniqueIndex('uq_leads_provider_external_id').on(t.provider, t.externalId),
+    uniqueIndex('uq_leads_provider_external_id').on(tCols.provider, tCols.externalId),
   ],
 );
 
