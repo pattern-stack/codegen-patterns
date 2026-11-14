@@ -1,0 +1,33 @@
+{
+	"case": "matrix-api-false",
+	"covers": "`api: false` and `api: { enabled: false }` — no controller, everything else kept",
+	"relations": [
+		{
+			"id": "sync_cursor.relationships.account",
+			"from": "sync_cursor",
+			"to": "account",
+			"kind": "belongs_to",
+			"generates": [
+				{
+					"entity": "sync_cursor",
+					"layer": "repository",
+					"method": "findByAccountId"
+				},
+				{
+					"entity": "sync_cursor",
+					"layer": "service",
+					"method": "account"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "sync_cursors",
+					"key": "account"
+				}
+			]
+		}
+	],
+	"unmodelled": [],
+	"warnings": [],
+	"includes": {}
+}

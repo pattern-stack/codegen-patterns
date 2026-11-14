@@ -1,0 +1,105 @@
+{
+	"case": "matrix-writes-false",
+	"covers": "`generate.writes: false` — no write use cases or routes; a search beside it",
+	"relations": [
+		{
+			"id": "project.relationships.account",
+			"from": "project",
+			"to": "account",
+			"kind": "belongs_to",
+			"generates": [
+				{
+					"entity": "project",
+					"layer": "repository",
+					"method": "findByAccountId"
+				},
+				{
+					"entity": "project",
+					"layer": "service",
+					"method": "account"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "projects",
+					"key": "account"
+				}
+			]
+		},
+		{
+			"id": "project.relationships.tasks",
+			"from": "project",
+			"to": "task",
+			"kind": "has_many",
+			"inverseOf": "task.relationships.project",
+			"generates": [
+				{
+					"entity": "project",
+					"layer": "service",
+					"method": "tasks"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "projects",
+					"key": "tasks"
+				}
+			]
+		},
+		{
+			"id": "task.relationships.project",
+			"from": "task",
+			"to": "project",
+			"kind": "belongs_to",
+			"inverseOf": "project.relationships.tasks",
+			"generates": [
+				{
+					"entity": "task",
+					"layer": "repository",
+					"method": "findByProjectId"
+				},
+				{
+					"entity": "task",
+					"layer": "service",
+					"method": "project"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "tasks",
+					"key": "project"
+				}
+			]
+		}
+	],
+	"unmodelled": [],
+	"warnings": [],
+	"includes": {
+		"project": [
+			{
+				"route": "find_by_id",
+				"maxDepth": 1,
+				"paths": [
+					{
+						"path": "account",
+						"depth": 1
+					},
+					{
+						"path": "tasks",
+						"depth": 1
+					}
+				]
+			},
+			{
+				"route": "list",
+				"maxDepth": 1,
+				"paths": [
+					{
+						"path": "account",
+						"depth": 1
+					}
+				]
+			}
+		]
+	}
+}

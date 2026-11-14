@@ -8,6 +8,7 @@
  *   - codegen project config    print resolved config (YAML or JSON)
  *   - codegen project inspect   legacy analyze/stats/doc/manifest/suggestions
  *   - codegen project graph     visualize entity-relationship graph in browser
+ *   - codegen project surface   the derived backend API surface (ADR-046)
  *
  * Legacy verbs (`analyze`, `stats`, `doc`, `manifest`, `suggestions`) from
  * `src/cli.ts` are hosted under `codegen project inspect --kind <k>` to keep
@@ -63,6 +64,9 @@ import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
 import { TablesConfigSchema, TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
+import { deriveProjectApiSurface, loadProjectApiContext } from '../../derived/api/project.js';
+import type { EntityApiSurface, ProjectApiSurface } from '../../derived/api/types.js';
+import type { RelationsConfigInput } from '../../emitters/relations/load-context.js';
 
 // ---------------------------------------------------------------------------
 // summary + hints
@@ -915,6 +919,124 @@ export class ProjectGraphCommand extends Command {
 }
 
 // ---------------------------------------------------------------------------
+// ProjectSurfaceCommand
+// ---------------------------------------------------------------------------
+
+export class ProjectSurfaceCommand extends Command {
+	static paths = [['project', 'surface']];
+	static usage = Command.Usage({
+		description: 'Print the derived backend API surface — every generated method, use case and route, with the YAML that caused it (ADR-046)',
+		examples: [
+			['Print a table per entity', 'codegen project surface'],
+			['One entity only', 'codegen project surface --entity contact'],
+			['Machine-readable', 'codegen project surface --json'],
+		],
+	});
+
+	entity = Option.String('--entity', { required: false });
+	json = Option.Boolean('--json', false);
+	cwd = Option.String('--cwd', { required: false });
+	configPath = Option.String('--config', { required: false });
+
+	async execute(): Promise<number> {
+		if (this.json) setJsonMode(true);
+		const ctx = await loadContext({
+			cwd: this.cwd,
+			configPath: this.configPath,
+			json: this.json,
+			skipDetection: true,
+		});
+
+		const entitiesDir = projectLayout(ctx.cwd, ctx.config).entities;
+		if (!fs.existsSync(entitiesDir)) {
+			printError(`Entity directory not found: ${entitiesDir}`);
+			return 1;
+		}
+
+		// App patterns decide an entity's base classes and inherited methods — load them first, as every
+		// whole-set step does, or an app pattern's entity derives against `Base`.
+		const loadErrors = await loadAppPatternsForCli(ctx);
+		if (loadErrors.length > 0) {
+			printError(
+				'app patterns could not be loaded, so the surface they contribute cannot be derived:\n' +
+					loadErrors.map((e) => `  ${e.file}: ${e.message}`).join('\n'),
+			);
+			return 1;
+		}
+
+		let surface: ProjectApiSurface;
+		try {
+			surface = deriveProjectApiSurface(
+				loadProjectApiContext(ctx.cwd, ctx.config as RelationsConfigInput | null | undefined, {
+					entitiesDir,
+					junctionsDir: junctionsDirFor(ctx.cwd),
+					// Where `relationship new` writes and `entity new` reads them.
+					relationshipsDir: path.resolve(ctx.cwd, 'relationships'),
+				}),
+			);
+		} catch (err) {
+			printError(err instanceof Error ? err.message : String(err));
+			return 1;
+		}
+
+		if (this.entity) {
+			const one = surface.entities[this.entity];
+			if (!one) {
+				printError(`No entity '${this.entity}' in ${entitiesDir}`);
+				return 1;
+			}
+			surface = { ...surface, entities: { [this.entity]: one } };
+		}
+
+		if (isJsonMode()) {
+			printJson({ command: 'project surface', entities: Object.keys(surface.entities).length, surface });
+			return 0;
+		}
+
+		for (const s of Object.values(surface.entities)) printEntitySurface(s);
+		for (const w of surface.warnings) printWarning(w);
+		for (const u of surface.unmodelled) printInfo(`unmodelled ${u.kind} ${u.name}: ${u.reason}`);
+		return 0;
+	}
+}
+
+function originLabel(origin: EntityApiSurface['service']['methods'][number]['origin']): string {
+	switch (origin.from) {
+		case 'base':
+			return 'base';
+		case 'pattern':
+			return `pattern ${origin.pattern}`;
+		case 'capability':
+			return `capability ${origin.capability}`;
+		case 'yaml': {
+			const at = `${origin.at.doc.kind === 'junction' ? 'junction ' : ''}${origin.at.doc.name}.${origin.at.path.join('.')}`;
+			const shadows = (origin.shadows ?? []).map((s) => s.path.join('.'));
+			return shadows.length > 0 ? `${at} (shadows ${shadows.join(', ')})` : at;
+		}
+	}
+}
+
+function printEntitySurface(s: EntityApiSurface): void {
+	const rows: [string, string, string, string][] = [];
+	for (const m of s.repository.methods) {
+		rows.push([`${s.repository.className}.${m.name}`, m.kind, '', originLabel(m.origin)]);
+	}
+	for (const m of s.service.methods) {
+		const to = m.delegatesTo ? `→ ${m.delegatesTo.entity}.${m.delegatesTo.method}` : '';
+		rows.push([`${s.service.className}.${m.name}`, m.kind, to, originLabel(m.origin)]);
+	}
+	for (const u of s.useCases) rows.push([u.className, u.kind, `→ ${u.calls.method}`, originLabel(u.origin)]);
+	for (const r of s.http.routes) rows.push([`${r.verb} ${r.path}`, 'route', r.handler, originLabel(r.origin)]);
+
+	const widths = [0, 1, 2].map((i) => Math.max(...rows.map((r) => r[i].length)));
+	console.log('');
+	console.log(theme.system(s.entity) + theme.muted(`  ${s.repository.baseClass} / ${s.service.baseClass}${s.http.enabled ? '' : '  (http off)'}`));
+	for (const r of rows) {
+		console.log(`  ${r[0].padEnd(widths[0] ?? 0)}  ${theme.muted(r[1].padEnd(widths[1] ?? 0))}  ${r[2].padEnd(widths[2] ?? 0)}  ${theme.muted(r[3])}`);
+	}
+}
+
+// ---------------------------------------------------------------------------
 // NounModule default export
 // ---------------------------------------------------------------------------
 
@@ -926,6 +1048,7 @@ const projectNoun: NounModule = {
 		ProjectConfigCommand,
 		ProjectInspectCommand,
 		ProjectGraphCommand,
+		ProjectSurfaceCommand,
 		ProjectUpgradeOpenapiCommand,
 		ProjectUpgradeAuthCommand,
 		ProjectUpdateCommand,

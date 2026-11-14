@@ -1,6 +1,6 @@
 # ADR-046 — Generated API names are derived once; templates print them
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-14, at sign-off S1 of the plan)
 **Date:** 2026-11-13
 **Owner:** Doug
 **Related:** ADR-038 (whole-set emitter), ADR-044 §5 (both sides project from one declared graph), ADR-041

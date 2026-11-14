@@ -1,0 +1,331 @@
+{
+	"relations": [
+		{
+			"id": "contact.relationships.account",
+			"from": "contact",
+			"to": "account",
+			"kind": "belongs_to",
+			"generates": [
+				{
+					"entity": "contact",
+					"layer": "repository",
+					"method": "findByAccountId"
+				},
+				{
+					"entity": "contact",
+					"layer": "service",
+					"method": "account"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "contacts",
+					"key": "account"
+				}
+			]
+		},
+		{
+			"id": "contact.relationships.user",
+			"from": "contact",
+			"to": "user",
+			"kind": "belongs_to",
+			"generates": [
+				{
+					"entity": "contact",
+					"layer": "repository",
+					"method": "findByUserId"
+				},
+				{
+					"entity": "contact",
+					"layer": "service",
+					"method": "user"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "contacts",
+					"key": "user"
+				}
+			]
+		},
+		{
+			"id": "deal_state.relationships.opportunities",
+			"from": "deal_state",
+			"to": "opportunity",
+			"kind": "has_many",
+			"inverseOf": "opportunity.relationships.state",
+			"generates": [
+				{
+					"entity": "deal_state",
+					"layer": "service",
+					"method": "opportunities"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "deal_states",
+					"key": "opportunities"
+				}
+			]
+		},
+		{
+			"id": "deal.relationships.account",
+			"from": "deal",
+			"to": "account",
+			"kind": "belongs_to",
+			"generates": [
+				{
+					"entity": "deal",
+					"layer": "repository",
+					"method": "findByAccountId"
+				},
+				{
+					"entity": "deal",
+					"layer": "service",
+					"method": "account"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "deals",
+					"key": "account"
+				}
+			]
+		},
+		{
+			"id": "deal.relationships.closer",
+			"from": "deal",
+			"to": "user",
+			"kind": "belongs_to",
+			"generates": [
+				{
+					"entity": "deal",
+					"layer": "repository",
+					"method": "findByClosedById"
+				},
+				{
+					"entity": "deal",
+					"layer": "service",
+					"method": "closer"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "deals",
+					"key": "closer"
+				}
+			]
+		},
+		{
+			"id": "deal.relationships.owner",
+			"from": "deal",
+			"to": "user",
+			"kind": "belongs_to",
+			"generates": [
+				{
+					"entity": "deal",
+					"layer": "repository",
+					"method": "findByOwnerId"
+				},
+				{
+					"entity": "deal",
+					"layer": "service",
+					"method": "owner"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "deals",
+					"key": "owner"
+				}
+			]
+		},
+		{
+			"id": "opportunity.relationships.organization",
+			"from": "opportunity",
+			"to": "organization",
+			"kind": "belongs_to",
+			"inverseOf": "organization.relationships.opportunities",
+			"generates": [
+				{
+					"entity": "opportunity",
+					"layer": "repository",
+					"method": "findByOrganizationId"
+				},
+				{
+					"entity": "opportunity",
+					"layer": "service",
+					"method": "organization"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "opportunities",
+					"key": "organization"
+				}
+			]
+		},
+		{
+			"id": "opportunity.relationships.owner",
+			"from": "opportunity",
+			"to": "user",
+			"kind": "belongs_to",
+			"inverseOf": "user.relationships.owned_opportunities",
+			"generates": [
+				{
+					"entity": "opportunity",
+					"layer": "repository",
+					"method": "findByOwnerId"
+				},
+				{
+					"entity": "opportunity",
+					"layer": "service",
+					"method": "owner"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "opportunities",
+					"key": "owner"
+				}
+			]
+		},
+		{
+			"id": "opportunity.relationships.state",
+			"from": "opportunity",
+			"to": "deal_state",
+			"kind": "belongs_to",
+			"inverseOf": "deal_state.relationships.opportunities",
+			"generates": [
+				{
+					"entity": "opportunity",
+					"layer": "repository",
+					"method": "findByStateId"
+				},
+				{
+					"entity": "opportunity",
+					"layer": "service",
+					"method": "state"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "opportunities",
+					"key": "state"
+				}
+			]
+		},
+		{
+			"id": "organization.relationships.children",
+			"from": "organization",
+			"to": "organization",
+			"kind": "has_many",
+			"inverseOf": "organization.relationships.parent",
+			"generates": [
+				{
+					"entity": "organization",
+					"layer": "service",
+					"method": "children"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "organizations",
+					"key": "children"
+				}
+			]
+		},
+		{
+			"id": "organization.relationships.opportunities",
+			"from": "organization",
+			"to": "opportunity",
+			"kind": "has_many",
+			"inverseOf": "opportunity.relationships.organization",
+			"generates": [
+				{
+					"entity": "organization",
+					"layer": "service",
+					"method": "opportunities"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "organizations",
+					"key": "opportunities"
+				}
+			]
+		},
+		{
+			"id": "organization.relationships.parent",
+			"from": "organization",
+			"to": "organization",
+			"kind": "belongs_to",
+			"inverseOf": "organization.relationships.children",
+			"generates": [
+				{
+					"entity": "organization",
+					"layer": "repository",
+					"method": "findByParentId"
+				},
+				{
+					"entity": "organization",
+					"layer": "service",
+					"method": "parent"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "organizations",
+					"key": "parent"
+				}
+			]
+		},
+		{
+			"id": "user.relationships.owned_opportunities",
+			"from": "user",
+			"to": "opportunity",
+			"kind": "has_many",
+			"inverseOf": "opportunity.relationships.owner",
+			"generates": [
+				{
+					"entity": "user",
+					"layer": "service",
+					"method": "owned_opportunities"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "users",
+					"key": "ownedOpportunities"
+				}
+			]
+		},
+		{
+			"id": "user.relationships.person",
+			"from": "user",
+			"to": "person",
+			"kind": "belongs_to",
+			"generates": [
+				{
+					"entity": "user",
+					"layer": "repository",
+					"method": "findByPersonId"
+				},
+				{
+					"entity": "user",
+					"layer": "service",
+					"method": "person"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "users",
+					"key": "person"
+				}
+			]
+		}
+	],
+	"unmodelled": [],
+	"warnings": [],
+	"includes": {}
+}

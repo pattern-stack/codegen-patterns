@@ -1,0 +1,28 @@
+{
+	"case": "matrix-two-capabilities",
+	"covers": "two capabilities (Actor + Communication): the composed base",
+	"relations": [
+		{
+			"id": "team.roles.lead",
+			"from": "team",
+			"to": "contact",
+			"kind": "role",
+			"generates": [
+				{
+					"entity": "team",
+					"layer": "repository",
+					"method": "findByLeadContactId"
+				},
+				{
+					"entity": "team",
+					"layer": "service",
+					"method": "lead"
+				}
+			],
+			"includeKeys": []
+		}
+	],
+	"unmodelled": [],
+	"warnings": [],
+	"includes": {}
+}

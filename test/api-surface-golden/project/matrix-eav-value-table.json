@@ -1,0 +1,8 @@
+{
+	"case": "matrix-eav-value-table",
+	"covers": "`eav_value_table: true` — upsertCurrentValues and the compound write",
+	"relations": [],
+	"unmodelled": [],
+	"warnings": [],
+	"includes": {}
+}

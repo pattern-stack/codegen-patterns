@@ -1,0 +1,54 @@
+{
+	"case": "matrix-self-fk",
+	"covers": "a self-referential belongs_to and has_many",
+	"relations": [
+		{
+			"id": "category.relationships.children",
+			"from": "category",
+			"to": "category",
+			"kind": "has_many",
+			"inverseOf": "category.relationships.parent",
+			"generates": [
+				{
+					"entity": "category",
+					"layer": "service",
+					"method": "children"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "categories",
+					"key": "children"
+				}
+			]
+		},
+		{
+			"id": "category.relationships.parent",
+			"from": "category",
+			"to": "category",
+			"kind": "belongs_to",
+			"inverseOf": "category.relationships.children",
+			"generates": [
+				{
+					"entity": "category",
+					"layer": "repository",
+					"method": "findByParentCategoryId"
+				},
+				{
+					"entity": "category",
+					"layer": "service",
+					"method": "parentCategory"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "categories",
+					"key": "parent"
+				}
+			]
+		}
+	],
+	"unmodelled": [],
+	"warnings": [],
+	"includes": {}
+}

@@ -1,0 +1,27 @@
+D4 pre-flight (api-surface S1, decision D4) — run 2026-11-14 against dugshub/api-surface-a1 @ 820e87b6
+(generator code identical to main @ 074cce00: Phase A changes no template). Scratch project outside the repo;
+same scaffold as f7-preflight/run-f7.ts. Usage: bun run-d4.ts <repoRoot> <workDir>
+
+W0 — control — field_value declares pattern: Metadata (the documented shape)
+  entity validate: exit 0 (valid=true errors=0 warnings=0)
+  entity new --all: exit 0
+  tsc: exit 0, 0 error(s)
+
+
+W1 — D4 — field_value declares no pattern (Base)
+  entity validate: exit 0 (valid=true errors=0 warnings=0)
+  entity new --all: exit 0
+  tsc: exit 2, 4 error(s)
+    src/modules/field-values/field-value.service.ts(107,23): error TS2339: Property 'findByEntityIdAndType' does not exist on type 'FieldValueRepository'.
+    src/modules/field-values/field-value.service.ts(110,34): error TS7006: Parameter 'd' implicitly has an 'any' type.
+    src/modules/field-values/field-value.service.ts(111,40): error TS7006: Parameter 'd' implicitly has an 'any' type.
+    src/modules/field-values/field-value.service.ts(112,38): error TS2345: Argument of type 'Map<unknown, unknown>' is not assignable to parameter of type 'ReadonlyMap<string, { key: string; }>'.
+
+W2 — D4 — field_value declares pattern: Integrated
+  entity validate: exit 0 (valid=true errors=0 warnings=0)
+  entity new --all: exit 0
+  tsc: exit 2, 4 error(s)
+    src/modules/field-values/field-value.service.ts(108,23): error TS2339: Property 'findByEntityIdAndType' does not exist on type 'FieldValueRepository'.
+    src/modules/field-values/field-value.service.ts(111,34): error TS7006: Parameter 'd' implicitly has an 'any' type.
+    src/modules/field-values/field-value.service.ts(112,40): error TS7006: Parameter 'd' implicitly has an 'any' type.
+    src/modules/field-values/field-value.service.ts(113,38): error TS2345: Argument of type 'Map<unknown, unknown>' is not assignable to parameter of type 'ReadonlyMap<string, { key: string; }>'.
