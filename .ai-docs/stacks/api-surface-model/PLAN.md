@@ -1,6 +1,6 @@
 # PLAN — backend API-surface derivation (slice 1) + Studio API view
 
-**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · A0, A1, A2 built · S1 signed off 2026-11-14
+**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · A0–A3 built · S1 signed off 2026-11-14
 **Basis:** `main` @ `c1ceeefd`. READ-1 merged 2026-11-12 (#859 and the ten PRs under it). Every `path:line`
 below was taken at the READ-1 tip `e9fe6f5f`; every cited file is byte-identical on `main` (checked one by one
 with `git diff --quiet e9fe6f5f c1ceeefd -- <file>`), so the line numbers hold.
@@ -793,7 +793,7 @@ Run `just studio-demo` first (no Docker, no network; writes the git-ignored `.st
 |---|---|
 | `git diff --stat $BASE_A..HEAD -- templates package.json test/baseline` | empty |
 | `just test-studio` | exit 0; the e2e's stage list includes the new `GET /api/surface` stage |
-| the e2e asserts, by exact value | every A2 row above, over HTTP; **and** after the demo relationship is written, `unmodelled` contains `{ name: 'contact_opportunity', kind: 'relationship' }` |
+| the e2e asserts, by exact value | every A2 row above, over HTTP; **and** after the demo relationship is written, `unmodelled` contains `{ name: 'contact_opportunity', kind: 'relationship' }`. *As built:* stages `2b` and `9b` (existing numbers unchanged); `9b` asserts `unmodelled` projected to `{ name, kind }` **equals** that one entry (stricter than contains; `reason` is free text and not pinned). `getSurface` reuses `CliFailureError` (a 502 with the CLI's detail) and also fails a payload without `surface`. STUDIO-0 §3's route table gains the row. |
 | `grep -nE '^import ' src/studio/shared/api.ts \| grep -v 'import type'` | no output (contract stays types-only) |
 | `grep -n "spawn(" src/studio/server/surface.ts` | no output (only `cli-runner.ts` spawns) |
 

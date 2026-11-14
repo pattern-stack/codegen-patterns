@@ -42,6 +42,28 @@ export interface GraphResponse {
 }
 
 // ---------------------------------------------------------------------------
+// GET /api/surface (STUDIO-2, ADR-046)
+// ---------------------------------------------------------------------------
+
+export type {
+	EntityApiSurface,
+	Origin,
+	ProjectApiSurface,
+	RelationApiSurface,
+	YamlRef,
+} from '../../derived/api/types.js';
+import type { ProjectApiSurface } from '../../derived/api/types.js';
+
+/**
+ * `codegen project surface --json`'s `surface` payload — the generator's own
+ * derivation of every generated method, route and relation, re-exported here
+ * rather than mirrored.
+ */
+export interface SurfaceResponse {
+	surface: ProjectApiSurface;
+}
+
+// ---------------------------------------------------------------------------
 // GET /api/files, GET|PUT /api/files/:path
 // ---------------------------------------------------------------------------
 
