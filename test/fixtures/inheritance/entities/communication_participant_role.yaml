@@ -1,0 +1,18 @@
+# RFC-0006 §2.4 case 2 — the lookup. `kind` shares communication.kind's enum.
+
+entity:
+  name: communication_participant_role
+  plural: communication_participant_roles
+
+fields:
+  kind:
+    type: enum
+    choices_of: communication.kind
+    required: true
+  role:
+    type: string
+    required: true
+    max_length: 32
+
+unique_indexes:
+  - fields: [kind, role]

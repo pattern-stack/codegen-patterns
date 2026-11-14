@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { TENANT_COLUMN_PATTERN } from "./tenancy.js";
+import { inheritanceIssues } from "./inheritance.js";
+
+/** An entity name as written in YAML: snake_case. */
+const ENTITY_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
 import { TABLE_NAME_IS_NOT_A_KEY, TABLE_NAME_PATTERN, TABLE_PREFIX_PATTERN } from "../config/table-naming.js";
 import { reservedGlobalFor, reservedNameMessage } from "./reserved-entity-names.js";
 import { roleForeignKey } from "../roles/derive.js";
@@ -230,6 +234,18 @@ const BaseFieldSchema = z.object({
   // Mutually exclusive with choices - parser loads file and extracts keys
   choices_from: z.string().optional(),
 
+  // Same Postgres enum type as another entity's enum field (RFC-0006 §2.4, #875):
+  // `<entity>.<field>`. The owner's `pgEnum` is imported, none is declared here.
+  // Whether the target exists and holds literal `choices:` is cross-entity
+  // (`src/parser/validate-inheritance.ts`).
+  choices_of: z
+    .string()
+    .regex(
+      /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/,
+      "'choices_of' must be '<entity>.<field>' (snake_case), e.g. 'communication.kind'",
+    )
+    .optional(),
+
   // Entity reference: allowed entity types for polymorphic refs
   // Required when type is 'entity_ref'
   allowed_types: z.array(z.string()).optional(),
@@ -348,17 +364,36 @@ export const FieldDefinitionSchema = BaseFieldSchema.merge(UiMetadataSchema)
   )
   .refine(
     (data) => {
-      // enum type requires either choices or choices_from
-      if (data.type === "enum" && !data.choices?.length && !data.choices_from) {
+      // enum type requires either choices, choices_from or choices_of
+      if (
+        data.type === "enum" &&
+        !data.choices?.length &&
+        !data.choices_from &&
+        !data.choices_of
+      ) {
         return false;
       }
       return true;
     },
     {
-      message: "'enum' type requires either 'choices' or 'choices_from'",
+      message: "'enum' type requires one of 'choices', 'choices_from' or 'choices_of'",
       path: ["choices"],
     },
   )
+  .refine(
+    (data) =>
+      data.choices_of === undefined ||
+      (data.choices === undefined && data.choices_from === undefined),
+    {
+      message:
+        "'choices_of' takes its values from another entity's enum, so it cannot be combined with 'choices' or 'choices_from'",
+      path: ["choices_of"],
+    },
+  )
+  .refine((data) => data.choices_of === undefined || data.type === "enum", {
+    message: "'choices_of' is only valid on 'type: enum' fields",
+    path: ["choices_of"],
+  })
   // --------------------------------------------------------------------------
   // Analytics field tags (SEM-1). Rules F1-F7 of docs/specs/SEM-1.md.
   // --------------------------------------------------------------------------
@@ -457,8 +492,25 @@ const RelationshipSchema = z
     inverse: z.string().optional(), // Name of inverse relationship on target entity
     nullable: z.boolean().optional(), // Whether the FK column allows NULL
     on_delete: OnDeleteSchema.optional().default("restrict"), // FK cascade action (belongs_to only; hard-delete only)
+    // Composite FK (RFC-0006 §2.4, #787's explicit form): `{ <local column>: <target column> }`,
+    // or a list of names as shorthand for same-name pairs. The cross-entity rules
+    // (M1-M5) are in `src/parser/validate-inheritance.ts`.
+    match: z
+      .union([
+        z.array(z.string().min(1)).min(1, "'match' needs at least one column"),
+        z
+          .record(z.string().min(1), z.string().min(1))
+          .refine((m) => Object.keys(m).length > 0, "'match' needs at least one column pair"),
+      ])
+      .optional(),
   })
   .strict()
+  .refine((data) => data.match === undefined || data.type === "belongs_to", {
+    // M1 (single-file half)
+    message:
+      "'match' is only valid on a 'belongs_to' relationship (it makes the foreign key composite)",
+    path: ["match"],
+  })
   .refine(
     (data) => {
       // set_null requires nullable: true — Postgres cannot null a NOT NULL column
@@ -1155,6 +1207,32 @@ export const EntityDefinitionSchema = z
     // Behaviors add cross-cutting concerns (timestamps, soft_delete, user_tracking, etc.)
     behaviors: z.array(BehaviorConfigSchema).optional().default([]),
 
+    // Joined-table inheritance (RFC-0006, #875). Top-level siblings of
+    // `relationships:` and `roles:`: each is a statement about how this entity
+    // relates to another. `inherits:` is on the child (`<entity>`, or
+    // `{ base, as }` when the kind value is not the entity name);
+    // `discriminator:` is on the base and names its kind enum field.
+    // Rules R1-R11 / M1-M5: the single-file ones in `inheritanceIssues` below,
+    // the cross-entity ones in `src/parser/validate-inheritance.ts`.
+    inherits: z
+      .union([
+        z.string().regex(ENTITY_NAME_PATTERN, "'inherits' must name an entity in snake_case"),
+        z
+          .object({
+            base: z.string().regex(ENTITY_NAME_PATTERN, "'inherits.base' must name an entity in snake_case"),
+            as: z
+              .string()
+              .regex(/^[a-z][a-z0-9_]*$/, "'inherits.as' must be a snake_case kind value")
+              .optional(),
+          })
+          .strict(),
+      ])
+      .optional(),
+    discriminator: z
+      .string()
+      .regex(/^[a-z][a-z0-9_]*$/, "'discriminator' must name a snake_case field")
+      .optional(),
+
     // Per-entity generation toggles (e.g. disable write-side emission)
     generate: GenerateConfigSchema.optional(),
 
@@ -1343,6 +1421,9 @@ export const EntityDefinitionSchema = z
               .optional(),
             where: z.string().trim().min(1, 'unique_indexes where must not be blank').optional(),
             nulls_not_distinct: z.boolean().optional(),
+            // RFC-0006 §4.2, R11: this entry is the `ON CONFLICT` target of the
+            // pair upsert. At most one per entity; checked in the entity superRefine.
+            natural_key: z.boolean().optional(),
           })
           .strict()
           .superRefine((entry, ctx) => {
@@ -1455,6 +1536,12 @@ export const EntityDefinitionSchema = z
           message: FK_REQUIRED_FALSE_MESSAGE,
         });
       }
+    }
+  })
+  .superRefine((entity, ctx) => {
+    // RFC-0006 (#875): R1 (own-file half), R3, R5, R9, R11 and the v1 refusals.
+    for (const issue of inheritanceIssues(entity)) {
+      ctx.addIssue({ code: 'custom', path: issue.path, message: issue.message });
     }
   })
   .superRefine((entity, ctx) => {
