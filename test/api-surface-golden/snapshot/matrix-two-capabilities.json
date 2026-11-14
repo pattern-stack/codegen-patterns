@@ -1,0 +1,607 @@
+{
+	"case": "matrix-two-capabilities",
+	"covers": "two capabilities (Actor + Communication): the composed base",
+	"entities": {
+		"team": {
+			"entity": "team",
+			"plural": "teams",
+			"className": "Team",
+			"repository": {
+				"className": "TeamRepository",
+				"baseClass": "ActivityEntityRepository",
+				"typedInclude": true,
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "find_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "find_by_ids",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "list",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "count",
+						"kind": "count",
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByLeadContactId",
+						"kind": "fk_finder",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id",
+								"field": "lead_contact_id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"limit": true,
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "team"
+								},
+								"path": [
+									"roles",
+									"lead"
+								]
+							}
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					},
+					{
+						"name": "upsertMany",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					},
+					{
+						"name": "findByDateRange",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					},
+					{
+						"name": "findByUserId",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					},
+					{
+						"name": "findBySubjectId",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					},
+					{
+						"name": "findRecentBySubjectId",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					},
+					{
+						"name": "findByRole",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "capability",
+							"capability": "Communication"
+						}
+					},
+					{
+						"name": "participants",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "capability",
+							"capability": "Communication"
+						}
+					}
+				]
+			},
+			"service": {
+				"className": "TeamService",
+				"baseClass": "ActivityEntityService",
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "team",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "team",
+							"layer": "repository",
+							"method": "findByIds"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "listOptions"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "team",
+							"layer": "repository",
+							"method": "list"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByRole",
+						"kind": "capability_forwarder",
+						"emitted": true,
+						"params": [
+							{
+								"name": "...args"
+							}
+						],
+						"returns": "forwarded",
+						"delegatesTo": {
+							"entity": "team",
+							"layer": "repository",
+							"method": "findByRole"
+						},
+						"origin": {
+							"from": "capability",
+							"capability": "Communication"
+						}
+					},
+					{
+						"name": "participants",
+						"kind": "capability_forwarder",
+						"emitted": true,
+						"params": [
+							{
+								"name": "...args"
+							}
+						],
+						"returns": "forwarded",
+						"delegatesTo": {
+							"entity": "team",
+							"layer": "repository",
+							"method": "participants"
+						},
+						"origin": {
+							"from": "capability",
+							"capability": "Communication"
+						}
+					},
+					{
+						"name": "lead",
+						"kind": "relation_one",
+						"emitted": true,
+						"params": [
+							{
+								"name": "teamId"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "contact",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "team"
+								},
+								"path": [
+									"roles",
+									"lead"
+								]
+							}
+						}
+					},
+					{
+						"name": "count",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					},
+					{
+						"name": "findByDateRange",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					},
+					{
+						"name": "findByUser",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					},
+					{
+						"name": "findBySubject",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					},
+					{
+						"name": "findRecent",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Activity"
+						}
+					}
+				]
+			},
+			"useCases": [
+				{
+					"className": "FindTeamByIdUseCase",
+					"kind": "find_by_id",
+					"calls": {
+						"entity": "team",
+						"layer": "service",
+						"method": "findById"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "ListTeamsUseCase",
+					"kind": "list",
+					"calls": {
+						"entity": "team",
+						"layer": "service",
+						"method": "list"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "CreateTeamUseCase",
+					"kind": "create",
+					"calls": {
+						"entity": "team",
+						"layer": "service",
+						"method": "create"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "UpdateTeamUseCase",
+					"kind": "update",
+					"calls": {
+						"entity": "team",
+						"layer": "service",
+						"method": "update"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "DeleteTeamUseCase",
+					"kind": "delete",
+					"calls": {
+						"entity": "team",
+						"layer": "service",
+						"method": "delete"
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"http": {
+				"enabled": true,
+				"routes": [
+					{
+						"verb": "GET",
+						"path": "/teams",
+						"controller": "TeamController",
+						"handler": "getAll",
+						"operationId": "listTeams",
+						"useCase": "ListTeamsUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "GET",
+						"path": "/teams/:id",
+						"controller": "TeamController",
+						"handler": "getById",
+						"operationId": "findTeamById",
+						"useCase": "FindTeamByIdUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "POST",
+						"path": "/teams",
+						"controller": "TeamController",
+						"handler": "create",
+						"operationId": "createTeam",
+						"useCase": "CreateTeamUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "PATCH",
+						"path": "/teams/:id",
+						"controller": "TeamController",
+						"handler": "update",
+						"operationId": "updateTeam",
+						"useCase": "UpdateTeamUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "DELETE",
+						"path": "/teams/:id",
+						"controller": "TeamController",
+						"handler": "remove",
+						"operationId": "deleteTeam",
+						"useCase": "DeleteTeamUseCase",
+						"origin": {
+							"from": "base"
+						}
+					}
+				],
+				"includeRoutes": [],
+				"includesConst": "TEAMS_API_INCLUDES"
+			}
+		}
+	}
+}

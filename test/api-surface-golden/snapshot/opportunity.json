@@ -1,0 +1,563 @@
+{
+	"entity": "opportunity",
+	"plural": "opportunities",
+	"className": "Opportunity",
+	"repository": {
+		"className": "OpportunityRepository",
+		"baseClass": "BaseRepository",
+		"typedInclude": true,
+		"methods": [
+			{
+				"name": "findById",
+				"kind": "find_by_id",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findByIds",
+				"kind": "find_by_ids",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "list",
+				"kind": "list",
+				"emitted": true,
+				"params": [
+					{
+						"name": "query"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "count",
+				"kind": "count",
+				"emitted": true,
+				"params": [
+					{
+						"name": "where"
+					}
+				],
+				"returns": "count",
+				"readOptions": "none",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findByOrganizationId",
+				"kind": "fk_finder",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id",
+						"field": "organization_id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns+with",
+				"limit": true,
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "opportunity"
+						},
+						"path": [
+							"relationships",
+							"organization"
+						]
+					}
+				}
+			},
+			{
+				"name": "findByOwnerId",
+				"kind": "fk_finder",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id",
+						"field": "owner_id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns+with",
+				"limit": true,
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "opportunity"
+						},
+						"path": [
+							"relationships",
+							"owner"
+						]
+					}
+				}
+			},
+			{
+				"name": "findByStateId",
+				"kind": "fk_finder",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id",
+						"field": "state_id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns+with",
+				"limit": true,
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "opportunity"
+						},
+						"path": [
+							"relationships",
+							"state"
+						]
+					}
+				}
+			},
+			{
+				"name": "exists",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "create",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "update",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "delete",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "upsertMany",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			}
+		]
+	},
+	"service": {
+		"className": "OpportunityService",
+		"baseClass": "BaseService",
+		"methods": [
+			{
+				"name": "findById",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "opportunity",
+					"layer": "repository",
+					"method": "findById"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findByIds",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "opportunity",
+					"layer": "repository",
+					"method": "findByIds"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "list",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "listOptions"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "opportunity",
+					"layer": "repository",
+					"method": "list"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "organization",
+				"kind": "relation_one",
+				"emitted": true,
+				"params": [
+					{
+						"name": "opportunityId"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "organization",
+					"layer": "repository",
+					"method": "findById"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "opportunity"
+						},
+						"path": [
+							"relationships",
+							"organization"
+						]
+					}
+				}
+			},
+			{
+				"name": "owner",
+				"kind": "relation_one",
+				"emitted": true,
+				"params": [
+					{
+						"name": "opportunityId"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "user",
+					"layer": "repository",
+					"method": "findById"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "opportunity"
+						},
+						"path": [
+							"relationships",
+							"owner"
+						]
+					}
+				}
+			},
+			{
+				"name": "state",
+				"kind": "relation_one",
+				"emitted": true,
+				"params": [
+					{
+						"name": "opportunityId"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "deal_state",
+					"layer": "repository",
+					"method": "findById"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "opportunity"
+						},
+						"path": [
+							"relationships",
+							"state"
+						]
+					}
+				}
+			},
+			{
+				"name": "count",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "exists",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "create",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "update",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "delete",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			}
+		]
+	},
+	"useCases": [
+		{
+			"className": "FindOpportunityByIdUseCase",
+			"kind": "find_by_id",
+			"calls": {
+				"entity": "opportunity",
+				"layer": "service",
+				"method": "findById"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "ListOpportunitiesUseCase",
+			"kind": "list",
+			"calls": {
+				"entity": "opportunity",
+				"layer": "service",
+				"method": "list"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "CreateOpportunityUseCase",
+			"kind": "create",
+			"calls": {
+				"entity": "opportunity",
+				"layer": "service",
+				"method": "create"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "UpdateOpportunityUseCase",
+			"kind": "update",
+			"calls": {
+				"entity": "opportunity",
+				"layer": "service",
+				"method": "update"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "DeleteOpportunityUseCase",
+			"kind": "delete",
+			"calls": {
+				"entity": "opportunity",
+				"layer": "service",
+				"method": "delete"
+			},
+			"origin": {
+				"from": "base"
+			}
+		}
+	],
+	"http": {
+		"enabled": true,
+		"routes": [
+			{
+				"verb": "GET",
+				"path": "/opportunities",
+				"controller": "OpportunityController",
+				"handler": "getAll",
+				"operationId": "listOpportunitys",
+				"useCase": "ListOpportunitiesUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "GET",
+				"path": "/opportunities/:id",
+				"controller": "OpportunityController",
+				"handler": "getById",
+				"operationId": "findOpportunityById",
+				"useCase": "FindOpportunityByIdUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "POST",
+				"path": "/opportunities",
+				"controller": "OpportunityController",
+				"handler": "create",
+				"operationId": "createOpportunity",
+				"useCase": "CreateOpportunityUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "PATCH",
+				"path": "/opportunities/:id",
+				"controller": "OpportunityController",
+				"handler": "update",
+				"operationId": "updateOpportunity",
+				"useCase": "UpdateOpportunityUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "DELETE",
+				"path": "/opportunities/:id",
+				"controller": "OpportunityController",
+				"handler": "remove",
+				"operationId": "deleteOpportunity",
+				"useCase": "DeleteOpportunityUseCase",
+				"origin": {
+					"from": "base"
+				}
+			}
+		],
+		"includeRoutes": [],
+		"includesConst": "OPPORTUNITIES_API_INCLUDES"
+	}
+}
