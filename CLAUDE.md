@@ -196,12 +196,24 @@ shape from `@studio-shared` (the `src/studio/shared/api.ts` alias) rather than
 mirroring it — the viewer's hand-copied `SerializedDomainGraph` is exactly the
 drift the contract exists to stop.
 
-The canvas counts differently from `/api/graph`, deliberately: a first-class
-relationship is one `N:M` entry in `graph.edges` but a **node plus two edges**
-on screen, because it carries its own fields, types and temporal/sourced flags
-and a line has nowhere to put them. Three entities and five API edges draw as
-four nodes and six edges. `buildEdges` says so at the skip that causes it — the
-difference is not drift, and neither half is wrong.
+The canvas counts differently from `/api/graph`, deliberately, in two ways. A
+first-class relationship is one `N:M` entry in `graph.edges` but a **node plus
+two edges** on screen, because it carries its own fields, types and
+temporal/sourced flags and a line has nowhere to put them. And a `belongs_to`
+with its inverse `has_many` / `has_one` is two entries in `graph.edges` but
+**one line** on screen (#778): `buildEdges` pairs them on the foreign key
+(holder + column + referenced entity, never the entity pair, so `billing_address` /
+`shipping_address` stay two lines) and the line carries both ids, `relationId` and
+`inverseRelationId`. Three entities and five API edges draw as four nodes and
+four edges. `buildEdges` says so — the difference is not drift, and neither half
+is wrong.
+
+The layout ranks parents above children (#778): elk `layered`, direction `DOWN`,
+fed each edge as `parent` → `child` (set by the adapter) rather than as drawn, so
+a `belongs_to` — drawn FK holder → referenced — does not rank the parent last.
+A line meets each card on the sides that face each other
+(`tools/studio/src/graph/edge-geometry.ts`); the card's handles are only a
+fallback until ReactFlow has measured it.
 
 Two vocabularies are single tables, and every surface renders *from* them rather
 than branching on a literal:

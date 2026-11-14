@@ -23,7 +23,11 @@ export const SchemaNode = memo(function SchemaNode({ data, selected }: NodeProps
 
   return (
     <>
-      <Handle type="target" position={Position.Left} />
+      {/* ReactFlow draws no edge without a handle at each end, so the card has
+          one of each — invisible, and only a fallback until the card is
+          measured. A line meets the card on whichever side faces the other
+          card (`./edge-geometry`, #778), not here. */}
+      <Handle type="target" position={Position.Top} />
       <div
         style={{
           display: 'flex',
@@ -150,7 +154,7 @@ export const SchemaNode = memo(function SchemaNode({ data, selected }: NodeProps
           </div>
         )}
       </div>
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={Position.Bottom} />
     </>
   );
 });

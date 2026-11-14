@@ -123,12 +123,15 @@ bundle.
 
 **The canvas's counts are not the API's, deliberately.** `GET /api/graph` reports a first-class relationship as
 *one* `N:M` edge between its endpoints — after the demo's relationship lands, `graph.edges.length` is 5. The canvas
-draws that relationship as a **node** with an edge to each endpoint, so it reads `4 nodes · 6 edges`. Both are
+draws that relationship as a **node** with an edge to each endpoint, and draws each `belongs_to` with its inverse
+`has_many` as **one** line (paired on the foreign key, #778), so it reads `4 nodes · 4 edges` (`4 nodes · 6 edges`
+before #778, when each inverse was a second line). Both are
 correct for their purpose: a first-class relationship carries its own fields, types and temporal/sourced flags, so
-the canvas needs somewhere to render them, while the API describes the domain graph rather than a drawing of it.
+the canvas needs somewhere to render them, and a foreign key is one relationship however many sides declare it,
+while the API describes the domain graph rather than a drawing of it.
 The e2e asserts the API's numbers (§6.2), and the adapter's own tests
 (`tools/studio/src/__tests__/schema-adapter.test.ts`) pin the translation with both sets named — 3 entities and 5 API
-edges become 4 nodes and 6 edges, the extra node is the relationship rather than an entity, and no direct
+edges become 4 nodes and 4 edges, the extra node is the relationship rather than an entity, and no direct
 `contact → opportunity` edge is drawn *alongside* the junction's two. So the divergence is gated from both sides:
 anyone "fixing" it meets a test that explains why it is deliberate, rather than one that looks like a stale
 expectation to bump.

@@ -1,6 +1,6 @@
 # PLAN — backend API-surface derivation (slice 1) + Studio API view
 
-**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · A0–A5 built · S1 and S2 signed off 2026-11-14
+**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · A0–A6 built · S1 and S2 signed off 2026-11-14 · A6 (#778) added to Phase A by Doug 2026-11-14
 **Basis:** `main` @ `c1ceeefd`. READ-1 merged 2026-11-12 (#859 and the ten PRs under it). Every `path:line`
 below was taken at the READ-1 tip `e9fe6f5f`; every cited file is byte-identical on `main` (checked one by one
 with `git diff --quiet e9fe6f5f c1ceeefd -- <file>`), so the line numbers hold.
@@ -33,6 +33,7 @@ them is temporary by decision.
 | A3 | Studio server: `GET /api/surface` | route + contract types + e2e stage | S · 0.5d |
 | A4 | Studio UI: API tab | new inspector tab, provenance → YAML line | M · 1d |
 | A5 | Studio UI: methods on edges | edge selection (new), edge panel | S–M · 1d |
+| A6 | Studio canvas: parent-first layout, one line per relationship (#778) | added 2026-11-14 (Doug, ASAP) | S–M |
 | B1 | Render-matrix goldens | byte snapshots for shapes the baseline misses | S–M · 0.5–1d |
 | B2 | `repository.ejs.t` prints | finders, FK finders, precedence; closes #711 | M · 1d |
 | B3 | controller / search controller / flags print | routes, `apiEnabled`, typed-include, const name | M · 1d |
@@ -612,12 +613,13 @@ Two `gh stack`s; each lands as one atomic merge, by you (§14.8). Sizes are roug
 | **A3** | `GET /api/surface`, contract types, e2e stage, STUDIO-2 spec | `src/studio/server/surface.ts`, `index.ts`, `src/studio/shared/api.ts`, `test/studio/run-studio-e2e.ts`, `docs/specs/STUDIO-2.md` | S · 0.5d |
 | **A4** | API tab, `surface-kinds.ts`, provenance → YAML line | `tools/studio/src/inspector/**`, `api/client.ts`, tests | M · 1d |
 | **A5** | Edge selection + edge method panel | `tools/studio/src/App.tsx`, `graph/**`, `adapters/schema-adapter.ts`, `inspector/EdgePanel.tsx`, tests | S–M · 1d |
+| **A6** | #778: a `belongs_to` and its inverse `has_many`/`has_one` draw as **one** line, paired on the foreign key (holder + column + referenced entity), never the entity pair; parent-first layout (`elk.direction: DOWN`, ELK fed referenced → FK holder for ranking only); connection points from measured node geometry, not fixed sides. A collapsed line keeps A5's selection: it carries the `belongs_to`'s `relationId`, and the panel shows the other side through `inverseOf`. No change to `/api/graph`, the server or the analyzer. | `tools/studio/src/adapters/schema-adapter.ts`, `graph/{edge-kinds,edge-geometry,SchemaEdge,SchemaNode}.ts(x)`, `layout/elk-layout.ts`, tests; CLAUDE.md § Studio, STUDIO-0, STUDIO-2 §5 | S–M |
 | **B1** | Byte goldens over the render matrix (reuses A1's cases) | `test/render-golden/**`, one test file | S–M · 0.5–1d |
 | **B2** | `repository.ejs.t` prints. `deriveQueryMethodName` deleted from `entity-locals.js`, `query-routes.ts` (file deleted), `relationship/new/prompt.js`; `build-includes.ts` reads `names.ts`; `queryTypes` local; `package.json` `files`; `resolvePatternComposition` moves into `src/` and `project.ts`'s restated copy is deleted (A2). Closes #711. | templates, `EL`, `src/schema/query-routes.ts`, the finder half of `route-name-parity.test.ts` | M · 1d |
 | **B3** | Controller, search controller, `index` / `module` flags print. One reader each for `apiEnabled`, typed-include, includes const. | templates, `EL`, `emit-includes.ts`, `build-includes.ts`, the rest of `route-name-parity.test.ts` | M · 1d |
 | **B4** | `service.ejs.t` + `declarative-queries.ejs.t` print; fan-out names from `names.ts`; entity-backend allowlist empty; CLAUDE.md clause removed; ADR and specs to post-implementation truth | templates, `EL`, `_shared/junction-fan-out.mjs`, `prompt.js` | M · 1–1.5d |
 
-Order: A0 → A1 → A2 → A3 → A4 → A5, then B1 → B2 → B3 → B4. Phase A critical path 5.5 days (A0 is half a day
+Order: A0 → A1 → A2 → A3 → A4 → A5 → A6, then B1 → B2 → B3 → B4. Phase A critical path 5.5 days (A0 is half a day
 of docs beside it); Phase B 3.5–4.5 days.
 
 ---
@@ -835,6 +837,25 @@ Run `just studio-demo` first (no Docker, no network; writes the git-ignored `.st
 | colour-literal and kind-literal greps from A4, over `EdgePanel.tsx` | no output |
 | Phase A frozen paths: `git diff --stat $BASE_A..HEAD -- templates package.json test/baseline test/junction/__snapshots__ test/relations-golden test/frontend-golden test/frontend-graph-golden test/semantic-golden test/integration-emit test/smoke/_consumer-errors.ts test/run-test.ts` | empty |
 
+**A6** (added 2026-11-14, `.ai-docs/stacks/api-surface-model/A6.md`)
+
+| Check | Expected |
+|---|---|
+| `git diff --stat <A5>..HEAD -- src/studio/server src/analyzer templates package.json test/baseline` | empty |
+| adapter test: `belongs_to` + inverse `has_many` → **1** drawn edge; two FKs onto one table → **2**; unpaired `has_many` → 1 | pass |
+| layout test: a parent with two children, one child also under a second parent (generic fixture names) → each parent's `y` < its child's `y` | pass |
+| `just test-studio` (incl. the UI typecheck) | exit 0 |
+| `just test-all` | exit 0 |
+| Mutation: pairing keyed on relation name | adapter test red, "expected 1 edge" |
+| Mutation: ranking fed child → parent | layout test red, "parent below child" |
+
+*As built:* the demo's 3 entities and 5 API edges draw as **4 nodes · 4 edges** (was 4 · 6) — each inverse pair is one
+foreign key and draws once; the junction node and its two halves are unchanged. A collapsed line is the
+`belongs_to`'s own, labelled `<parent> ⇄ <children>` (`pairedLabel`, `edge-kinds.ts`), carrying `relationId` and
+`inverseRelationId`. `elkjs` cannot load under bun (its bundled worker sees `self` and no `document`), so
+`elk-layout.test.ts` defines `document` for that one import and restores it. Smooth-step routes between the same
+two layers share one horizontal y, so unselected segments can overlap; selecting a line disambiguates it.
+
 **B1**
 
 | Check | Expected |
@@ -897,7 +918,7 @@ again by the reviewer; a non-empty result is a stop (§14.6), not something to e
 | Add to the lint allowlist. It only shrinks. | `git diff --numstat <A1>..HEAD -- src/__tests__/templates/no-name-derivation.allowlist.ts \| cut -f1` → `0`, **except** one approved label edit: the `bridge-listener.ejs.t` entry's `issue` became `#884` in A5 (Doug, S2, 2026-11-14) — same file, pattern and count, so `1` added line that widens nothing |
 | Loosen the lint or the parity comparison after S1 signed them off. | `git diff --stat <A1>..HEAD -- src/__tests__/derived/api-surface-parity.test.ts src/__tests__/derived/_parity-compare.ts src/__tests__/templates/no-name-derivation-in-templates.test.ts` |
 | Skip or narrow a test. | `git diff $BASE..HEAD \| grep -nE '^\+.*\b(it\|test\|describe)\.(skip\|todo\|only)\b\|^\+.*\b(xit\|xdescribe)\('` |
-| Delete or weaken an assertion in an existing test. | `git diff $BASE..HEAD -- src/__tests__ test tools/studio/src/__tests__ \| grep -c '^-.*expect('` → `0`, **except** in the two enumerated deletions: `src/__tests__/emitters/relations/route-name-parity.test.ts` (B2 its finder half, B3 the rest); and one enumerated update: `src/__tests__/cli/project.test.ts`'s `expect(projectNoun.commandClasses.length).toBe(<n>)`, whose count changes only when a command is added and is never deleted or loosened (A2: `8` → `9` for `project surface`; approved by Doug 2026-11-14 after it tripped this detection) |
+| Delete or weaken an assertion in an existing test. | `git diff $BASE..HEAD -- src/__tests__ test tools/studio/src/__tests__ \| grep -c '^-.*expect('` → `0`, **except** in the two enumerated deletions: `src/__tests__/emitters/relations/route-name-parity.test.ts` (B2 its finder half, B3 the rest); A6's canvas pins in `tools/studio/src/__tests__/schema-adapter.test.ts`, which fall because inverse pairs collapse (#778) — the demo's edge count `toHaveLength(6)` → `4`, approved by Doug 2026-11-14 in A6.md, still exact; and one enumerated update: `src/__tests__/cli/project.test.ts`'s `expect(projectNoun.commandClasses.length).toBe(<n>)`, whose count changes only when a command is added and is never deleted or loosened (A2: `8` → `9` for `project surface`; approved by Doug 2026-11-14 after it tripped this detection) |
 | Delete a test file not enumerated above. | `git diff --diff-filter=D --name-only $BASE..HEAD -- src/__tests__ test tools/studio/src/__tests__` → only that file, plus `src/schema/query-routes.ts`'s own test if one exists |
 | Add a predicate to the smoke filter, or touch the #680 expectation. | `git diff --stat $BASE..HEAD -- test/smoke/_consumer-errors.ts test/run-test.ts` |
 | Silence the type checker. | `git diff $BASE..HEAD -- src/derived src/studio tools/studio/src \| grep -nE '^\+.*(@ts-ignore\|@ts-expect-error\|as any\|as unknown as)'` |
@@ -935,7 +956,7 @@ adding a fifth.
 |---|---|---|---|
 | **S1** | after A1 (A0 included) | A story page: the derived surface of the demo `contact` and `account` as tables with origin chips, rendered from the golden JSON; `types.ts` (one file); ADR-046 and the CLAUDE.md rule; the eight mutation checks with their red output; the oddities list (§3.4); the unit-time number (R8). Also the place to settle N1 if not already. | A2, A3, A4. From here the parity test, comparator and lint are frozen. |
 | **S2** | after A4 | Screenshots of Studio on `.studio-demo`, one per row, full width, light and dark: (1) `contact` API tab; (2) a shadowed row — `findByAccountId` ← `relationships.account` over `queries[0]`; (3) click an origin chip → the YAML tab at that line; (4) a relationship node's "not modelled yet (#679)" state; (5) the surface route failing (server stopped) — the tab's error state, canvas intact. | A5, then the Phase A stack is submitted (not merged). |
-| **S3** | after B1 | (a) Phase A: CI green on all six PRs; two edge-view screenshots. (b) Goldens: one table — matrix case → shape covered → files snapshotted → the F2 `grep` that now finds it. | You merge Phase A. The orchestrator rebases B1 onto `main`, re-runs B1's exit criteria, then B2–B4. No template has been edited before this point. |
+| **S3** | after B1 | (a) Phase A: CI green on all seven PRs; two edge-view screenshots; A6's before/after, light and dark, of a parent/two-children/second-parent model and of the demo, plus one of selecting a collapsed edge (A5's panel showing both sides); the real `project surface` failure in the tab (S2/E2). (b) Goldens: one table — matrix case → shape covered → files snapshotted → the F2 `grep` that now finds it. | You merge Phase A. The orchestrator rebases B1 onto `main`, re-runs B1's exit criteria, then B2–B4. No template has been edited before this point. |
 | **S4** | after B4 | A one-page diff summary: per template, scriptlet-logic lines before → after; every deleted local with its reader list; the allowlist diff (deletions only); every frozen-path diff (empty); gate outputs; the tarball smoke; issues drafted for the oddities, F6 and Q5. | You merge Phase B. #711 closes. |
 
 ### 14.6 Stop conditions
@@ -975,7 +996,7 @@ Halt and ask. Do not push on.
 
 | | Rule |
 |---|---|
-| Stacks | Two. **Phase A** = A0–A5. **Phase B** = B1–B4, based on Phase A's tip until Phase A merges, then rebased onto `main`. |
+| Stacks | Two. **Phase A** = A0–A6. **Phase B** = B1–B4, based on Phase A's tip until Phase A merges, then rebased onto `main`. |
 | Submit | `gh stack submit --auto --open` once the top PR's exit criteria pass (`--auto` is auto-generated titles, not auto-merge). |
 | Auto-merge | **Never enabled** on any PR. |
 | Merge | You. Phase A at S3, Phase B at S4, each `gh stack merge --yes --squash` — atomic, all or none. A builder lane never merges. |

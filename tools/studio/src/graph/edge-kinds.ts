@@ -25,6 +25,30 @@ export interface StudioEdgeData extends GraphEdgeData {
    * Absent on a junction's two halves: neither is a declared relation.
    */
   relationId?: string;
+  /**
+   * The inverse `has_many` / `has_one` this line also draws (#778). A
+   * `belongs_to` and its inverse are one foreign key, so the canvas draws them
+   * as one line — the `belongs_to`'s — and the inverse rides along here, keyed
+   * the same way as `relationId`. Absent when nothing was paired.
+   */
+  inverseRelationId?: string;
+  /**
+   * The two ends for ranking only (#778): `parent` is the referenced entity,
+   * `child` the one holding the foreign key. The layout ranks parents above
+   * children; what is drawn — `source` → `target`, the arrowhead — is
+   * unchanged. Set where the edge is built, because only the adapter knows
+   * which way a given kind points.
+   */
+  parent: string;
+  child: string;
+}
+
+/**
+ * The label of a line that draws a relation and its inverse — `account ⇄
+ * contacts`: the `belongs_to` side's name first, then the inverse's.
+ */
+export function pairedLabel(own: string, inverse: string): string {
+  return `${own} ⇄ ${inverse}`;
 }
 
 export interface EdgeKindStyle {

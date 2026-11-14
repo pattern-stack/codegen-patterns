@@ -1,16 +1,34 @@
 import { memo } from 'react';
-import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from '@xyflow/react';
-import type { EdgeProps } from '@xyflow/react';
+import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useInternalNode } from '@xyflow/react';
+import type { EdgeProps, InternalNode } from '@xyflow/react';
+import { anchorsBetween } from './edge-geometry';
+import type { Box } from './edge-geometry';
 import { edgeColor, edgeStyle } from './edge-kinds';
 import type { StudioEdgeData } from './edge-kinds';
+
+/** A laid-out card's box, once ReactFlow has measured it. */
+function boxOf(node: InternalNode | undefined): Box | undefined {
+  const width = node?.measured.width;
+  const height = node?.measured.height;
+  if (node == null || width == null || height == null) return undefined;
+  const { x, y } = node.internals.positionAbsolute;
+  return { x, y, width, height };
+}
 
 /**
  * A schema edge, styled from `edge-kinds` — the one table that decides what
  * each relationship kind looks like. Nothing here branches on a kind literal,
  * so the legend and the stroke cannot disagree.
+ *
+ * The line meets each card on the side facing the other (`edge-geometry.ts`),
+ * not at the card's fixed handles — those only exist because ReactFlow will
+ * not draw an edge without one. Before both cards are measured, the handle
+ * positions ReactFlow passes in are used as they are.
  */
 export const SchemaEdge = memo(function SchemaEdge({
   id,
+  source,
+  target,
   sourceX,
   sourceY,
   targetX,
@@ -24,24 +42,19 @@ export const SchemaEdge = memo(function SchemaEdge({
   const style = edgeStyle(edge?.studioKind ?? 'belongs_to');
   const color = edgeColor(style);
 
-  const [path, labelX, labelY] = getSmoothStepPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
-    borderRadius: 14,
-  });
+  const sourceBox = boxOf(useInternalNode(source));
+  const targetBox = boxOf(useInternalNode(target));
+  const anchors =
+    sourceBox != null && targetBox != null
+      ? anchorsBetween(sourceBox, targetBox)
+      : { sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition };
+
+  const [path, labelX, labelY] = getSmoothStepPath({ ...anchors, borderRadius: 14 });
 
   const dimmed = edge?.dimmed === true;
-  const label = edge?.roleName ?? edge?.label;
-
-  // A `belongs_to` and its inverse `has_many` run between the same two cards in
-  // opposite directions, so `getSmoothStepPath` hands both the same midpoint
-  // and the two labels land on top of each other. Offsetting by the direction
-  // of travel separates them without needing to know about the other edge.
-  const labelOffset = sourceX <= targetX ? -11 : 11;
+  // A `belongs_to` and its inverse are one line (#778), so its label already
+  // names both ends — there is no second label to keep clear of.
+  const label = edge?.label;
 
   return (
     <>
@@ -62,7 +75,7 @@ export const SchemaEdge = memo(function SchemaEdge({
           <div
             style={{
               position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY + labelOffset}px)`,
+              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
               fontFamily: 'var(--font-mono)',
               fontSize: 9.5,
               padding: '1px 5px',
