@@ -24,8 +24,8 @@ relationships:
     target: communication_participant_role
     foreign_key: role_id
     match: { communication_kind: kind }
-  person:
+  party:
     type: belongs_to
     target: party
-    foreign_key: person_id
+    foreign_key: party_id
     nullable: true

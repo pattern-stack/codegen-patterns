@@ -20,13 +20,9 @@
  */
 
 import { camelCase, emittedStem } from '../../src/config/file-naming.js';
-import { sqlTableName } from '../../src/config/table-naming.js';
-import { resolveChildTenancy } from '../../src/schema/tenancy.js';
-import { inheritsOf } from '../../src/schema/inheritance.js';
+import { resolveChildTenancy, resolveTenancy } from '../../src/schema/tenancy.js';
+import { inheritsOf, matchPairsOf } from '../../src/schema/inheritance.js';
 import { entityModuleNaming, relativeModuleDir } from './entity-naming.mjs';
-
-/** Postgres truncates an identifier to 63 bytes; two long names would then collide silently. */
-const PG_IDENTIFIER_MAX = 63;
 
 /**
  * The pg type name and the exported `pgEnum` const of an enum field —
@@ -37,14 +33,6 @@ const PG_IDENTIFIER_MAX = 63;
 export function enumTypeNames(entityName, fieldName) {
   const dbName = entityName ? `${entityName}_${fieldName}` : fieldName;
   return { dbName, enumName: `${camelCase(dbName)}Enum` };
-}
-
-/** `match:` as `[local, target]` pairs: the object form, or the `[col]` shorthand for `{ col: col }`. */
-export function matchPairsOf(rel) {
-  const m = rel?.match;
-  if (m === undefined || m === null) return [];
-  if (Array.isArray(m)) return m.map((c) => [c, c]);
-  return Object.entries(m);
 }
 
 function requireDefinition(lookup, name, why) {
@@ -149,17 +137,6 @@ export function matchReferrers(lookup, targetName) {
   return out;
 }
 
-/** An identifier no longer than Postgres keeps; a clash after truncation is silent. */
-export function checkedIdentifier(name, entityName, what) {
-  if (Buffer.byteLength(name) > PG_IDENTIFIER_MAX) {
-    throw new Error(
-      `[codegen] '${entityName}': the ${what} name '${name}' is ${Buffer.byteLength(name)} bytes; Postgres keeps ${PG_IDENTIFIER_MAX} ` +
-        `and would truncate it, so two long names could collide. Shorten the entity or relationship name.`,
-    );
-  }
-  return name;
-}
-
 /**
  * What the entity template needs for the inheritance half of one entity's DDL.
  *
@@ -169,14 +146,11 @@ export function checkedIdentifier(name, entityName, what) {
  * @param {Function} p.lookup          `projectEntityLookup` (with `.definition` / `.definitions`)
  * @param {object} p.ownNaming         `entityModuleNaming` of this entity
  * @param {string} p.modulesDir
- * @param {string} p.tablePrefix       the resolved `tables.prefix` (required)
  * @param {string} p.tenancyColumn     the project's `tenancy.column`
- * @param {string} p.tableName         this entity's SQL table name
- * @param {Set<string>} p.declaredColumns   columns the entity already emits (`match:` locals that exist are not derived)
  *
  * @returns {{
  *   child: null | {
- *     base: string, as: string, baseTable: string, baseTableName: string,
+ *     base: string, as: string, baseTable: string,
  *     baseImportPath: string, kind: {column,prop,enumName,importPath,ownerEntity,dbName},
  *     discriminator: string, tenant: null | {column, prop},
  *   },
@@ -189,9 +163,7 @@ export function inheritanceFor({
   lookup,
   ownNaming,
   modulesDir,
-  tablePrefix,
   tenancyColumn,
-  tableName,
 }) {
   const declaration = inheritsOf(definition);
   let child = null;
@@ -204,7 +176,6 @@ export function inheritanceFor({
       throw new Error(`[codegen] ${why}, which declares no 'discriminator:'.`);
     }
     const baseRef = moduleRef(lookup, ownNaming, modulesDir, declaration.base, why);
-    const baseBlock = lookup(declaration.base);
     const kindEnum = resolveEnumField({
       lookup,
       modulesDir,
@@ -216,15 +187,11 @@ export function inheritanceFor({
     if (kindEnum === null) {
       throw new Error(`[codegen] ${why}: discriminator '${discriminator}' is not an enum field with known choices.`);
     }
-    if (!/^[A-Za-z0-9_-]+$/.test(declaration.as)) {
-      throw new Error(`[codegen] ${why}: the kind value '${declaration.as}' is not a plain identifier.`);
-    }
     const tenancy = resolveChildTenancy(declaration.base, baseDef, tenancyColumn);
     child = {
       base: declaration.base,
       as: declaration.as,
       baseTable: baseRef.plural,
-      baseTableName: sqlTableName(baseBlock, tablePrefix),
       baseImportPath: baseRef.importPath,
       discriminator,
       kind: {
@@ -247,7 +214,13 @@ export function inheritanceFor({
     const key = [...cols].sort().join(',');
     if (!sets.has(key)) sets.set(key, { columns: cols });
   };
-  if (typeof definition.discriminator === 'string') addSet([definition.discriminator]);
+  if (typeof definition.discriminator === 'string') {
+    addSet([definition.discriminator]);
+    // ...and, for a tenant-scoped base, the tenant column set every child's tenant FK points at. It goes through
+    // the same set as a `match:` onto the tenant column, so the two can never emit one constraint twice.
+    const tenancy = resolveTenancy(entityName, definition, tenancyColumn);
+    if (tenancy !== null) addSet([tenancy.column]);
+  }
   for (const { pairs } of matchReferrers(lookup, entityName)) addSet(pairs.map(([, target]) => target));
   const uniqueTargets = [...sets.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, v]) => v);
 
@@ -263,7 +236,7 @@ export function inheritanceFor({
  * match on one of those derives nothing, and the FK uses the declared column.
  * Two relationships matching one local column share ONE derived column (M3).
  * `nullableByRel` is each relationship's resolved FK nullability (`processBelongsTo`):
- * the derived column is NOT NULL unless the FK is nullable.
+ * the derived column is NOT NULL unless EVERY relationship matching it is nullable.
  *
  * @returns {{
  *   derived: Array<{ column: string, targetEntity: string, targetColumn: string, nullable: boolean,
@@ -273,7 +246,7 @@ export function inheritanceFor({
  */
 export function matchColumns({ entityName, relationships, lookup, existing, nullableByRel, modulesDir, fromNaming }) {
   const derived = [];
-  const seen = new Set();
+  const byLocal = new Map();
   const fks = [];
   for (const [relName, rel] of Object.entries(relationships ?? {})) {
     if (rel?.type !== 'belongs_to') continue;
@@ -282,21 +255,31 @@ export function matchColumns({ entityName, relationships, lookup, existing, null
     fks.push({ relName, rel, pairs });
     const targetDef = requireDefinition(lookup, rel.target, `'${entityName}' relationship '${relName}' (match:)`);
     for (const [local, targetColumn] of pairs) {
-      if (existing.has(local) || seen.has(local)) continue;
-      seen.add(local);
+      if (existing.has(local)) continue;
+      const fkNullable = nullableByRel.get(relName) === true;
+      const prior = byLocal.get(local);
+      // One derived column, however many relationships match it (M3): it is NOT NULL as soon as ANY of them is.
+      // A NULL in a composite FK's columns skips the check (MATCH SIMPLE), so a nullable column shared with a
+      // NOT NULL FK would silently disable that FK's rule.
+      if (prior !== undefined) {
+        prior.nullable = prior.nullable && fkNullable;
+        continue;
+      }
       const t = targetColumnField(targetDef, rel.target, targetColumn, relName, entityName);
-      derived.push({
+      const entry = {
         column: local,
         targetEntity: rel.target,
         targetColumn,
-        nullable: nullableByRel.get(relName) === true,
+        nullable: fkNullable,
         // An enum column is typed with the pgEnum its target column is typed with.
         enumRef:
           t.kind === 'field'
             ? resolveEnumField({ lookup, modulesDir, fromNaming, entityName: rel.target, fieldName: targetColumn, field: t.field })
             : null,
         ...t,
-      });
+      };
+      byLocal.set(local, entry);
+      derived.push(entry);
     }
   }
   return { derived, fks };

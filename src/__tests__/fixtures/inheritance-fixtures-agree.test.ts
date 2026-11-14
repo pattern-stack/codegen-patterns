@@ -11,16 +11,20 @@
  *   test/scaffold/entities/*-scaffold.yaml  the integration set (the whole family)
  *   test/smoke/fixtures/                  the smoke set (the whole family)
  *
- * The one allowed difference: the smoke sets `tenancy.column: organization_id`
- * for its whole project, so its three tenant-scoped entities spell their column
- * out (`tenant_scoped: { column: tenant_id }`). That key is normalised away on
- * both sides before comparing; nothing else is.
+ * The one allowed difference is in HOW tenancy is spelled, never in WHETHER the
+ * entity is tenant-scoped: the smoke sets `tenancy.column: organization_id` for
+ * its whole project, so its three tenant-scoped entities spell their column out
+ * (`tenant_scoped: { column: tenant_id }`). `tenant_scoped` is therefore compared
+ * as what it resolves to under each location's OWN project tenancy column
+ * (`resolveTenancy`) — a copy that drops it, or resolves to another column,
+ * differs.
  */
 
 import { describe, expect, it } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { resolveTenancy } from '../../schema/tenancy.js';
 import { loadEntityFromYaml } from '../../utils/yaml-loader.js';
 
 const REPO = path.resolve(import.meta.dir, '../../..');
@@ -32,6 +36,14 @@ const LOCATIONS: Record<string, string> = {
 	smoke: 'test/smoke/fixtures',
 };
 
+/** The `tenancy.column` each location's project resolves an unnamed `tenant_scoped: true` to. */
+const PROJECT_TENANCY_COLUMN: Record<string, string> = {
+	inheritance: 'tenant_id',
+	baseline: 'tenant_id',
+	scaffold: 'tenant_id',
+	smoke: 'organization_id', // run-smoke.ts sets it for the default scenario
+};
+
 /** entity name → location → normalised parsed definition */
 function loadAll(): Map<string, Map<string, unknown>> {
 	const byEntity = new Map<string, Map<string, unknown>>();
@@ -41,8 +53,8 @@ function loadAll(): Map<string, Map<string, unknown>> {
 			const res = loadEntityFromYaml(path.join(dir, file));
 			if (!res.success) continue; // a file another test owns may be deliberately invalid
 			const def = JSON.parse(JSON.stringify(res.definition)) as Record<string, unknown>;
-			delete def.tenant_scoped;
 			const name = (def.entity as { name: string }).name;
+			def.tenant_scoped = resolveTenancy(name, def as never, PROJECT_TENANCY_COLUMN[location]!)?.column ?? null;
 			if (!byEntity.has(name)) byEntity.set(name, new Map());
 			byEntity.get(name)!.set(location, def);
 		}

@@ -140,7 +140,7 @@ describe('the family generates (S2: the DDL)', () => {
 		const root = familyProject('inh-literal', (f) => {
 			f['communication_participant.yaml'] = f['communication_participant.yaml']!
 				.replace('fields:\n', 'fields:\n  note:\n    type: string\n    nullable: true\n')
-				.concat("\nunique_indexes:\n  - name: participant_note_uniq\n    fields: [person_id]\n    where: \"note <> 'https://t.co'\"\n");
+				.concat("\nunique_indexes:\n  - name: participant_note_uniq\n    fields: [party_id]\n    where: \"note <> 'https://t.co'\"\n");
 		});
 		expect(run(root, ['entity', 'new', '--all', '--force']).status).toBe(0);
 		const participant = read(root, 'communication-participants/communication-participant.entity.ts');
@@ -169,6 +169,97 @@ describe('the family generates (S2: the DDL)', () => {
 			if (r.status !== 0) failures.push(`${path.relative(modulesDir, file)}: ${(r.stderr || r.stdout).split('\n').find((l) => /Error/.test(l)) ?? 'failed'}`);
 		}
 		expect(failures).toEqual([]);
+	});
+
+	describe('a derived match: column and its nullability', () => {
+		const participant = (first: string, second: string) =>
+			[
+				'entity:',
+				'  name: communication_participant',
+				'  plural: communication_participants',
+				'tenant_scoped: true',
+				'fields:',
+				'  tenant_id: { type: uuid, required: true }',
+				'relationships:',
+				first,
+				second,
+				'',
+			].join('\n');
+		const communication = [
+			'  communication:',
+			'    type: belongs_to',
+			'    target: communication',
+			'    foreign_key: communication_id',
+			'    match: { communication_kind: kind }',
+		].join('\n');
+		const role = (nullable: boolean) =>
+			[
+				'  role:',
+				'    type: belongs_to',
+				'    target: communication_participant_role',
+				'    foreign_key: role_id',
+				...(nullable ? ['    nullable: true'] : []),
+				'    match: { communication_kind: kind }',
+			].join('\n');
+
+		it('is NOT NULL when ANY matching FK is NOT NULL, whichever is declared first', () => {
+			// A nullable `role` declared before the NOT NULL `communication` used to make the shared column
+			// nullable, and MATCH SIMPLE then skipped BOTH composite FKs on a NULL.
+			const root = familyProject('inh-m3null', (f) => {
+				f['communication_participant.yaml'] = participant(role(true), communication);
+			});
+			expect(run(root, ['entity', 'new', '--all', '--force']).status).toBe(0);
+			const out = read(root, 'communication-participants/communication-participant.entity.ts');
+			expect(out).toContain("communicationKind: communicationKindEnum('communication_kind').notNull(),");
+			expect(out).not.toContain('_match_check');
+		});
+
+		it('when EVERY matching FK is nullable, the FK and the derived column are NULL together (a CHECK per FK)', () => {
+			const root = familyProject('inh-nullable-match');
+			expect(run(root, ['entity', 'new', '--all', '--force']).status).toBe(0);
+			const note = read(root, 'communication-notes/communication-note.entity.ts');
+			expect(note).toContain("communicationKind: communicationKindEnum('communication_kind'),");
+			expect(note).toContain("check('communication_notes_communication_match_check'");
+			expect(note).toContain('(${tCols.communicationId} IS NULL) = (${tCols.communicationKind} IS NULL)');
+		});
+	});
+
+	it("a match: onto the base's tenant column shares the base's own unique(id, tenant) — one constraint, not two", () => {
+		const root = familyProject('inh-match-tenant', (f) => {
+			f['tenant_ref.yaml'] = [
+				'entity:',
+				'  name: tenant_ref',
+				'  plural: tenant_refs',
+				'fields:',
+				'  label: { type: string, required: true }',
+				'relationships:',
+				'  communication:',
+				'    type: belongs_to',
+				'    target: communication',
+				'    foreign_key: communication_id',
+				'    match: { comm_tenant_id: tenant_id }',
+				'',
+			].join('\n');
+		});
+		const r = run(root, ['entity', 'new', '--all', '--force']);
+		expect(r.out).not.toContain('declare the same unique');
+		expect(r.status).toBe(0);
+		const base = read(root, 'communications/communication.entity.ts');
+		expect(base.match(/communications_id_tenant_id_uniq/g)).toHaveLength(1);
+	});
+
+	it('rendering a child alone refuses a bad roles: on its base cleanly, writing nothing', () => {
+		const root = familyProject('inh-counterpart-roles', (f) => {
+			f['communication.yaml'] = f['communication.yaml']!.concat('\nroles:\n  organizer:\n    target: no_such_entity\n    cardinality: one\n');
+		});
+		const r = run(root, ['entity', 'new', 'entities/meeting.yaml', '--force']);
+		expect(r.status).not.toBe(0);
+		expect(r.out).toContain('no_such_entity');
+		// nothing for the child either (the default is --continue-on-error): it is rendered from the base's YAML,
+		// so it is rejected with the base, before hygen runs
+		expect(r.out).toContain("'communication' failed validation");
+		expect(fs.existsSync(path.join(root, 'src/modules/meetings'))).toBe(false);
+		expect(fs.existsSync(path.join(root, 'src/modules/communications'))).toBe(false);
 	});
 
 	it("M2's exception: the discriminator is the matched column, so nothing is derived", () => {

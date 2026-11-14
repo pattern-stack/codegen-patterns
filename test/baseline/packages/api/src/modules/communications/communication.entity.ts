@@ -32,7 +32,7 @@ export const communications = pgTable(
     unique('communications_tenant_id_source_external_id_uniq').on(tCols.tenantId, tCols.source, tCols.externalId).nullsNotDistinct(),
     // inherits / match: the target of a composite FK (id, kind)
     unique('communications_id_kind_uniq').on(tCols.id, tCols.kind),
-    // inherits: the target of every child tenant FK (id, tenant)
+    // inherits / match: the target of a composite FK (id, tenant_id)
     unique('communications_id_tenant_id_uniq').on(tCols.id, tCols.tenantId),
   ],
 );

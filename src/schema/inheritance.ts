@@ -32,6 +32,38 @@ export function inheritsOf(
 	return { base: raw.base, as: raw.as ?? def.entity.name };
 }
 
+/**
+ * `match:` as `[local column, target column]` pairs — the ONE normaliser of the
+ * two spellings (the object form, and the `[col]` shorthand for `{ col: col }`).
+ * Every reader — the schema, the parsed model (`load-entities.ts`), the
+ * validator, the hygen templates — goes through it. Empty without a `match:`.
+ */
+export function matchPairsOf(rel: { match?: readonly string[] | Readonly<Record<string, string>> | null }): Array<[string, string]> {
+	const m = rel.match;
+	if (m === undefined || m === null) return [];
+	if (Array.isArray(m)) return m.map((c): [string, string] => [c, c]);
+	return Object.entries(m as Record<string, string>);
+}
+
+/**
+ * The entities a rendered entity's table depends on, besides itself (RFC-0006
+ * §2): its BASE (which carries the uniques the child's two composite FKs point
+ * at) and every `match:` relationship's TARGET (which carries
+ * `unique(id, <matched columns>)`). Shape-neutral: the raw YAML and the parsed
+ * model both reduce to it, so family discovery is written once.
+ */
+export function inheritanceCounterpartNames(def: {
+	base: string | null;
+	relationships: Iterable<{ type: string; target: string; match?: readonly string[] | Readonly<Record<string, string>> | null }>;
+}): string[] {
+	const out: string[] = [];
+	if (def.base !== null) out.push(def.base);
+	for (const rel of def.relationships) {
+		if (rel.type === 'belongs_to' && matchPairsOf(rel).length > 0 && !out.includes(rel.target)) out.push(rel.target);
+	}
+	return out;
+}
+
 /** One issue: a YAML path and a message that names the entity. */
 export interface InheritanceIssue {
 	path: (string | number)[];

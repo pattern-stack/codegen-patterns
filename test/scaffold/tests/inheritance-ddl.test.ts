@@ -244,3 +244,40 @@ d('match: on a role lookup -- a participant role is one of the communication kin
     expect(err?.column).toBe('communication_kind');
   });
 });
+
+d('match: with a nullable FK -- the FK and its derived column are NULL together', () => {
+  // MATCH SIMPLE skips a composite FK that has a NULL in any column, so a set communication_id with a NULL
+  // communication_kind would never be checked against the communication at all. The emitted CHECK closes that.
+  const insertNote = (comm: string | null, kind: string | null) =>
+    run(sql`INSERT INTO communication_notes (communication_id, communication_kind, body)
+            VALUES (${comm}, ${kind}, 'n')`);
+
+  test('control: no communication and no kind inserts', async () => {
+    await insertNote(null, null);
+  });
+
+  test('control: a communication with its own kind inserts', async () => {
+    await insertComm(ids.meetingComm, 'meeting');
+    await insertNote(ids.meetingComm, 'meeting');
+  });
+
+  test('a set FK with a NULL derived column fails the CHECK (23514) instead of skipping the composite FK', async () => {
+    await insertComm(ids.meetingComm, 'meeting');
+    const err = await violation(() => insertNote(ids.meetingComm, null));
+    expect(err?.code).toBe('23514');
+    expect(err?.constraint).toBe('communication_notes_communication_match_check');
+  });
+
+  test('a derived column with no FK fails the same CHECK', async () => {
+    const err = await violation(() => insertNote(null, 'meeting'));
+    expect(err?.code).toBe('23514');
+    expect(err?.constraint).toBe('communication_notes_communication_match_check');
+  });
+
+  test('a set FK with the wrong kind still fails the composite FK (23503)', async () => {
+    await insertComm(ids.meetingComm, 'meeting');
+    const err = await violation(() => insertNote(ids.meetingComm, 'email'));
+    expect(err?.code).toBe('23503');
+    expect(err?.constraint).toBe('communication_notes_communication_match_fk');
+  });
+});

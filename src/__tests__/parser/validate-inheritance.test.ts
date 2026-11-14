@@ -40,6 +40,7 @@ describe('the fixture family', () => {
 		const names = loadFamily().map((e) => e.name).sort();
 		expect(names).toEqual([
 			'communication',
+			'communication_note',
 			'communication_participant',
 			'communication_participant_role',
 			'communication_part',
@@ -581,9 +582,9 @@ describe('M2 — the local column is derived, except the discriminator', () => {
 	// (the same field is matched by both relationships, so both report it)
 	it('M2: the local column is a foreign key column', () => {
 		const messages = errorsFor({
-			communication_participant: (r) => (r.relationships.communication.match = { person_id: 'kind' }),
+			communication_participant: (r) => (r.relationships.communication.match = { party_id: 'kind' }),
 		}).map((e) => e.message);
-		expect(messages.join('\n')).toContain("local column 'person_id'");
+		expect(messages.join('\n')).toContain("local column 'party_id'");
 	});
 
 	it('M2: the local column collides with a behavior column', () => {

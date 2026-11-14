@@ -52,6 +52,7 @@ export * from '@gen/modules/email-communication-parts/email-communication-part.e
 export * from '@gen/modules/communication-participant-roles/communication-participant-role.entity';
 export * from '@gen/modules/communication-participants/communication-participant.entity';
 export * from '@gen/modules/parties/party.entity';
+export * from '@gen/modules/communication-notes/communication-note.entity';
 
 // Subsystem schemas come from `@shared/*` — i.e. `runtime/subsystems/*`, the
 // real source — NOT from a vendored copy generated into the repo root. One

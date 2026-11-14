@@ -67,8 +67,22 @@ function makeLookup(load, where) {
    * `entity:` blocks alone (`entityLookupFrom` without `definitions`).
    */
   lookup.definition = (name) => get().defs.get(name) ?? null;
-  /** Every document, in directory-walk order (see {@link lookup.definition}). */
-  lookup.definitions = () => [...get().defs.values()];
+  /**
+   * Every document, in directory-walk order (see {@link lookup.definition}).
+   * Strict: a lookup in which some entity has a block but no document would answer
+   * "no referrers" for an entity it simply could not read, so it throws instead.
+   */
+  lookup.definitions = () => {
+    const { byName, defs } = get();
+    if (defs.size < byName.size) {
+      const missing = [...byName.keys()].filter((n) => !defs.has(n));
+      throw new Error(
+        `[codegen] the entity lookup holds the entity: block but not the YAML document of ${missing.join(', ')}; ` +
+          `a cross-entity read (inheritance, match:) cannot run over it.`,
+      );
+    }
+    return [...defs.values()];
+  };
   /** Why `name` did not resolve: the directory searched and the file expected. */
   lookup.missingEntity = (name) =>
     where.dir
@@ -188,11 +202,13 @@ export function projectEntityLookup(cwd) {
  * schema default `''`, the same default hand-built locals get.
  */
 export function entityLookupFrom(entityBlocks, { tablePrefix = '', definitions = [] } = {}) {
+  // A block with no document of its own is the bare document `{ entity: block }`: it declares no
+  // fields or relationships, which is all a unit test that builds locals by hand has said about it.
   const docs = new Map(definitions.map((d) => [d.entity.name, d]));
   return makeLookup(
     () =>
       indexBlocks(
-        entityBlocks.map((block) => ({ block, source: `<${block.name}>`, doc: docs.get(block.name) })),
+        entityBlocks.map((block) => ({ block, source: `<${block.name}>`, doc: docs.get(block.name) ?? { entity: block } })),
         tablePrefix,
       ),
     { dir: '<in-memory>', candidates: [], tablePrefix },

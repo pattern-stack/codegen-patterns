@@ -16,11 +16,9 @@ import { junctionFanOutFor, junctionNaming } from '../../../_shared/junction-fan
 import { renderSqlPredicate } from '../../../_shared/sql-predicate.mjs';
 import { TABLE_CALLBACK_PARAM as T } from '../../../_shared/table-callback.mjs';
 import {
-  checkedIdentifier,
   enumTypeNames,
   inheritanceFor,
   matchColumns,
-  matchPairsOf,
   resolveEnumField,
 } from '../../../_shared/inheritance.mjs';
 // The patterns barrel has the side effect of pre-registering the five
@@ -52,7 +50,7 @@ import {
   timestampColumn,
 } from '../../../../src/schema/field-timestamp.js';
 import { resolveTenancy } from '../../../../src/schema/tenancy.js';
-import { inheritsOf } from '../../../../src/schema/inheritance.js';
+import { inheritsOf, matchPairsOf } from '../../../../src/schema/inheritance.js';
 import { sqlTableName } from '../../../../src/config/table-naming.js';
 import { rewriteSharedImport, subsystemsImport } from '../../../../src/config/runtime-mode.mjs';
 import { DEFAULT_CODEGEN_CONFIG } from '../../../../src/config/project-config.js';
@@ -1088,16 +1086,30 @@ function processUniqueIndexes(
   });
 }
 
+/** Postgres keeps 63 bytes of an identifier and truncates the rest without a word. */
+export const PG_IDENTIFIER_MAX_BYTES = 63;
+
 /**
- * C3 and C4 (#784): every name in the extra-config callback is distinct, and no
+ * C3, C4 (#784) and C5: every name in the extra-config callback is distinct and at most
+ * 63 bytes (C5), and no
  * two non-partial uniques cover the same column set. Partial entries are exempt
  * from C4 — two partial entries over the same columns with different
  * predicates are the documented use.
  */
-function assertDistinctConstraints(tableConstraints, entityName) {
+export function assertDistinctConstraints(tableConstraints, entityName) {
   const names = new Map();
   const colSets = new Map();
   for (const c of tableConstraints) {
+    // Two names that differ only after byte 63 are one name to Postgres: a silent collision (or a
+    // constraint the author cannot find by the name they read). Every emitted index, unique, FK and
+    // CHECK passes through here.
+    if (Buffer.byteLength(c.name) > PG_IDENTIFIER_MAX_BYTES) {
+      throw new Error(
+        `[codegen] '${entityName}': the name '${c.name}' (${c.source}) is ${Buffer.byteLength(c.name)} bytes; ` +
+          `Postgres keeps ${PG_IDENTIFIER_MAX_BYTES} and would truncate it. A name starts with the SQL table ` +
+          `name, so shorten that with \`entity.table:\` (TABLE-0), or rename the entity or relationship.`,
+      );
+    }
     if (names.has(c.name)) {
       throw new Error(
         `[codegen] '${entityName}': constraint name '${c.name}' is used by both ${names.get(c.name)} and ${c.source}.`,
@@ -1589,10 +1601,9 @@ export function buildBackendLocals(definition, baseLocals) {
   // stays on `ownNaming.plural`. `baseLocals.tablePrefix` is the project's
   // `tables.prefix` that prompt.js reads from the config; absent (locals built
   // by hand in a unit test) means the schema default.
-  const entityTableName = sqlTableName(
-    entity,
-    baseLocals.tablePrefix ?? DEFAULT_CODEGEN_CONFIG.tables.prefix,
-  );
+  const projectTablePrefix = baseLocals.tablePrefix ?? DEFAULT_CODEGEN_CONFIG.tables.prefix;
+  const projectTenancyColumn = baseLocals.tenancyColumn ?? DEFAULT_CODEGEN_CONFIG.tenancy.column;
+  const entityTableName = sqlTableName(entity, projectTablePrefix);
   const targetNaming = { entityName, ownNaming, entityTableName, modulesDir, entityLookup };
   const entityNamePlural = ownNaming.plural;
   // NAME-2: the emitted file stems. `entityName` / `entityNamePlural` stay the
@@ -1838,7 +1849,7 @@ export function buildBackendLocals(definition, baseLocals) {
   const tenancy = resolveTenancy(
     entityName,
     definition,
-    baseLocals.tenancyColumn ?? DEFAULT_CODEGEN_CONFIG.tenancy.column,
+    projectTenancyColumn,
   );
   const tenantScoped = tenancy !== null;
   // The tenant block in entity.ejs.t emits the column only when nothing adopts it.
@@ -2041,16 +2052,13 @@ export function buildBackendLocals(definition, baseLocals) {
   // point at — each rendered by this entity's OWN template from the other
   // side's YAML (`_shared/inheritance.mjs`).
   // ==========================================================================
-  const projectTablePrefix = baseLocals.tablePrefix ?? DEFAULT_CODEGEN_CONFIG.tables.prefix;
   const inheritance = inheritanceFor({
     entityName,
     definition,
     lookup: entityLookup,
     ownNaming,
     modulesDir,
-    tablePrefix: projectTablePrefix,
-    tenancyColumn: baseLocals.tenancyColumn ?? DEFAULT_CODEGEN_CONFIG.tenancy.column,
-    tableName: entityTableName,
+    tenancyColumn: projectTenancyColumn,
   });
   const inheritedChild = inheritance.child;
   const isChild = inheritedChild !== null;
@@ -2215,9 +2223,8 @@ export function buildBackendLocals(definition, baseLocals) {
     `      foreignColumns: [${targetColumns.map((c) => `${targetTable}.${propOf(c)}`).join(', ')}],\n` +
     `    }).onDelete('${onDelete}')`;
   // The targets of other tables' composite FKs: unique(id, <cols>), one per column set.
-  const tenantForUnique = tenantScoped && typeof definition.discriminator === 'string' ? tenancy : null;
   for (const u of inheritance.uniqueTargets) {
-    const name = checkedIdentifier(`${entityTableName}_id_${u.columns.join('_')}_uniq`, entityName, 'unique constraint');
+    const name = `${entityTableName}_id_${u.columns.join('_')}_uniq`;
     tableConstraints.push({
       comment: `inherits / match: the target of a composite FK (id, ${u.columns.join(', ')})`,
       expr: `unique('${name}').on(${T}.id, ${u.columns.map((c) => `${T}.${propOf(c)}`).join(', ')})`,
@@ -2228,28 +2235,36 @@ export function buildBackendLocals(definition, baseLocals) {
       source: `inherits / match: unique(id, ${u.columns.join(', ')})`,
     });
   }
-  if (tenantForUnique) {
-    const name = checkedIdentifier(`${entityTableName}_id_${tenantForUnique.column}_uniq`, entityName, 'unique constraint');
-    tableConstraints.push({
-      comment: 'inherits: the target of every child tenant FK (id, tenant)',
-      expr: `unique('${name}').on(${T}.id, ${T}.${tenantForUnique.prop})`,
-      name,
-      builder: 'unique',
-      partial: false,
-      columns: ['id', tenantForUnique.column],
-      source: 'inherits: unique(id, tenant)',
-    });
-  }
   // `match:` — one composite FK per relationship, in place of the column's single-column FK.
   for (const fk of matched.fks) {
     const rel = belongsTo.find((r) => r.relName === fk.relName);
-    const name = checkedIdentifier(`${entityTableName}_${fk.relName}_match_fk`, entityName, 'foreign key');
+    const name = `${entityTableName}_${fk.relName}_match_fk`;
     tableConstraints.push({
       comment: `match: (${[rel.field, ...fk.pairs.map(([l]) => l)].join(', ')}) → ${rel.relatedEntity}(id, ${fk.pairs.map(([, t]) => t).join(', ')})`,
       expr: fkExpr(name, [rel.field, ...fk.pairs.map(([l]) => l)], rel.relatedTable, ['id', ...fk.pairs.map(([, t]) => t)], rel.onDelete),
       name,
       builder: 'foreignKey',
       source: `match: on relationship '${fk.relName}'`,
+    });
+  }
+  // A derived column that is nullable (EVERY relationship matching it is nullable) would let a set FK skip its
+  // composite check: MATCH SIMPLE does not check a row with a NULL in any key column. So the FK and the derived
+  // column are NULL together, per relationship (RFC-0006 §2.4).
+  const nullableDerived = new Set(matched.derived.filter((d) => d.nullable).map((d) => d.column));
+  for (const fk of matched.fks) {
+    const rel = belongsTo.find((r) => r.relName === fk.relName);
+    const locals = fk.pairs.map(([l]) => l).filter((l) => nullableDerived.has(l));
+    if (locals.length === 0) continue;
+    const name = `${entityTableName}_${fk.relName}_match_check`;
+    const body = locals
+      .map((l) => `(\${${T}.${camelCase(rel.field)}} IS NULL) = (\${${T}.${camelCase(l)}} IS NULL)`)
+      .join(' AND ');
+    tableConstraints.push({
+      comment: `match: ${rel.field} and ${locals.join(', ')} are NULL together, so a set ${rel.field} always reaches its composite FK`,
+      expr: `check('${name}', sql\`${body}\`)`,
+      name,
+      builder: 'check',
+      source: `match: on relationship '${fk.relName}' (nullable)`,
     });
   }
   // A child: tenant index, the two composite FKs to the base row, the kind CHECK.
@@ -2266,7 +2281,7 @@ export function buildBackendLocals(definition, baseLocals) {
         source: 'inherits: tenant column',
       });
     }
-    const kindFk = checkedIdentifier(`${entityTableName}_${baseName}_${disc}_fk`, entityName, 'foreign key');
+    const kindFk = `${entityTableName}_${baseName}_${disc}_fk`;
     tableConstraints.push({
       comment: `inherits ${baseName}: this row sits only under a ${baseName} row whose ${disc} is ${inheritedChild.as}`,
       expr: fkExpr(kindFk, ['id', disc], inheritedChild.baseTable, ['id', disc], 'cascade'),
@@ -2276,7 +2291,7 @@ export function buildBackendLocals(definition, baseLocals) {
     });
     if (inheritedChild.tenant) {
       const t = inheritedChild.tenant;
-      const tenantFk = checkedIdentifier(`${entityTableName}_${baseName}_tenant_fk`, entityName, 'foreign key');
+      const tenantFk = `${entityTableName}_${baseName}_tenant_fk`;
       tableConstraints.push({
         comment: `inherits ${baseName}: the tenant of this row is the tenant of its ${baseName} row`,
         expr: fkExpr(tenantFk, ['id', t.column], inheritedChild.baseTable, ['id', t.column], 'cascade'),
@@ -2285,7 +2300,7 @@ export function buildBackendLocals(definition, baseLocals) {
           source: 'inherits: tenant FK',
       });
     }
-    const checkName = checkedIdentifier(`${entityTableName}_${disc}_check`, entityName, 'check constraint');
+    const checkName = `${entityTableName}_${disc}_check`;
     tableConstraints.push({
       comment: `inherits ${baseName}: the kind is fixed (DEFAULT + CHECK, not a generated column)`,
       expr: `check('${checkName}', sql\`\${${T}.${inheritedChild.kind.prop}} = '${inheritedChild.as}'\`)`,

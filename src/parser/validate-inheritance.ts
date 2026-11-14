@@ -29,6 +29,7 @@ import { declaredPatternNames } from '../patterns/compose.js';
 import { getPattern } from '../patterns/registry.js';
 import { resolveImpliedBehaviors } from '../patterns/implied-behaviors.js';
 import { foreignKeyColumnNullable } from '../schema/field-nullability.js';
+import { inheritanceCounterpartNames, matchPairsOf } from '../schema/inheritance.js';
 import {
 	baseTenantColumnIssue,
 	tenantColumnName,
@@ -40,11 +41,6 @@ export interface ValidateInheritanceOptions {
 	tenancyColumn: string;
 	/** The project's `frontend.sync.mode`, which an entity with no `sync:` resolves to, resolved through `FrontendSyncConfigSchema` by the caller. */
 	syncMode: 'api' | 'electric';
-}
-
-/** `match:` of a relationship as `[local, target]` pairs (empty without one). */
-export function matchPairs(rel: Pick<ParsedRelationship, 'match'>): Array<[string, string]> {
-	return Object.entries(rel.match ?? {});
 }
 
 /** The parsed model as the tenancy helpers read it. */
@@ -83,7 +79,7 @@ function ownNames(e: ParsedEntity): Map<string, string> {
 	for (const key of e.roles?.keys() ?? []) add(key, `role '${key}'`);
 	// A `match:` derives its local column when the entity does not declare it (RFC-0006 §2.4).
 	for (const [key, rel] of e.relationships) {
-		for (const [local] of matchPairs(rel)) {
+		for (const [local] of matchPairsOf(rel)) {
 			if (!e.fields.has(local)) add(local, `column '${local}' derived by the match: of relationship '${key}'`);
 		}
 	}
@@ -437,7 +433,7 @@ export function validateInheritance(
 				);
 			}
 
-			for (const [local, targetCol] of matchPairs(rel)) {
+			for (const [local, targetCol] of matchPairsOf(rel)) {
 				// M1: the target column exists and is NOT NULL.
 				const notNull = columnNotNull(target, targetCol);
 				if (notNull === undefined) {
@@ -542,29 +538,29 @@ export function validateInheritance(
 
 /**
  * The entities whose generated table depends on a rendered one's YAML, and so
- * must be re-rendered with it (RFC-0006 §2): a child's BASE (the base carries
- * the uniques the child's two composite FKs point at) and every `match:`
- * relationship's TARGET (the target carries `unique(id, <matched columns>)`).
- * Names only; ones already in `rendered`, and the entity itself, are left out.
+ * must be re-rendered with it (RFC-0006 §2): a child's BASE and every `match:`
+ * relationship's TARGET (`inheritanceCounterpartNames`, the one reader of both
+ * shapes). Names only; ones already in `rendered`, and the entity itself, are
+ * left out.
  *
- * The reverse direction needs no entry: a base's or a target's own render
- * already reads its children and referrers from their YAML.
+ * Only this direction exists. A base's output depends on its own YAML and on
+ * its `match:` referrers' (the uniques their composite FKs point at) and NOT on
+ * its children, so editing a base and rendering only the base leaves its
+ * children stale — as a `belongs_to` target's edit leaves its referrers stale.
  */
 export function inheritanceCounterparts(entities: ParsedEntity[], rendered: ReadonlySet<string>): string[] {
 	const byName = new Map(entities.map((e) => [e.name, e]));
 	const out: string[] = [];
-	const add = (name: string | undefined, from: string) => {
-		if (name === undefined || name === from || rendered.has(name) || out.includes(name) || !byName.has(name)) return;
-		out.push(name);
-	};
 	for (const name of rendered) {
 		const e = byName.get(name);
 		if (e === undefined) continue;
-		if (e.inherits !== undefined) {
-			add(e.inherits.base, name);
-		}
-		for (const rel of e.relationships.values()) {
-			if (rel.type === 'belongs_to' && rel.match !== undefined) add(rel.target, name);
+		const counterparts = inheritanceCounterpartNames({
+			base: e.inherits?.base ?? null,
+			relationships: e.relationships.values(),
+		});
+		for (const c of counterparts) {
+			if (c === name || rendered.has(c) || out.includes(c) || !byName.has(c)) continue;
+			out.push(c);
 		}
 	}
 	return out;

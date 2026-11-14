@@ -30,7 +30,7 @@ export {
 
 export {
 	validateInheritance,
-	matchPairs,
+	inheritanceCounterparts,
 	type ValidateInheritanceOptions,
 } from './validate-inheritance';
 
