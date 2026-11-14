@@ -35,7 +35,7 @@ src/studio/shared/api.ts        the wire contract — types only, no runtime imp
         │
 src/studio/server/**            HTTP server. Owns no generator logic: every mutating
         │                       route shells the codegen CLI with --json and parses it.
-        │                       Read routes call the analyzer in-process.
+        │                       So do the generator read routes (graph, validate).
         │
 tools/studio/**                 Vite + React app. Owns no generator logic either: it
                                 renders @pattern-stack/graph-components onto an
@@ -50,9 +50,12 @@ future CLI change would need porting. Shelling `entity new --all --force --json`
 and the owner's terminal run the same code path, and the `--json` payloads CLI-1 (#673) added to every verb are what
 makes that legible over the wire rather than screen-scraped.
 
-The one place the server does *not* shell out is the graph: `GET /api/graph` calls `analyzeDomain` +
-`serializeDomainGraph` in-process, because `project graph --json` would only re-serialize the same structure through a
-subprocess.
+The generator's read routes shell it too: `GET /api/graph` runs `project graph --json` and `POST /api/validate` runs
+`entity validate --json` (`src/studio/server/graph.ts`). An earlier draft of this spec called the analyzer in-process
+for the graph; shelling instead means the server holds no second copy of the analyzer, and a fresh process per call
+never serves a pattern registry filled by an earlier request's dynamic imports. What stays in-process is file I/O on the
+project's own YAML and the write-time schema check (`src/studio/server/files.ts`), which needs the Zod issue paths the
+CLI flattens to strings.
 
 ### Why the UI reuses graph-components
 
