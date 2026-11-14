@@ -373,6 +373,35 @@ export function locateIssues(source: string, issues: ZodIssueLike[]): LocatedIss
   });
 }
 
+/** Where a YAML path sits in a document — `exact: false` when only a prefix of it exists. */
+export interface PathLocation extends IssueLocation {
+  exact: boolean;
+}
+
+/**
+ * The position of the declaration at `path` — the same walk `locateIssues`
+ * uses for a Zod issue, so a provenance link and an issue marker for the same
+ * path land on the same line.
+ *
+ * A path that lands on a block (`relationships.account`) resolves to the key
+ * that opens it; a sequence item (`queries.0`) to the item's first line. When
+ * only a prefix of the path exists — the file was edited since the surface was
+ * derived — the deepest existing ancestor is returned with `exact: false`.
+ * Nothing in the document matching, or a document that does not parse, is
+ * `undefined`: the caller says so rather than pointing at line 1.
+ */
+export function locatePath(source: string, path: (string | number)[]): PathLocation | undefined {
+  if (path.length === 0) return undefined;
+  const doc = parseDocument(source, { keepSourceTokens: false });
+  const root = doc.contents as Node | null;
+  if (root == null || !hasRange(root)) return undefined;
+
+  const { node, depth } = resolveWithWrapper(root, path);
+  if (depth === 0 || !hasRange(node)) return undefined;
+
+  return { ...locationOf(node.range, lineStarts(source), source), exact: depth === path.length };
+}
+
 /** Human-readable `a.b[0].c` for an issue path. */
 export function formatIssuePath(path: (string | number)[]): string {
   return path.reduce<string>((acc, segment) => {

@@ -91,22 +91,46 @@ What the payload holds, per ADR-046 and `src/derived/api/types.ts`:
 
 ---
 
-## 4. The API tab (design — built in A4)
+## 4. The API tab (built in A4)
 
-`InspectorTab` gains `'api'`, enabled for an entity node.
+`InspectorTab` gains `'api'`. Its button is disabled when nothing is selected; once open, it stays open when another
+node is selected (as `relate` does). The tab is `inspector/ApiTab.tsx`; the pure view model it renders is
+`inspector/surface-view.ts`.
 
-- **Sections**, in order: Repository, Service, Use cases, HTTP, Includes.
-- **Row anatomy**: name, parameter names, shape — `findByAccountId(id, opts) → many` — and flags (`unique`, `limit`,
-  `emitted: false` shown as inherited). No TypeScript types: the derivation carries none until slice 2.
-- **Origin chip**: `← relationships.account`, `← queries[1] (unique)`, `base`, `pattern Integrated`,
-  `capability Actor`, `junction opportunity_contact`.
-- **Shadowing**: a declaration that lost to another of the same name is shown under the winning row, with its own
-  YAML path — the demo's `contact` shows `queries[0]` under `findByAccountId`.
-- **Provenance → line**: clicking a YAML origin opens the YAML tab at that declaration's line. The path → position
-  walker that maps Zod issues (`inspector/yaml-issues.ts`) is exported as `locatePath(source, path)`; `YamlEditor`
-  gains `revealLine`.
-- **Unmodelled**: a relationship or junction node shows its `unmodelled` reason instead of a method list.
-- **Failure**: a non-2xx from `/api/surface` shows the CLI's detail in the tab; the canvas is unaffected.
+- **Sections**, in order: Repository, Service, Use cases, HTTP, Includes. Each header counts its rows; Repository and
+  Service read `6 + 11 inherited`.
+- **Row order**: by the kind order in `surface-kinds.ts`, stable, so rows of one kind keep the derivation's order —
+  the FK finder sorts before the `queries:` finders.
+- **Row anatomy**: name, parameter names, shape — `findByAccountId(id, opts) → many` — then flags (`unique`, `order`,
+  `limit`, read options). A service row with a delegate shows what it calls. No TypeScript types: the derivation
+  carries none until slice 2.
+- **Inherited** (`emitted: false`) entries sit in a collapsed group per source ("Inherited from pattern Integrated —
+  11"), never mixed with emitted rows.
+- **Origin chip**: `← relationships.account`, `← queries[1]`, `base`, `pattern Integrated`, `capability Actor`,
+  `junction opportunity_contact`. Uniqueness is a row flag, not chip text: a chip appends a `YamlRef.note` only when
+  the derivation sets one. A relation-sourced chip takes its edge kind's colour (`edge-kinds.ts`), so the chip and
+  the line it explains match.
+- **Shadowing**: a declaration that lost to another of the same name is shown under the winning row with its own
+  chip — the demo's `contact` shows "shadows ← queries[0] — resolved to the same name and lost" under
+  `findByAccountId`.
+- **Provenance → line**: clicking any YAML chip, winning or shadowed, opens the YAML tab on the file its `doc` names
+  and reveals that declaration's line (`relationships.account` → line 43, `queries[0]` → line 49 in the demo). The
+  walker behind Zod issue mapping is exported as `locatePath(source, path)`; when the path was edited away it returns
+  the nearest ancestor with `exact: false` and the YAML tab says so; when nothing matches it returns `undefined`.
+  `YamlEditor` gains `revealLine`. The inspector re-syncs the open file to the selection only when the selection
+  changes, so a chip that opens another file (a junction's) is not undone.
+- **HTTP off**: `http.enabled === false` reads as HTTP off, with `disabledBy` as its chip.
+- **Includes**: one row per compiled path — route · path, depth, max depth, the allowlist constant. An empty
+  allowlist reads "No `api.includes` declared — `?include=` is closed." (charter I6).
+- **Unmodelled**: a relationship or junction node shows "<name> — not modelled yet (#679)" and the CLI's reason. A
+  node in neither `entities` nor `unmodelled` says it is undescribed; no state ever shows an empty list.
+- **Failure**: a failed `/api/surface` shows the error and a Retry in the tab; the canvas and other tabs are
+  unaffected. An error outranks "Nothing selected", so a dead server is never hidden behind an empty selection. When
+  the whole server is down, a header Reload also empties the canvas (the graph route fails too); the canvas stays
+  intact when the surface route fails on its own.
+- **Tests**: `tools/studio/src/__tests__/surface-view.test.ts` over three real `project surface --json` payloads of
+  the demo (`__tests__/fixtures/`, regenerated per its README) — no hand-written surface. The demo has no capability
+  or junction origin, so those two chips are tested with typed `Origin` values.
 
 ---
 
@@ -122,11 +146,13 @@ What the payload holds, per ADR-046 and `src/derived/api/types.ts`:
 
 ---
 
-## 6. Vocabulary table (design)
+## 6. Vocabulary table (built in A4)
 
 `tools/studio/src/inspector/surface-kinds.ts` — one row per method kind and per origin kind: label, section, order.
 The API tab and the edge panel render from it and never branch on a kind literal, as `relationship-kinds.ts` and
-`edge-kinds.ts` already work. #679 and REL-3 become edits to this table, not conditionals across components.
+`edge-kinds.ts` already work. #679 and REL-3 become edits to this table, not conditionals across components. It also
+holds each section's label, order and empty-state sentence, and each origin kind's chip; it reads the derivation's
+unions off `@studio-shared` rather than restating them, and holds no colour.
 
 ---
 

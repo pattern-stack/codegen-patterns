@@ -22,6 +22,7 @@ import type {
   RelationshipWriteResponse,
   RunConflictResponse,
   RunEvent,
+  SurfaceResponse,
   ValidateResponse,
   ZodIssueLike,
 } from '@studio-shared';
@@ -134,6 +135,13 @@ export const api = {
   health: () => request<HealthResponse>('/api/health'),
 
   graph: () => request<GraphResponse>('/api/graph'),
+
+  /**
+   * The derived API surface. Fetched apart from the graph: it can fail where
+   * the graph does not (an invalid `api.includes`, a pattern that fails to
+   * load), and that failure belongs in the API tab, not on the canvas.
+   */
+  surface: () => request<SurfaceResponse>('/api/surface'),
 
   listFiles: () => request<FileListResponse>('/api/files'),
 

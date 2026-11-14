@@ -22,6 +22,11 @@ export interface YamlEditorProps {
   /** Save is wired to ⌘S / Ctrl-S as well as the toolbar button. */
   onSave: () => void;
   readOnly?: boolean;
+  /**
+   * A 1-based line to scroll to and select. `seq` changes on every request, so
+   * asking for the same line twice still moves the editor.
+   */
+  revealLine?: { line: number; seq: number };
 }
 
 /**
@@ -33,7 +38,7 @@ export interface YamlEditorProps {
  * a missing required key — resolves to its nearest ancestor and is phrased as
  * "expected here", which is where the author has to type.
  */
-export function YamlEditor({ value, onChange, issues, onSave, readOnly = false }: YamlEditorProps) {
+export function YamlEditor({ value, onChange, issues, onSave, readOnly = false, revealLine }: YamlEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
@@ -122,6 +127,22 @@ export function YamlEditor({ value, onChange, issues, onSave, readOnly = false }
       effects: editable.current.reconfigure(EditorView.editable.of(!readOnly)),
     });
   }, [readOnly]);
+
+  // Declared after the mount effect, so a reveal requested together with the
+  // editor's first render finds the view already built.
+  const revealSeq = revealLine?.seq;
+  useEffect(() => {
+    const instance = view.current;
+    if (!instance || revealLine == null) return;
+    const doc = instance.state.doc;
+    const line = doc.line(Math.min(Math.max(revealLine.line, 1), doc.lines));
+    instance.dispatch({
+      selection: { anchor: line.from, head: line.to },
+      effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
+    });
+    instance.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one move per request
+  }, [revealSeq]);
 
   useEffect(() => {
     view.current?.dispatch({

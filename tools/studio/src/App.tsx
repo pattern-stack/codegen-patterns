@@ -8,6 +8,7 @@ import type { AdaptedGraph } from './adapters/schema-adapter';
 import { GraphPane } from './graph/GraphPane';
 import { Inspector } from './inspector/Inspector';
 import type { InspectorTab } from './inspector/Inspector';
+import type { SurfaceState } from './inspector/ApiTab';
 import { Drawer } from './drawer/Drawer';
 import { RUN_STEPS, initialRunState, isRunInFlight, runReducer } from './drawer/run-state';
 import { Button, Dot, Segmented, Spinner, Toggle } from './ui/primitives';
@@ -41,6 +42,7 @@ export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [graph, setGraph] = useState<GraphState>({ data: EMPTY_GRAPH, counts: null, loading: true });
+  const [surface, setSurface] = useState<SurfaceState>({ status: 'loading' });
   const [files, setFiles] = useState<StudioFile[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('detail');
@@ -78,6 +80,18 @@ export function App() {
       });
   }, []);
 
+  // Its own request, its own state: a surface that fails to derive shows in the
+  // API tab, and the canvas — drawn from the graph — is untouched by it.
+  const loadSurface = useCallback(() => {
+    setSurface((prev) => (prev.status === 'ready' ? prev : { status: 'loading' }));
+    return api
+      .surface()
+      .then((res) => setSurface({ status: 'ready', surface: res.surface }))
+      .catch((err: unknown) =>
+        setSurface({ status: 'error', error: describe(err, 'Could not derive the API surface') }),
+      );
+  }, []);
+
   const loadFiles = useCallback(
     () => api.listFiles().then(setFiles).catch(() => setFiles([])),
     [],
@@ -85,8 +99,9 @@ export function App() {
 
   const reload = useCallback(() => {
     void loadGraph();
+    void loadSurface();
     void loadFiles();
-  }, [loadGraph, loadFiles]);
+  }, [loadGraph, loadSurface, loadFiles]);
 
   useEffect(() => {
     api
@@ -100,6 +115,7 @@ export function App() {
         const described = describe(err, 'Could not reach the Studio server');
         setHealthError(described.title);
         setGraph({ data: EMPTY_GRAPH, counts: null, loading: false, error: described });
+        setSurface({ status: 'error', error: described });
       });
   }, [reload]);
 
@@ -168,7 +184,8 @@ export function App() {
   // Selecting a node is a request to look at it; the inspector follows.
   const select = useCallback((id: string | null) => {
     setSelectedId(id);
-    if (id != null) setInspectorTab((tab) => (tab === 'relate' ? tab : 'detail'));
+    // The API tab stays put too, so clicking through entities compares their surfaces.
+    if (id != null) setInspectorTab((tab) => (tab === 'relate' || tab === 'api' ? tab : 'detail'));
   }, []);
 
   const startInspectorDrag = (event: React.PointerEvent) => {
@@ -315,6 +332,8 @@ export function App() {
             entities={entityNames}
             tab={inspectorTab}
             onTabChange={setInspectorTab}
+            surface={surface}
+            onRetrySurface={() => void loadSurface()}
             onProjectChanged={reload}
             onDirtyChange={setDirty}
           />
