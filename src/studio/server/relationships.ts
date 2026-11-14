@@ -14,6 +14,7 @@
  *   has_many              → the FROM entity YAML
  *   many_to_many          → a new first-class relationship definition at
  *                           `relationships/<from>_<to>.yaml`
+ *   inherits              → the FROM (child) entity YAML's top-level `inherits:`
  *
  * Existing files are edited through `yaml`'s Document API, not re-serialized
  * from a parsed object, so comments and key order in the rest of the file
@@ -41,7 +42,7 @@ export class RelationshipRequestError extends Error {
 	}
 }
 
-const KINDS: RelationshipKind[] = ['belongs_to', 'has_many', 'has_one', 'many_to_many'];
+const KINDS: RelationshipKind[] = ['belongs_to', 'has_many', 'has_one', 'many_to_many', 'inherits'];
 
 /** Validate and normalize the request body. Throws on anything unusable. */
 export function parseRelationshipRequest(body: unknown): RelationshipRequest {
@@ -150,6 +151,45 @@ function editedEntity(
 	return { path: toProjectRelative(projectDir, file), content };
 }
 
+/**
+ * `inherits:` on the CHILD (`from`), naming the base (`to`) — RFC-0006. It is a key of
+ * the entity, not an entry of `relationships:`, so it does not go through
+ * `addRelationship`. The short form when the kind value is the entity's own name; the
+ * long form `{ base, as }` when `options.as` says otherwise. The single-file schema is the
+ * judge (a child that declares its own `timestamps` is refused here, as it would be on a PUT).
+ */
+function inheritsEdit(
+	projectDir: string,
+	req: RelationshipRequest,
+): RelationshipPreviewFile {
+	if (req.from === req.to) {
+		throw new RelationshipRequestError(`'${req.from}' cannot inherit itself`);
+	}
+	requireEntityFile(projectDir, req.to);
+	const file = requireEntityFile(projectDir, req.from);
+	const doc = parseDocument(fs.readFileSync(file, 'utf-8'));
+	if (doc.errors.length > 0) {
+		throw new RelationshipRequestError(
+			`${toProjectRelative(projectDir, file)} is not valid YAML: ${doc.errors[0].message}`,
+		);
+	}
+	if (doc.has('inherits')) {
+		throw new RelationshipRequestError(`'${req.from}' already declares \`inherits:\``);
+	}
+	const as = req.options?.as?.trim();
+	const value = as && as !== req.from ? { base: req.to, as } : req.to;
+	// Sibling of `entity:`, directly after it, as every family YAML in the repo writes it.
+	doc.setIn(['inherits'], doc.createNode(value));
+	const content = doc.toString();
+	const outcome = validateContent('entity', content);
+	if (!outcome.ok) {
+		throw new RelationshipRequestError(
+			`the resulting ${req.from} YAML would be invalid: ${outcome.issues[0].message}`,
+		);
+	}
+	return { path: toProjectRelative(projectDir, file), content };
+}
+
 /** The first-class relationship definition file for a `many_to_many`. */
 function relationshipDefinitionFile(
 	projectDir: string,
@@ -211,6 +251,10 @@ export function previewRelationship(
 
 	if (req.kind === 'many_to_many') {
 		return [relationshipDefinitionFile(projectDir, req)];
+	}
+
+	if (req.kind === 'inherits') {
+		return [inheritsEdit(projectDir, req)];
 	}
 
 	const files: RelationshipPreviewFile[] = [];

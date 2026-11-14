@@ -4,9 +4,10 @@
  * is a SECONDARY line, drawn lighter and never fed to the layout.
  *
  * First match wins:
- *   1. an explicit `inherits` — #875; until it lands no signal carries it, so
- *      this tier never matches. When it does, delete the inference below it;
- *      no shim.
+ *   1. an explicit `inherits:` (#875, RFC-0006) — a child hangs under its base.
+ *      Fed by `buildEdges` from `SerializedEntity.inherits`, not from a `belongs_to`.
+ *      The tiers below stay: a plain unique-FK 1:1 is still a modelling choice
+ *      that is not an inheritance, and `inherits:` is what states one.
  *   2. a `belongs_to` whose FK column is unique (the 1:1 is-a workaround);
  *   3. a `belongs_to` with `on_delete: cascade`;
  *   4. the first declared `belongs_to`.
@@ -20,7 +21,7 @@
 
 /** What a candidate edge says about itself, read off the graph payload. */
 export interface SpineSignals {
-  /** An explicit `inherits:` (#875). Always false until that lands. */
+  /** An explicit `inherits:` (#875): set only on the child → base edge `buildEdges` draws for it. */
   inherits: boolean;
   /** The FK column is unique (`SerializedRelationship.fkUnique`). */
   fkUnique: boolean;

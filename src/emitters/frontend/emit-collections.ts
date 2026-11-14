@@ -34,6 +34,27 @@ function baseUrlExpr(base: string, plural: string, apiBaseUrlImport: string | nu
 /** SSR-safe origin: `''` on the server, `window.location.origin` in the browser. */
 const SSR_ORIGIN_EXPR = "typeof window !== 'undefined' ? window.location.origin : ''";
 
+/** The Electric column types whose parser builds a `Date`. */
+const DATE_PARSER_TYPES: ReadonlySet<string> = new Set(['timestamptz', 'timestamp', 'date']);
+
+/**
+ * Whether this entity's own table has a date-family column (a `date` / `datetime`
+ * field, or a behavior that adds one: `timestamps`, `soft_delete`).
+ *
+ * `electricCollectionOptions` types `parser` against the row type: a parser that
+ * returns a `Date` is a type error on a row with no `Date` in it (`ParseFunction<never>`),
+ * and it is dead config there anyway. A child of `inherits:` is the common case —
+ * its table carries no `timestamps` (RFC-0006 R5), so one with no date field of its
+ * own (`email`: a subject) would not compile. A context built without `parsed` keeps
+ * every parser, as it always did.
+ */
+function rowCarriesDates(entity: EntityRegistryEntry, ctx: FrontendEmitContext): boolean {
+	const parsed = ctx.parsed.get(entity.name);
+	if (!parsed) return true;
+	if (parsed.behaviors.includes('timestamps') || parsed.behaviors.includes('soft_delete')) return true;
+	return [...parsed.fields.values()].some((f) => f.type === 'date' || f.type === 'datetime');
+}
+
 function buildElectricCollection(
 	entity: EntityRegistryEntry,
 	ctx: FrontendEmitContext,
@@ -42,6 +63,7 @@ function buildElectricCollection(
 	// `table` is the SQL name (TABLE-0) — the shape's `table` param; `plural` is
 	// the API route segment, which follows the code vocabulary.
 	const { camelName, plural, name, fileStem, table } = entity;
+	const carriesDates = rowCarriesDates(entity, ctx);
 
 	const imports: string[] = [
 		"import { electricCollectionOptions } from '@tanstack/electric-db-collection';",
@@ -83,6 +105,7 @@ function buildElectricCollection(
 		: '';
 
 	const parserEntries = Object.entries(config.parsers)
+		.filter(([type]) => carriesDates || !DATE_PARSER_TYPES.has(type))
 		.map(([type, fn]) => `\t\t\t\t${type}: ${fn},`)
 		.join('\n');
 	const parserBlock = parserEntries

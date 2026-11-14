@@ -12,7 +12,7 @@
 import { join } from 'node:path';
 import type { EntityRegistryEntry, FrontendEmitContext } from './types';
 import { sortEntities } from './types';
-import { withBanner, writeFile } from './emit-utils';
+import { hasCreateRoute, withBanner, writeFile } from './emit-utils';
 
 const SOURCE_DESC_SET = 'the entity set';
 
@@ -142,6 +142,12 @@ export function buildEntityApiFile(
 ): string {
 	const { config } = ctx;
 	const { camelName, plural, className, name } = entity;
+	// A base whose every kind has a child has no `POST /<plural>` (RFC-0006 §4.1).
+	const createMethod = hasCreateRoute(entity, ctx)
+		? `\tcreate: (data: globalThis.Partial<${className}>): Promise<${className}> =>\n\t\trequest<${className}>('POST', '/${plural}', data),\n\n`
+		: // `createEntityHooks` types its `api` with a required `create`, so the member stays — but it
+			// issues no request: it rejects, naming why. The entity file does not re-export `useCreate<Class>`.
+			`\t/** No \`POST /${plural}\`: every kind of ${name} is created through its child (RFC-0006 §4.1). */\n\tcreate: (_data: globalThis.Partial<${className}>): Promise<${className}> =>\n\t\tPromise.reject(new Error('${name} has no create route: create a row of any kind through its child')),\n\n`;
 
 	const body = `import { MAX_PAGE_SIZE, type ListQuery, type Page, request, toListQueryString } from './client';
 import type { ${className} } from '${config.dbEntitiesImport}/${name}';
@@ -182,10 +188,7 @@ export const ${camelName}Api = {
 \tget: (id: string): Promise<${className}> =>
 \t\trequest<${className}>('GET', \`/${plural}/\${id}\`),
 
-\tcreate: (data: globalThis.Partial<${className}>): Promise<${className}> =>
-\t\trequest<${className}>('POST', '/${plural}', data),
-
-\tupdate: (id: string, data: globalThis.Partial<${className}>): Promise<${className}> =>
+${createMethod}\tupdate: (id: string, data: globalThis.Partial<${className}>): Promise<${className}> =>
 \t\trequest<${className}>('PATCH', \`/${plural}/\${id}\`, data),
 
 \tdelete: (id: string): Promise<void> =>

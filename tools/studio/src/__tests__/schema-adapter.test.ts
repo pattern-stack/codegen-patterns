@@ -236,6 +236,57 @@ describe('buildEdges', () => {
     });
   });
 
+  test('an `inherits:` child draws one 1:1 edge to its base, labelled with its kind value', () => {
+    const edges = buildEdges(
+      graph({
+        entities: {
+          communication: entity('communication'),
+          meeting: entity('meeting', { inherits: { base: 'communication', as: 'meeting' } }),
+        },
+      }),
+    );
+
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toMatchObject({
+      id: 'inherits-meeting-communication',
+      source: 'meeting',
+      target: 'communication',
+      studioKind: 'inherits',
+      cardinality: '1:1',
+      label: 'meeting',
+      type: 'fk',
+    });
+  });
+
+  test('an `inherits:` child is spined under its base, ahead of a belongs_to it also declares, and is never paired', () => {
+    const edges = buildEdges(
+      graph({
+        entities: {
+          communication: entity('communication'),
+          account: entity('account'),
+          meeting: entity('meeting', { inherits: { base: 'communication', as: 'meeting' } }),
+        },
+        edges: [
+          {
+            from: 'meeting',
+            to: 'account',
+            relationship: relationship({ name: 'account', target: 'account', foreignKey: 'account_id', onDelete: 'cascade' }),
+            cardinality: 'N:1',
+            bidirectional: false,
+          },
+        ],
+      }),
+    );
+
+    const inherits = edges.filter((e) => e.studioKind === 'inherits');
+    expect(inherits).toHaveLength(1);
+    expect(inherits[0]).toMatchObject({ treeRole: 'spine', treeReason: 'spine: inherits' });
+    expect(inherits[0]).not.toHaveProperty('inverseRelationId');
+    const other = edges.find((e) => e.studioKind === 'belongs_to');
+    expect(other?.treeRole).toBe('secondary');
+    expect(edges).toHaveLength(2);
+  });
+
   test('a junction becomes a node with an edge in and an edge out', () => {
     const edges = buildEdges(
       graph({

@@ -21,7 +21,7 @@
 import { join } from 'node:path';
 import type { EntityRegistryEntry, FrontendEmitContext } from './types';
 import { sortEntities } from './types';
-import { withBanner, writeFile } from './emit-utils';
+import { hasCreateRoute, withBanner, writeFile } from './emit-utils';
 
 const SOURCE_DESC_SET = 'the entity set';
 
@@ -34,6 +34,8 @@ export function buildEntityHooksFile(
 	ctx: FrontendEmitContext,
 ): string {
 	const { camelName, className, name, fileStem } = entity;
+	// No `useCreate<Class>` for a base whose every kind has a child (RFC-0006 §4.1): its create route does not exist.
+	const useCreate = hasCreateRoute(entity, ctx) ? `\tuseCreate: useCreate${className},\n` : '';
 
 	const body = `import { createEntityHooks } from '@pattern-stack/frontend-patterns';
 import { ${camelName}Collection } from '../collections/${fileStem}';
@@ -59,8 +61,7 @@ export const ${camelName}Hooks = createEntityHooks<${className}>({
 export const {
 \tuseList: use${className}List,
 \tuseGet: use${className},
-\tuseCreate: useCreate${className},
-\tuseUpdate: useUpdate${className},
+${useCreate}\tuseUpdate: useUpdate${className},
 \tuseDelete: useDelete${className},
 \tkeys: ${camelName}Keys,
 } = ${camelName}Hooks;
@@ -77,12 +78,12 @@ export function buildEntitiesIndexFile(ctx: FrontendEmitContext): string {
 	const entities = sortEntities(ctx.entities);
 	const blocks = entities.map((e) => {
 		const { camelName, className, fileStem } = e;
+		const useCreate = hasCreateRoute(e, ctx) ? `\tuseCreate${className},\n` : '';
 		return `export {
 \t${camelName}Hooks,
 \tuse${className}List,
 \tuse${className},
-\tuseCreate${className},
-\tuseUpdate${className},
+${useCreate}\tuseUpdate${className},
 \tuseDelete${className},
 \t${camelName}Keys,
 } from './${fileStem}';`;

@@ -223,6 +223,9 @@ async function main(): Promise<number> {
 			'graph/opportunity.ts', // the junction `through` hop
 			'graph/tag.ts', // the junction's other parent
 			'graph/index.ts',
+			'graph/meeting.ts', // RFC-0006 §3.4: the inner-joined child-to-base hop + <Child>WithBase
+			'graph/communication.ts', // the base's edge to each child
+			'entities/communication-part.ts', // a base whose every kind has a child: no create route
 		]) {
 			if (!fs.existsSync(path.join(frontendDir, required))) {
 				throw new Error(`frontend emitter did not write ${required}`);
@@ -244,6 +247,35 @@ async function main(): Promise<number> {
 		);
 		if (!descriptor.includes('Accessors deliberately NOT emitted')) {
 			throw new Error('graph/descriptor.ts does not record the api-mode deferral');
+		}
+
+		// RFC-0006 §3.4 (A13): the child-to-base hop is an INNER join, in the graph
+		// accessor and in the `WithBase` fragment alike. The type gate in `usage/` proves
+		// what the accessor is typed AS; this proves what it RUNS — a left join with the
+		// right type would leave a child on the client with no base.
+		const meetingGraph = fs.readFileSync(path.join(frontendDir, 'graph', 'meeting.ts'), 'utf8');
+		for (const [needle, why] of [
+			['.innerJoin({ communication: communicationCollection }', 'the root query joins the base inner'],
+			['.innerJoin({ base: communicationCollection }', 'the WithBase fragment joins the base inner'],
+		] as const) {
+			if (!meetingGraph.includes(needle)) throw new Error(`graph/meeting.ts: ${why} (missing \`${needle}\`)`);
+		}
+		if (/\.(join|leftJoin)\(\{ (communication|base): /.test(meetingGraph)) {
+			throw new Error('graph/meeting.ts left-joins the child-to-base hop; RFC-0006 §3.4 says inner');
+		}
+
+		// RFC-0006 §4.1 (S5): `communication_part` has a child for every kind, so the
+		// backend generates no `POST /communication_parts`. Nothing emitted may aim a
+		// mutation at it; `communication` keeps a base-only kind and keeps its create.
+		const emitted = (rel: string): string => fs.readFileSync(path.join(frontendDir, rel), 'utf8');
+		if (/'POST'/.test(emitted('api/communication-part.ts'))) {
+			throw new Error('api/communication-part.ts emits a POST for a base with no create route');
+		}
+		if (/useCreateCommunicationPart\b/.test(emitted('entities/communication-part.ts') + emitted('entities/index.ts'))) {
+			throw new Error('a useCreateCommunicationPart hook is emitted for a base with no create route');
+		}
+		if (!/'POST'/.test(emitted('api/communication.ts')) || !/useCreateCommunication\b/.test(emitted('entities/communication.ts'))) {
+			throw new Error('communication keeps a base-only kind, so it must keep its create route');
 		}
 
 		// 5. The consumer-owned modules the contract requires. Not stubs of

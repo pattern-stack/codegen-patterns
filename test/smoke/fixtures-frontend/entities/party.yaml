@@ -1,0 +1,10 @@
+# RFC-0006 (#875) fixture family — frontend-smoke copy. Same as test/fixtures/inheritance/entities/party.yaml, except `sync: electric` (the client graph joins collections, so every entity on a hop must sync the same way, FE-REL §4.4) and tenant_scoped naming its column where the smoke copies do. Compared by src/__tests__/fixtures/inheritance-fixtures-agree.test.ts.
+entity:
+  name: party
+  plural: parties
+  sync: electric
+
+fields:
+  name:
+    type: string
+    required: true

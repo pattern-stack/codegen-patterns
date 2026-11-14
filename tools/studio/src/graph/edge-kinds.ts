@@ -11,7 +11,7 @@ import type { GraphEdgeData } from '@pattern-stack/graph-components';
 import { cssColor } from '../theme/theme';
 import type { ThemedColor } from '../theme/theme';
 
-export type StudioEdgeKind = 'belongs_to' | 'has_many' | 'has_one' | 'junction' | 'role';
+export type StudioEdgeKind = 'belongs_to' | 'has_many' | 'has_one' | 'junction' | 'role' | 'inherits';
 
 /** A library edge carrying Studio's finer classification. */
 export interface StudioEdgeData extends GraphEdgeData {
@@ -170,6 +170,14 @@ export const EDGE_KIND_STYLES: Record<StudioEdgeKind, EdgeKindStyle> = {
     width: 2,
     marker: 'studio-arrow-role',
   },
+  inherits: {
+    kind: 'inherits',
+    label: 'inherits',
+    description: 'A child table joined 1:1 to its base on id (`inherits:`)',
+    color: { light: '#be123c', dark: '#fb7185' },
+    width: 2.75,
+    marker: 'studio-arrow-inherits',
+  },
 };
 
 /** Legend order — densest first, so the eye reads structure before decoration. */
@@ -179,6 +187,7 @@ export const EDGE_KIND_ORDER: StudioEdgeKind[] = [
   'has_one',
   'junction',
   'role',
+  'inherits',
 ];
 
 export function edgeStyle(kind: StudioEdgeKind): EdgeKindStyle {

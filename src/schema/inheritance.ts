@@ -363,3 +363,48 @@ export function inheritanceIssues(def: EntityDefinition): InheritanceIssue[] {
 
 	return issues;
 }
+
+/**
+ * The kinds of a discriminator base: its own literal `choices:`, or — for
+ * `choices_of: <entity>.<field>` — the owner's. `null` when neither resolves
+ * (the validator reports that; this reader never throws).
+ */
+function discriminatorKinds(
+	def: EntityDefinition,
+	definitions: ReadonlyMap<string, EntityDefinition>,
+): readonly string[] | null {
+	if (typeof def.discriminator !== 'string') return null;
+	const field = def.fields[def.discriminator];
+	if (field === undefined) return null;
+	if (field.choices_of !== undefined) {
+		const [owner, ownerField] = field.choices_of.split('.');
+		const choices = owner === undefined ? undefined : definitions.get(owner)?.fields[ownerField ?? '']?.choices;
+		return Array.isArray(choices) && choices.length > 0 ? choices : null;
+	}
+	return Array.isArray(field.choices) && field.choices.length > 0 ? field.choices : null;
+}
+
+/**
+ * RFC-0006 §4.1 (S5): a base whose EVERY kind has a child table has no create
+ * route — a row of any kind is made through its child (`generateCreate: false` in
+ * `templates/entity/new/backend/entity-locals.js`, from `familyReads`'s
+ * `baseOnlyKinds`). The frontend reads it here, from the same two facts (the
+ * discriminator's kinds, the children's `as:` values), so it never emits a
+ * mutation for a route the backend does not generate.
+ *
+ * `src/__tests__/emitters/frontend/no-create-route.test.ts` pins this against
+ * `familyReads` itself, so the two cannot drift.
+ */
+export function baseHasNoCreateRoute(
+	def: EntityDefinition,
+	definitions: ReadonlyMap<string, EntityDefinition>,
+): boolean {
+	const kinds = discriminatorKinds(def, definitions);
+	if (kinds === null) return false;
+	const childKinds = new Set<string>();
+	for (const other of definitions.values()) {
+		const decl = inheritsOf(other);
+		if (decl !== null && decl.base === def.entity.name) childKinds.add(decl.as);
+	}
+	return childKinds.size > 0 && kinds.every((k) => childKinds.has(k));
+}

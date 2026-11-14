@@ -160,7 +160,7 @@ export function relationIdOf(edge: SerializedEdge): string {
 /** The library's coarse renderer hint for a Studio edge kind. */
 function libraryType(kind: StudioEdgeKind): StudioEdgeData['type'] {
   if (kind === 'junction') return 'junction';
-  if (kind === 'belongs_to' || kind === 'role') return 'fk';
+  if (kind === 'belongs_to' || kind === 'role' || kind === 'inherits') return 'fk';
   return 'inline';
 }
 
@@ -296,6 +296,29 @@ export function buildEdges(graph: SerializedDomainGraph): StudioEdgeData[] {
     if (pushed && pointsAtParent) candidate(id, e.from, e.to, spineSignalsOf(e));
   }
 
+  // `inherits:` is not a relationship the analyzer draws — a child names its base on the
+  // entity itself — so it is its own edge, child → base, from the serialized `inherits`. It is
+  // never one half of a #778 pair (it has no inverse `has_many` and no foreign-key column in
+  // the payload: the child's `id` IS the base's), so it stays one line. It is the child's
+  // spine (STUDIO-3's first tier): a child hangs directly under its base, whatever other
+  // `belongs_to`s it declares.
+  for (const entity of Object.values(graph.entities)) {
+    if (!entity.inherits) continue;
+    const id = `inherits-${entity.name}-${entity.inherits.base}`;
+    if (push({
+      id,
+      source: entity.name,
+      target: entity.inherits.base,
+      parent: entity.inherits.base,
+      child: entity.name,
+      cardinality: '1:1',
+      label: entity.inherits.as,
+      type: libraryType('inherits'),
+      bidirectional: false,
+      studioKind: 'inherits',
+    })) candidate(id, entity.name, entity.inherits.base, { ...NO_SIGNALS, inherits: true });
+  }
+
   for (const relDef of Object.values(graph.relationshipDefinitions)) {
     // The junction row holds both foreign keys, so it hangs under one end —
     // `from`, its first declared — and reaches the other by a secondary line.
@@ -338,7 +361,7 @@ type UntreedEdge = Omit<StudioEdgeData, 'treeRole' | 'treeReason' | 'channelY'>;
 
 /**
  * What a `belongs_to` tells the spine rule, read off the payload. `inherits`
- * (#875) is not in the payload yet, so it is never set.
+ * (#875) is never set here: an `inherits:` is its own edge (see `buildEdges`), not a `belongs_to`.
  */
 export function spineSignalsOf(edge: SerializedEdge): SpineSignals {
   return {

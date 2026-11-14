@@ -28,6 +28,8 @@ export interface SerializedEntity {
   fields: Record<string, SerializedField>;
   relationships: Record<string, SerializedRelationship>;
   behaviors: string[];
+  /** `inherits:` (RFC-0006): this entity is a child of `base`, as the kind value `as`. Absent on a base or a plain entity. */
+  inherits?: { base: string; as: string };
   queries?: Array<{ by: string[]; unique?: boolean; order?: string }>;
   sourcePath: string;
 }
@@ -175,6 +177,7 @@ export function serializeDomainGraph(graph: DomainGraph): SerializedDomainGraph 
       fields: serializeFields(entity.fields),
       relationships: serializeRelationships(entity),
       behaviors: entity.behaviors,
+      ...(entity.inherits ? { inherits: entity.inherits } : {}),
       queries: entity.queries?.map((q) => ({
         by: q.by,
         unique: q.unique,

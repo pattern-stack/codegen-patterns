@@ -189,7 +189,7 @@ export interface DiffResponse {
 // POST|PUT /api/relationships
 // ---------------------------------------------------------------------------
 
-export type RelationshipKind = 'belongs_to' | 'has_many' | 'has_one' | 'many_to_many';
+export type RelationshipKind = 'belongs_to' | 'has_many' | 'has_one' | 'many_to_many' | 'inherits';
 
 export interface RelationshipRequest {
 	from: string;
@@ -209,6 +209,8 @@ export interface RelationshipOptions {
 	required?: boolean;
 	/** FK cascade action. `belongs_to` only; spelled as `OnDeleteSchema`. */
 	onDelete?: 'restrict' | 'cascade' | 'set_null' | 'no_action';
+	/** `inherits` only — the base's discriminator value this child is (`inherits: { base, as }`). Absent: the child's own name. */
+	as?: string;
 	/** `many_to_many` only — relationship subtypes (`types:` in the YAML). */
 	types?: string[];
 	/** `many_to_many` only — emit temporal columns. Schema default true. */

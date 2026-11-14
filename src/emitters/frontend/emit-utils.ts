@@ -10,7 +10,23 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+import { baseHasNoCreateRoute } from '../../schema/inheritance.js';
 import { generating } from '../../utils/generated-file.js';
+import type { EntityRegistryEntry, FrontendEmitContext } from './types';
+
+/**
+ * Whether the backend generates `POST /<plural>` for this entity. False for a
+ * discriminator base whose every kind has a child table (RFC-0006 §4.1): a row of
+ * any kind is created through its child, so the base has no create route. The
+ * frontend must not emit a mutation aimed at a route that does not exist, so
+ * every create emission asks here — and the answer is `baseHasNoCreateRoute`,
+ * the same two facts the backend's `generateCreate` reads. A context built
+ * without `definitions` (a registry-only fixture) has no families.
+ */
+export function hasCreateRoute(entity: EntityRegistryEntry, ctx: FrontendEmitContext): boolean {
+	const def = ctx.definitions?.get(entity.name);
+	return !(def && ctx.definitions && baseHasNoCreateRoute(def, ctx.definitions));
+}
 
 /**
  * House `@generated` banner. `sourceDesc` describes the input the file was

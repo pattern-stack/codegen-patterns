@@ -1,0 +1,21 @@
+# RFC-0006 (#875) fixture family — frontend-smoke copy. Same as test/fixtures/inheritance/entities/email.yaml, except `sync: electric` (the client graph joins collections, so every entity on a hop must sync the same way, FE-REL §4.4) and tenant_scoped naming its column where the smoke copies do. Compared by src/__tests__/fixtures/inheritance-fixtures-agree.test.ts.
+# A child with a typed link to a plain entity.
+
+entity:
+  name: email
+  plural: emails
+  sync: electric
+
+inherits: communication
+
+fields:
+  subject:
+    type: string
+    required: true
+
+relationships:
+  thread:
+    type: belongs_to
+    target: email_thread
+    foreign_key: thread_id
+    nullable: true

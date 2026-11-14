@@ -93,6 +93,47 @@ The backend uses **hygen templates**; the frontend and integration layers use
 - **`templates/entity/new/backend/`** — the one backend pipeline: per entity, a module folder under `paths.modules_dir` (`<modules_dir>[/<kebab context>]/<kebab plural>/`) holding the entity (Drizzle table), repository, service, controller, module, DTOs and use-cases. `backend/entity-locals.js` builds almost every local; `prompt.js` builds only the four it does not (the `@generated` banner, the runtime-import specifiers, the `detection:` literal and the EVT-7 `emits:` descriptors) and spreads the extension's over them. Every template references its locals unguarded, so a missing local throws (#638).
 - There is no architecture choice. The `clean` pipeline (`templates/entity/new/backend/`) and `generate.architecture` were deleted by ARCH-0 (#677, `docs/specs/ARCH-0.md`); writing the key is an unknown-key error. ARCH-1 (#682, `docs/specs/ARCH-1.md`) deleted the rest of the surface only `clean` read — `naming:`, `database:`, `behaviors.strategy` (`behaviors:` itself is live again as `{ timezone }`, #845), the 14 `locations.backend*` names (plus four dead `db*` ones), the entity layout keys (`folder_structure:`, `file_grouping:`, `behavior_strategy:`) and the 69 dead `prompt.js` locals behind them, with `src/config/naming-config.mjs`, `src/config/locations.mjs` and `src/schema/naming-config.schema.ts`. Each deleted key is now an unknown-key error naming the key and the file. `expose:` stays — the frontend emitter reads it.
 
+### Joined-table inheritance (`inherits:`, RFC-0006, #875)
+
+A child entity IS a kind of its base: one row in each table under one `id`. `docs/rfcs/RFC-0006-joined-table-inheritance.md`
+is the design and, in its "as built" notes, the truth; `consumer-skills/entities/yaml-reference.md` is the author's view.
+
+- **`discriminator: kind`** on the base (an enum field, literal `choices:` or `choices_of:`); **`inherits: base`** or
+  `inherits: { base, as }` on the child (`as` is its kind value, default the entity name). One level. `timestamps`,
+  `soft_delete`, `user_tracking`, `external_id_tracking` and `tenant_scoped` live on the base (R5); the base's tenant column is
+  declared by the base and NOT NULL (R10). Rules R1–R11 / M1–M5: `src/schema/inheritance.ts` (one file) and
+  `src/parser/validate-inheritance.ts` (two files).
+- **DDL.** The child's `id` is the primary key and an FK to the base (no default); a composite FK `(id, kind)` plus a `kind`
+  `DEFAULT` + `CHECK` make the database refuse a child under another kind, and a second composite FK `(id, tenant)` pins the
+  tenant. A base or `match:` target carries the `unique(id, …)` sets its referrers point at, rendered by **its own template from
+  its referrers' YAML** (`templates/_shared/inheritance.mjs`), so `entity new` in any order gives the same bytes.
+- **`match: { local: target_col }`** on a `belongs_to` emits a composite FK to the target's `(id, <col>)`; the local column is
+  derived from the target and filled by a scalar subquery in the insert, immutable while the FK is. The part-kind rule
+  ("a transcript part sits only under a meeting communication") is `choices_of: communication.kind` plus
+  `match: { kind: kind }` — **there is no user-facing `checks:` key** (that stays in #786; the `kind` CHECK uses an internal builder).
+- **`natural_key: true`** on one `unique_indexes` entry (every column NOT NULL, R11) makes **`upsertByNaturalKey` exist on
+  every entity that has one**, family or not: the base on its key, then the child on `id`, in one transaction
+  (`{ row, created, baseCreated }`). A soft-deleted match is updated and stays deleted; another kind under the key is
+  `KindMismatchError`; a `user_tracking` entity's upsert is guarded by the user axis.
+- **Reads** are the READ-1 surface (the base is a relation, `with: { communication: true }`); a child's reads are scoped by
+  its own tenant column and the base's lifecycle (`EXISTS`). `findWithBase` / `listFlat` return `<Child>Flat`;
+  `<Base>.findAllKinds` / `listKind` read across kinds in one statement; `findOrphans` finds a base with no child.
+- **Writes** go through the child's repository / service (the pair, one transaction; `KindImmutableError` on a `kind` in an
+  update). **HTTP is flat** (`<Child>` DTOs extend the base's; unknown keys such as `kind` are stripped); the base's `POST`
+  accepts base-only kinds, and a base whose *every* kind has a child has **no create route** — and the frontend emits no
+  create hook or `POST` for it (`baseHasNoCreateRoute`).
+- **Frontend.** A child's hop to its base is **inner-joined and typed without `| undefined`**; every `electric` child gets
+  `<Child>WithBase`, `<plural>WithBase(q)`, `use<Plural>WithBase()`, `use<Child>WithBase(id)` in `graph/<child>.ts`. Base and
+  children share one sync mode (R8). Studio draws one `inherits` edge, child → base.
+- **Generator-wide changes this build made** (any entity, not only a family): enums live in a leaf `<entity>.enums.ts` that
+  imports only `drizzle-orm/pg-core` (importing an owner's enum from its entity file is a boot-time `ReferenceError` in a
+  cycle); every table callback's one parameter is `tCols`; a module that composes another entity's repository imports that
+  entity's **home module** instead of providing the repository locally; every constraint and index name over 63 bytes is a
+  generation error; the frontend drops the `Date` parsers from a collection whose table has no date column, and names a
+  `belongs_to` target that has no edge of its own.
+- Fixtures: the family is copied into five harness directories (`test/fixtures/inheritance/entities/`, the baseline,
+  scaffold, smoke and frontend-smoke sets) and `src/__tests__/fixtures/inheritance-fixtures-agree.test.ts` fails when a copy drifts.
+
 ### Frontend Relation Graph (`src/emitters/frontend/graph-model.ts` + `emit-graph.ts`, FE-REL)
 
 The client half of ADR-044 §5's "both sides project from the same declared graph". It calls **REL-1's own**

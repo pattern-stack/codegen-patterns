@@ -160,20 +160,21 @@ function targetNaming(
 	graph: ClientGraph,
 ): TargetNaming | null {
 	const node = graph.nodes.find((n) => n.collection === rel.target);
-	if (!node) return null;
-	if (node.entity) {
+	// An entity with no edge of its own has no node, but it is a legitimate hop target.
+	const entity = node?.entity ?? graph.leaves.find((e) => e.plural === rel.target);
+	if (entity) {
 		return {
-			className: node.entity.className,
-			camelName: node.entity.camelName,
-			entityFile: node.entity.name,
-			collectionVar: `${node.entity.camelName}Collection`,
+			className: entity.className,
+			camelName: entity.camelName,
+			entityFile: entity.name,
+			collectionVar: `${entity.camelName}Collection`,
 			// A codegen-EMITTED path (`../collections/<stem>`), so it takes the
 			// #695/#684 naming rule. `entityFile` above is a CONSUMER-owned
 			// `dbEntities` module and deliberately keeps the raw name.
-			collectionFile: emittedStem(node.entity.name),
+			collectionFile: emittedStem(entity.name),
 		};
 	}
-	if (node.junction) {
+	if (node?.junction) {
 		return {
 			className: node.junction.className,
 			camelName: node.junction.camelName,
@@ -206,6 +207,14 @@ export class ReservedRelationAliasError extends Error {
 		this.name = 'ReservedRelationAliasError';
 	}
 }
+
+/**
+ * A hop the generated query INNER-joins (RFC-0006 §3.4): a child's edge to its base.
+ * A child's shape holds rows whose base left the base's shape or was soft-deleted, so
+ * the child row must not exist on the client until its base does — which makes the
+ * joined row never absent, and the result type says so (no `| undefined`).
+ */
+const isInnerHop = (rel: ClientRelation): boolean => rel.inherits === 'base';
 
 /** The to-one relations of a node — the ones joinable into an existing query. */
 function toOneRelations(node: ClientGraphNode | undefined): ClientRelation[] {
@@ -349,9 +358,11 @@ export function buildEntityGraphFile(
 	for (const rel of ones) {
 		const t = naming.get(rel.key);
 		// Left-joined, so the row may be absent — preserved as `| undefined`
-		// exactly as measured (FE-REL §4.2), never narrowed to the bare type.
+		// exactly as measured (FE-REL §4.2), never narrowed to the bare type. The
+		// one exception is the inner-joined child-to-base hop (RFC-0006 §3.4).
+		const absent = isInnerHop(rel) ? '' : ' | undefined';
 		resultClauses.push(
-			`\t(Sel<I, '${rel.key}'> extends true ? { ${rel.key}: ${t?.className ?? 'unknown'} | undefined } : unknown)`,
+			`\t(Sel<I, '${rel.key}'> extends true ? { ${rel.key}: ${t?.className ?? 'unknown'}${absent} } : unknown)`,
 		);
 	}
 	for (const rel of manys) {
@@ -370,7 +381,8 @@ export function buildEntityGraphFile(
 	const rootJoins = ones
 		.map((rel) => {
 			const t = naming.get(rel.key);
-			return `\t\t\t\t\t\t.join({ ${rel.key}: ${t?.collectionVar} }, ({ row, ${rel.key} }) =>\n\t\t\t\t\t\t\teq(row.${rel.from}, ${rel.key}.${rel.to}),\n\t\t\t\t\t\t)`;
+			const join = isInnerHop(rel) ? 'innerJoin' : 'join';
+			return `\t\t\t\t\t\t.${join}({ ${rel.key}: ${t?.collectionVar} }, ({ row, ${rel.key} }) =>\n\t\t\t\t\t\t\teq(row.${rel.from}, ${rel.key}.${rel.to}),\n\t\t\t\t\t\t)`;
 		})
 		.join('\n');
 	const rootSelectRefs = ['row', ...ones.map((r) => r.key)];
@@ -449,7 +461,13 @@ function withOf(value: unknown): globalThis.Record<string, unknown> {
 `
 			: '';
 
-	const body = `import { eq, useLiveQuery } from '@tanstack/react-db';
+	const withBase = buildWithBaseHelper(node, naming);
+	// The one hop that is not left-joined (RFC-0006 §3.4) — said only where it applies.
+	const innerNote = ones.some(isInnerHop)
+		? ' — except a child\'s hop to its base, which is inner-joined and so is \`T\`'
+		: '';
+
+	const body = `import { eq, useLiveQuery${withBase ? ', type InitialQueryBuilder' : ''} } from '@tanstack/react-db';
 
 ${collectionImports}
 
@@ -483,7 +501,7 @@ ${branchTypes.join('\n')}
 /**
  * The result of {@link use${entity.className}Graph} for a given include.
  *
- * A to-one hop is \`T | undefined\` (it is left-joined); a to-many is \`T[]\`. A
+ * A to-one hop is \`T | undefined\` (it is left-joined)${innerNote}; a to-many is \`T[]\`. A
  * relation that was not included is not on the type at all, so reading it is a
  * compile error rather than \`undefined\` at runtime.
  */
@@ -496,7 +514,7 @@ export interface ${entity.className}GraphResult<I extends ${entity.className}Inc
 	isLoading: boolean;
 	isError: boolean;
 }
-${withOfHelper}
+${withOfHelper}${withBase}
 /**
  * Traverse the graph from one ${entity.className}.
  *
@@ -552,6 +570,88 @@ ${assembleManys}
 }
 `;
 	return withBanner(`entities/${entity.name}.yaml`, body);
+}
+
+/**
+ * The `<Child>WithBase` helper of an `electric` child (RFC-0006 §3.4), or `''` for any
+ * other entity: the flat type (the backend's `<Child>Flat`, on the client), the query
+ * fragment (child ⋈ base on id — the caller adds where / orderBy / limit) and the two
+ * hooks. The join is an INNER join, which is the point: a child whose base has left
+ * the base's shape disappears from every list with no client code. A `sync: api` child
+ * never reaches here (it has no accessor module) — its REST routes already return the
+ * flat shape.
+ */
+function buildWithBaseHelper(
+	node: ClientGraphNode,
+	naming: Map<string, TargetNaming>,
+): string {
+	const entity = node.entity;
+	const baseRel = node.relations.find(isInnerHop);
+	const base = baseRel ? naming.get(baseRel.key) : undefined;
+	if (!entity || !baseRel || !base) return '';
+
+	const { className, camelName, classNamePlural, pluralCamelName } = entity;
+	const type = `${className}WithBase`;
+	const fragment = `${pluralCamelName}WithBase`;
+	const flat = '{ ...r.base, ...r.row }';
+	return `
+/**
+ * The backend's \`${className}Flat\`, on the client: the base's columns and the child's own.
+ * \`kind\` is the child's copy of the base's discriminator.
+ */
+export type ${type} = globalThis.Omit<${base.className}, 'kind'> & ${className};
+
+/**
+ * ${pluralCamelName} ⋈ ${baseRel.target} on id — a query fragment: add where / orderBy / limit to it.
+ *
+ * An INNER join: a ${entity.name} row does not exist on the client until its base does
+ * (RFC-0006 §3.4). Refs are \`row\` (the ${entity.name}) and \`base\` (the ${baseRel.key}).
+ */
+export function ${fragment}(q: InitialQueryBuilder) {
+	return q
+		.from({ row: ${camelName}Collection })
+		.innerJoin({ base: ${base.collectionVar} }, ({ row, base }) => eq(row.id, base.id));
+}
+
+/** Every ${entity.name} with its base's columns — one live query. */
+export function use${classNamePlural}WithBase(): {
+	data: ${type}[];
+	isLoading: boolean;
+	isError: boolean;
+} {
+	const result = useLiveQuery((q) =>
+		${fragment}(q).select(({ row, base }) => ({ row, base })),
+	);
+	return {
+		data: (result.data ?? []).map((r): ${type} => (${flat})),
+		isLoading: result.isLoading,
+		isError: result.isError,
+	};
+}
+
+/** One ${entity.name} with its base's columns, or \`undefined\` until both rows are on the client. */
+export function use${className}WithBase(id: string | null | undefined): {
+	data: ${type} | undefined;
+	isLoading: boolean;
+	isError: boolean;
+} {
+	const result = useLiveQuery(
+		(q) =>
+			id !== null && id !== undefined
+				? ${fragment}(q)
+						.where(({ row }) => eq(row.id, id))
+						.select(({ row, base }) => ({ row, base }))
+				: undefined,
+		[id],
+	);
+	const first = result.data?.[0];
+	return {
+		data: first ? ((r): ${type} => (${flat}))(first) : undefined,
+		isLoading: result.isLoading,
+		isError: result.isError,
+	};
+}
+`;
 }
 
 /**

@@ -12,7 +12,7 @@ import {
 	buildCollectionFile,
 	buildCollectionsIndexFile,
 } from '../../../emitters/frontend/emit-collections';
-import { config, ctx, entry } from './_helpers';
+import { config, ctx, entry, field, parsedEntity, parsedMap } from './_helpers';
 
 describe('emit-collections — electric (default) branch', () => {
 	it('emits electricCollectionOptions + shapeOptions, no queryCollectionOptions', () => {
@@ -41,12 +41,36 @@ describe('emit-collections — electric (default) branch', () => {
 	});
 
 	it('emits the parser block from frontend.parsers', () => {
-		const c = ctx([entry('contact', 'contacts')], {
-			parsers: { timestamptz: '(date: string) => new Date(date)' },
-		});
-		const out = buildCollectionFile(entry('contact', 'contacts'), c);
+		const contact = entry('contact', 'contacts');
+		const c = ctx(
+			[contact],
+			{ parsers: { timestamptz: '(date: string) => new Date(date)' } },
+			parsedMap(parsedEntity(contact, { behaviors: ['timestamps'] })),
+		);
+		const out = buildCollectionFile(contact, c);
 		expect(out).toContain('parser: {');
 		expect(out).toContain('timestamptz: (date: string) => new Date(date),');
+	});
+
+	it('drops a date parser for an entity whose table carries no date column (a child with no timestamps, R5)', () => {
+		const parsers = { timestamptz: '(date: string) => new Date(date)', numeric: 'parseFloat' };
+		const email = entry('email', 'emails');
+		const noDates = ctx(
+			[email],
+			{ parsers },
+			parsedMap(parsedEntity(email, { fields: new Map([['subject', field('subject')]]) })),
+		);
+		const out = buildCollectionFile(email, noDates);
+		// `ParseFunction<never>`: a Date-building parser on a row with no Date does not compile.
+		expect(out).not.toContain('timestamptz');
+		expect(out).toContain('numeric: parseFloat,'); // only the date family is dropped
+
+		for (const dated of [
+			parsedEntity(email, { fields: new Map([['starts_at', field('starts_at', { type: 'datetime' })]]) }),
+			parsedEntity(email, { behaviors: ['soft_delete'] }),
+		]) {
+			expect(buildCollectionFile(email, ctx([email], { parsers }, parsedMap(dated)))).toContain('timestamptz:');
+		}
 	});
 
 	it('emits the table-param shape URL form when useTableParam', () => {
