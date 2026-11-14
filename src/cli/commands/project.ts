@@ -63,7 +63,7 @@ import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
 import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
-import { TablesConfigSchema, TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
+import { FrontendConfigSchema, TablesConfigSchema, TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
 import { deriveProjectApiSurface, loadProjectApiContext } from '../../derived/api/project.js';
 import type { EntityApiSurface, ProjectApiSurface } from '../../derived/api/types.js';
 import type { RelationsConfigInput } from '../../emitters/relations/load-context.js';
@@ -598,6 +598,7 @@ export class ProjectInspectCommand extends Command {
 			junctionsDir: junctionsDirFor(ctx.cwd),
 			tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
 			tablePrefix: TablesConfigSchema.parse(ctx.config?.tables ?? {}).prefix,
+			syncMode: FrontendConfigSchema.parse(ctx.config?.frontend ?? {}).sync.mode,
 		});
 		const result =
 			loaderIssues.length === 0
@@ -676,6 +677,7 @@ export class ProjectInspectCommand extends Command {
 			junctionsDir: junctionsDirFor(ctx.cwd),
 			tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
 			tablePrefix: TablesConfigSchema.parse(ctx.config?.tables ?? {}).prefix,
+			syncMode: FrontendConfigSchema.parse(ctx.config?.frontend ?? {}).sync.mode,
 		});
 		const transitiveSuggestions = suggestTransitiveRelationships(analysis.graph);
 		const existing = readManifest(ctx.cwd);
@@ -870,6 +872,7 @@ export class ProjectGraphCommand extends Command {
 			junctionsDir: junctionsDirFor(ctx.cwd),
 			tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
 			tablePrefix: TablesConfigSchema.parse(ctx.config?.tables ?? {}).prefix,
+			syncMode: FrontendConfigSchema.parse(ctx.config?.frontend ?? {}).sync.mode,
 		});
 		const serialized = serializeDomainGraph(result.graph);
 

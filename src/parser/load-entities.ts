@@ -38,6 +38,7 @@ import {
 } from '../schema/relationship-definition.schema';
 import type { FieldDefinition } from '../schema/entity-definition.schema';
 import { deriveRoleRelationships, roleForeignKey } from '../roles/derive';
+import { inheritsOf } from '../schema/inheritance';
 import { fieldColumnNullable, foreignKeyColumnNullable } from '../schema/field-nullability';
 
 /**
@@ -91,7 +92,7 @@ export interface LoadEntitiesResult {
 /**
  * Transform a loaded entity definition into a ParsedEntity
  */
-function transformToEntity(result: LoadResult, tablePrefix: string): ParsedEntity {
+export function transformToEntity(result: LoadResult, tablePrefix: string): ParsedEntity {
 	const { definition, filePath } = result;
 
 	// Search queries use a different shape (name/filters/search) and
@@ -125,6 +126,14 @@ function transformToEntity(result: LoadResult, tablePrefix: string): ParsedEntit
 		queries,
 		sourcePath: filePath,
 	};
+	if (definition.entity.sync !== undefined) entity.sync = definition.entity.sync;
+	// RFC-0006 keys — carried so cross-entity validation, and S3's relation graph,
+	// read the parsed model rather than re-reading the YAML.
+	const inherits = inheritsOf(definition);
+	if (inherits !== null) entity.inherits = inherits;
+	if (definition.discriminator !== undefined) entity.discriminator = definition.discriminator;
+	const naturalKey = definition.unique_indexes?.find((u) => u.natural_key === true);
+	if (naturalKey !== undefined) entity.naturalKey = naturalKey.fields;
 
 	// Parse fields
 	for (const [name, fieldDef] of Object.entries(definition.fields)) {
@@ -138,6 +147,7 @@ function transformToEntity(result: LoadResult, tablePrefix: string): ParsedEntit
 			foreignKey: fieldDef.foreign_key ? parseForeignKey(fieldDef.foreign_key) : undefined,
 			choices: fieldDef.choices,
 			choicesFrom: fieldDef.choices_from,
+			choicesOf: fieldDef.choices_of,
 			constraints: {
 				minLength: fieldDef.min_length,
 				maxLength: fieldDef.max_length,
@@ -161,7 +171,15 @@ function transformToEntity(result: LoadResult, tablePrefix: string): ParsedEntit
 				inverse: relDef.inverse,
 				through: relDef.through,
 				resolved: false,
+				nullable: relDef.nullable,
 				onDelete: relDef.on_delete,
+				...(relDef.match !== undefined
+					? {
+							match: Array.isArray(relDef.match)
+								? Object.fromEntries(relDef.match.map((c) => [c, c]))
+								: relDef.match,
+						}
+					: {}),
 			};
 			entity.relationships.set(name, relationship);
 		}
@@ -211,6 +229,7 @@ function transformToEntity(result: LoadResult, tablePrefix: string): ParsedEntit
 				target: derived.target,
 				foreignKey: derived.foreign_key,
 				resolved: false,
+				nullable: derived.nullable,
 				onDelete: derived.on_delete,
 				role: name,
 			});

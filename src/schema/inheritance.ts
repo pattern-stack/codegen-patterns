@@ -227,32 +227,3 @@ export function inheritanceIssues(def: EntityDefinition): InheritanceIssue[] {
 
 	return issues;
 }
-
-/**
- * The RFC-0006 keys an entity uses that the generator does not emit yet.
- * `natural_key:` is not among them: no emitter reads it, so accepting it
- * changes nothing that is generated. Empty when the entity uses none.
- *
- * Until S2 of #875 lands the DDL, `entity new` refuses an entity that uses any
- * of these (`NOT_GENERATED_YET`), so no half-built table is emitted.
- */
-export function unemittedInheritanceKeys(def: EntityDefinition): string[] {
-	const keys: string[] = [];
-	if (def.inherits !== undefined) keys.push("'inherits:'");
-	if (def.discriminator !== undefined) keys.push("'discriminator:'");
-	for (const [name, rel] of Object.entries(def.relationships ?? {})) {
-		if (rel.match !== undefined) keys.push(`'match:' on relationship '${name}'`);
-	}
-	for (const [name, field] of Object.entries(def.fields)) {
-		if (field.choices_of !== undefined) keys.push(`'choices_of:' on field '${name}'`);
-	}
-	return keys;
-}
-
-/** The refusal `entity new` prints for an entity that uses {@link unemittedInheritanceKeys}. */
-export function notGeneratedYetMessage(entityName: string, keys: string[]): string {
-	return (
-		`'${entityName}' uses ${keys.join(', ')}. Joined-table inheritance validates but is not implemented ` +
-		`until S2 of #875 (RFC-0006 §13.2): nothing is generated for it yet, so nothing half-built is emitted.`
-	);
-}

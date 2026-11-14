@@ -96,9 +96,30 @@ describe('generation is refused until S2', () => {
 		expect(r.out).toContain("R3 — 'meeting' inherits 'conversation'");
 	});
 
-	it('a plain entity in the same directory still generates', () => {
+	it('a plain entity in the same directory stops too: the barrels and the manifest read the whole set', () => {
+		// Old behaviour: only the family's own files were refused, so this exited 0 and wrote a schema.ts
+		// re-exporting eight modules that were never emitted, and a relations.ts naming schema.meetings.
 		const root = familyProject('inh-plain');
 		const r = run(root, ['entity', 'new', 'entities/email_thread.yaml', '--force']);
+		expect(r.status).not.toBe(0);
+		expect(r.out).toContain('not implemented until S2 of #875');
+		expect(fs.existsSync(path.join(root, 'src/modules/email-threads'))).toBe(false);
+		expect(fs.existsSync(path.join(root, 'src/generated/schema.ts'))).toBe(false);
+		expect(fs.existsSync(path.join(root, 'src/generated/relations.ts'))).toBe(false);
+	});
+
+	it('--continue-on-error does not lift it', () => {
+		const root = familyProject('inh-continue');
+		const r = run(root, ['entity', 'new', '--all', '--force', '--continue-on-error']);
+		expect(r.status).not.toBe(0);
+		expect(fs.existsSync(path.join(root, 'src/modules'))).toBe(false);
+	});
+
+	it('a directory without the family generates, barrels included', () => {
+		const root = familyProject('inh-plain-only', (f) => {
+			for (const name of Object.keys(f)) if (name !== 'email_thread.yaml') delete f[name];
+		});
+		const r = run(root, ['entity', 'new', '--all', '--force']);
 		expect(r.status).toBe(0);
 		expect(fs.existsSync(path.join(root, 'src/modules/email-threads/email-thread.entity.ts'))).toBe(true);
 	});

@@ -112,6 +112,15 @@ export interface PatternDefinition<TConfig = unknown> {
 	columns?: PatternColumnContribution[];
 
 	/**
+	 * The snake_case columns this pattern READS from the entity's table, given its
+	 * `config:` block (`undefined` when none is declared). Where a pattern's config
+	 * names columns, or implies a default one, this is the one statement of which.
+	 * Joined-table inheritance reads it (RFC-0006 R6): a child may declare the
+	 * pattern only when every column it reads is the child's own.
+	 */
+	columnsRead?(config: TConfig | undefined): string[];
+
+	/**
 	 * Behaviors this pattern implicitly enables. Entity YAML need not
 	 * re-declare them; duplicates across patterns are silent-deduped.
 	 */

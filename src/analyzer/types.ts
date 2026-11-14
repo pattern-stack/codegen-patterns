@@ -48,6 +48,8 @@ export interface ParsedField {
 	 * DECLARED — the semantic emitter's `hasDeclaredDomain` — can see it.
 	 */
 	choicesFrom?: string;
+	/** `choices_of: <entity>.<field>` — this enum is the same Postgres type as that entity's enum field (RFC-0006). */
+	choicesOf?: string;
 	constraints: {
 		minLength?: number;
 		maxLength?: number;
@@ -98,6 +100,13 @@ export interface ParsedRelationship {
 	inverse?: string;
 	through?: string; // For transitive relationships: "owned_opportunities.updates"
 	resolved: boolean;
+	/** The relationship's own `nullable:` (a `cardinality: one` role's, when derived); `undefined` = not declared. */
+	nullable?: boolean;
+	/**
+	 * `match:` as `{ <local column>: <target column> }` (the list shorthand is
+	 * expanded to same-name pairs). Composite FK, RFC-0006 §2.4.
+	 */
+	match?: Record<string, string>;
 	/**
 	 * The YAML `on_delete:` as parsed (ADR-021) — `restrict` when the YAML says
 	 * nothing, which is the schema's own default. Meaningful on a `belongs_to`
@@ -238,6 +247,14 @@ export interface ParsedEntity {
 	 * where the constraint is emitted, not here.
 	 */
 	uniqueIndexes: ParsedUniqueIndex[];
+	/** `entity.sync` as declared — `undefined` resolves through the global `frontend.sync.mode`. */
+	sync?: 'api' | 'electric';
+	/** `inherits:` (RFC-0006): the base entity and this child's kind value (`as:`, default the entity name). */
+	inherits?: { base: string; as: string };
+	/** `discriminator:` (RFC-0006): the base's kind enum field. */
+	discriminator?: string;
+	/** The columns of the `unique_indexes` entry marked `natural_key: true`, if any (RFC-0006 R11). */
+	naturalKey?: string[];
 	queries?: ParsedQuery[];
 	integration?: ParsedIntegration;
 	events?: ParsedEvent[];

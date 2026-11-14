@@ -7,12 +7,9 @@
 import { describe, expect, it } from 'bun:test';
 
 import { EntityDefinitionSchema } from '../../schema/entity-definition.schema';
-import {
-	inheritsOf,
-	notGeneratedYetMessage,
-	unemittedInheritanceKeys,
-} from '../../schema/inheritance';
-import { loadFamily, rawFixture, schemaIssues } from '../parser/inheritance-family';
+import { notGeneratedYetMessage, unemittedInheritanceKeys } from '../../parser/validate-inheritance';
+import { inheritsOf } from '../../schema/inheritance';
+import { loadFamily, parseRaw, rawFixture, schemaIssues } from '../parser/inheritance-family';
 
 const joined = (issues: string[]) => issues.join('\n');
 
@@ -255,7 +252,7 @@ describe('R11 — the natural key', () => {
 
 describe('generation refusal (until S2 of #875)', () => {
 	it('lists the unemitted keys an entity uses', () => {
-		const keys = (name: string) => unemittedInheritanceKeys(EntityDefinitionSchema.parse(rawFixture(name)));
+		const keys = (name: string) => unemittedInheritanceKeys(parseRaw(rawFixture(name)));
 		expect(keys('meeting')).toEqual(["'inherits:'"]);
 		expect(keys('communication')).toEqual(["'discriminator:'"]);
 		expect(keys('communication_participant')).toEqual([
@@ -266,11 +263,11 @@ describe('generation refusal (until S2 of #875)', () => {
 		expect(keys('communication_part')).toEqual(["'discriminator:'", "'match:' on relationship 'communication'", "'choices_of:' on field 'kind'"]);
 	});
 	it('natural_key alone is not refused: no emitter reads it', () => {
-		const person = EntityDefinitionSchema.parse(rawFixture('person', (r) => (r.unique_indexes = [{ fields: ['name'], natural_key: true }])));
+		const person = parseRaw(rawFixture('person', (r) => (r.unique_indexes = [{ fields: ['name'], natural_key: true }])));
 		expect(unemittedInheritanceKeys(person)).toEqual([]);
 	});
 	it('a plain entity uses none', () => {
-		expect(unemittedInheritanceKeys(EntityDefinitionSchema.parse(rawFixture('email_thread')))).toEqual([]);
+		expect(unemittedInheritanceKeys(parseRaw(rawFixture('email_thread')))).toEqual([]);
 	});
 	it('the message names the entity, the keys and S2', () => {
 		const msg = notGeneratedYetMessage('meeting', ["'inherits:'"]);

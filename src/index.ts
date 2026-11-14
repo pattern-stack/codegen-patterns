@@ -7,11 +7,7 @@
 
 import { loadEntities, loadRelationships, resolveReferences, resolveRelationshipReferences } from './parser';
 import { validateSemanticModel } from './parser/validate-semantic.js';
-import { resolve as resolvePath } from 'node:path';
 import { validateInheritance } from './parser/validate-inheritance.js';
-import type { EntityDefinition } from './schema/entity-definition.schema.js';
-import { loadEntitiesFromYaml } from './utils/yaml-loader.js';
-import { findYamlFiles } from './utils/find-yaml-files.js';
 import { buildDomainGraph, checkConsistency, computeStatistics } from './analyzer';
 import { validatePatternComposition } from './patterns/validate-composition.js';
 import { validateOrchestrationProject } from './patterns/validate-orchestration.js';
@@ -44,6 +40,8 @@ export interface AnalyzeDomainOptions {
 	junctionsDir?: string;
 	/** The project's `tenancy.column` (#791). Absent resolves through `TenancyConfigSchema`, the one owner of the default. */
 	tenancyColumn?: string;
+	/** The project's `frontend.sync.mode`, which an entity with no `sync:` resolves to (RFC-0006 R8). Absent: the config default. */
+	syncMode?: 'api' | 'electric';
 	/** The project's `tables.prefix` (TABLE-0). Absent resolves through `TablesConfigSchema`, the one owner of the default. */
 	tablePrefix?: string;
 }
@@ -114,17 +112,9 @@ export async function analyzeDomain(
 	// child against its base, a `match:` against its target), so it runs over the
 	// whole set, from the definitions: `ParsedEntity` does not carry these keys.
 	// `entity validate` and `project inspect --kind analyze` both come through here.
-	let inheritanceSet: Array<{ definition: EntityDefinition; filePath: string }> = [];
-	try {
-		inheritanceSet = loadEntitiesFromYaml(findYamlFiles(resolvePath(entitiesDir))).successes.map((s) => ({
-			definition: s.definition,
-			filePath: s.filePath,
-		}));
-	} catch {
-		// An unreadable directory is already a load issue from `loadEntities`.
-	}
-	const inheritanceIssues = validateInheritance(inheritanceSet, {
+	const inheritanceIssues = validateInheritance(entities, {
 		tenancyColumn: TenancyConfigSchema.parse({ column: opts.tenancyColumn }).column,
+		syncMode: opts.syncMode,
 	});
 	// CAP-2 — role targets must be Actors; many-roles must name a junction
 	// between the two entities.

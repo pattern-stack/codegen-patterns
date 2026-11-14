@@ -23,9 +23,12 @@ import type { Context } from './context.js';
 import { invokeEntityNew } from './hygen.js';
 import { collectMergedEvents } from './event-codegen-generator.js';
 import { validateEntityEmits } from '../../parser/validate-emits.js';
-import { validateInheritance } from '../../parser/validate-inheritance.js';
-import { notGeneratedYetMessage, unemittedInheritanceKeys } from '../../schema/inheritance.js';
-import { TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
+import {
+	notGeneratedYetMessage,
+	unemittedInheritanceKeys,
+	validateInheritance,
+} from '../../parser/validate-inheritance.js';
+import { FrontendConfigSchema, TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
 import {
 	loadProviderSet,
 	resolveTsconfigAliases,
@@ -213,6 +216,27 @@ export async function preflightEntityTargets(
 		...junctionSetIssues(junctionSet, new Set(allEntitiesForEmits.map((e) => e.name))),
 	);
 
+	// RFC-0006 (#875): joined-table inheritance. A family is an input to the
+	// barrels (`schema.ts`, `modules.ts`) and the relations manifest, which read
+	// the WHOLE directory — so a violation, or a key the generator cannot emit
+	// yet, in ANY entity is a run-level rejection (the #666 posture), not one
+	// target's: refusing only that entity's own files would still emit exports of
+	// modules that were never written. Until S2 emits the DDL, an entity using
+	// `inherits:` / `discriminator:` / `match:` / `choices_of:` stops the run.
+	const frontendSync = FrontendConfigSchema.parse(ctx.config?.frontend ?? {}).sync.mode;
+	for (const issue of validateInheritance(allEntitiesForEmits, {
+		tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
+		syncMode: frontendSync,
+	})) {
+		runRejections.push({ file: issue.path ?? entitiesDirForEmits, message: `inheritance: ${issue.message}` });
+	}
+	for (const e of allEntitiesForEmits) {
+		const keys = unemittedInheritanceKeys(e);
+		if (keys.length > 0) {
+			runRejections.push({ file: e.sourcePath, message: notGeneratedYetMessage(e.name, keys) });
+		}
+	}
+
 	// TABLE-0: one SQL table, one owning definition — entities and junctions
 	// share the database's namespace. `table:` / prefixes let two
 	// definitions meet on a table without sharing a plural, which no other
@@ -241,53 +265,21 @@ export async function preflightEntityTargets(
 		junctions: junctionSet.junctions,
 	});
 
-	// RFC-0006 (#875): joined-table inheritance. The cross-entity rules (R1-R10,
-	// M1-M5) run over every entity in the directory, because a child is checked
-	// against its base. Then, until S2 emits the DDL, a target that uses
-	// `inherits:` / `discriminator:` / `match:` / `choices_of:` is refused
-	// outright — nothing half-built is generated.
-	const inheritanceSet = loadEntitiesFromYaml(
-		listEntityYamls(entitiesDirForEmits, projectLayout(ctx.cwd, ctx.config).providers),
-	).successes.map((s) => ({ definition: s.definition, filePath: s.filePath }));
-	const inheritanceErrors = validateInheritance(inheritanceSet, {
-		tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
-	}).filter((i) => i.severity === 'error');
-	const unemitted = new Map(
-		inheritanceSet.flatMap(({ definition }) => {
-			const keys = unemittedInheritanceKeys(definition);
-			return keys.length > 0 ? [[definition.entity.name, keys] as const] : [];
-		}),
-	);
-
-	// An entity with an `emits:`, `roles:` or inheritance error is not generated:
-	// the hygen prompt assumes those blocks are valid.
+	// An entity with an `emits:` or `roles:` error is not generated: the
+	// hygen prompt assumes both blocks are valid.
 	for (let i = validated.length - 1; i >= 0; i--) {
 		const v = validated[i]!;
 		const ownEmits = emitsErrors.filter((e) => e.entity === v.name);
 		const ownRoles = roleErrors.filter((e) => e.entity === v.name);
-		const ownInheritance = inheritanceErrors.filter((e) => e.entity === v.name);
-		const ownUnemitted = unemitted.get(v.name);
-		if (
-			ownEmits.length === 0 &&
-			ownRoles.length === 0 &&
-			ownInheritance.length === 0 &&
-			ownUnemitted === undefined
-		) {
-			continue;
-		}
+		if (ownEmits.length === 0 && ownRoles.length === 0) continue;
 		const blocks = [
 			...(ownEmits.length > 0 ? ['emits:'] : []),
 			...(ownRoles.length > 0 ? ['roles:'] : []),
-			...(ownInheritance.length > 0 ? ['inheritance'] : []),
-			...(ownUnemitted !== undefined ? ['inherits:/discriminator:/match:/choices_of: (not implemented until S2 of #875)'] : []),
 		];
 		invalid.push({
 			file: v.file,
 			message: `${blocks.join(' and ')} validation failed`,
-			details: [
-				...[...ownEmits, ...ownRoles, ...ownInheritance].map((e) => e.message),
-				...(ownUnemitted !== undefined ? [notGeneratedYetMessage(v.name, ownUnemitted)] : []),
-			],
+			details: [...ownEmits, ...ownRoles].map((e) => e.message),
 		});
 		validated.splice(i, 1);
 	}

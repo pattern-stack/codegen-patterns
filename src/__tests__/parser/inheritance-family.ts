@@ -8,10 +8,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 
-import type { InheritanceEntity } from '../../parser/validate-inheritance';
+import type { ParsedEntity } from '../../analyzer/types';
+import { loadEntities, transformToEntity } from '../../parser/load-entities';
 import { EntityDefinitionSchema } from '../../schema/entity-definition.schema';
 import { findYamlFiles } from '../../utils/find-yaml-files';
-import { loadEntitiesFromYaml } from '../../utils/yaml-loader';
 
 export const FAMILY_DIR = join(import.meta.dir, '../../../test/fixtures/inheritance/entities');
 
@@ -20,27 +20,30 @@ export type RawYaml = Record<string, any>;
 export type Mutations = Record<string, (raw: RawYaml) => void>;
 
 /** The family through the real loader — no mutation. */
-export function loadFamily(): InheritanceEntity[] {
-	const { successes, failures } = loadEntitiesFromYaml(findYamlFiles(FAMILY_DIR));
-	if (failures.length > 0) {
-		throw new Error(`fixture family failed to load:\n${failures.map((f) => `${f.filePath}: ${f.error} ${(f.details ?? []).join('; ')}`).join('\n')}`);
+export function loadFamily(): ParsedEntity[] {
+	const { entities, issues } = loadEntities(FAMILY_DIR, { tablePrefix: '' });
+	const errors = issues.filter((i) => i.severity === 'error');
+	if (errors.length > 0) {
+		throw new Error(`fixture family failed to load:\n${errors.map((e) => `${e.path}: ${e.message}`).join('\n')}`);
 	}
-	return successes.map((s) => ({ definition: s.definition, filePath: s.filePath }));
+	return entities;
+}
+
+/** Raw YAML through the real schema and the real parse step. Throws if it no longer passes the schema. */
+export function parseRaw(raw: RawYaml, filePath = 'test.yaml'): ParsedEntity {
+	return transformToEntity({ success: true, definition: EntityDefinitionSchema.parse(raw), filePath }, '');
 }
 
 /**
  * The family with `mutations[entityName](raw)` applied to that entity's raw YAML,
- * then parsed through the real schema. Throws if a mutated entity no longer
- * passes the schema (use `schemaIssues` for single-file cases).
+ * then parsed as the loader does. Use `schemaIssues` for single-file cases.
  */
-export function familyWith(mutations: Mutations): InheritanceEntity[] {
-	const out: InheritanceEntity[] = [];
-	for (const file of findYamlFiles(FAMILY_DIR)) {
+export function familyWith(mutations: Mutations): ParsedEntity[] {
+	return findYamlFiles(FAMILY_DIR).map((file) => {
 		const raw = parseYaml(readFileSync(file, 'utf8')) as RawYaml;
 		mutations[raw.entity.name]?.(raw);
-		out.push({ definition: EntityDefinitionSchema.parse(raw), filePath: file });
-	}
-	return out;
+		return parseRaw(raw, file);
+	});
 }
 
 /** Raw YAML of one fixture, mutated, for schema-only (single-file) cases. */

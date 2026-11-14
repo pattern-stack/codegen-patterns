@@ -658,7 +658,9 @@ carries". #780 keeps the batch form and the update policies (overwrite, coalesce
 
 **`Integrated` on a child** stays refused in this build, and is no longer blocked by design. Once
 `upsertByNaturalKey` exists, a child's `integrationUpsertOne` is a thin adapter: resolve the FKs, then delegate.
-It needs the base to carry `external_id_tracking` with `(provider, external_id)` as its natural key, and
+It needs the base to carry `external_id_tracking` with `(provider, external_id)` as its natural key (R11 as built
+in S1 accepts only declared fields and `belongs_to` foreign key columns in a natural key, so S7 must extend it to
+accept the behavior columns `provider` and `external_id`), and
 `findByExternalIdProjected` / `softDeleteByExternalId` to forward to the base. That is one follow-up slice (§13,
 S7), left out of v1 because the first consumer writes through the pivot, not the sink.
 
@@ -1127,7 +1129,10 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   R10, M1–M5) are `validateInheritance` in `src/parser/validate-inheritance.ts`, called from `entity new`'s
   pre-flight (`preflightEntityTargets`, so `--all`, a single target and `junction new` all see it) and from
   `analyzeDomain` (so `entity validate` and `project inspect --kind analyze` report the same errors). The
-  validator reads definitions, not `ParsedEntity`, which does not carry these keys.
+  validator reads `ParsedEntity`, the model S3's `build-graph` reads. `inherits`, `discriminator`, `naturalKey`,
+  `sync`, a field's `choicesOf` and a relationship's `match` / `nullable` / `onDelete` are carried onto it, so
+  the columns a `roles:` entry derives (`<role>_<target>_id`) are visible to M2 and R4, and the directory is
+  loaded once.
 - **R10 and a child's tenancy** are in `src/schema/tenancy.ts`: `baseTenantColumnIssue` and `resolveChildTenancy`
   (column, `tenantScoped`, strict enforcement, all from the base). `lifecycleBehaviorsDeclared` is R5's behavior
   half and counts a behavior a pattern implies (`Integrated` implies `external_id_tracking`).
@@ -1135,17 +1140,26 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   refused on it, because the kinds must be known when the family is validated. `choices_of:` follows exactly one
   hop: its target is an existing entity's `type: enum` field with literal `choices:`, never another `choices_of:`
   or a `choices_from:`, and never the entity's own field.
-- **R6** is checked on the child's `entity.config`: any string value naming a column the base owns (and the child
-  does not) is an error, and so is `Activity` on a child with no `occurredAt:` configured when the base owns
-  `occurred_at`, since the pattern would read the default column.
-- **R7** covers `by`, `select`, `order` and a search query's `filters` / `search`.
-- **R8** is "declare the same `entity.sync` on every member, or on none". A mode declared on one side only is an
-  error: an undeclared mode resolves through the global `frontend.sync.mode`, which a child's own YAML cannot see.
+- **R4** also sees the columns a `match:` derives (a child deriving `thread_topic` collides with a base field of
+  that name) and the FK columns a role derives.
+- **R6** reads the columns a pattern says it reads: `PatternDefinition.columnsRead(config)`, stated next to the
+  pattern's own config (`activityColumnsRead`: `occurredAt`, default `occurred_at`; `subjectColumn`, else
+  `<subject>_id`). A child declaring a pattern whose columns include one the base owns is an error. Config strings
+  are not compared; only a pattern that declares `columnsRead` is checked (today, `Activity`).
+- **R7** covers `by`, `select` and `order` of the by-column queries, the only ones `ParsedEntity` carries. A
+  search query's `filters` are not checked.
+- **R8** compares **resolved** modes: `entity.sync ?? frontend.sync.mode`. The project mode reaches the validator
+  as an option (`syncMode`, from `ctx.config.frontend`, as `tenancyColumn` does), so a base `sync: electric` with
+  undeclared children under a global `electric` is fine, and is an error under a global `api`.
 - **R11** adds two refusals the rule implies: a `natural_key` entry may not have `where` (a partial index is not an
   `ON CONFLICT` target without its predicate), and its columns must be declared fields or `belongs_to` foreign
   key columns. `natural_key:` on an entity outside a family is legal.
 - **§8's key refusals** include a field named `id` on a child (its key is the base row's id) and a non-`uuid` `id`
   on a base.
+- **M2's exception compares SQL types, not spellings:** the discriminator is accepted when its type equals the
+  target column's (`choices_of: communication.kind` against a lookup column that is also `choices_of:
+  communication.kind`, or a literal `communication.kind` against one). A child's derived columns are not
+  available to a match either: its base's discriminator and tenant column are columns on the child.
 - **M1** takes target columns from the target's declared fields and `belongs_to` FK columns only; a behavior or
   emitted tenant column is not a match target (the tenant column is emitted nullable unless declared).
 - **M4** is a write-path rule (S4). S1 enforces its one static corollary: `on_delete: set_null` on a `match:`
@@ -1155,9 +1169,12 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   (`choices_of` pointing elsewhere); or one local column is matched by two relationships whose target enums are
   different Postgres types (reported as M5, not M3). A discriminator with no `choices_of:` at all is M2's
   exception unmet.
-- **Generation refusal.** Until S2, `entity new` (single and `--all`) refuses an entity that uses `inherits:`,
-  `discriminator:`, `match:` or `choices_of:`, with "not implemented until S2 of #875", and emits nothing for it;
-  the rest of the directory still generates. `natural_key:` alone is accepted: no emitter reads the key, and
+- **Generation refusal.** Until S2, an entity in the directory that uses `inherits:`, `discriminator:`, `match:`
+  or `choices_of:` is a **run-level rejection** (the #666 posture): `entity new` stops before hygen, whatever
+  target it was asked for and whatever `--continue-on-error` says, with "not implemented until S2 of #875". The
+  barrels (`schema.ts`, `modules.ts`) and the relations manifest read the whole directory, so refusing only the
+  family's own files would still emit exports and scopes for modules that were never written. A cross-entity
+  violation (R1–R10, M1–M5) is a run-level rejection for the same reason. `natural_key:` alone is accepted: no emitter reads the key, and
   `src/__tests__/cli/inheritance-refusal.test.ts` asserts the generated tree is byte-identical with and without
   it.
 - **`checks:`** is not a key (OQ-11). The schema is `.strict()`, so writing it is an unknown-key error.
@@ -1235,7 +1252,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
 - Gates: `just test-smoke-frontend`, `just test-studio`, `just test-all`.
 - Closes: A12, A13, A14, A15, A16.
 
-**S7 — `Integrated` on a child. Not in v1.** Described in §4.2. File it as its own issue when a consumer writes a
+**S7 — `Integrated` on a child. Not in v1.** Described in §4.2. S7 also widens R11 to accept behavior columns in a natural key (§4.2). File it as its own issue when a consumer writes a
 family through the generated sink.
 
 ### 13.3 Rules for every slice

@@ -41,7 +41,19 @@ const ActivityPatternConfigSchema = z
 	})
 	.strict();
 
-export const ActivityPattern = definePattern({
+type ActivityPatternConfig = z.infer<typeof ActivityPatternConfigSchema>;
+
+/**
+ * The columns `ActivityEntityRepository` reads (`activity-entity-repository.ts`):
+ * the recency column (`occurredAt`, default `occurred_at`) and, when the config
+ * names one, the subject FK (`subjectColumn`, else `<subject>_id`).
+ */
+export function activityColumnsRead(config: ActivityPatternConfig | undefined): string[] {
+	const subject = config?.subjectColumn ?? (config?.subject ? `${config.subject}_id` : undefined);
+	return [config?.occurredAt ?? 'occurred_at', ...(subject !== undefined ? [subject] : [])];
+}
+
+export const ActivityPattern = definePattern<ActivityPatternConfig>({
 	name: 'Activity',
 	extends: ['Base'],
 	repositoryClass: 'ActivityEntityRepository',
@@ -49,6 +61,7 @@ export const ActivityPattern = definePattern({
 	repositoryImport: '@shared/base-classes/activity-entity-repository',
 	serviceImport: '@shared/base-classes/activity-entity-service',
 	configSchema: ActivityPatternConfigSchema,
+	columnsRead: (config) => activityColumnsRead(config),
 	repositoryInheritedMethods: [
 		'findById, findByIds, list, count, exists, create, update, delete, upsertMany',
 		'findByDateRange, findByUserId, findBySubjectId, findRecentBySubjectId',

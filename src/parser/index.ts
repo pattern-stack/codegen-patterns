@@ -31,7 +31,6 @@ export {
 export {
 	validateInheritance,
 	matchPairs,
-	type InheritanceEntity,
 	type ValidateInheritanceOptions,
 } from './validate-inheritance';
 

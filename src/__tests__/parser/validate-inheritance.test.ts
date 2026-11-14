@@ -34,7 +34,7 @@ describe('the fixture family', () => {
 	});
 
 	it('contains both bases, three children and the match-only entities', () => {
-		const names = loadFamily().map((e) => e.definition.entity.name).sort();
+		const names = loadFamily().map((e) => e.name).sort();
 		expect(names).toEqual([
 			'communication',
 			'communication_participant',
@@ -229,6 +229,31 @@ describe('R4 — no name on both tables', () => {
 	});
 });
 
+describe('R4 — match-derived and role-derived columns', () => {
+	it('R4: a child deriving a column via match: that the base declares', () => {
+		const msg = only({
+			communication: (r) => (r.fields.thread_topic = { type: 'string', nullable: true }),
+			email_thread: (r) => {
+				r.fields.topic = { type: 'string', required: true };
+			},
+			email: (r) => {
+				r.relationships.thread.match = { thread_topic: 'topic' };
+			},
+		});
+		expect(msg).toContain("R4 — 'email' declares column 'thread_topic' derived by the match: of relationship 'thread'");
+		expect(msg).toContain("'communication' declares field 'thread_topic'");
+	});
+
+	it('R4: a child role whose derived FK column the base declares', () => {
+		const msg = only({
+			communication: (r) => (r.fields.attendee_person_id = { type: 'uuid', nullable: true }),
+			meeting: (r) => (r.roles = { attendee: { target: 'person', cardinality: 'one' } }),
+		});
+		expect(msg).toContain("'meeting' declares foreign key 'attendee_person_id' (role 'attendee')");
+		expect(msg).toContain("'communication' declares field 'attendee_person_id'");
+	});
+});
+
 describe('R6 — a child declares a pattern only over its own columns', () => {
 	it('R6: pattern config naming a base column', () => {
 		const msg = only({
@@ -238,15 +263,53 @@ describe('R6 — a child declares a pattern only over its own columns', () => {
 			},
 		});
 		expect(msg).toContain('R6');
-		expect(msg).toContain("'meeting' configures pattern 'Activity' with 'created_at'");
+		expect(msg).toContain("'meeting' declares pattern 'Activity', which reads the column 'created_at'");
 		expect(msg).toContain("'communication'");
 	});
 
 	it('R6: Activity on a child reads occurred_at, which the base owns', () => {
 		const msg = only({ meeting: (r) => (r.entity.patterns = ['Activity']) });
-		expect(msg).toContain("'meeting' declares pattern 'Activity'");
-		expect(msg).toContain("'occurred_at'");
+		expect(msg).toContain("'meeting' declares pattern 'Activity', which reads the column 'occurred_at'");
 		expect(msg).toContain("'communication'");
+	});
+
+	it('R6: Activity reads its derived subject column (subject: owner -> owner_id), which the base owns', () => {
+		const msg = only({
+			communication: (r) => {
+				r.relationships = { owner: { type: 'belongs_to', target: 'person', foreign_key: 'owner_id' } };
+			},
+			meeting: (r) => {
+				r.entity.patterns = ['Activity'];
+				r.entity.config = { Activity: { subject: 'owner', occurredAt: 'starts_at' } };
+			},
+		});
+		expect(msg).toContain("'meeting' declares pattern 'Activity', which reads the column 'owner_id'");
+		expect(msg).toContain("base 'communication'");
+	});
+
+	it('R6: an explicit subjectColumn the base owns', () => {
+		const msg = only({
+			communication: (r) => {
+				r.relationships = { owner: { type: 'belongs_to', target: 'person', foreign_key: 'owner_id' } };
+			},
+			meeting: (r) => {
+				r.entity.patterns = ['Activity'];
+				r.entity.config = { Activity: { subjectColumn: 'owner_id', occurredAt: 'starts_at' } };
+			},
+		});
+		expect(msg).toContain("reads the column 'owner_id'");
+	});
+
+	it('R6: a string in config that merely equals a base column name is not a column read', () => {
+		// Only the pattern says which columns it reads; an unrelated config string is not compared.
+		expect(
+			errorsFor({
+				meeting: (r) => {
+					r.entity.patterns = ['Activity'];
+					r.entity.config = { Activity: { occurredAt: 'starts_at' } };
+				},
+			}),
+		).toEqual([]);
 	});
 
 	it('R6: Activity on a child over its own column is fine', () => {
@@ -278,29 +341,42 @@ describe('R7 — a child query names only its own columns', () => {
 	});
 });
 
-describe('R8 — one sync mode per family', () => {
+describe('R8 — one RESOLVED sync mode per family', () => {
+	const run = (mutations: Mutations, syncMode?: 'api' | 'electric') =>
+		validateInheritance(familyWith(mutations), { syncMode }).filter((i) => i.severity === 'error');
+
 	it('R8: a child that differs from its base', () => {
-		const msg = only({
+		const messages = run({
 			communication: (r) => (r.entity.sync = 'electric'),
 			meeting: (r) => (r.entity.sync = 'api'),
 			email: (r) => (r.entity.sync = 'electric'),
-		});
-		expect(msg).toContain('R8');
-		expect(msg).toContain("'meeting'");
-		expect(msg).toContain("base 'communication'");
-		expect(msg).toContain("'api'");
-		expect(msg).toContain("'electric'");
+		}).map((e) => e.message);
+		expect(messages).toHaveLength(1);
+		expect(messages[0]).toContain('R8');
+		expect(messages[0]).toContain("'meeting' syncs 'api' and its base 'communication' syncs 'electric'");
 	});
 
-	it('R8: a declared mode on one side only', () => {
-		const messages = errorsFor({ communication: (r) => (r.entity.sync = 'electric') }).map((e) => e.message);
-		expect(messages.length).toBe(2); // meeting and email
-		expect(messages[0]).toContain('undeclared');
+	it('R8: a base declaring a mode the project default does not match, children undeclared', () => {
+		const messages = run({ communication: (r) => (r.entity.sync = 'api') }, 'electric').map((e) => e.message);
+		expect(messages).toHaveLength(2); // meeting and email
+		expect(messages[0]).toContain("syncs 'electric' and its base 'communication' syncs 'api'");
+		expect(messages[0]).toContain("frontend.sync.mode, 'electric'");
+	});
+
+	it('R8: a base declaring the SAME mode the project resolves to, children undeclared, is fine', () => {
+		expect(run({ communication: (r) => (r.entity.sync = 'electric') }, 'electric')).toEqual([]);
+		expect(run({ communication: (r) => (r.entity.sync = 'api') }, 'api')).toEqual([]);
+	});
+
+	it('R8: the project default is the resolution, not the literal', () => {
+		const messages = run({ communication: (r) => (r.entity.sync = 'electric') }, 'api').map((e) => e.message);
+		expect(messages).toHaveLength(2);
+		expect(messages[0]).toContain("syncs 'api' and its base 'communication' syncs 'electric'");
 	});
 
 	it('R8: the same mode on every member is fine', () => {
 		const all = (r: { entity: { sync?: string } }) => (r.entity.sync = 'electric');
-		expect(errorsFor({ communication: all, meeting: all, email: all })).toEqual([]);
+		expect(run({ communication: all, meeting: all, email: all })).toEqual([]);
 	});
 });
 
@@ -436,6 +512,97 @@ describe('M2 — the local column is derived, except the discriminator', () => {
 		expect(msg).toContain('M2');
 		expect(msg).toContain("local column 'revision'");
 		expect(msg).toContain('own discriminator');
+	});
+});
+
+describe('M2 — the discriminator exception compares SQL types, not strings', () => {
+	it('allowed: a discriminator (choices_of communication.kind) matched against a lookup column that is also choices_of communication.kind', () => {
+		const errors = errorsFor({
+			communication_part: (r) => {
+				r.relationships.role = {
+					type: 'belongs_to',
+					target: 'communication_participant_role',
+					foreign_key: 'role_id',
+					match: { kind: 'kind' },
+				};
+			},
+		});
+		expect(errors).toEqual([]);
+	});
+
+	it('allowed: communication.kind (literal) matched against a lookup column that is choices_of communication.kind', () => {
+		const errors = errorsFor({
+			communication: (r) => {
+				r.relationships = {
+					role: {
+						type: 'belongs_to',
+						target: 'communication_participant_role',
+						foreign_key: 'role_id',
+						match: { kind: 'kind' },
+					},
+				};
+			},
+		});
+		expect(errors).toEqual([]);
+	});
+
+	it('refused: the discriminator against a non-enum target column names the types, with no choices_of advice', () => {
+		const msg = only({
+			communication_part: (r) => {
+				r.relationships.role = {
+					type: 'belongs_to',
+					target: 'communication_participant_role',
+					foreign_key: 'role_id',
+					match: { kind: 'role' },
+				};
+			},
+		});
+		expect(msg).toContain("'communication_part.kind' is the discriminator (enum:communication.kind)");
+		expect(msg).toContain("'communication_participant_role.role' is string");
+		expect(msg).not.toContain('declare it');
+	});
+});
+
+describe('M2 — a child\'s derived columns are not available to a match', () => {
+	it("a child matching the base's tenant column", () => {
+		const msg = only({
+			meeting: (r) => {
+				r.relationships.origin = {
+					type: 'belongs_to',
+					target: 'communication',
+					foreign_key: 'origin_id',
+					match: { tenant_id: 'tenant_id' },
+				};
+			},
+		});
+		expect(msg).toContain('M2');
+		expect(msg).toContain("'meeting.origin'");
+		expect(msg).toContain("local column 'tenant_id' is already the tenant column 'tenant_id' the child carries from its base 'communication'");
+	});
+
+	it("a child matching the base's discriminator", () => {
+		const msg = only({
+			transcript_communication_part: (r) => {
+				r.relationships.origin = {
+					type: 'belongs_to',
+					target: 'communication',
+					foreign_key: 'origin_id',
+					match: { kind: 'kind' },
+				};
+			},
+		});
+		expect(msg).toContain("'transcript_communication_part.origin'");
+		expect(msg).toContain("local column 'kind' is already the 'kind' column the child carries from its base 'communication_part'");
+	});
+
+	it('a role-derived FK column is not available either', () => {
+		const msg = only({
+			communication_participant: (r) => {
+				r.roles = { attendee: { target: 'person', cardinality: 'one' } };
+				r.relationships.communication.match = { attendee_person_id: 'kind' };
+			},
+		});
+		expect(msg).toContain("local column 'attendee_person_id' is already a declared foreign key column");
 	});
 });
 

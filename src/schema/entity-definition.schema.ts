@@ -1,9 +1,6 @@
 import { z } from "zod";
 import { TENANT_COLUMN_PATTERN } from "./tenancy.js";
 import { inheritanceIssues } from "./inheritance.js";
-
-/** An entity name as written in YAML: snake_case. */
-const ENTITY_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
 import { TABLE_NAME_IS_NOT_A_KEY, TABLE_NAME_PATTERN, TABLE_PREFIX_PATTERN } from "../config/table-naming.js";
 import { reservedGlobalFor, reservedNameMessage } from "./reserved-entity-names.js";
 import { roleForeignKey } from "../roles/derive.js";
@@ -21,6 +18,9 @@ import {
 } from "./field-timestamp.js";
 import { timestampBehaviorNames } from "../behaviors/index.js";
 import { DetectionConfigSchema } from "../../runtime/subsystems/integration";
+
+/** A snake_case name as written in YAML: an entity, a kind value, a field. */
+const SNAKE_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
 
 /**
  * Entity Definition Schema
@@ -1216,13 +1216,13 @@ export const EntityDefinitionSchema = z
     // the cross-entity ones in `src/parser/validate-inheritance.ts`.
     inherits: z
       .union([
-        z.string().regex(ENTITY_NAME_PATTERN, "'inherits' must name an entity in snake_case"),
+        z.string().regex(SNAKE_NAME_PATTERN, "'inherits' must name an entity in snake_case"),
         z
           .object({
-            base: z.string().regex(ENTITY_NAME_PATTERN, "'inherits.base' must name an entity in snake_case"),
+            base: z.string().regex(SNAKE_NAME_PATTERN, "'inherits.base' must name an entity in snake_case"),
             as: z
               .string()
-              .regex(/^[a-z][a-z0-9_]*$/, "'inherits.as' must be a snake_case kind value")
+              .regex(SNAKE_NAME_PATTERN, "'inherits.as' must be a snake_case kind value")
               .optional(),
           })
           .strict(),
@@ -1230,7 +1230,7 @@ export const EntityDefinitionSchema = z
       .optional(),
     discriminator: z
       .string()
-      .regex(/^[a-z][a-z0-9_]*$/, "'discriminator' must name a snake_case field")
+      .regex(SNAKE_NAME_PATTERN, "'discriminator' must name a snake_case field")
       .optional(),
 
     // Per-entity generation toggles (e.g. disable write-side emission)
