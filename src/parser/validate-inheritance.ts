@@ -334,19 +334,23 @@ export function validateInheritance(
 			}
 		}
 
-		// R7: a child's queries name only its own columns.
-		for (const q of e.queries ?? []) {
-			const order = q.order?.trim().split(/\s+/)[0];
-			for (const col of [...q.by, ...(q.select ?? []), ...(order ? [order] : [])]) {
-				if (baseOnly(col)) {
-					error(
-						e,
-						'inherits_query',
-						`R7 — a query on '${name}' names '${col}', a column of its base '${child.base}'. ` +
-							`A finder by a base column is a read on the base: declare it on '${child.base}'.`,
-						col,
-					);
-				}
+		// R7: a child's queries name only its own columns — by-column and search queries alike.
+		const queryColumns: string[] = [
+			...(e.queries ?? []).flatMap((q) => {
+				const order = q.order?.trim().split(/\s+/)[0];
+				return [...q.by, ...(q.select ?? []), ...(order ? [order] : [])];
+			}),
+			...(e.searchQueries ?? []).flatMap((q) => [...q.filters, ...(q.search !== undefined ? [q.search] : [])]),
+		];
+		for (const col of queryColumns) {
+			if (baseOnly(col)) {
+				error(
+					e,
+					'inherits_query',
+					`R7 — a query on '${name}' names '${col}', a column of its base '${child.base}'. ` +
+						`A finder or filter by a base column is a read on the base: declare it on '${child.base}'.`,
+					col,
+				);
 			}
 		}
 

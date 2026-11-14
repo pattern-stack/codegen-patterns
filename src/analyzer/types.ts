@@ -201,6 +201,18 @@ export interface ParsedEvent {
 	generateHandler: boolean;
 }
 
+/**
+ * A `queries:` entry of the search shape (`name: search`): the list endpoint,
+ * filtered. Carried beside `ParsedEntity.queries` (the by-column shape) rather
+ * than inside it, because the by-column consumers read `by` unconditionally.
+ */
+export interface ParsedSearchQuery {
+	/** Columns the list endpoint accepts a filter on. */
+	filters: string[];
+	/** The column the free-text `search` term matches, when declared. */
+	search?: string;
+}
+
 export interface ParsedEntity {
 	name: string;
 	plural: string;
@@ -256,6 +268,8 @@ export interface ParsedEntity {
 	/** The columns of the `unique_indexes` entry marked `natural_key: true`, if any (RFC-0006 R11). */
 	naturalKey?: string[];
 	queries?: ParsedQuery[];
+	/** The search-shape `queries:` entries (see {@link ParsedSearchQuery}). */
+	searchQueries?: ParsedSearchQuery[];
 	integration?: ParsedIntegration;
 	events?: ParsedEvent[];
 	/**

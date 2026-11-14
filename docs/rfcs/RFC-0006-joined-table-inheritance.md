@@ -1146,8 +1146,8 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   pattern's own config (`activityColumnsRead`: `occurredAt`, default `occurred_at`; `subjectColumn`, else
   `<subject>_id`). A child declaring a pattern whose columns include one the base owns is an error. Config strings
   are not compared; only a pattern that declares `columnsRead` is checked (today, `Activity`).
-- **R7** covers `by`, `select` and `order` of the by-column queries, the only ones `ParsedEntity` carries. A
-  search query's `filters` are not checked.
+- **R7** covers `by`, `select` and `order` of the by-column queries and the `filters` and `search` column of a
+  search query. Both shapes are on `ParsedEntity` (`queries`, `searchQueries`).
 - **R8** compares **resolved** modes: `entity.sync ?? frontend.sync.mode`. The project mode reaches the validator
   as an option (`syncMode`, from `ctx.config.frontend`, as `tenancyColumn` does), so a base `sync: electric` with
   undeclared children under a global `electric` is fine, and is an error under a global `api`.

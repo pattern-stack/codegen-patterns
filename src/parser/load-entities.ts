@@ -22,6 +22,7 @@ import type {
 	ParsedField,
 	ParsedProviderIntegration,
 	ParsedQuery,
+	ParsedSearchQuery,
 	ParsedRelationship,
 	ParsedRelationshipDefinition,
 	ParsedIntegration,
@@ -109,6 +110,10 @@ export function transformToEntity(result: LoadResult, tablePrefix: string): Pars
 			via: q.via,
 		}));
 
+	const searchQueries: ParsedSearchQuery[] = (definition.queries ?? [])
+		.filter((q): q is Extract<typeof q, { name: 'search' }> => 'name' in q)
+		.map((q) => ({ filters: q.filters, ...(q.search !== undefined ? { search: q.search } : {}) }));
+
 	const entity: ParsedEntity = {
 		name: definition.entity.name,
 		plural: definition.entity.plural,
@@ -126,6 +131,7 @@ export function transformToEntity(result: LoadResult, tablePrefix: string): Pars
 		queries,
 		sourcePath: filePath,
 	};
+	if (searchQueries.length > 0) entity.searchQueries = searchQueries;
 	if (definition.entity.sync !== undefined) entity.sync = definition.entity.sync;
 	// RFC-0006 keys — carried so cross-entity validation, and S3's relation graph,
 	// read the parsed model rather than re-reading the YAML.

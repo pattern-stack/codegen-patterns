@@ -336,6 +336,22 @@ describe('R7 — a child query names only its own columns', () => {
 		expect(msg).toContain("'occurred_at'");
 	});
 
+	it('R7: a search query filtering a base column', () => {
+		const msg = only({ meeting: (r) => (r.queries = [{ name: 'search', filters: ['title', 'source'] }]) });
+		expect(msg).toContain("R7 — a query on 'meeting' names 'source', a column of its base 'communication'");
+	});
+
+	it('R7: a search query whose free-text column is a base column', () => {
+		const msg = only({
+			meeting: (r) => (r.queries = [{ name: 'search', filters: ['title'], search: 'external_id' }]),
+		});
+		expect(msg).toContain("names 'external_id'");
+	});
+
+	it('R7: a search query over its own columns is fine', () => {
+		expect(errorsFor({ meeting: (r) => (r.queries = [{ name: 'search', filters: ['title'], search: 'link' }]) })).toEqual([]);
+	});
+
 	it('R7: a finder by its own column is fine', () => {
 		expect(errorsFor({ meeting: (r) => (r.queries = [{ by: ['title'] }]) })).toEqual([]);
 	});
