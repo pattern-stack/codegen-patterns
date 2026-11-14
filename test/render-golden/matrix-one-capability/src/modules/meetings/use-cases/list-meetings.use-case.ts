@@ -1,0 +1,98 @@
+
+import { Injectable } from '@nestjs/common';
+import { buildPage, resolveListQuery, type ListQuery, type Page } from '@shared/http/page';
+import { hasColumn, type RowFilter, type SortTerm } from '@shared/base-classes/base-repository';
+import { MeetingService } from '../meeting.service';
+import { meetings } from '../meeting.entity';
+import type {
+  MeetingInclude,
+  MeetingNoInclude,
+  MeetingResult,
+} from '../meeting.repository';
+
+/**
+ * Paginated list use-case for meetings (pagination-by-default).
+ *
+ * Composes `service.list({ where, limit, offset, sort })` + `service.count(where)`
+ * into a `Page<Meeting>` envelope. Defaults: page 1,
+ * pageSize 50 (max 200), sort `created_at desc, id desc`. `total`/`pageCount`
+ * reflect the (optionally filtered) set, so pagination composes with where
+ * filters orthogonally — it works fully unfiltered too. `options.where` is the
+ * filter seam — a ROW FILTER, `(t) => eq(t.name, x)`, handed whichever table
+ * handle the executing path holds (READ-1 §4); the same value reaches `list` and
+ * `count`, so the page and its total describe one set: the entity's search use case, when its YAML declares one, ANDs
+ * its predicates and pages through here, so search and list share one
+ * envelope (#744).
+ *
+ * v1 ENGINE = OFFSET. `nextCursor` is computed from the last row and emitted
+ * (contract-stable), but cursor-REQUEST honoring (keyset seek) is DEFERRED:
+ * `resolved.cursor` is accepted and ignored here. The keyset swap belongs in
+ * the marked seam below — fetch by `WHERE (created_at, id) < decodeCursor(cursor)`
+ * instead of `offset` — and is otherwise invisible to the controller/UI.
+ */
+@Injectable()
+export class ListMeetingsUseCase {
+  constructor(private readonly service: MeetingService) {}
+
+  /**
+   * `include` is a typed include tree the controller already resolved against the
+   * route's allowlist (REL-2 §5); an internal caller passes one directly. Every
+   * hop of it is scoped by the relations manifest, so pagination composes with a
+   * nested read without widening what the reader can see.
+   */
+  async execute<TWith extends MeetingInclude = MeetingNoInclude>(
+    listQuery?: ListQuery,
+    listOptions: { include?: TWith; where?: RowFilter<typeof meetings> } = {},
+  ): Promise<Page<MeetingResult<TWith>>> {
+    const { include: includeTree, where: whereClause } = listOptions;
+    const resolvedQuery = resolveListQuery(listQuery);
+
+    // Default sort: `created_at desc, id desc` (id is the stable keyset
+    // tie-break). A caller `sort_by` that names a real column is honored in the
+    // requested direction with the id tie-break appended; an unknown column
+    // falls back to the default.
+    //
+    // Expressed as COLUMN KEYS, not a rendered SQL fragment: the repository
+    // renders it against whichever table handle the executing path holds, and the
+    // relational query builder (the `with`-include path) aliases the root table
+    // (REL-2 §2.4). A pre-rendered fragment would name `meetings`,
+    // which is not in scope there.
+    const sortColumn = resolvedQuery.sortBy.replace(
+      /_([a-z])/g,
+      (_m: string, c: string) => c.toUpperCase(),
+    );
+    // `hasColumn` — the repository's own column test (an own-key check, so
+    // `?sort_by=to_string` is unknown, not `Object.prototype.toString`).
+    const isKnownColumn = hasColumn(meetings, sortColumn);
+    const sortTerms: SortTerm[] = isKnownColumn
+      ? [
+          { column: sortColumn, direction: resolvedQuery.sortOrder },
+          { column: 'id', direction: 'desc' },
+        ]
+      : [
+          { column: 'createdAt', direction: 'desc' },
+          { column: 'id', direction: 'desc' },
+        ];
+
+    // The ListQuery owns only pagination + sort; filtering is the caller's
+    // `where` (undefined = unfiltered). The same `where` goes to both `list`
+    // and `count`, so `total`/`pageCount` describe the filtered set.
+
+    // KEYSET SEAM (deferred — v1 fetches by offset). When the keyset upgrade
+    // lands, branch here on `resolvedQuery.cursor`: decode it and fetch by
+    // `WHERE (created_at, id) < (cursorCreatedAt, cursorId)` LIMIT pageSize,
+    // dropping the offset. The envelope + nextCursor below are unchanged.
+    const [pageRows, rowTotal] = await Promise.all([
+      this.service.list<TWith>({
+        where: whereClause,
+        limit: resolvedQuery.pageSize,
+        offset: resolvedQuery.offset,
+        sort: sortTerms,
+        ...(includeTree === undefined ? {} : { with: includeTree }),
+      }),
+      this.service.count(whereClause),
+    ]);
+
+    return buildPage(pageRows, rowTotal, resolvedQuery);
+  }
+}
