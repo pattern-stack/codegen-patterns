@@ -1,6 +1,6 @@
 # PLAN — backend API-surface derivation (slice 1) + Studio API view
 
-**Status:** approved with changes (Doug, 2026-11-12) · **Revision 1** folded in · nothing built
+**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · A0 built
 **Basis:** `main` @ `c1ceeefd`. READ-1 merged 2026-11-12 (#859 and the ten PRs under it). Every `path:line`
 below was taken at the READ-1 tip `e9fe6f5f`; every cited file is byte-identical on `main` (checked one by one
 with `git diff --quiet e9fe6f5f c1ceeefd -- <file>`), so the line numbers hold.
@@ -42,10 +42,9 @@ them is temporary by decision.
 junction- and `relationship:`-owned modules are `unmodelled` until #679 · oddities are recorded, not fixed ·
 B4 does not wait for REL-3 · no param or return *types* in slice 1.
 
-**One thing still needs your nod — the directory name.** You asked for `src/surface/api/` unless there is a
+**Directory name — decided 2026-11-13: `src/derived/api/`.** You asked for `src/surface/api/` unless there was a
 concrete reason it is worse. There is (§4.2): `surface` is already the integration-surface term in the very
-files that would import it. I propose **`src/derived/api/`**. It is the default below; say so before A1 starts
-if you want something else — it is a rename, nothing depends on it.
+files that would import it.
 
 **How it runs:** one orchestration session, PR by PR, against §14 — exact exit commands per PR, anti-cheat
 rules with their detection commands, four sign-off stops (after A1, A4, B1, B4), and stop conditions.
@@ -532,7 +531,9 @@ of docs beside it); Phase B 3.5–4.5 days.
 
 ## 10. Sequencing against other work
 
-- **READ-1** is merged. Nothing waits. A1 starts from `main` @ `c1ceeefd` or later.
+- **READ-1** is merged. Nothing waits. A1 starts from `main` @ `c1ceeefd` or later. (`main` moved to `074cce00`, the
+  0.33.0 release, before A0; P0 re-checked that nothing under `templates/`, `src/studio`, `tools/studio`,
+  `src/emitters`, `src/schema`, `runtime/base-classes`, `test/baseline` or `test/fixtures` changed.)
 - **REL-3 (#588) does not gate B4** (decided). B4 moves names and existence into the derivation; REL-3 later
   rewrites the method bodies and edits one derivation entry (`delegatesTo`, plus a navigator kind). If REL-3
   lands on `main` *while* this stack is open and touches `templates/entity/new/backend/service.ejs.t`, that is
@@ -587,7 +588,7 @@ Decide on slice 2 after Phase B. Do slice 3 only after REL-3.
 
 | # | Question | Default |
 |---|---|---|
-| N1 | Directory name: `src/derived/api/` instead of `src/surface/api/` (§4.2). | `src/derived/api/`. Settle before A1 starts. |
+| N1 | Directory name: `src/derived/api/` instead of `src/surface/api/` (§4.2). | **Decided 2026-11-13: `src/derived/api/`.** |
 | Q4 | What `project surface` answers for a `has_many` whose target was never generated (F3). | "What `entity new --all` emits." Single-entity `entity new` keeps today's disk check, passed in explicitly. |
 | Q5 | F7 is real (§14.4). Warning or error? | **Warning in A2**, as you framed it. All three shapes already fail the consumer's `tsc`, so promoting it to an `entity validate` error would break no working project — file that as its own issue at S4; REL-3 probably removes the need. |
 | Q8 | Should the frontend client (`emit-api.ts`) read `http.routes` (F6)? | Follow-up issue filed at S4; no derivation change. |
@@ -659,9 +660,9 @@ it names. After a Phase B mutation (which regenerates), re-run G3 once reverted 
 
 | Check | Expected |
 |---|---|
-| `git diff --name-only $BASE_A..HEAD` | exactly `CLAUDE.md`, `docs/adrs/ADR-046-derived-once-templates-print.md`, `docs/specs/STUDIO-0.md` |
+| `git diff --name-only $BASE_A..HEAD` | exactly `CLAUDE.md`, `docs/adrs/ADR-046-derived-once-templates-print.md`, `docs/specs/STUDIO-0.md`, plus this plan's own post-implementation corrections (`.ai-docs/stacks/api-surface-model/PLAN.md`) |
 | `grep -c '^### Templates print (ADR-046)$' CLAUDE.md` | `1` |
-| `grep -c 'calls .analyzeDomain. + .serializeDomainGraph. in-process' docs/specs/STUDIO-0.md` | `0` |
+| `git show $BASE_A:docs/specs/STUDIO-0.md \| grep -c 'serializeDomainGraph. in-process'`, then the same `grep -c` on `HEAD` | `1`, then `0`. (The first draft of this row grepped the whole sentence, which wraps across two lines, so it printed `0` at the base too and could not fail.) |
 
 **A1**
 
