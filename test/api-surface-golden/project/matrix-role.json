@@ -1,0 +1,71 @@
+{
+	"case": "matrix-role",
+	"covers": "two `cardinality: one` roles beside a declared belongs_to onto the same target",
+	"relations": [
+		{
+			"id": "call.relationships.account",
+			"from": "call",
+			"to": "account",
+			"kind": "belongs_to",
+			"generates": [
+				{
+					"entity": "call",
+					"layer": "repository",
+					"method": "findByAccountId"
+				},
+				{
+					"entity": "call",
+					"layer": "service",
+					"method": "account"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "calls",
+					"key": "account"
+				}
+			]
+		},
+		{
+			"id": "call.roles.caller",
+			"from": "call",
+			"to": "contact",
+			"kind": "role",
+			"generates": [
+				{
+					"entity": "call",
+					"layer": "repository",
+					"method": "findByCallerId"
+				},
+				{
+					"entity": "call",
+					"layer": "service",
+					"method": "caller"
+				}
+			],
+			"includeKeys": []
+		},
+		{
+			"id": "call.roles.regarding",
+			"from": "call",
+			"to": "account",
+			"kind": "role",
+			"generates": [
+				{
+					"entity": "call",
+					"layer": "repository",
+					"method": "findByRegardingAccountId"
+				},
+				{
+					"entity": "call",
+					"layer": "service",
+					"method": "regarding"
+				}
+			],
+			"includeKeys": []
+		}
+	],
+	"unmodelled": [],
+	"warnings": [],
+	"includes": {}
+}

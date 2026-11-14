@@ -1,0 +1,8 @@
+{
+	"case": "matrix-eav",
+	"covers": "`eav: true` — paired reads, with-fields routes and use cases",
+	"relations": [],
+	"unmodelled": [],
+	"warnings": [],
+	"includes": {}
+}

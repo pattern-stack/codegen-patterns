@@ -1,0 +1,52 @@
+{
+	"case": "matrix-precedence",
+	"covers": "the queries: × belongs_to collision, both directions, with an ordered query",
+	"relations": [
+		{
+			"id": "ticket.relationships.account",
+			"from": "ticket",
+			"to": "account",
+			"kind": "belongs_to",
+			"generates": [
+				{
+					"entity": "ticket",
+					"layer": "repository",
+					"method": "findByAccountId"
+				},
+				{
+					"entity": "ticket",
+					"layer": "service",
+					"method": "account"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "tickets",
+					"key": "account"
+				}
+			]
+		},
+		{
+			"id": "ticket.relationships.assignee",
+			"from": "ticket",
+			"to": "user",
+			"kind": "belongs_to",
+			"generates": [
+				{
+					"entity": "ticket",
+					"layer": "service",
+					"method": "assignee"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "tickets",
+					"key": "assignee"
+				}
+			]
+		}
+	],
+	"unmodelled": [],
+	"warnings": [],
+	"includes": {}
+}

@@ -1,0 +1,28 @@
+{
+	"case": "matrix-one-capability",
+	"covers": "one capability (Communication): inline mixin, two service forwarders, role-derived FK",
+	"relations": [
+		{
+			"id": "meeting.roles.host",
+			"from": "meeting",
+			"to": "contact",
+			"kind": "role",
+			"generates": [
+				{
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "findByHostContactId"
+				},
+				{
+					"entity": "meeting",
+					"layer": "service",
+					"method": "host"
+				}
+			],
+			"includeKeys": []
+		}
+	],
+	"unmodelled": [],
+	"warnings": [],
+	"includes": {}
+}
