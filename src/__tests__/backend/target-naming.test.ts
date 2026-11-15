@@ -310,11 +310,11 @@ describe('a service that composes the same target twice (#632)', () => {
 		expect(service).toContain('this.crewRepo.findByLeadPersonId(personId, opts)');
 	});
 
-	it('the module imports and provides it once', () => {
+	it('the module imports it once, as a forwardRef', () => {
 		const module = render('module.ejs.t', both());
 		const count = (needle: string) => module.split(needle).length - 1;
 		expect(count("import { CrewsModule } from '../org/crews/crews.module';")).toBe(1);
-		expect(count('    CrewsModule,\n')).toBe(1);
+		expect(count('    forwardRef(() => CrewsModule),\n')).toBe(1);
 	});
 
 	it('an EAV definition entity also reached by a belongs_to is imported and injected once', () => {

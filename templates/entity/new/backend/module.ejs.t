@@ -21,7 +21,7 @@ _%>
  * root AppModule (global) so these tokens resolve at runtime.
  */
 <% } -%>
-import { Inject, Module,<% if (junctionFanOut.length > 0 || repositoryDepModules.some((d) => d.forwardRef)) { %> forwardRef,<% } %> type OnModuleInit } from '@nestjs/common';
+import { Inject, Module,<% if (junctionFanOut.length > 0 || repositoryDepModules.length > 0 || _eav || eavValueTable) { %> forwardRef,<% } %> type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '<%= openApiImport %>';
 import { DatabaseModule } from '@shared/database/database.module';
 <%_ /* ADR-002: the home module of each composed entity (belongs_to + has_many targets, deduped) exports its repository */ _%>
@@ -76,34 +76,19 @@ import { <%= classNames.searchController %> } from './<%= entityFileStem %>-sear
 <%_ if (dep.inherits) { _%>
     // A <%= entityName %> is a kind of <%= dep.entity %>: its repository injects the base's, which that module exports.
 <%_ } _%>
-<%_ if (dep.forwardRef) { _%>
     forwardRef(() => <%= dep.moduleClass %>),
-<%_ } else { _%>
-    <%= dep.moduleClass %>,
-<%_ } _%>
 <%_ }) _%>
 <%_ /* JUNC-0 — forwardRef breaks the parent ↔ junction module cycle (the junction module imports this one for its repository) */ _%>
 <%_ junctionFanOut.forEach(fan => { _%>
     forwardRef(() => <%= fan.junction.moduleClass %>),
 <%_ }) _%>
 <% if (_eav) { -%>
-    <%= eavFieldValueModulePascal %>Module,
+    forwardRef(() => <%= eavFieldValueModulePascal %>Module),
 <% } -%>
 <% if (eavValueTable) { -%>
-    <%= eavDefinitionPluralPascal %>Module,
+    forwardRef(() => <%= eavDefinitionPluralPascal %>Module),
 <% } -%>
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-<%_
-// Only a module this one does NOT already import is a hint (the composed entities' modules are real imports above).
-const _importedEntities = new Set(repositoryDeps.map((d) => d.entity));
-const _hintRels = belongsTo.filter((rel) => !_importedEntities.has(rel.relatedEntity));
-_%>
-<%_ if (_hintRels.length > 0) { _%>
-    // Cross-domain modules from relationships:
-<%_ _hintRels.forEach(rel => { _%>
-    // <%= rel.relatedEntityPascal %>sModule,
-<%_ }) _%>
-<%_ } _%>
   ],
   controllers: [<% if (_api) { %><%= classNames.controller %><% if (_searchRoute) { %>, <%= classNames.searchController %><% } %><% } %>],
   providers: [

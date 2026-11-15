@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'bun:test';
 
+import { familyConstName } from '../../derived/api/names';
 import { familyReadSurface, familyWriteSurface, hasTypedInclude } from '../../derived/api/entity';
 import { inheritanceBaseOf, inheritanceChildrenOf, naturalKeyIndexOf } from '../../schema/inheritance';
 import { baselineSet, deriveSet } from './_inputs';
@@ -107,6 +108,29 @@ describe('a base with no entity lookup', () => {
     const base = { ...withEntities(), entityLookup: hidden };
     expect(() => buildBackendLocals(raw, base)).toThrow(/a `match:` referrer scan for 'notice' needs an entity lookup/);
   });
+});
+
+describe('a child service\'s delete (Gate 2.5, #875 S4)', () => {
+	const surfaces = deriveSet(baselineSet());
+	const deletes = (name: string) => surfaces.get(name)!.service.methods.filter((m) => m.name === 'delete');
+
+	it('is a pair_delete, which the generated service prints as a pre-read that emits nothing for another kind\'s id', () => {
+		expect(deletes('meeting').map((m) => m.kind)).toEqual(['pair_delete']);
+		expect(deletes('email').map((m) => m.kind)).toEqual(['pair_delete']);
+	});
+
+	it('a base or a plain entity has none (BaseService.delete is right for a row it owns)', () => {
+		expect(deletes('communication').map((m) => m.kind)).toEqual(['inherited']);
+		expect(deletes('catalog_entry').map((m) => m.kind)).toEqual(['inherited']);
+	});
+});
+
+describe('familyConstName (Gate 2.5, #875 S4)', () => {
+	it('is the one SCREAMING_CASE rule, shared with includesConstName: a camelCase boundary is a word break', () => {
+		expect(familyConstName('meeting', 'BASE_KEYS')).toBe('MEETING_BASE_KEYS');
+		expect(familyConstName('deal_state', 'NATURAL_KEY')).toBe('DEAL_STATE_NATURAL_KEY');
+		expect(familyConstName('dealState', 'NATURAL_KEY')).toBe('DEAL_STATE_NATURAL_KEY');
+	});
 });
 
 describe('familyWriteSurface (RFC-0006 §4, #875 S4)', () => {

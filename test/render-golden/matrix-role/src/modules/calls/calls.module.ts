@@ -1,5 +1,5 @@
 
-import { Inject, Module, type OnModuleInit } from '@nestjs/common';
+import { Inject, Module, forwardRef, type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
 import { AccountsModule } from '../accounts/accounts.module';
@@ -21,8 +21,8 @@ import { DeleteCallUseCase } from './use-cases/delete-call.use-case';
 @Module({
   imports: [
     DatabaseModule,
-    AccountsModule,
-    ContactsModule,
+    forwardRef(() => AccountsModule),
+    forwardRef(() => ContactsModule),
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
   ],
   controllers: [CallController],

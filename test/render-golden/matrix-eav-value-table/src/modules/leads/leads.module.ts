@@ -1,5 +1,5 @@
 
-import { Inject, Module, type OnModuleInit } from '@nestjs/common';
+import { Inject, Module, forwardRef, type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
 import { FieldValuesModule } from '../field-values/field-values.module';
@@ -22,7 +22,7 @@ import { DeleteLeadUseCase } from './use-cases/delete-lead.use-case';
 @Module({
   imports: [
     DatabaseModule,
-    FieldValuesModule,
+    forwardRef(() => FieldValuesModule),
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
   ],
   controllers: [LeadController],

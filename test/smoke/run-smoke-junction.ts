@@ -791,14 +791,20 @@ async function main(): Promise<number> {
       runCli('junction new --all --force', dir);
       assertParentsIdentical(dir, scenarioArg, reference, 'entity → junction → entity → junction');
 
+      // Every junction YAML of the project goes (the scenario's own, and the Gate 2.5 one that closes a module cycle
+      // through a junction): a parent's module keeps a `forwardRef` for each cross-entity import it has — they are
+      // all lazy — so the fan-out is proven gone by the junction's NAME and by the SERVICE's `forwardRef`.
       const { junctionName } = SCENARIO_META[scenarioArg];
-      fs.rmSync(path.join(dir, 'junctions', `${junctionName}.yaml`));
-      log(`JUNC-0: removed junctions/${junctionName}.yaml; entity new --all`);
+      const removed = fs.readdirSync(path.join(dir, 'junctions')).filter((f) => f.endsWith('.yaml'));
+      for (const f of removed) fs.rmSync(path.join(dir, 'junctions', f));
+      log(`JUNC-0: removed junctions/ (${removed.join(', ')}); entity new --all`);
       runCli('entity new --all --force', dir);
       const junctionPascal = pascalCase(junctionName);
       for (const [rel, src] of readParents(dir, scenarioArg)) {
         assertAbsent(src, new RegExp(junctionPascal), `${rel}: no ${junctionPascal} after the junction YAML is removed`);
-        assertAbsent(src, /forwardRef/, `${rel}: no forwardRef after the junction YAML is removed`);
+        if (rel.endsWith('.service.ts')) {
+          assertAbsent(src, /forwardRef/, `${rel}: no forwardRef after the junction YAML is removed`);
+        }
       }
       const tscAfter = runSilent('bunx tsc --noEmit --skipLibCheck', dir);
       const afterErrors = tscGateErrors({ code: tscAfter.code, output: tscAfter.out + tscAfter.err }, dir);

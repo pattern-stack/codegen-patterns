@@ -452,6 +452,15 @@ d('A11 — a child write emits under both names', () => {
     expect(typesOf(bus)).toEqual(['communication.updated', 'meeting.updated']);
   });
 
+  test('delete: an id that is another kind\'s row emits nothing, and the row is untouched', async () => {
+    const bus = recordingBus();
+    const email = await asA(() => emailRepo().create({ ...meetingInput({ externalId: 'ext-mail' }), subject: 'hi' } as any));
+    await asA(() => meetingService(bus).delete(email.id));
+    expect(bus.published).toEqual([]);
+    expect(await count('communications', `id = '${email.id}'`)).toBe(1);
+    expect(await count('emails', `id = '${email.id}'`)).toBe(1);
+  });
+
   test('delete: both names; a delete through the BASE emits the base name only', async () => {
     const bus = recordingBus();
     const service = meetingService(bus);

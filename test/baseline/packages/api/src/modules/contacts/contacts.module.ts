@@ -4,7 +4,7 @@
  * TYPED_EVENT_BUS + DRIZZLE. Ensure EventsModule is registered in the
  * root AppModule (global) so these tokens resolve at runtime.
  */
-import { Inject, Module, type OnModuleInit } from '@nestjs/common';
+import { Inject, Module, forwardRef, type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
 import { AccountsModule } from '../accounts/accounts.module';
@@ -27,8 +27,8 @@ import { declarativeQueryClasses } from './use-cases/declarative-queries';
 @Module({
   imports: [
     DatabaseModule,
-    AccountsModule,
-    UsersModule,
+    forwardRef(() => AccountsModule),
+    forwardRef(() => UsersModule),
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
   ],
   controllers: [ContactController],

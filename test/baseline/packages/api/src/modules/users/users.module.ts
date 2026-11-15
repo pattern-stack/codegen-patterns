@@ -21,7 +21,7 @@ import { DeleteUserUseCase } from './use-cases/delete-user.use-case';
 @Module({
   imports: [
     DatabaseModule,
-    PersonsModule,
+    forwardRef(() => PersonsModule),
     forwardRef(() => OpportunitiesModule),
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
   ],

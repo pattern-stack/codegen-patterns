@@ -107,8 +107,9 @@ export interface EntityDefinitionInput {
  * The YAML declaration that turns the write side off — create / update / delete use cases, their routes and
  * their module providers — or `null` when writes are emitted (RFC-0006 §13.2, #875).
  *
- * Two causes, `generate.writes: false` and a child's `inherits:` (a child's inherited `create` would insert a row
- * with no `id`: its key is the base row's; the pair write is the repository's and the service's, not a use case's).
+ * Two causes, `generate.writes: false` and a child's `inherits:` (the child's use cases would take the flat
+ * input, whose DTOs are S5's; until then the pair write is the repository's and the service's, not a use case's, and S5 deletes
+ * this branch).
  * The ONE owner of this decision —
  * `deriveEntityApiSurface` reads it for the use cases and routes, and the templates read those — so a third
  * cause is one edit here.
@@ -587,6 +588,7 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 		service.push(
 			{ name: FAMILY_METHOD.create, kind: 'pair_create', emitted: true, params: [{ name: 'input' }, { name: 'tx' }], returns: 'one', delegatesTo: repoRef(entityName, FAMILY_METHOD.create), origin: inheritsOrigin },
 			{ name: FAMILY_METHOD.update, kind: 'pair_update', emitted: true, params: [{ name: 'id' }, { name: 'patch' }, { name: 'tx' }], returns: 'one', delegatesTo: repoRef(entityName, FAMILY_METHOD.update), origin: inheritsOrigin },
+			{ name: FAMILY_METHOD.delete, kind: 'pair_delete', emitted: true, params: [{ name: 'id' }, { name: 'tx' }], returns: 'none', delegatesTo: repoRef(entityName, FAMILY_METHOD.delete), origin: inheritsOrigin },
 		);
 	}
 	if (writeFamily.kindGuardCreate) {

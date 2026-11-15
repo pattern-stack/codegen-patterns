@@ -115,7 +115,7 @@ export class CommunicationService extends WithAnalytics(
   ): Promise<{ row: Communication; created: boolean }> {
     assertBaseOnlyKind('communication', input.kind, COMMUNICATION_CHILD_CREATE_PATH);
     const result = await this.repository.upsertByNaturalKey(input, tx);
-    this.emitUpserted(result.row, result.created);
+    this.emitUpserted(result.row, result.created, result.created);
     return result;
   }
 

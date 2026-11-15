@@ -35,6 +35,7 @@ import { resolvePatternComposition } from '../../../../src/patterns/resolve-comp
 import '../../../../src/patterns/library/index.js';
 import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
 import {
+  familyConstName,
   finderName,
   fkFinderName,
   moduleClassName,
@@ -810,40 +811,11 @@ function processBelongsTo(relationships, naming, fields = {}) {
 }
 
 /**
- * The module graph, from the entity set: entity -> the entities whose module it imports (a `belongs_to` or `has_many`
- * target, or the base it inherits). A superset of what one render composes (a `has_many` onto an entity outside the run
- * is not wired), which is safe: `forwardRef` on a non-cycle changes nothing at runtime.
- */
-function moduleGraphEdges(entityLookup) {
-  const edges = new Map();
-  // A lookup built from `entity:` blocks alone (no YAML documents: a unit test of one entity) cannot say what any other
-  // entity relates to, so it has no cycles to report. The CLI's lookup always carries the documents.
-  let documents = [];
-  try {
-    documents = entityLookup?.definitions ? entityLookup.definitions() : [];
-  } catch {
-    documents = [];
-  }
-  for (const def of documents) {
-    const targets = new Set();
-    for (const rel of Object.values(def.relationships ?? {})) {
-      if ((rel?.type === 'belongs_to' || rel?.type === 'has_many') && rel.target !== def.entity.name && entityLookup(rel.target)) {
-        targets.add(rel.target);
-      }
-    }
-    const declaration = inheritsOf(def);
-    if (declaration !== null) targets.add(declaration.base);
-    edges.set(def.entity.name, targets);
-  }
-  return edges;
-}
-
-/**
  * The other entities this service needs a repository for (#632), deduped by
  * target entity across every edge that composes one: non-self `belongs_to`
  * (parent fetch) and wired non-self `has_many` (child list), in that order.
- * `service.ejs.t` imports + injects each once; `module.ejs.t` imports +
- * provides each once. The per-relationship methods still iterate
+ * `service.ejs.t` imports + injects each once; `module.ejs.t` imports each one's
+ * home module once (ADR-002, revision 2026-11-15). The per-relationship methods still iterate
  * `belongsTo` / `existingHasMany`; they address the repository by the
  * same `property`.
  *
@@ -1965,15 +1937,9 @@ export function buildBackendLocals(definition, baseLocals) {
   // The other entities' MODULES this module imports (ADR-002): a service that composes another entity's repository
   // gets it from that entity's home module, which exports it — the only place the repository's own dependencies are
   // wired (a joined-table child's repository injects its base's, an EAV repository its field-value service). A
-  // module that provided the repository itself would have to repeat that closure. `forwardRef` only where the
-  // module graph really cycles (this entity is reachable from the dependency).
-  const moduleDependents = moduleGraphEdges(entityLookup);
-  const reaches = (from, to, seen = new Set()) => {
-    if (from === to) return true;
-    if (seen.has(from)) return false;
-    seen.add(from);
-    return [...(moduleDependents.get(from) ?? [])].some((next) => reaches(next, to, seen));
-  };
+  // module that provided the repository itself would have to repeat that closure. Every such import prints
+  // `forwardRef(() => …)`: an ES-module cycle can close through a junction's module or the EAV block's import, which no
+  // graph computed here would see, and `forwardRef` on an import that is not in a cycle changes nothing at runtime.
   // JUNC-0 (#678): every junction naming this entity in `between:` is mirrored
   // onto its service + module here, from the junction YAML set — the parent's
   // own templates render the fan-out; nothing injects into them. A counterparty
@@ -2145,7 +2111,6 @@ export function buildBackendLocals(definition, baseLocals) {
         entity: dep.entity,
         moduleClass: moduleClassName(depNaming.plural),
         importPath: `${dep.importDir}/${emittedStem(depNaming.plural)}.module`,
-        forwardRef: reaches(dep.entity, entityName),
         inherits: dep.inherits === true,
       };
     });
@@ -2996,7 +2961,7 @@ export function buildBackendLocals(definition, baseLocals) {
     // `.service.methods` (the derivation), not a flag here; the base-edge and kind-union text is keyed below.
     familyChild: family.child,
     // The constant names the repository and service share (`<EU>_BASE_KEYS`, `<EU>_CHILD_CREATE_PATH`, …): one derivation.
-    familyConstPrefix: entityName.toUpperCase().replace(/[^A-Z0-9]+/g, '_'),
+    familyConstName: (suffix) => familyConstName(entityName, suffix),
     familyBase: family.base,
     matchFills,
     naturalKey,

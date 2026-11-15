@@ -108,6 +108,16 @@ export class MeetingService extends WithAnalytics(
     return this.repository.findWithBase(id);
   }
 
+  /**
+   * The repository's delete is a no-op for an id that is not a meeting (a row of another kind is never deleted
+   * through this service), so `BaseService`'s events fire only when there was a row of this kind to delete — a
+   * `communication.deleted` for a row that still exists would drop it from every subscriber.
+   */
+  override async delete(id: string, tx?: unknown): Promise<void> {
+    if ((await this.repository.findWithBase(id)) === null) return;
+    return super.delete(id, tx);
+  }
+
   /** Base on its natural key, then this table on `id`, one transaction; emits `created` / `updated` under both names. */
   async upsertByNaturalKey(
     input: MeetingCreate,

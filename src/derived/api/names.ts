@@ -233,6 +233,14 @@ export function includesConstName(plural: string): string {
 	return `${plural.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase()}_API_INCLUDES`;
 }
 
+/**
+ * A generated module-level constant of one entity, `<ENTITY>_<SUFFIX>` (`meeting` + `BASE_KEYS` → `MEETING_BASE_KEYS`).
+ * The one SCREAMING_CASE rule, shared with `includesConstName`: a camelCase boundary is a word break.
+ */
+export function familyConstName(entityName: string, suffix: string): string {
+	return `${entityName.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[^A-Za-z0-9]+/g, '_').toUpperCase()}_${suffix}`;
+}
+
 // ----------------------------------------------------------------------------
 // Joined-table family reads and writes (RFC-0006 §3–§4, #875)
 // ----------------------------------------------------------------------------

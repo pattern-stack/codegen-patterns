@@ -1,0 +1,10 @@
+# Gate 2.5 (#875 S4) — a junction between a `belongs_to` pair whose target declares no `has_many` back.
+# `contact` belongs_to `account`, so ContactsModule imports AccountsModule; AccountsModule imports this junction's module
+# (the parent's fan-out), which imports ContactsModule. That ES-module cycle closes through the junction, which no
+# relationship graph holds, so every cross-entity module import must be a `forwardRef` — the DI boot gate fails
+# ("the module at index [n] of the ContactsModule imports array is undefined") if one is plain.
+pattern: Junction
+between: [account, contact]
+fields:
+  role:
+    type: string

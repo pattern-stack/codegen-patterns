@@ -21,7 +21,7 @@ import { DeleteProjectUseCase } from './use-cases/delete-project.use-case';
 @Module({
   imports: [
     DatabaseModule,
-    AccountsModule,
+    forwardRef(() => AccountsModule),
     forwardRef(() => TasksModule),
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
   ],

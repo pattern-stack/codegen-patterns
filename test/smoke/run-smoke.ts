@@ -955,8 +955,9 @@ async function main(): Promise<number> {
 			assertUniqueIndexShapes(tmpDir);
 			log('unique_indexes shapes OK');
 			assertTenancyColumnEmission(tmpDir);
-			assertFamilyWithoutNaturalKey(tmpDir);
 			log('tenancy column emission OK (#791)');
+			assertFamilyWithoutNaturalKey(tmpDir);
+			log('family without natural key OK');
 		}
 
 		// 5.1. CGP-62 — under the `relationship` scenario, assert the

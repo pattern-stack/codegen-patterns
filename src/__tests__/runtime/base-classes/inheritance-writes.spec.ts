@@ -216,7 +216,7 @@ describe('BaseService — a child announces under both names (A11)', () => {
 		}
 		flatBefore?: (id: string) => Meeting | null;
 		upserted(row: Meeting, created: boolean) {
-			this.emitUpserted(row, created);
+			this.emitUpserted(row, created, created);
 		}
 	}
 

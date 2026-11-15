@@ -131,6 +131,8 @@ export interface ServiceMethod {
 		| 'pair_create'
 		/** A child's `update`, likewise. */
 		| 'pair_update'
+		/** A child's `delete`: a no-op, emitting nothing, for an id that is not a row of this kind. */
+		| 'pair_delete'
 		/** `upsertByNaturalKey` on the entity's own natural key, forwarded; emits the pair's events. */
 		| 'upsert_own'
 		/** `upsertByNaturalKey` through the base's natural key, forwarded; emits the pair's events. */

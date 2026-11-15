@@ -67,7 +67,7 @@ export class CatalogEntryService extends WithAnalytics(
     tx?: DrizzleTx,
   ): Promise<{ row: CatalogEntry; created: boolean }> {
     const result = await this.repository.upsertByNaturalKey(input, tx);
-    this.emitUpserted(result.row, result.created);
+    this.emitUpserted(result.row, result.created, result.created);
     return result;
   }
 

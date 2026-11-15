@@ -186,6 +186,14 @@ Move `modules/canonical/` to `shared/canonical/`.
 
 **Partially considered.** The argument for `shared/` is that canonical schemas are cross-cutting. The argument for `modules/` is that they are part of the domain layer conceptually and referenced primarily by domain modules. Open question — tracked in v2 overview.
 
+## Revision — 2026-11-15 (#875)
+
+A module that composes another entity's repository (a `belongs_to` or `has_many` target, a joined-table base) **imports that
+entity's home module**, which exports the repository, instead of providing the repository itself. The repository's own
+dependencies (a child's repository injects its base's; an EAV repository its field-value service) are wired in one place, the
+home module. Every such import is `forwardRef(() => XModule)`: an ES-module cycle can close through a relationship, a junction's
+module or the EAV block's import, and `forwardRef` on an import that is not in a cycle changes nothing at runtime.
+
 ## References
 
 - [ADR-001 — DDD + hexagonal architecture](./ADR-001-ddd-hexagonal-architecture.md)

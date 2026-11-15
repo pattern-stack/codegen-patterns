@@ -245,7 +245,7 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
    * created child under an updated base. No per-field CHANGE events: an upsert
    * reads no row before it writes.
    */
-  protected emitUpserted(row: object, created: boolean, baseCreated: boolean = created): void {
+  protected emitUpserted(row: object, created: boolean, baseCreated: boolean): void {
     if (!this._shouldEmit()) return;
     const record = row as Record<string, unknown>;
     const id = record.id as string;

@@ -22,8 +22,6 @@ import { DeleteOrganizationUseCase } from './use-cases/delete-organization.use-c
     DatabaseModule,
     forwardRef(() => OpportunitiesModule),
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
-    // OrganizationsModule,
   ],
   controllers: [OrganizationController],
   providers: [

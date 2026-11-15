@@ -8,8 +8,8 @@
  * `with`, the scope and the one-statement rule all belong to the read that
  * produced the row.
  *
- * The WRITE half (RFC-0006 §4) lives here too: `splitByOwner`, `inTransaction`
- * and the errors the pair writes throw. The write itself is the child
+ * The WRITE half (RFC-0006 §4) lives here too: `splitByOwner`, `inTransaction`,
+ * `upsertSet`, `assertBaseOnlyKind`, `fillDerivedColumns` and the errors the pair writes throw. The write itself is the child
  * repository's generated `create` / `update` / `delete` / `upsertByNaturalKey`;
  * these are the pure parts those methods share.
  */
@@ -224,7 +224,7 @@ export function inTransaction<T>(
  */
 export function upsertSet(
   input: Record<string, unknown>,
-  never: ReadonlySet<string> = new Set(),
+  never: ReadonlySet<string>,
 ): Record<string, unknown> {
   const set: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {

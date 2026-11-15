@@ -105,6 +105,16 @@ export class CrateService extends WithAnalytics(
     return this.repository.findWithBase(id);
   }
 
+  /**
+   * The repository's delete is a no-op for an id that is not a crate (a row of another kind is never deleted
+   * through this service), so `BaseService`'s events fire only when there was a row of this kind to delete — a
+   * `parcel.deleted` for a row that still exists would drop it from every subscriber.
+   */
+  override async delete(id: string, tx?: unknown): Promise<void> {
+    if ((await this.repository.findWithBase(id)) === null) return;
+    return super.delete(id, tx);
+  }
+
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
   // automatically by BaseService when the events subsystem is installed.

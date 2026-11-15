@@ -233,7 +233,7 @@ describe('backend eav_value_table — module emission', () => {
     expect(output).toContain(
       "import { FieldDefinitionsModule } from '../field-definitions/field-definitions.module';",
     );
-    expect(output).toContain('FieldDefinitionsModule,');
+    expect(output).toContain('forwardRef(() => FieldDefinitionsModule),');
   });
 
   it('omits the paired-module import when flag is absent', () => {

@@ -19,7 +19,7 @@ import { ListMeetingsUseCase } from './use-cases/list-meetings.use-case';
   imports: [
     DatabaseModule,
     // A meeting is a kind of communication: its repository injects the base's, which that module exports.
-    CommunicationsModule,
+    forwardRef(() => CommunicationsModule),
     forwardRef(() => MeetingTranscriptsModule),
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
   ],

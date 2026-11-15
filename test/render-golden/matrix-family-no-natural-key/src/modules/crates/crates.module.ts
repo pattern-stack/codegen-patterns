@@ -1,5 +1,5 @@
 
-import { Inject, Module, type OnModuleInit } from '@nestjs/common';
+import { Inject, Module, forwardRef, type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
 import { ParcelsModule } from '../parcels/parcels.module';
@@ -18,7 +18,7 @@ import { ListCratesUseCase } from './use-cases/list-crates.use-case';
   imports: [
     DatabaseModule,
     // A crate is a kind of parcel: its repository injects the base's, which that module exports.
-    ParcelsModule,
+    forwardRef(() => ParcelsModule),
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
   ],
   controllers: [CrateController],

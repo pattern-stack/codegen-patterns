@@ -114,10 +114,11 @@ export const SERVICE_KINDS: Record<ServiceKind, KindDescriptor> = {
   orphans: { label: 'orphans', section: 'service', order: 16 },
   pair_create: { label: 'pair create', section: 'service', order: 17 },
   pair_update: { label: 'pair update', section: 'service', order: 18 },
-  upsert_own: { label: 'upsert', section: 'service', order: 19 },
-  upsert_through_base: { label: 'upsert through base', section: 'service', order: 20 },
-  kind_guard: { label: 'kind guard', section: 'service', order: 21 },
-  inherited: { label: 'inherited', section: 'service', order: 22 },
+  pair_delete: { label: 'pair delete', section: 'service', order: 19 },
+  upsert_own: { label: 'upsert', section: 'service', order: 20 },
+  upsert_through_base: { label: 'upsert through base', section: 'service', order: 21 },
+  kind_guard: { label: 'kind guard', section: 'service', order: 22 },
+  inherited: { label: 'inherited', section: 'service', order: 23 },
 };
 
 export const USE_CASE_KINDS: Record<UseCaseKind, KindDescriptor> = {
