@@ -642,8 +642,8 @@ Two statements, one transaction, opened when no `tx` is passed. The result is `{
 - **`match:` columns** are filled as in `create` (§2.4).
 - **Events.** The service emits `created` or `updated` from the `created` flag, under both names (§5). No per-field
   change events, because there is no pre-read.
-- **On the base**, `communicationService.upsertByNaturalKey` refuses a kind that has a child table, as `create`
-  does. Base-only kinds upsert through it.
+- **On the base**, the base repository's `upsertByNaturalKey` refuses a kind that has a child table, as its `create`
+  does (`KindRequiresChildError`; the repository owns both kind invariants, D16). Base-only kinds upsert through it.
 
 The single-table half is #780's `upsertByNaturalKey`, built here for one shape: one row, "set what the input
 carries". #780 keeps the batch form and the update policies (overwrite, coalesce, keep-first).
