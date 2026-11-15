@@ -7,7 +7,7 @@
 
 import { writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 // Define schema for JSON schema generation
 const FieldTypeSchema = z.enum([
@@ -34,6 +34,7 @@ const FieldDefinitionSchema = z.object({
   max: z.number().optional().describe("Maximum numeric value"),
   choices: z.array(z.string()).optional().describe("Enum values for this field"),
   choices_from: z.string().optional().describe("Load enum values from external YAML file"),
+  choices_of: z.string().optional().describe("'<entity>.<field>': this enum is the same Postgres type as that entity's enum field (RFC-0006)"),
   allowed_types: z.array(z.string()).optional().describe("Allowed entity types for entity_ref"),
   default: z.unknown().optional().describe("Default value"),
   index: z.boolean().optional().describe("Create database index"),
@@ -54,6 +55,10 @@ const RelationshipSchema = z.object({
   type: z.enum(["belongs_to", "has_many", "has_one"]).describe("Relationship type"),
   target: z.string().describe("Target entity name (e.g., 'account')"),
   foreign_key: z.string().describe("FK field name (e.g., 'account_id')"),
+  match: z
+    .union([z.array(z.string()), z.record(z.string(), z.string())])
+    .optional()
+    .describe("belongs_to only: composite FK. { <local column>: <target column> }, or a list of names as shorthand for same-name pairs (RFC-0006)"),
 });
 
 const BehaviorSchema = z.union([
@@ -82,12 +87,21 @@ const EntityDefinitionSchema = z.object({
   fields: z.record(z.string(), FieldDefinitionSchema).describe("Field definitions"),
   relationships: z.record(z.string(), RelationshipSchema).optional().describe("Entity relationships"),
   behaviors: z.array(BehaviorSchema).optional().describe("Cross-cutting behaviors"),
+  inherits: z
+    .union([
+      z.string(),
+      z.object({ base: z.string(), as: z.string().optional() }),
+    ])
+    .optional()
+    .describe("Child of a joined-table family: '<base entity>', or { base, as } when the kind value is not the entity name (RFC-0006)"),
+  discriminator: z.string().optional().describe("Base of a joined-table family: the enum field that holds each row's kind (RFC-0006)"),
   unique_indexes: z
     .array(
       z.object({
         fields: z.array(z.string()).describe("Columns the unique constraint spans (1+)"),
         name: z.string().optional().describe("Constraint name, lowercase snake_case, max 63 (default <table>_<col1>_<col2>_uniq); required with `where`"),
         where: z.string().optional().describe("Raw SQL predicate making this a partial unique index; needs `name`, exclusive with nulls_not_distinct: true"),
+        natural_key: z.boolean().optional().describe("The ON CONFLICT target of the pair upsert. At most one per entity; every column NOT NULL; a child declares none (RFC-0006 R11)"),
         nulls_not_distinct: z.boolean().optional().describe("true: UNIQUE NULLS NOT DISTINCT constraint. Default on tenant_scoped entities; false opts out. PostgreSQL 15+"),
       }),
     )

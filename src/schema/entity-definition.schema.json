@@ -5,15 +5,16 @@
   "type": "object",
   "properties": {
     "entity": {
+      "description": "Entity configuration",
       "type": "object",
       "properties": {
         "name": {
-          "type": "string",
-          "description": "Entity name in snake_case (e.g., 'opportunity')"
+          "description": "Entity name in snake_case (e.g., 'opportunity')",
+          "type": "string"
         },
         "plural": {
-          "type": "string",
-          "description": "Plural form in snake_case (e.g., 'opportunities')"
+          "description": "Plural form in snake_case (e.g., 'opportunities')",
+          "type": "string"
         },
         "table": {
           "description": "Literal SQL table name, used verbatim (default: <tables.prefix><plural>)",
@@ -39,10 +40,10 @@
       "required": [
         "name",
         "plural"
-      ],
-      "description": "Entity configuration"
+      ]
     },
     "fields": {
+      "description": "Field definitions",
       "type": "object",
       "propertyNames": {
         "type": "string"
@@ -51,6 +52,7 @@
         "type": "object",
         "properties": {
           "type": {
+            "description": "Field data type",
             "type": "string",
             "enum": [
               "string",
@@ -64,8 +66,7 @@
               "entity_ref",
               "string_array",
               "enum"
-            ],
-            "description": "Field data type"
+            ]
           },
           "required": {
             "description": "Field must be provided on CREATE",
@@ -108,6 +109,10 @@
           },
           "choices_from": {
             "description": "Load enum values from external YAML file",
+            "type": "string"
+          },
+          "choices_of": {
+            "description": "'<entity>.<field>': this enum is the same Postgres type as that entity's enum field (RFC-0006)",
             "type": "string"
           },
           "allowed_types": {
@@ -194,8 +199,7 @@
         "required": [
           "type"
         ]
-      },
-      "description": "Field definitions"
+      }
     },
     "relationships": {
       "description": "Entity relationships",
@@ -207,21 +211,41 @@
         "type": "object",
         "properties": {
           "type": {
+            "description": "Relationship type",
             "type": "string",
             "enum": [
               "belongs_to",
               "has_many",
               "has_one"
-            ],
-            "description": "Relationship type"
+            ]
           },
           "target": {
-            "type": "string",
-            "description": "Target entity name (e.g., 'account')"
+            "description": "Target entity name (e.g., 'account')",
+            "type": "string"
           },
           "foreign_key": {
-            "type": "string",
-            "description": "FK field name (e.g., 'account_id')"
+            "description": "FK field name (e.g., 'account_id')",
+            "type": "string"
+          },
+          "match": {
+            "description": "belongs_to only: composite FK. { <local column>: <target column> }, or a list of names as shorthand for same-name pairs (RFC-0006)",
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
           }
         },
         "required": [
@@ -237,31 +261,31 @@
       "items": {
         "anyOf": [
           {
+            "description": "Adds created_at, updated_at",
             "type": "string",
-            "const": "timestamps",
-            "description": "Adds created_at, updated_at"
+            "const": "timestamps"
           },
           {
+            "description": "Adds deleted_at for soft deletes",
             "type": "string",
-            "const": "soft_delete",
-            "description": "Adds deleted_at for soft deletes"
+            "const": "soft_delete"
           },
           {
+            "description": "Adds created_by, updated_by",
             "type": "string",
-            "const": "user_tracking",
-            "description": "Adds created_by, updated_by"
+            "const": "user_tracking"
           },
           {
+            "description": "Adds valid_from, valid_to, is_active",
             "type": "string",
-            "const": "temporal_validity",
-            "description": "Adds valid_from, valid_to, is_active"
+            "const": "temporal_validity"
           },
           {
             "type": "object",
             "properties": {
               "name": {
-                "type": "string",
-                "description": "Behavior name"
+                "description": "Behavior name",
+                "type": "string"
               },
               "options": {
                 "description": "Behavior options",
@@ -279,6 +303,32 @@
         ]
       }
     },
+    "inherits": {
+      "description": "Child of a joined-table family: '<base entity>', or { base, as } when the kind value is not the entity name (RFC-0006)",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "base": {
+              "type": "string"
+            },
+            "as": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "base"
+          ]
+        }
+      ]
+    },
+    "discriminator": {
+      "description": "Base of a joined-table family: the enum field that holds each row's kind (RFC-0006)",
+      "type": "string"
+    },
     "unique_indexes": {
       "description": "Unique constraints: 1+ fields, optional where (partial) and nulls_not_distinct",
       "type": "array",
@@ -286,11 +336,11 @@
         "type": "object",
         "properties": {
           "fields": {
+            "description": "Columns the unique constraint spans (1+)",
             "type": "array",
             "items": {
               "type": "string"
-            },
-            "description": "Columns the unique constraint spans (1+)"
+            }
           },
           "name": {
             "description": "Constraint name, lowercase snake_case, max 63 (default <table>_<col1>_<col2>_uniq); required with `where`",
@@ -299,6 +349,10 @@
           "where": {
             "description": "Raw SQL predicate making this a partial unique index; needs `name`, exclusive with nulls_not_distinct: true",
             "type": "string"
+          },
+          "natural_key": {
+            "description": "The ON CONFLICT target of the pair upsert. At most one per entity; every column NOT NULL; a child declares none (RFC-0006 R11)",
+            "type": "boolean"
           },
           "nulls_not_distinct": {
             "description": "true: UNIQUE NULLS NOT DISTINCT constraint. Default on tenant_scoped entities; false opts out. PostgreSQL 15+",

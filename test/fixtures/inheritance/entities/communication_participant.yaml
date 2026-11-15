@@ -1,0 +1,31 @@
+# RFC-0006 §2.4 case 2 — one derived column (`communication_kind`) matched by two
+# relationships: the communication's kind and the role's kind.
+
+entity:
+  name: communication_participant
+  plural: communication_participants
+
+tenant_scoped: true
+
+fields:
+  tenant_id:
+    type: uuid
+    required: true
+
+relationships:
+  communication:
+    type: belongs_to
+    target: communication
+    foreign_key: communication_id
+    on_delete: cascade
+    match: { communication_kind: kind }
+  role:
+    type: belongs_to
+    target: communication_participant_role
+    foreign_key: role_id
+    match: { communication_kind: kind }
+  person:
+    type: belongs_to
+    target: person
+    foreign_key: person_id
+    nullable: true

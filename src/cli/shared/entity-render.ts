@@ -24,6 +24,12 @@ import { invokeEntityNew } from './hygen.js';
 import { collectMergedEvents } from './event-codegen-generator.js';
 import { validateEntityEmits } from '../../parser/validate-emits.js';
 import {
+	notGeneratedYetMessage,
+	unemittedInheritanceKeys,
+	validateInheritance,
+} from '../../parser/validate-inheritance.js';
+import { FrontendConfigSchema, TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
+import {
 	loadProviderSet,
 	resolveTsconfigAliases,
 	collectEntitySurfaces,
@@ -209,6 +215,27 @@ export async function preflightEntityTargets(
 	runRejections.push(
 		...junctionSetIssues(junctionSet, new Set(allEntitiesForEmits.map((e) => e.name))),
 	);
+
+	// RFC-0006 (#875): joined-table inheritance. A family is an input to the
+	// barrels (`schema.ts`, `modules.ts`) and the relations manifest, which read
+	// the WHOLE directory — so a violation, or a key the generator cannot emit
+	// yet, in ANY entity is a run-level rejection (the #666 posture), not one
+	// target's: refusing only that entity's own files would still emit exports of
+	// modules that were never written. Until S2 emits the DDL, an entity using
+	// `inherits:` / `discriminator:` / `match:` / `choices_of:` stops the run.
+	const frontendSync = FrontendConfigSchema.parse(ctx.config?.frontend ?? {}).sync.mode;
+	for (const issue of validateInheritance(allEntitiesForEmits, {
+		tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
+		syncMode: frontendSync,
+	})) {
+		runRejections.push({ file: issue.path ?? entitiesDirForEmits, message: `inheritance: ${issue.message}` });
+	}
+	for (const e of allEntitiesForEmits) {
+		const keys = unemittedInheritanceKeys(e);
+		if (keys.length > 0) {
+			runRejections.push({ file: e.sourcePath, message: notGeneratedYetMessage(e.name, keys) });
+		}
+	}
 
 	// TABLE-0: one SQL table, one owning definition — entities and junctions
 	// share the database's namespace. `table:` / prefixes let two

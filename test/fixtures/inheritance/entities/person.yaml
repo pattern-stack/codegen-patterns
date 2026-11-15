@@ -1,0 +1,8 @@
+entity:
+  name: person
+  plural: people
+
+fields:
+  name:
+    type: string
+    required: true

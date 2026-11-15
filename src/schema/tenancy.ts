@@ -37,6 +37,11 @@ import { getBehavior, normalizeBehaviorConfig } from '../behaviors/index.js';
 import type { BehaviorConfig } from '../behaviors/types.js';
 import { camelCase } from '../config/file-naming.js';
 import { resolveImpliedBehaviors } from '../patterns/implied-behaviors.js';
+import {
+	fieldColumnNullable,
+	foreignKeyColumnNullable,
+	type FieldNullabilityDeclaration,
+} from './field-nullability.js';
 
 /** A tenant column name: snake_case. The config schema and the entity schema both validate against it. */
 export const TENANT_COLUMN_PATTERN = /^[a-z][a-z0-9_]*$/;
@@ -54,10 +59,10 @@ export interface TenancyEntityInput {
 	/** The `behaviors:` list, as declared (a name or `{ name, options }`). */
 	behaviors?: BehaviorConfig[] | null;
 	tenant_scoped?: TenantScopedDeclaration;
-	fields?: Record<string, { type?: string } | null | undefined> | null;
+	fields?: Record<string, ({ type?: string } & FieldNullabilityDeclaration) | null | undefined> | null;
 	relationships?: Record<
 		string,
-		{ type?: string; foreign_key?: string } | null | undefined
+		{ type?: string; foreign_key?: string; nullable?: boolean | null } | null | undefined
 	> | null;
 }
 
@@ -164,4 +169,106 @@ export function resolveTenancy(
 	}
 
 	return { column, prop, adopted: null };
+}
+
+// ---------------------------------------------------------------------------
+// Inheritance (RFC-0006, #875): a child's tenancy is its base's
+// ---------------------------------------------------------------------------
+
+/**
+ * The lifecycle behaviors a joined-table family keeps on the BASE only (R5).
+ * `deleted_at`, `updated_at` and the rest are mutable, so a copy on the child
+ * would drift (RFC-0006 §2.3); the child's scope reaches them through its base.
+ */
+export const BASE_ONLY_BEHAVIORS: readonly string[] = [
+	'timestamps',
+	'soft_delete',
+	'user_tracking',
+	'external_id_tracking',
+];
+
+/**
+ * The base-only lifecycle behaviors an entity declares or implies (a pattern's
+ * `impliedBehaviors` counts: `Integrated` implies `external_id_tracking`).
+ * Empty for an entity that declares none. Used for R5 on a child.
+ */
+export function lifecycleBehaviorsDeclared(def: TenancyEntityInput): string[] {
+	const explicit = (def.behaviors ?? []).map((b) => normalizeBehaviorConfig(b).name);
+	const implied = resolveImpliedBehaviors(def.entity ?? {});
+	return [...new Set([...explicit, ...implied])].filter((n) => BASE_ONLY_BEHAVIORS.includes(n));
+}
+
+/** What a child's tenancy resolves to: always the base's column, always strict. */
+export interface ChildTenancy {
+	column: string;
+	prop: string;
+	tenantScoped: true;
+	scopeEnforcement: 'strict';
+	/** The base the column and the scoping are read from. */
+	base: string;
+}
+
+/**
+ * A child's tenancy, derived from its base — the ONE place a later slice reads
+ * it from (RFC-0006 §2.3). `tenant_scoped:` is declared on the base only (R5);
+ * the child carries a copy of the base's column, pinned by a composite FK, and
+ * is scoped on it with strict enforcement. `null` when the base is not
+ * `tenant_scoped`. Throws as {@link resolveTenancy} does for the base.
+ */
+export function resolveChildTenancy(
+	baseName: string,
+	baseDef: TenancyEntityInput,
+	projectColumn: string,
+): ChildTenancy | null {
+	const base = resolveTenancy(baseName, baseDef, projectColumn);
+	if (base === null) return null;
+	return {
+		column: base.column,
+		prop: base.prop,
+		tenantScoped: true,
+		scopeEnforcement: 'strict',
+		base: baseName,
+	};
+}
+
+/**
+ * R10: a `tenant_scoped` base declares its tenant column itself, NOT NULL.
+ * Returns the message, or `null` when the rule holds (or the base is not
+ * tenant-scoped). The column `tenant_scoped` emits on its own is nullable, and
+ * a composite FK is not checked for a NULL, so the child's tenant FK would pin
+ * nothing.
+ */
+export function baseTenantColumnIssue(
+	baseName: string,
+	baseDef: TenancyEntityInput,
+	projectColumn: string,
+): string | null {
+	const tenancy = resolveTenancy(baseName, baseDef, projectColumn);
+	if (tenancy === null) return null;
+	const how =
+		`declare '${tenancy.column}' under fields: as 'type: uuid, required: true' ` +
+		`(or as a belongs_to whose foreign key is not nullable)`;
+	if (tenancy.adopted === null) {
+		return (
+			`'${baseName}' is tenant_scoped but does not declare its tenant column '${tenancy.column}', ` +
+			`so it would be emitted nullable. A family base needs it NOT NULL (R10): ${how}.`
+		);
+	}
+	if (tenancy.adopted.kind === 'field') {
+		if (fieldColumnNullable(baseDef.fields?.[tenancy.column] ?? {})) {
+			return (
+				`'${baseName}' declares its tenant column '${tenancy.column}' as nullable. ` +
+				`A family base needs it NOT NULL (R10): ${how}.`
+			);
+		}
+		return null;
+	}
+	const rel = baseDef.relationships?.[tenancy.adopted.relationship];
+	if (foreignKeyColumnNullable(rel?.nullable, baseDef.fields?.[tenancy.column] ?? undefined)) {
+		return (
+			`'${baseName}' adopts '${tenancy.column}' from its belongs_to '${tenancy.adopted.relationship}', ` +
+			`which is nullable. A family base needs it NOT NULL (R10): ${how}.`
+		);
+	}
+	return null;
 }

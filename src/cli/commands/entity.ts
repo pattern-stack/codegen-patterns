@@ -54,7 +54,7 @@ import {
 } from '../../emitters/frontend/index.js';
 import { configuredSubsystemNames } from '../shared/subsystem-detect.js';
 import { projectLayout } from '../shared/project-layout.js';
-import { TablesConfigSchema, TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
+import { FrontendConfigSchema, TablesConfigSchema, TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
 import {
 	buildJobBridgeTriggers,
 	buildJobScheduledEvents,
@@ -1156,6 +1156,7 @@ export class EntityValidateCommand extends Command {
 		const full = await analyzeDomain(targetDir, {
 			tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
 			tablePrefix: TablesConfigSchema.parse(ctx.config?.tables ?? {}).prefix,
+			syncMode: FrontendConfigSchema.parse(ctx.config?.frontend ?? {}).sync.mode,
 		});
 
 		const errors = [...loaderIssues, ...full.issues.filter((i) => i.severity === 'error')];

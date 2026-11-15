@@ -1,0 +1,19 @@
+# A child with a typed link to a plain entity.
+
+entity:
+  name: email
+  plural: emails
+
+inherits: communication
+
+fields:
+  subject:
+    type: string
+    required: true
+
+relationships:
+  thread:
+    type: belongs_to
+    target: email_thread
+    foreign_key: thread_id
+    nullable: true

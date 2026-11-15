@@ -29,6 +29,12 @@ export {
 } from './validate-semantic';
 
 export {
+	validateInheritance,
+	matchPairs,
+	type ValidateInheritanceOptions,
+} from './validate-inheritance';
+
+export {
 	validateProviders,
 	collectEntitySurfaces,
 	resolveImportRef,

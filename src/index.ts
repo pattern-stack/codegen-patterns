@@ -7,6 +7,7 @@
 
 import { loadEntities, loadRelationships, resolveReferences, resolveRelationshipReferences } from './parser';
 import { validateSemanticModel } from './parser/validate-semantic.js';
+import { validateInheritance } from './parser/validate-inheritance.js';
 import { buildDomainGraph, checkConsistency, computeStatistics } from './analyzer';
 import { validatePatternComposition } from './patterns/validate-composition.js';
 import { validateOrchestrationProject } from './patterns/validate-orchestration.js';
@@ -17,7 +18,7 @@ import {
 	getAllPatternNames,
 } from './patterns/registry.js';
 import type { AnalysisIssue, AnalysisResult, OutputFormat } from './analyzer/types';
-import { TablesConfigSchema, TenancyConfigSchema } from './schema/codegen-config.schema.js';
+import { FrontendSyncConfigSchema, TablesConfigSchema, TenancyConfigSchema } from './schema/codegen-config.schema.js';
 import { sqlTableCollisionMessage, sqlTableCollisions } from './config/table-naming.js';
 
 /**
@@ -39,6 +40,8 @@ export interface AnalyzeDomainOptions {
 	junctionsDir?: string;
 	/** The project's `tenancy.column` (#791). Absent resolves through `TenancyConfigSchema`, the one owner of the default. */
 	tenancyColumn?: string;
+	/** The project's `frontend.sync.mode`, which an entity with no `sync:` resolves to (RFC-0006 R8). Absent resolves through `FrontendSyncConfigSchema`, the one owner of the default. */
+	syncMode?: 'api' | 'electric';
 	/** The project's `tables.prefix` (TABLE-0). Absent resolves through `TablesConfigSchema`, the one owner of the default. */
 	tablePrefix?: string;
 }
@@ -105,6 +108,14 @@ export async function analyzeDomain(
 	// measure catalog is one flat namespace: metric legs may name measures on
 	// another entity, and both names must be unique across entities.
 	const semanticIssues = validateSemanticModel(entities);
+	// RFC-0006 (#875) — joined-table inheritance. Reads two YAML files per rule (a
+	// child against its base, a `match:` against its target), so it runs over the
+	// whole set, over `ParsedEntity`, which carries these keys.
+	// `entity validate` and `project inspect --kind analyze` both come through here.
+	const inheritanceIssues = validateInheritance(entities, {
+		tenancyColumn: TenancyConfigSchema.parse({ column: opts.tenancyColumn }).column,
+		syncMode: FrontendSyncConfigSchema.parse({ mode: opts.syncMode }).mode,
+	});
 	// CAP-2 — role targets must be Actors; many-roles must name a junction
 	// between the two entities.
 	const rolesProjectIssues = validateRolesProject({
@@ -138,6 +149,7 @@ export async function analyzeDomain(
 		...patternIssues,
 		...orchestrationProjectIssues,
 		...semanticIssues,
+		...inheritanceIssues,
 		...rolesProjectIssues,
 		...tableCollisionIssues,
 	];

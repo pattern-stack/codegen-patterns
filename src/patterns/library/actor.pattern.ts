@@ -46,6 +46,8 @@ export const ActorPattern = defineCapabilityPattern<ActorPatternConfig>({
 	mixin: 'WithActor',
 	mixinImport: '@shared/base-classes/with-actor',
 	configSchema: ActorPatternConfigSchema,
+	// `individual` reads nothing; `group` reads its members' table through a has_many, never a column of this one.
+	columnsRead: () => [],
 	description:
 		'An entity a role may point at — an individual, or a group with members via a has_many',
 });

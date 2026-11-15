@@ -1,0 +1,31 @@
+# Long form: the kind value is not the entity name.
+
+entity:
+  name: transcript_communication_part
+  plural: transcript_communication_parts
+
+inherits:
+  base: communication_part
+  as: meeting
+
+fields:
+  text:
+    type: string
+    required: true
+  start_ms:
+    type: integer
+    nullable: true
+  end_ms:
+    type: integer
+    nullable: true
+
+relationships:
+  transcript:
+    type: belongs_to
+    target: meeting_transcript
+    foreign_key: transcript_id
+    on_delete: cascade
+  participant:
+    type: belongs_to
+    target: communication_participant
+    foreign_key: participant_id
