@@ -210,6 +210,11 @@
 					"entity": "email",
 					"layer": "service",
 					"method": "update"
+				},
+				{
+					"entity": "email",
+					"layer": "service",
+					"method": "delete"
 				}
 			],
 			"includeKeys": [
@@ -342,6 +347,11 @@
 					"entity": "meeting",
 					"layer": "service",
 					"method": "update"
+				},
+				{
+					"entity": "meeting",
+					"layer": "service",
+					"method": "delete"
 				}
 			],
 			"includeKeys": [

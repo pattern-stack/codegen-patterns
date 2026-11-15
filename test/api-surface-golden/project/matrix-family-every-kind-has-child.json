@@ -72,6 +72,11 @@
 					"entity": "air_freight",
 					"layer": "service",
 					"method": "update"
+				},
+				{
+					"entity": "air_freight",
+					"layer": "service",
+					"method": "delete"
 				}
 			],
 			"includeKeys": [
@@ -155,6 +160,11 @@
 					"entity": "sea_freight",
 					"layer": "service",
 					"method": "update"
+				},
+				{
+					"entity": "sea_freight",
+					"layer": "service",
+					"method": "delete"
 				}
 			],
 			"includeKeys": [

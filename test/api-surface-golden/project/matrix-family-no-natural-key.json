@@ -72,6 +72,11 @@
 					"entity": "crate",
 					"layer": "service",
 					"method": "update"
+				},
+				{
+					"entity": "crate",
+					"layer": "service",
+					"method": "delete"
 				}
 			],
 			"includeKeys": [
