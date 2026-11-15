@@ -15,8 +15,9 @@ import type {
 } from './meeting.repository';
 import { MEETING_BASE_KEYS } from './meeting.repository';
 import type { DrizzleTx } from '@shared/types/drizzle';
-import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
+import type { ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
 import type { meetings, Meeting } from './meeting.entity';
+import type { communications } from '../communications/communication.entity';
 import { MeetingTranscriptRepository } from '../meeting-transcripts/meeting-transcript.repository';
 import type { MeetingTranscript } from '../meeting-transcripts/meeting-transcript.entity';
 
@@ -86,6 +87,19 @@ export class MeetingService extends WithAnalytics(
     opts?: ReadOptions<W, C>,
   ): Promise<Array<MeetingFlat<W, C>>> {
     return this.repository.findManyWithBase<W, C>(ids, opts);
+  }
+
+  /** This kind's rows, flat, filtered and sorted on the base's columns — the base's `listKind` (RFC-0006 §3.3). What the HTTP list reads. */
+  listFlat<W extends MeetingInclude = MeetingNoInclude>(
+    query?: ListOptions<typeof communications>,
+    opts?: { with?: W },
+  ): Promise<Array<MeetingFlat<W>>> {
+    return this.repository.listFlat<W>(query, opts);
+  }
+
+  /** How many rows `listFlat` ranges over, on the same scope. */
+  countFlat(where?: RowFilter<typeof communications>): Promise<number> {
+    return this.repository.countFlat(where);
   }
 
   // ═══════════════════════════════════════════════════════════════════════

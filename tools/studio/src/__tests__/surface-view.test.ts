@@ -229,26 +229,50 @@ describe('HTTP', () => {
     expect(http.off?.origin?.yaml).toEqual({ doc: { kind: 'entity', name: 'opportunity' }, path: ['api'] });
   });
 
-  test('a child (#875) reads as writes off, credited to its inherits:', () => {
-    // The derivation's own shape for a child: no create/update/delete use case or route, `writesDisabledBy`
-    // on the `inherits:` declaration (test/api-surface-golden/snapshot/email.json).
-    const child = structuredClone(DEMO);
-    const contact = child.entities.contact!;
+  test('writes off (generate.writes: false) reads as no create, update or delete, credited to that key', () => {
+    const off = structuredClone(DEMO);
+    const contact = off.entities.contact!;
     const isWrite = (name: string) => /^(Create|Update|Delete)/.test(name);
     contact.useCases = contact.useCases.filter((u) => !isWrite(u.className));
     contact.http.routes = contact.http.routes.filter((r) => !['POST', 'PATCH', 'DELETE'].includes(r.verb));
-    contact.writesDisabledBy = { doc: { kind: 'entity', name: 'contact' }, path: ['inherits'] };
+    contact.writesDisabledBy = { doc: { kind: 'entity', name: 'contact' }, path: ['generate', 'writes'] };
 
-    const http = sectionOf(child, 'contact', 'http');
+    const http = sectionOf(off, 'contact', 'http');
     expect(http.rows.map((r) => r.name)).toEqual(['GET /contacts', 'GET /contacts/:id']);
     expect(http.off?.text).toBe('Writes off — no POST, PATCH or DELETE route');
-    expect(http.off?.origin?.text).toBe('← inherits');
-    expect(http.off?.origin?.yaml).toEqual({ doc: { kind: 'entity', name: 'contact' }, path: ['inherits'] });
-    const useCases = sectionOf(child, 'contact', 'useCases');
+    expect(http.off?.origin?.text).toBe('← generate.writes');
+    expect(http.off?.origin?.yaml).toEqual({ doc: { kind: 'entity', name: 'contact' }, path: ['generate', 'writes'] });
+    const useCases = sectionOf(off, 'contact', 'useCases');
     expect(useCases.off?.text).toBe('Writes off — no create, update or delete use case');
-    expect(useCases.off?.origin?.text).toBe('← inherits');
+    expect(useCases.off?.origin?.text).toBe('← generate.writes');
     // An entity that emits writes carries no such note.
     expect(sectionOf(DEMO, 'contact', 'useCases').off).toBeUndefined();
+  });
+
+  test('a base whose every kind has a child table has no create, credited to its discriminator: (#875 S5)', () => {
+    // The derivation's own shape (test/api-surface-golden/snapshot/matrix-family-every-kind-has-child.json): the
+    // create use case and the POST route are gone, update and delete stay, `createDisabledBy` names the discriminator.
+    const base = structuredClone(DEMO);
+    const contact = base.entities.contact!;
+    contact.useCases = contact.useCases.filter((u) => u.kind !== 'create');
+    contact.http.routes = contact.http.routes.filter((r) => r.verb !== 'POST');
+    contact.createDisabledBy = {
+      doc: { kind: 'entity', name: 'contact' },
+      path: ['discriminator'],
+      note: 'every kind has a child table: email',
+    };
+
+    const http = sectionOf(base, 'contact', 'http');
+    expect(http.rows.map((r) => r.name)).not.toContain('POST /contacts');
+    expect(http.off?.text).toBe('No POST route — every kind has a child table, so a row is created through its child');
+    expect(http.off?.origin?.yaml).toEqual({
+      doc: { kind: 'entity', name: 'contact' },
+      path: ['discriminator'],
+      note: 'every kind has a child table: email',
+    });
+    const useCases = sectionOf(base, 'contact', 'useCases');
+    expect(useCases.off?.text).toBe('No create use case — every kind has a child table, so a row is created through its child');
+    expect(useCases.off?.origin?.text).toBe('← discriminator (every kind has a child table: email)');
   });
 
   test('a base reads across its kinds, credited to its discriminator: (#875 S3)', () => {

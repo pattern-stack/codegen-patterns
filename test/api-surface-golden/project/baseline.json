@@ -396,5 +396,18 @@
 	],
 	"unmodelled": [],
 	"warnings": [],
-	"includes": {}
+	"includes": {
+		"meeting": [
+			{
+				"route": "list",
+				"maxDepth": 1,
+				"paths": [
+					{
+						"path": "transcripts",
+						"depth": 1
+					}
+				]
+			}
+		]
+	}
 }

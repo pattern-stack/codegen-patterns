@@ -4,7 +4,7 @@ import { MeetingService } from '../meeting.service';
 import type {
   MeetingInclude,
   MeetingNoInclude,
-  MeetingResult,
+  MeetingFlat,
 } from '../meeting.repository';
 
 @Injectable()
@@ -12,17 +12,15 @@ export class FindMeetingByIdUseCase {
   constructor(private readonly service: MeetingService) {}
 
   /**
-   * `include` is a typed include TREE, not a client string — the controller has
-   * already resolved `?include=` against the route's allowlist and rejected
-   * anything it does not name (REL-2 §5). An internal caller passes the tree
-   * directly and gets the exact nested result type back, because `TWith` is
-   * inferred at the call site.
+   * RFC-0006 §3.2, §5: a meeting is read FLAT — `findWithBase`, one statement, the base's columns
+   * hoisted to the root — so the base relation is never an include. `include` is a typed include TREE, not a client
+   * string: the controller already resolved `?include=` against the route's allowlist (REL-2 §5).
    */
-  async execute<TWith extends MeetingInclude = MeetingNoInclude>(
+  async execute<TWith extends MeetingInclude & { communication?: never } = MeetingNoInclude>(
     id: string,
     include?: TWith,
-  ): Promise<MeetingResult<TWith>> {
-    const entity = await this.service.findById<TWith>(
+  ): Promise<MeetingFlat<TWith>> {
+    const entity = await this.service.findWithBase<TWith>(
       id,
       include === undefined ? undefined : { with: include },
     );

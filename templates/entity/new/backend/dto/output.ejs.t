@@ -4,8 +4,14 @@ force: true
 ---
 <%- generatedBanner %>
 import { z } from 'zod';
+<% if (familyChild) { -%>
+import { <%= familyChild.baseOutputSchema %> } from '<%= familyChild.baseOutputImportPath %>';
+<% } -%>
 
-export const <%= classNames.outputSchema %> = z.object({
+<% if (familyChild) { -%>
+// RFC-0006 §5: the columns THIS table owns, alone. `<%= familyChild.baseClass %>OfKindSchema` nests it under the kind key.
+<% } -%>
+export const <%= familyChild ? classNames.ownOutputSchema : classNames.outputSchema %> = z.object({
   id: z.string().uuid(),
 <%_ belongsToFkFields.forEach(fk => { _%>
   <%= fk.camelName %>: <%- fk.zodChainOutput %>,
@@ -27,6 +33,15 @@ export const <%= classNames.outputSchema %> = z.object({
   deletedAt: z.coerce.date().nullable(),
 <%_ } _%>
 });
+<% if (familyChild) { -%>
+
+// The flat shape every HTTP read and write of a <%= entityName %> returns: the base's output with the kind fixed, and
+// this table's columns at the same level.
+export const <%= classNames.outputSchema %> = <%= familyChild.baseOutputSchema %>.extend({
+  <%= familyChild.discriminatorProp %>: z.literal('<%= familyChild.as %>'),
+  ...<%= classNames.ownOutputSchema %>.omit({ id: true }).shape,
+});
+<% } -%>
 
 <%_ if (outputDtoHasUnknownKey) { _%>
 // `Required<…>`: Zod 3 infers a `json` (`z.unknown()`) key as optional; the row

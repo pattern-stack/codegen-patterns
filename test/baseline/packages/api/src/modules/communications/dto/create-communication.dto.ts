@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const CreateCommunicationSchema = z.object({
-  kind: z.enum(['meeting', 'email', 'message']),
+  kind: z.enum(['message']),
   occurredAt: z.coerce.date(),
   source: z.string().max(32),
   externalId: z.string(),

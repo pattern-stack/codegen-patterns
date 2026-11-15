@@ -29,7 +29,7 @@ import { declaredPatternNames } from '../patterns/compose.js';
 import { getPattern } from '../patterns/registry.js';
 import { resolveImpliedBehaviors } from '../patterns/implied-behaviors.js';
 import { foreignKeyColumnNullable } from '../schema/field-nullability.js';
-import { inheritanceCounterpartNames, matchPairsOf } from '../schema/inheritance.js';
+import { enumChoices, inheritanceCounterpartNames, matchPairsOf } from '../schema/inheritance.js';
 import {
 	baseTenantColumnIssue,
 	tenantColumnName,
@@ -115,7 +115,11 @@ function implicitColumns(
 	return cols;
 }
 
-/** The literal choice list of an enum field, following ONE `choices_of:` hop; `undefined` when unknown. */
+/**
+ * The literal choice list of an enum field, following ONE `choices_of:` hop; `undefined` when unknown. The parsed
+ * model spells the key `choicesOf` and holds fields in a `Map`, so this only adapts the shape — the resolution is
+ * `enumChoices`, the one the derivation and the templates read too.
+ */
 function resolveChoices(
 	byName: Map<string, ParsedEntity>,
 	e: ParsedEntity,
@@ -123,13 +127,14 @@ function resolveChoices(
 ): string[] | undefined {
 	const f = e.fields.get(field);
 	if (f === undefined) return undefined;
-	if (f.choices?.length) return f.choices;
-	if (f.choicesOf !== undefined) {
-		const [entity, targetField] = f.choicesOf.split('.') as [string, string];
-		const target = byName.get(entity)?.fields.get(targetField);
-		return target?.choices?.length ? target.choices : undefined;
-	}
-	return undefined;
+	return enumChoices(
+		{ choices: f.choices, choices_of: f.choicesOf },
+		(name) => {
+			const owner = byName.get(name);
+			if (owner === undefined) return undefined;
+			return { fields: Object.fromEntries([...owner.fields].map(([k, v]) => [k, { choices: v.choices }])) };
+		},
+	);
 }
 
 /**

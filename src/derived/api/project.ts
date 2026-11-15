@@ -31,7 +31,7 @@ import type { RelationEdge, RelationsEmitContext } from '../../emitters/relation
 import type { PatternDeclaringEntity } from '../../patterns/compose.js';
 import { resolvePatternComposition } from '../../patterns/resolve-composition.js';
 import type { EntityDefinition } from '../../schema/entity-definition.schema.js';
-import { inheritanceBaseOf, inheritanceChildrenOf } from '../../schema/inheritance.js';
+import { discriminatorKindsOf, inheritanceBaseOf, inheritanceChildrenOf } from '../../schema/inheritance.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import { detectYamlType, loadRelationshipFromYaml } from '../../utils/yaml-loader.js';
 import {
@@ -46,6 +46,7 @@ import type {
 	Origin,
 	ProjectApiSurface,
 	RelationApiSurface,
+	RepositoryMethod,
 	ServiceMethod,
 } from './types.js';
 
@@ -134,6 +135,7 @@ export function deriveProjectApiSurface(ctx: ProjectApiContext): ProjectApiSurfa
 			wiredTargets: allNames,
 			inheritanceChildren: inheritanceChildrenOf(definition.entity.name, definitions),
 			inheritanceBase: inheritanceBaseOf(definition, definitions),
+			discriminatorKinds: discriminatorKindsOf(definition, definitions),
 			entityLookup,
 		});
 	}
@@ -185,25 +187,28 @@ function className(surface: EntityApiSurface, layer: MethodRef['layer']): string
 function delegateWarnings(entities: Record<string, EntityApiSurface>, junctionNames: ReadonlySet<string>): string[] {
 	const warnings: string[] = [];
 	for (const surface of Object.values(entities)) {
-		for (const method of surface.service.methods) {
-			const to = method.delegatesTo;
-			if (!to || junctionNames.has(to.entity)) continue;
-			const warning = checkDelegate(surface, method, to, entities[to.entity]);
-			if (warning) warnings.push(warning);
+		for (const layer of ['repository', 'service'] as const) {
+			for (const method of layer === 'repository' ? surface.repository.methods : surface.service.methods) {
+				const to = method.delegatesTo;
+				if (!to || junctionNames.has(to.entity)) continue;
+				const warning = checkDelegate(surface, layer, method, to, entities[to.entity]);
+				if (warning) warnings.push(warning);
+			}
 		}
 	}
 	return warnings;
 }
 
-function checkDelegate(
+export function checkDelegate(
 	from: EntityApiSurface,
-	method: ServiceMethod,
+	layer: MethodRef['layer'],
+	method: RepositoryMethod | ServiceMethod,
 	to: MethodRef,
 	target: EntityApiSurface | undefined,
 ): string | undefined {
 	const site = originId(method.origin) ?? `${from.entity}.${method.name}`;
 	const callee = `\`${target ? className(target, to.layer) : to.entity}.${to.method}\``;
-	const head = `${site}: \`${from.service.className}.${method.name}\` calls ${callee}`;
+	const head = `${site}: \`${className(from, layer)}.${method.name}\` calls ${callee}`;
 
 	const listed = target
 		? (to.layer === 'repository' ? target.repository.methods : target.service.methods).find((m) => m.name === to.method)

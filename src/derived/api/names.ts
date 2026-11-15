@@ -9,7 +9,7 @@
  * ship in the package's `files`. The case primitive is `src/config/file-naming.ts`'s — never a local copy.
  */
 
-import { camelCase } from '../../config/file-naming.js';
+import { camelCase, emittedStem } from '../../config/file-naming.js';
 
 /** `deal_state` → `DealState`. */
 export function pascalCase(name: string): string {
@@ -33,6 +33,40 @@ export function idParamName(entityName: string): string {
 
 export function entityClassName(entityName: string): string {
 	return pascalCase(entityName);
+}
+
+/**
+ * The Zod schema names a module's DTO files export, and the file stem of each (no folder, no extension) — the one
+ * owner of both, so a child's import of its base's schema and the base's own export cannot drift (RFC-0006 §5).
+ */
+export function dtoSchemaNames(entityName: string): {
+	createSchema: string;
+	updateSchema: string;
+	outputSchema: string;
+	ownOutputSchema: string;
+	ofKindSchema: string;
+} {
+	const c = entityClassName(entityName);
+	return {
+		createSchema: `Create${c}Schema`,
+		updateSchema: `Update${c}Schema`,
+		outputSchema: `${c}OutputSchema`,
+		ownOutputSchema: `${c}OwnOutputSchema`,
+		ofKindSchema: `${c}OfKindSchema`,
+	};
+}
+
+export function dtoFileStem(entityName: string, kind: 'create' | 'update' | 'output' | 'ofKind'): string {
+	switch (kind) {
+		case 'create':
+			return emittedStem('create', entityName);
+		case 'update':
+			return emittedStem('update', entityName);
+		case 'output':
+			return emittedStem(entityName, 'output');
+		case 'ofKind':
+			return emittedStem(entityName, 'of-kind');
+	}
 }
 
 export function repositoryClassName(entityName: string): string {
@@ -241,6 +275,14 @@ export function familyConstName(entityName: string, suffix: string): string {
 	return `${entityName.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[^A-Za-z0-9]+/g, '_').toUpperCase()}_${suffix}`;
 }
 
+/**
+ * A generated module-level function of one entity, `<entity camel><Suffix>` (`communication` + `KindJoins` →
+ * `communicationKindJoins`). The one camelCase-prefix rule for the family helpers the repository declares.
+ */
+export function familyHelperName(entityName: string, suffix: string): string {
+	return `${camelCase(entityName)}${suffix}`;
+}
+
 // ----------------------------------------------------------------------------
 // Joined-table family reads and writes (RFC-0006 §3–§4, #875)
 // ----------------------------------------------------------------------------
@@ -256,6 +298,9 @@ export const FAMILY_METHOD = {
 	listKind: 'listKind',
 	countKind: 'countKind',
 	findOrphans: 'findOrphans',
+	/** A child's list over its base's rows, flat — the base's `listKind`, hoisted; what the HTTP list reads (S5). */
+	listFlat: 'listFlat',
+	countFlat: 'countFlat',
 	/** A child's pair write: these override the base class's, in the generated class body. */
 	create: 'create',
 	update: 'update',

@@ -9,7 +9,11 @@ import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 import type {
   <%= classNames.entity %>Include,
   <%= classNames.entity %>NoInclude,
+<% if (isInheritanceChild) { -%>
+  <%= classNames.entity %>Flat,
+<% } else { -%>
   <%= classNames.entity %>Result,
+<% } -%>
 } from '../<%= entityFileStem %>.repository';
 <% } else { -%>
 import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
@@ -20,6 +24,21 @@ export class <%= classNames.findByIdUseCase %> {
   constructor(private readonly service: <%= classNames.service %>) {}
 
 <% if (apiSurface.repository.typedInclude) { -%>
+<% if (isInheritanceChild) { -%>
+  /**
+   * RFC-0006 §3.2, §5: a <%= entityName %> is read FLAT — `findWithBase`, one statement, the base's columns
+   * hoisted to the root — so the base relation is never an include. `include` is a typed include TREE, not a client
+   * string: the controller already resolved `?include=` against the route's allowlist (REL-2 §5).
+   */
+  async execute<TWith extends <%= classNames.entity %>Include & { <%= familyChild.relKey %>?: never } = <%= classNames.entity %>NoInclude>(
+    id: string,
+    include?: TWith,
+  ): Promise<<%= classNames.entity %>Flat<TWith>> {
+    const entity = await this.service.<%= apiSurface.useCases.find((u) => u.kind === 'find_by_id').calls.method %><TWith>(
+      id,
+      include === undefined ? undefined : { with: include },
+    );
+<% } else { -%>
   /**
    * `include` is a typed include TREE, not a client string — the controller has
    * already resolved `?include=` against the route's allowlist and rejected
@@ -35,6 +54,7 @@ export class <%= classNames.findByIdUseCase %> {
       id,
       include === undefined ? undefined : { with: include },
     );
+<% } -%>
 <% } else { -%>
   async execute(id: string): Promise<<%= classNames.entity %>> {
     const entity = await this.service.findById(id);

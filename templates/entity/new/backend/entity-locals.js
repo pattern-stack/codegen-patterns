@@ -29,13 +29,16 @@ import {
 // prompt.js via loadAppPatterns() against `codegen.config.yaml patterns:`
 // globs before this helper runs — we only read the registry here, through
 // `resolvePatternComposition`.
-import { inheritanceBaseOf, inheritsOf, naturalKeyIndexOf } from '../../../../src/schema/inheritance.js';
+import { discriminatorKindsOf, inheritanceBaseOf, inheritsOf, naturalKeyIndexOf } from '../../../../src/schema/inheritance.js';
 import { detectMethodCollisions } from '../../../../src/patterns/compose.js';
 import { resolvePatternComposition } from '../../../../src/patterns/resolve-composition.js';
 import '../../../../src/patterns/library/index.js';
 import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
 import {
   familyConstName,
+  familyHelperName,
+  dtoFileStem,
+  dtoSchemaNames,
   finderName,
   fkFinderName,
   moduleClassName,
@@ -2490,9 +2493,10 @@ export function buildBackendLocals(definition, baseLocals) {
     wiredTargets: hasMany.filter((r) => r.targetExists).map((r) => r.target),
     inheritanceChildren: familyChildren,
     inheritanceBase,
+    discriminatorKinds: discriminatorKindsOf(definition, entityLookup?.definitions ? entityLookup.definitions() : []),
     entityLookup: (name) => (entityLookup ? entityLookup(name) : null),
   });
-  // Whether writes are emitted is the derivation's answer (ADR-046): `generate.writes: false`, or a child (RFC-0006).
+  // Whether writes are emitted is the derivation's answer (ADR-046): `generate.writes: false`; a base with a child for every kind has no create (RFC-0006 §4.1, S5).
   const hasUseCase = (kind) => apiSurface.useCases.some((u) => u.kind === kind);
 
   // Output paths
@@ -2522,9 +2526,13 @@ export function buildBackendLocals(definition, baseLocals) {
     deleteUseCase: hasUseCase('delete')
       ? `${useCasesDir}/${emittedStem('delete', entityName)}.use-case.ts`
       : null,
-    createDto: `${moduleDir}/dto/${emittedStem('create', entityName)}.dto.ts`,
-    updateDto: `${moduleDir}/dto/${emittedStem('update', entityName)}.dto.ts`,
-    outputDto: `${moduleDir}/dto/${emittedStem(entityName, 'output')}.dto.ts`,
+    createDto: `${moduleDir}/dto/${dtoFileStem(entityName, 'create')}.dto.ts`,
+    updateDto: `${moduleDir}/dto/${dtoFileStem(entityName, 'update')}.dto.ts`,
+    outputDto: `${moduleDir}/dto/${dtoFileStem(entityName, 'output')}.dto.ts`,
+    // RFC-0006 §5: a base with child tables also emits the cross-kind output (`<Base>OfKindSchema`).
+    ofKindDto: family.base !== null && family.base.children.length > 0
+      ? `${moduleDir}/dto/${dtoFileStem(entityName, 'ofKind')}.dto.ts`
+      : null,
     // Pagination-by-default: the universal list query DTO (page/cursor/pageSize
     // + sort). Always emitted — the list endpoint is unconditional.
     listQueryDto: `${moduleDir}/dto/${emittedStem('list', entityNamePlural)}.query.ts`,
@@ -2583,9 +2591,10 @@ export function buildBackendLocals(definition, baseLocals) {
     createDto: `Create${entityNamePascal}Dto`,
     updateDto: `Update${entityNamePascal}Dto`,
     outputDto: `${entityNamePascal}OutputDto`,
-    createSchema: `Create${entityNamePascal}Schema`,
-    updateSchema: `Update${entityNamePascal}Schema`,
-    outputSchema: `${entityNamePascal}OutputSchema`,
+    // RFC-0006 §5: a child's own columns alone, and a base's output across its kinds — one owner of every schema
+    // name, which a child's import of its base's schema reads too.
+    ...dtoSchemaNames(entityName),
+    ofKindDto: `${entityNamePascal}OfKindDto`,
     // Pagination-by-default: list query DTO + schema (re-export of the shared
     // ListQuerySchema). Named per-entity so the controller import is unambiguous.
     listQueryDto: `List${entityNamePluralPascal}QueryDto`,
@@ -2613,10 +2622,20 @@ export function buildBackendLocals(definition, baseLocals) {
   // ...and for the create DTO: an adopted tenant FK (#791) is stamped, not input.
   const createFkFields = belongsToFkFields.filter((fk) => !(tenantScoped && fk.camelName === tenancy.prop));
 
+  // The kinds with no child table — the only ones a base's own create accepts (RFC-0006 §4.1, §5).
+  const baseOnlyKinds = family.base === null ? [] : family.base.baseOnlyKinds;
+
   // Build zodChain for each create DTO field
+  // RFC-0006 §5: a base's discriminator accepts only its base-only kinds (`z.never()` when every kind has a child:
+  // the field stays so a child's `.omit({ kind: true })` has something to omit, and the base has no create route).
   const createDtoFieldsWithZod = createDtoFields.map((f) => ({
     ...f,
-    zodChainCreate: zodChainForCreate(f),
+    zodChainCreate:
+      family.base !== null && f.name === family.base.discriminator
+        ? baseOnlyKinds.length === 0
+          ? 'z.never()'
+          : `z.enum([${baseOnlyKinds.map((k) => `'${k}'`).join(', ')}])`
+        : zodChainForCreate(f),
   }));
 
   // Build zodChain for each output DTO field (all non-FK fields).
@@ -2902,6 +2921,9 @@ export function buildBackendLocals(definition, baseLocals) {
     typedEventBusImport,
     // Output paths
     outputPaths: outputPaths,
+    // The DTO file stems the module's own index and of-kind file import (one owner: `dtoFileStem`).
+    outputDtoStem: dtoFileStem(entityName, 'output'),
+    ofKindDtoStem: dtoFileStem(entityName, 'ofKind'),
 
     // Architecture-specific imports (ADR-033.1 §8 — integration-source closes #267)
     imports,
@@ -2962,6 +2984,7 @@ export function buildBackendLocals(definition, baseLocals) {
     familyChild: family.child,
     // The constant names the repository and service share (`<EU>_BASE_KEYS`, `<EU>_CHILD_CREATE_PATH`, …): one derivation.
     familyConstName: (suffix) => familyConstName(entityName, suffix),
+    familyHelperName: (suffix) => familyHelperName(entityName, suffix),
     familyBase: family.base,
     matchFills,
     naturalKey,

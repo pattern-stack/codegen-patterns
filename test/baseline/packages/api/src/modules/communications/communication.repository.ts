@@ -298,10 +298,14 @@ export class CommunicationRepository extends ActivityEntityRepository<Communicat
   /**
    * One kind, flat (the base's columns and the child's at one level), filtered and sorted on BASE columns —
    * the read a child's HTTP list uses, since `created_at` and `occurred_at` live here.
+   *
+   * `childWith` is an include tree for the CHILD's own includes (`{ transcripts: true }`): it is joined under the
+   * child's relation key in the same statement (charter I4), so a child list with an include is still one statement.
    */
   async listKind<K extends keyof CommunicationFlatByKind>(
     kind: K,
     query?: ListOptions<typeof communications>,
+    childWith?: globalThis.Record<string, unknown>,
   ): Promise<Array<CommunicationFlatByKind[K]>> {
     const where: CommunicationRowFilter = (t) =>
       and(eq(t.kind, kind), query?.where?.(t));
@@ -310,7 +314,10 @@ export class CommunicationRepository extends ActivityEntityRepository<Communicat
       sort: query?.sort,
       limit: query?.limit,
       offset: query?.offset,
-      with: communicationKindJoins([kind]),
+      with:
+        childWith === undefined
+          ? communicationKindJoins([kind])
+          : ({ [COMMUNICATION_CHILD_KEY_BY_KIND[kind]]: { with: childWith } } as never),
     } as never);
     return rows.map((row) =>
       flattenBase(

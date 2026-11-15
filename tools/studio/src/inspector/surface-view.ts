@@ -197,9 +197,15 @@ function serviceSection(surface: ProjectApiSurface, e: EntityApiSurface): Surfac
   );
 }
 
-/** The write side is off: credited to the declaration that turned it off (`generate.writes: false`, a child's `inherits:`). */
-function writesOff(surface: ProjectApiSurface, e: EntityApiSurface, text: string): SurfaceSection['off'] {
-  return e.writesDisabledBy ? { text, origin: yamlChip(surface, e.writesDisabledBy) } : undefined;
+/**
+ * The write side is off (`generate.writes: false`), or a base has no create of its own because every kind has a child
+ * table (`discriminator:`, #875 S5) — each credited to the declaration that caused it. Writes off wins: it removes the
+ * create too.
+ */
+function writesOff(surface: ProjectApiSurface, e: EntityApiSurface, text: string, createText: string): SurfaceSection['off'] {
+  if (e.writesDisabledBy) return { text, origin: yamlChip(surface, e.writesDisabledBy) };
+  if (e.createDisabledBy) return { text: createText, origin: yamlChip(surface, e.createDisabledBy) };
+  return undefined;
 }
 
 function useCaseSection(surface: ProjectApiSurface, e: EntityApiSurface): SurfaceSection {
@@ -212,12 +218,17 @@ function useCaseSection(surface: ProjectApiSurface, e: EntityApiSurface): Surfac
       signature: u.className,
       kindLabel: kinds(u).label,
       flags: [],
-      calls: methodRefText(u.calls),
+      calls: [u.calls, ...(u.preRead ? [u.preRead] : []), ...(u.alsoCalls ?? [])].map(methodRefText).join(', '),
       origin: originChip(surface, u.origin),
       shadows: shadowsOf(surface, u.origin),
     })),
   );
-  const off = writesOff(surface, e, 'Writes off — no create, update or delete use case');
+  const off = writesOff(
+    surface,
+    e,
+    'Writes off — no create, update or delete use case',
+    'No create use case — every kind has a child table, so a row is created through its child',
+  );
   if (off) s.off = off;
   return s;
 }
@@ -246,7 +257,12 @@ function httpSection(surface: ProjectApiSurface, e: EntityApiSurface): SurfaceSe
       origin: e.http.disabledBy ? yamlChip(surface, e.http.disabledBy) : undefined,
     };
   } else {
-    const off = writesOff(surface, e, 'Writes off — no POST, PATCH or DELETE route');
+    const off = writesOff(
+      surface,
+      e,
+      'Writes off — no POST, PATCH or DELETE route',
+      'No POST route — every kind has a child table, so a row is created through its child',
+    );
     if (off) s.off = off;
   }
   return s;

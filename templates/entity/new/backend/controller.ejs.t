@@ -20,7 +20,8 @@ const _findByIdWithFields = _route('find_by_id_with_fields');
 const _create = _route('create');
 const _update = _route('update');
 const _delete = _route('delete');
-const _writes = !!(_create && _update && _delete);
+// A base whose every kind has a child table has no create route (RFC-0006 §4.1) but keeps update / delete.
+const _writes = !!(_update && _delete);
 // The controller prefix is the list route's path; every other route's
 // decorator argument is its path below that prefix. (With `api: false` there
 // are no routes and the file is skipped; the body below is guarded on `_list`
@@ -36,7 +37,7 @@ const _includeRoutes = apiSurface.http.includeRoutes;
 const _allow = (r) => (r.includeRoute ? `${apiSurface.http.includesConst}.${r.includeRoute}` : 'undefined');
 _%>
 <% if (_list) { -%>
-import { BadRequestException, Controller, Get<% if (_writes) { %>, Post, Patch, Delete, Body<% } %>, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get<% if (_create) { %>, Post<% } %><% if (_writes) { %>, Patch, Delete, Body<% } %>, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiBearerAuth, <% if (_writes) { %>ApiBody, <% } %>ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { ZodValidationPipe } from '<%= zodValidationPipeImport %>';
 import type { Page } from '<%= paginationImport %>';
@@ -48,16 +49,24 @@ import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityPlural
 import { <%= classNames.findByIdWithFieldsUseCase %> } from './use-cases/find-<%= entityFileStem %>-by-id-with-fields.use-case';
 import { <%= classNames.listWithFieldsUseCase %> } from './use-cases/list-<%= entityPluralFileStem %>-with-fields.use-case';
 <% } -%>
-<% if (_writes) { -%>
+<% if (_create) { -%>
 import { <%= classNames.createUseCase %> } from './use-cases/create-<%= entityFileStem %>.use-case';
+<% } -%>
+<% if (_writes) { -%>
 import { <%= classNames.updateUseCase %> } from './use-cases/update-<%= entityFileStem %>.use-case';
 import { <%= classNames.deleteUseCase %> } from './use-cases/delete-<%= entityFileStem %>.use-case';
+<% if (_create) { -%>
 import { <%= classNames.createSchema %> } from './dto/create-<%= entityFileStem %>.dto';
 import type { <%= classNames.createDto %> } from './dto/create-<%= entityFileStem %>.dto';
+<% } -%>
 import { <%= classNames.updateSchema %> } from './dto/update-<%= entityFileStem %>.dto';
 import type { <%= classNames.updateDto %> } from './dto/update-<%= entityFileStem %>.dto';
 <% } -%>
+<% if (isInheritanceChild) { -%>
+import type { <%= classNames.entity %>Flat } from './<%= entityFileStem %>.repository';
+<% } else { -%>
 import type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
+<% } -%>
 // REL-2 (#587): the HTTP include allowlist (charter I6). A client sends dot
 // PATHS; this controller looks each one up in a compile-time literal map and
 // merges the fragments. It never builds an include tree from client input, and a
@@ -87,7 +96,9 @@ export class <%= _list.controller %> {
     private readonly listWithFieldsUseCase: <%= classNames.listWithFieldsUseCase %>,
 <% } -%>
 <% if (_writes) { -%>
+<% if (_create) { -%>
     private readonly createUseCase: <%= classNames.createUseCase %>,
+<% } -%>
     private readonly updateUseCase: <%= classNames.updateUseCase %>,
     private readonly deleteUseCase: <%= classNames.deleteUseCase %>,
 <% } -%>
@@ -109,7 +120,7 @@ export class <%= _list.controller %> {
       return resolveAllowedInclude(raw, allow);
     } catch (err: unknown) {
       if (err instanceof IncludeNotAllowedError) {
-        throw new BadRequestException({ code: err.code, path: err.path, message: err.message });
+        throw new BadRequestException({ statusCode: 400, error: 'Bad Request', code: err.code, path: err.path, message: err.message });
       }
       throw err;
     }
@@ -227,7 +238,9 @@ export class <%= _list.controller %> {
     return entity;
   }
 <% } %>
+<%_ const _W = isInheritanceChild ? `${classNames.entity}Flat` : classNames.entity; _%>
 <% if (_writes) { %>
+<%_ if (_create) { _%>
   @ApiOperation({ summary: 'Create <%= entityName %>', operationId: '<%= _create.operationId %>' })
   @ApiBody({ schema: { $ref: '#/components/schemas/<%= classNames.createDto %>' } })
   @ApiResponse({ status: 201, schema: { $ref: '#/components/schemas/<%= classNames.outputDto %>' } })
@@ -236,10 +249,10 @@ export class <%= _list.controller %> {
   <%- _decorator(_create) %>
   async <%= _create.handler %>(
     @Body(new ZodValidationPipe(<%= classNames.createSchema %>)) dto: <%= classNames.createDto %>,
-  ): Promise<<%= classNames.entity %>> {
+  ): Promise<<%= _W %>> {
     return this.createUseCase.execute(dto);
   }
-
+<% } %>
   @ApiOperation({ summary: 'Update <%= entityName %>', operationId: '<%= _update.operationId %>' })
   @ApiBody({ schema: { $ref: '#/components/schemas/<%= classNames.updateDto %>' } })
   @ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/<%= classNames.outputDto %>' } })
@@ -251,7 +264,7 @@ export class <%= _list.controller %> {
   async <%= _update.handler %>(
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(<%= classNames.updateSchema %>)) dto: <%= classNames.updateDto %>,
-  ): Promise<<%= classNames.entity %>> {
+  ): Promise<<%= _W %>> {
     const entity = await this.updateUseCase.execute(id, dto);
     if (!entity) throw new NotFoundException(`<%= classNames.entity %> ${id} not found`);
     return entity;

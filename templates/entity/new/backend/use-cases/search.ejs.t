@@ -9,7 +9,12 @@ import { Injectable } from '@nestjs/common';
 import { and, eq<% if (searchQuery.searchField) { %>, ilike<% } %>, type SQL } from 'drizzle-orm';
 import type { ListQuery, Page } from '<%= paginationImport %>';
 import { <%= classNames.listUseCase %> } from './list-<%= entityPluralFileStem %>.use-case';
+<% if (isInheritanceChild) { -%>
+import type { <%= entityNamePlural %> } from '../<%= entityFileStem %>.entity';
+import type { <%= classNames.entity %>Flat } from '../<%= entityFileStem %>.repository';
+<% } else { -%>
 import type { <%= entityNamePlural %>, <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
+<% } -%>
 
 /** The list query (paging + sort) plus the declared search filters. */
 export interface <%= searchQuery.inputTypeName %> extends ListQuery {
@@ -32,7 +37,7 @@ export interface <%= searchQuery.inputTypeName %> extends ListQuery {
 export class <%= searchQuery.useCaseClassName %> {
   constructor(private readonly listUseCase: <%= classNames.listUseCase %>) {}
 
-  async execute(searchInput: <%= searchQuery.inputTypeName %>): Promise<Page<<%= classNames.entity %>>> {
+  async execute(searchInput: <%= searchQuery.inputTypeName %>): Promise<Page<<%= classNames.entity %><%= isInheritanceChild ? 'Flat' : '' %>>> {
     // A ROW FILTER, not a rendered SQL: the list renders it against the table
     // handle its executing path holds — the aliased root on the relational path
     // (READ-1 §4). Built from `t`, never from the imported table.
@@ -52,7 +57,23 @@ export class <%= searchQuery.useCaseClassName %> {
       return and(...whereTerms);
     };
 
-    return this.listUseCase.execute(searchInput, { where: rowFilter });
+    // No declared filter set = no `where`. A row filter that happens to render to nothing is still a defined
+    // closure, and a child's list routes on whether a `where` is present (RFC-0006 §8): an empty search must read
+    // as the plain list, with its default order, not as a filtered one.
+    const hasFilter = [
+<% searchQuery.filters.forEach((f) => { -%>
+<% if (f.isBoolean) { -%>
+      searchInput.<%= f.camelName %> !== undefined,
+<% } else { -%>
+      Boolean(searchInput.<%= f.camelName %>),
+<% } -%>
+<% }) -%>
+<% if (searchQuery.searchField) { -%>
+      Boolean(searchInput.search),
+<% } -%>
+    ].some(Boolean);
+
+    return this.listUseCase.execute(searchInput, hasFilter ? { where: rowFilter } : {});
   }
 }
 <% } -%>

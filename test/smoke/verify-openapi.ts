@@ -155,6 +155,9 @@ async function main(): Promise<void> {
 			fail(`expected openapi 3.0.x, got '${document.openapi}'`);
 		}
 
+		// `family` (argv[3]) is passed by the scenario whose fixtures carry the joined-table family (RFC-0006, #875): the
+		// family checks run exactly when it is named, so a scenario that should have the family cannot skip them.
+		const withFamily = process.argv[3] === 'family';
 		const requiredSchemas = [
 			'CreateContactDto',
 			'UpdateContactDto',
@@ -162,6 +165,7 @@ async function main(): Promise<void> {
 			// (OPENAPI-2 implementation note 3).
 			'ContactOutputDto',
 			'ErrorResponseDto',
+			...(withFamily ? (['CreateMeetingDto', 'MeetingOutputDto'] as const) : []),
 		] as const;
 
 		const presentSchemas = Object.keys(document.components.schemas);
@@ -169,6 +173,28 @@ async function main(): Promise<void> {
 			if (!presentSchemas.includes(name)) {
 				fail(`components.schemas missing ${name} — present: ${presentSchemas.join(', ')}`);
 			}
+		}
+
+		if (withFamily) {
+			// A child's output is FLAT: the base's columns and its own at one level, the kind fixed (RFC-0006 §5).
+			const flat = document.components.schemas['MeetingOutputDto'] as { properties?: Record<string, unknown> };
+			for (const key of ['id', 'kind', 'tenantId', 'occurredAt', 'source', 'title', 'startsAt']) {
+				if (!flat.properties || !(key in flat.properties)) {
+					fail(`MeetingOutputDto is not flat: no '${key}' — has: ${Object.keys(flat.properties ?? {}).join(', ')}`);
+				}
+			}
+			if ('communication' in (flat.properties ?? {})) fail(`MeetingOutputDto nests 'communication'; a child is flat`);
+
+			// A base whose every kind has a child table has no create route, so it registers no create schema either.
+			// Positive controls first: the module is mounted (its list route and its update schema exist), so the
+			// two absences below cannot pass because the module is missing.
+			if (!document.paths['/communication_parts']?.get) fail(`paths['/communication_parts'].get is missing`);
+			if (!presentSchemas.includes('UpdateCommunicationPartDto')) fail('UpdateCommunicationPartDto is not registered');
+			if (presentSchemas.includes('CreateCommunicationPartDto')) {
+				fail('CreateCommunicationPartDto is registered, but communication_part has no create route');
+			}
+			if (document.paths['/communication_parts']?.post) fail(`paths['/communication_parts'].post exists`);
+
 		}
 
 		const contactsPath = document.paths['/contacts'];

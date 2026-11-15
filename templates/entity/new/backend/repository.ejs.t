@@ -32,7 +32,7 @@ const _withLine = _typedInclude ? '\n      with: opts?.with,' : '';
 // its child keys) come from `familyChild` / `familyBase`.
 const _ACROSS = ['all_kinds', 'kind_by_id', 'list_kind', 'count_kind'];
 const _isAcross = (m) => _ACROSS.includes(m.kind);
-const _isRead = (m) => m.kind === 'count' || m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans';
+const _isRead = (m) => m.kind === 'count' || m.kind === 'with_base' || m.kind === 'list_flat' || m.kind === 'count_flat' || _isAcross(m) || m.kind === 'orphans';
 // The write kinds (S4) close the same run: the `queries:` banner comes after the last of them.
 const _PAIR = ['pair_create', 'pair_update', 'pair_delete'];
 const _isPair = (m) => _PAIR.includes(m.kind);
@@ -42,7 +42,7 @@ const _base = _methods.some(_isAcross) ? familyBase : null;
 const _listName = _methods.find((x) => x.kind === 'list').name;
 const _findByIdName = _methods.find((x) => x.kind === 'find_by_id').name;
 const _C = familyConstName;
-const _eLower = E.charAt(0).toLowerCase() + E.slice(1);
+const _H = familyHelperName;
 // RFC-0006 (#875) S4 — the write half. Which writes exist is the derivation's call (`pair_create` / `pair_update` / `pair_delete` /
 // `kind_guard` / `upsert_own` / `upsert_through_base` entries): a child writes both rows, a base refuses to change a row's kind, an entity with a natural key
 // upserts. `matchFills`: columns this table derives from a parent row; `naturalKey`: the conflict target.
@@ -208,9 +208,19 @@ export type <%= E %>Result<
  *
  * Internal callers keep the exact inferred type, because `TWith` is inferred at
  * the call site (REL-2 §2.3/§5.2).
+<%_ if (_child) { _%>
+ *
+ * A child's HTTP result is FLAT (RFC-0006 §5): the base's columns are in the body, so the base relation is never an
+ * include and never needs an allowlist entry.
+<%_ } _%>
  */
+<%_ if (_child) { _%>
+export type <%= classNames.entity %>ApiResult = <%= classNames.entity %>Flat &
+  globalThis.Partial<globalThis.Omit<<%= classNames.entity %>Result<<%= classNames.entity %>Include>, '<%= _child.relKey %>'>>;
+<%_ } else { _%>
 export type <%= classNames.entity %>ApiResult = <%= classNames.entity %> &
   globalThis.Partial<<%= classNames.entity %>Result<<%= classNames.entity %>Include>>;
+<%_ } _%>
 
 <%_ if (_child) { _%>
 /**
@@ -273,7 +283,7 @@ const <%= _C('CHILD_KEY_BY_KIND') %> = {
 } as const;
 
 /** The children a read of these kinds joins — only the kinds asked for, all of them when none are. */
-function <%= _eLower %>KindJoins(kinds: readonly <%= E %>Kind[] | undefined): {
+function <%= _H('KindJoins') %>(kinds: readonly <%= E %>Kind[] | undefined): {
 <%_ _base.children.forEach((c) => { _%>
   <%= c.relKey %>?: true;
 <%_ }) _%>
@@ -289,7 +299,7 @@ function <%= _eLower %>KindJoins(kinds: readonly <%= E %>Kind[] | undefined): {
  * The orphan predicate: a row whose kind has a child table but no child row (RFC-0006 §2.2). A module-level
  * function with camelCase bindings only, because it reads the children's table exports (emitted-name hygiene, #813).
  */
-function <%= _eLower %>OrphanFilter(dbClient: DrizzleClient<Relations>, rootRow: typeof <%= entityNamePlural %>) {
+function <%= _H('OrphanFilter') %>(dbClient: DrizzleClient<Relations>, rootRow: typeof <%= entityNamePlural %>) {
   return or(
 <%_ _base.children.forEach((c) => { _%>
     and(
@@ -565,6 +575,28 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
   override async <%= m.name %>(<%= m.params[0].name %>?: RowFilter<typeof <%= entityNamePlural %>>): Promise<number> {
     return super.<%= m.name %>(<%= m.params[0].name %>);
   }
+<%_ } else if (m.kind === 'list_flat' || m.kind === 'count_flat') { _%>
+<%_ const _p = m.params.map((x) => x.name); _%>
+<%_ if (m.kind === 'list_flat') { _%>
+
+  /**
+   * This kind's rows, flat, filtered and sorted on the BASE's columns (RFC-0006 §3.3): the base's `<%= m.delegatesTo.method %>`, which
+   * is what a child's HTTP list reads — its default sort is `created_at desc, id desc`, and `created_at` is the base's.
+   * `opts.with` names this table's own relations; they are joined in the same statement.
+   */
+  async <%= m.name %><W extends <%= E %>Include = <%= E %>NoInclude>(
+    <%= _p[0] %>?: ListOptions<typeof <%= _child.baseTable %>>,
+    <%= _p[1] %>?: { with?: W },
+  ): Promise<Array<<%= E %>Flat<W>>> {
+    return this.baseRepo.<%= m.delegatesTo.method %>('<%= _child.as %>', <%= _p[0] %>, <%= _p[1] %>?.with) as unknown as Array<<%= E %>Flat<W>>;
+  }
+<%_ } else { _%>
+
+  /** How many rows `<%= _methods.find((x) => x.kind === 'list_flat').name %>` ranges over, on the same scope: the base's `<%= m.delegatesTo.method %>`. */
+  async <%= m.name %>(<%= _p[0] %>?: RowFilter<typeof <%= _child.baseTable %>>): Promise<number> {
+    return this.baseRepo.<%= m.delegatesTo.method %>('<%= _child.as %>', <%= _p[0] %>);
+  }
+<%_ } _%>
 <%_ } else if (m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans') { _%>
 <%_ /* RFC-0006 (#875) §3 — the family reads. Each is a derived method (`src/derived/api/entity.ts`, caused by the
       child's `inherits:` or the base's `discriminator:`); the first of each kind opens its banner. */ _%>
@@ -630,7 +662,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
       sort: <%= _p[0] %>?.sort,
       limit: <%= _p[0] %>?.limit,
       offset: <%= _p[0] %>?.offset,
-      with: <%= _eLower %>KindJoins(kinds),
+      with: <%= _H('KindJoins') %>(kinds),
     } as never);
     return rows.map((row) => asKind<<%= E %>OfKind>(row, '<%= _base.discriminator %>', <%= _C('CHILD_KEY_BY_KIND') %>));
   }
@@ -638,7 +670,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
 
   /** One row by id with its child, narrowed by kind. `null` when absent or out of scope. */
   async <%= m.name %>(<%= _p[0] %>: string): Promise<<%= E %>OfKind | null> {
-    const row = await this.<%= _findByIdName %>(<%= _p[0] %>, { with: <%= _eLower %>KindJoins(undefined) } as never);
+    const row = await this.<%= _findByIdName %>(<%= _p[0] %>, { with: <%= _H('KindJoins') %>(undefined) } as never);
     return row ? asKind<<%= E %>OfKind>(row, '<%= _base.discriminator %>', <%= _C('CHILD_KEY_BY_KIND') %>) : null;
   }
 <%_ } else if (m.kind === 'list_kind') { _%>
@@ -646,10 +678,14 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
   /**
    * One kind, flat (the base's columns and the child's at one level), filtered and sorted on BASE columns —
    * the read a child's HTTP list uses, since `created_at` and `occurred_at` live here.
+   *
+   * `childWith` is an include tree for the CHILD's own includes (`{ transcripts: true }`): it is joined under the
+   * child's relation key in the same statement (charter I4), so a child list with an include is still one statement.
    */
   async <%= m.name %><K extends keyof <%= E %>FlatByKind>(
     <%= _p[0] %>: K,
     <%= _p[1] %>?: ListOptions<typeof <%= entityNamePlural %>>,
+    <%= _p[2] %>?: globalThis.Record<string, unknown>,
   ): Promise<Array<<%= E %>FlatByKind[K]>> {
     const where: <%= E %>RowFilter = (t) =>
       and(eq(t.<%= _base.discriminatorProp %>, <%= _p[0] %>), <%= _p[1] %>?.where?.(t));
@@ -658,7 +694,10 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
       sort: <%= _p[1] %>?.sort,
       limit: <%= _p[1] %>?.limit,
       offset: <%= _p[1] %>?.offset,
-      with: <%= _eLower %>KindJoins([<%= _p[0] %>]),
+      with:
+        <%= _p[2] %> === undefined
+          ? <%= _H('KindJoins') %>([<%= _p[0] %>])
+          : ({ [<%= _C('CHILD_KEY_BY_KIND') %>[<%= _p[0] %>]]: { with: <%= _p[2] %> } } as never),
     } as never);
     return rows.map((row) =>
       flattenBase(
@@ -684,7 +723,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
    */
   async <%= m.name %>(<%= _p[0] %>?: { limit?: number }): Promise<<%= E %>[]> {
     const rows = await this.db.query.<%= entityNamePlural %>.findMany({
-      where: { RAW: this.rootFilter((t) => <%= _eLower %>OrphanFilter(this.db, t)) },
+      where: { RAW: this.rootFilter((t) => <%= _H('OrphanFilter') %>(this.db, t)) },
       // A `limit` without an order is an arbitrary subset; `id` makes it one.
       orderBy: { id: 'asc' },
       limit: <%= _p[0] %>?.limit,

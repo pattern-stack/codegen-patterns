@@ -27,6 +27,7 @@ import { execSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { composeSubsystemModules } from './_compose-subsystems';
 import { tscGateErrors } from './_consumer-errors';
 import { assertTimestampColumns, collectTimezoneOptOuts, projectBehaviorsTimezone } from './_timestamp-columns';
 
@@ -768,7 +769,7 @@ function assertRelationshipEmission(tmpDir: string): void {
 	);
 	assertContains(
 		accountController,
-		/throw new BadRequestException\(\{ code: err\.code, path: err\.path, message: err\.message \}\)/,
+		/throw new BadRequestException\(\{ statusCode: 400, error: 'Bad Request', code: err\.code, path: err\.path, message: err\.message \}\)/,
 		'account.controller.ts turns a disallowed include into a 400',
 	);
 	assertContains(
@@ -924,6 +925,17 @@ async function main(): Promise<number> {
 			}
 			fs.writeFileSync(configPath, `${config.trimEnd()}\n\ntenancy:\n  column: organization_id\n`);
 			log('set tenancy.column: organization_id for the default scenario');
+		}
+
+		// 4.9. Install the events subsystem BEFORE generating: the default fixture set's `crate` (a child, RFC-0006 §5)
+		// declares `emits: [crate_deleted]`, so its delete use case imports `@shared/subsystems/events` and the typed
+		// bus. That is what makes this smoke's `tsc` compile a child's flat event payload and `findWithBase` pre-read.
+		// (Only the default scenario carries that fixture; the relationship one has no child.)
+		if (SCENARIO === 'default') {
+			run(`${cli(tmpDir)} subsystem install events`, tmpDir);
+			// `subsystem install` does not wire AppModule (the CLI leaves it manual), so without this the boot check
+			// (openapi-verify) cannot resolve `TYPED_EVENT_BUS` for `DeleteCrateUseCase`.
+			composeSubsystemModules(tmpDir);
 		}
 
 		// 5. Run `codegen entity new --all`.
@@ -1233,7 +1245,8 @@ async function main(): Promise<number> {
 		if (exitCode === 0) {
 			log('verifying /docs-json via programmatic AppModule import');
 			const verifyResult = runSilent(
-				`bun ${path.join(REPO_ROOT, 'test', 'smoke', 'verify-openapi.ts')} ${tmpDir}`,
+				// The default scenario's fixtures carry the joined-table family; the relationship scenario's do not.
+				`bun ${path.join(REPO_ROOT, 'test', 'smoke', 'verify-openapi.ts')} ${tmpDir}${SCENARIO === 'default' ? ' family' : ''}`,
 				tmpDir,
 			);
 			if (verifyResult.code !== 0) {

@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { CreateNoticeSchema } from './create-notice.dto';
 
-export const UpdateNoticeSchema = CreateNoticeSchema.partial();
+// RFC-0006 §4.1: a row does not change kind, so the update takes no `kind`; one in a body is stripped.
+export const UpdateNoticeSchema = CreateNoticeSchema.omit({ kind: true }).partial();
 
 export type UpdateNoticeDto = z.infer<typeof UpdateNoticeSchema>;

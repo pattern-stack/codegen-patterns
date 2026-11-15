@@ -10,7 +10,11 @@ force: true
 const _useCase = (kind) => apiSurface.useCases.find((u) => u.kind === kind);
 const _api = apiSurface.http.enabled;
 const _eav = !!_useCase('find_by_id_with_fields');
-const _writes = !!_useCase('create');
+// A base whose every kind has a child table has no create (RFC-0006 §4.1) but keeps update / delete: two use cases, two reads.
+const _create = !!_useCase('create');
+const _writes = !!_useCase('update');
+// The create DTO is registered unless the derivation removed the base's create (a `writes: false` entity still registers it).
+const _createDto = !apiSurface.createDisabledBy;
 const _searchUseCase = _useCase('search');
 const _searchRoute = !!_searchUseCase && apiSurface.http.routes.some((r) => r.useCase === _searchUseCase.className);
 _%>
@@ -45,7 +49,9 @@ import { <%= classNames.service %> } from './<%= entityFileStem %>.service';
 import { <%= classNames.controller %> } from './<%= entityFileStem %>.controller';
 <% } -%>
 // OPENAPI-2: Zod schemas registered with OpenApiRegistry at module init.
+<% if (_createDto) { -%>
 import { <%= classNames.createSchema %> } from './dto/create-<%= entityFileStem %>.dto';
+<% } -%>
 import { <%= classNames.updateSchema %> } from './dto/update-<%= entityFileStem %>.dto';
 import { <%= classNames.outputSchema %> } from './dto/<%= entityFileStem %>-output.dto';
 import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= entityFileStem %>-by-id.use-case';
@@ -54,8 +60,10 @@ import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityPlural
 import { <%= classNames.findByIdWithFieldsUseCase %> } from './use-cases/find-<%= entityFileStem %>-by-id-with-fields.use-case';
 import { <%= classNames.listWithFieldsUseCase %> } from './use-cases/list-<%= entityPluralFileStem %>-with-fields.use-case';
 <% } -%>
-<% if (_writes) { -%>
+<% if (_create) { -%>
 import { <%= classNames.createUseCase %> } from './use-cases/create-<%= entityFileStem %>.use-case';
+<% } -%>
+<% if (_writes) { -%>
 import { <%= classNames.updateUseCase %> } from './use-cases/update-<%= entityFileStem %>.use-case';
 import { <%= classNames.deleteUseCase %> } from './use-cases/delete-<%= entityFileStem %>.use-case';
 <% } -%>
@@ -100,8 +108,10 @@ import { <%= classNames.searchController %> } from './<%= entityFileStem %>-sear
     <%= classNames.findByIdWithFieldsUseCase %>,
     <%= classNames.listWithFieldsUseCase %>,
 <% } -%>
-<% if (_writes) { -%>
+<% if (_create) { -%>
     <%= classNames.createUseCase %>,
+<% } -%>
+<% if (_writes) { -%>
     <%= classNames.updateUseCase %>,
     <%= classNames.deleteUseCase %>,
 <% } -%>
@@ -129,7 +139,9 @@ export class <%= classNames.module %> implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
+<% if (_createDto) { -%>
     this.openApi.registerSchema('<%= classNames.createDto %>', <%= classNames.createSchema %>);
+<% } -%>
     this.openApi.registerSchema('<%= classNames.updateDto %>', <%= classNames.updateSchema %>);
     // The response schema is named <Entity>OutputDto (matches
     // classNames.outputDto); the OPENAPI-2 spec sketch uses "ResponseDto"

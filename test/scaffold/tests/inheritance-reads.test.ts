@@ -414,6 +414,41 @@ d('A9 — each generated family read is ONE statement (charter I4), measured on 
     expect(await one(() => repo.findOrphans())).toBe(1);
   });
 
+  test('a child list with an include is ONE statement, flat, with the include and no base key (S5, review I4)', async () => {
+    await seedCommunications();
+    await run(sql`INSERT INTO meeting_transcripts (id, meeting_id) VALUES (${ids.transcript}, ${ids.meetingA})`);
+    const repo = newMeetingRepository(countingDb);
+    let rows: any[] = [];
+    const n = await statementsOf(() =>
+      asA(async () => {
+        rows = await repo.listFlat(undefined, { with: { transcripts: true } });
+      }),
+    );
+    expect(n).toBe(1);
+    expect(rows.map((r) => r.id)).toEqual([ids.meetingA]);
+    expect(rows[0].kind).toBe('meeting');
+    expect(rows[0].occurredAt).toBeInstanceOf(Date);
+    expect(rows[0].transcripts.map((t: any) => t.id)).toEqual([ids.transcript]);
+    expect('communication' in rows[0]).toBe(false);
+  });
+
+  test('a child-rooted list (a child-column sort) with the base joined in is ONE statement', async () => {
+    await seedCommunications();
+    const repo = newMeetingRepository(countingDb);
+    let rows: any[] = [];
+    const n = await statementsOf(() =>
+      asA(async () => {
+        rows = await repo.list({
+          with: { communication: true },
+          sort: [{ column: 'title', direction: 'asc' }],
+        } as never);
+      }),
+    );
+    expect(n).toBe(1);
+    expect(rows.map((r) => r.id)).toEqual([ids.meetingA]);
+    expect(rows[0].communication.kind).toBe('meeting');
+  });
+
   test('findWithBase and findManyWithBase', async () => {
     await seedCommunications();
     const repo = newMeetingRepository(countingDb);

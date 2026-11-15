@@ -20,7 +20,11 @@ import { tryGetRequester } from '<%= tenantContextImport %>';
 import { FieldValueService } from '<%= eavFieldValueUseCaseImportDir %>/<%= eavFieldValueStem %>.service';
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 import type { <%= classNames.createDto %> } from '../dto/create-<%= entityFileStem %>.dto';
+<% if (isInheritanceChild) { -%>
+import type { <%= classNames.entity %>Flat } from '../<%= entityFileStem %>.repository';
+<% } else { -%>
 import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
+<% } -%>
 
 /**
  * EAV compound-write use case (ADR-13).
@@ -50,7 +54,7 @@ export class <%= classNames.createUseCase %> {
 
   async execute(
     dto: <%= classNames.createDto %> & { fields?: globalThis.Record<string, unknown> },
-  ): Promise<<%= classNames.entity %>> {
+  ): Promise<<%= classNames.entity %><%= isInheritanceChild ? 'Flat' : '' %>> {
 <% if (hasEmits && createEventType) { -%>
     const requester = tryGetRequester();
 <% } -%>
@@ -101,7 +105,11 @@ import { TypedEventBus } from '<%= typedEventBusImport %>';
 import { tryGetRequester } from '<%= tenantContextImport %>';
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 import type { <%= classNames.createDto %> } from '../dto/create-<%= entityFileStem %>.dto';
+<% if (isInheritanceChild) { -%>
+import type { <%= classNames.entity %>Flat } from '../<%= entityFileStem %>.repository';
+<% } else { -%>
 import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
+<% } -%>
 
 /**
  * EXTENSION POINT (EVT-7): verify payload mapping against
@@ -117,7 +125,7 @@ export class <%= classNames.createUseCase %> {
 
   async execute(
     dto: <%= classNames.createDto %>,
-  ): Promise<<%= classNames.entity %>> {
+  ): Promise<<%= classNames.entity %><%= isInheritanceChild ? 'Flat' : '' %>> {
     const requester = tryGetRequester();
     return this.db.transaction(async (tx) => {
       const entity = await this.service.create(dto, tx);
@@ -144,7 +152,11 @@ export class <%= classNames.createUseCase %> {
 import { Injectable } from '@nestjs/common';
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 import type { <%= classNames.createDto %> } from '../dto/create-<%= entityFileStem %>.dto';
+<% if (isInheritanceChild) { -%>
+import type { <%= classNames.entity %>Flat } from '../<%= entityFileStem %>.repository';
+<% } else { -%>
 import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
+<% } -%>
 
 @Injectable()
 export class <%= classNames.createUseCase %> {
@@ -152,7 +164,7 @@ export class <%= classNames.createUseCase %> {
 
   async execute(
     dto: <%= classNames.createDto %>,
-  ): Promise<<%= classNames.entity %>> {
+  ): Promise<<%= classNames.entity %><%= isInheritanceChild ? 'Flat' : '' %>> {
     return this.service.create(dto);
   }
 }

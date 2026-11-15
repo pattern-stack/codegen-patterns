@@ -26,6 +26,8 @@ type PatternId = AllowlistEntry['pattern'];
 const PATTERNS: Record<PatternId, { re: RegExp; ejsOnly: boolean }> = {
 	'inline-camel-case': { re: /\.replace\(\/_\(\[a-z\]\)\/g/g, ejsOnly: false },
 	'charat-upper-case': { re: /\.charAt\(0\)\.toUpperCase\(\)/g, ejsOnly: true },
+	'charat-lower-case': { re: /\.charAt\(0\)\.toLowerCase\(\)/g, ejsOnly: false },
+	'upper-case-replace': { re: /\.toUpperCase\(\)\.replace\(/g, ejsOnly: false },
 	'string-built-finder': { re: /`findBy\$\{|findBy<%/g, ejsOnly: false },
 	'local-case-helper': { re: /\b(?:const|let|var|function)\s+(?:camelCase|pascalCase)\b/g, ejsOnly: false },
 };
@@ -88,6 +90,15 @@ export function lint(found: Map<string, Map<PatternId, number>>, allowlist: read
 	return errors;
 }
 
+/**
+ * Sites that already exist on `origin/main`, outside #875's templates (Gate 2.5 D5 / D6). Not allowlisted — the
+ * allowlist never grows — and not fixed here: each is a named single-purpose expectation, asserted present with its
+ * exact count so it fails the moment the site is migrated, and must then be deleted. Tracked in #922.
+ */
+const KNOWN_ON_MAIN: readonly { file: string; pattern: PatternId; count: number; issue: string }[] = [
+	{ file: 'templates/entity/new/backend/entity-locals.js', pattern: 'charat-lower-case', count: 1, issue: '#922' },
+];
+
 describe('no name derivation in templates (ADR-046)', () => {
 	const files = templateFiles(join(REPO_ROOT, SCAN_ROOT));
 	const found = new Map<string, Map<PatternId, number>>();
@@ -103,7 +114,14 @@ describe('no name derivation in templates (ADR-046)', () => {
 	});
 
 	it('every inline name derivation is allowlisted, with its exact count', () => {
-		expect(lint(found, NO_NAME_DERIVATION_ALLOWLIST)).toEqual([]);
+		// The named expectations come off first; each must be present with its exact count.
+		const remaining = new Map([...found].map(([f, m]) => [f, new Map(m)] as const));
+		for (const k of KNOWN_ON_MAIN) {
+			const n = remaining.get(k.file)?.get(k.pattern) ?? 0;
+			expect({ file: k.file, pattern: k.pattern, found: n }).toEqual({ file: k.file, pattern: k.pattern, found: k.count });
+			remaining.get(k.file)!.delete(k.pattern);
+		}
+		expect(lint(remaining, NO_NAME_DERIVATION_ALLOWLIST)).toEqual([]);
 	});
 
 	it('every allowlist entry names its issue, once', () => {
@@ -125,12 +143,16 @@ describe('no-name-derivation lint — the rule itself', () => {
 			'async findBy<%= fk %>() {}',
 			'const n = `findBy${x}`;',
 			'function pascalCase(s) {}',
+			'const lower = E.charAt(0).toLowerCase() + E.slice(1);',
+			"const up = n.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase().replace(/-/g, '_');",
 		].join('\n');
 		expect(Object.fromEntries(scanSites(src, 'x.ejs.t'))).toEqual({
 			'inline-camel-case': 1,
 			'charat-upper-case': 1,
 			'string-built-finder': 2,
 			'local-case-helper': 1,
+			'charat-lower-case': 1,
+			'upper-case-replace': 1,
 		});
 		expect(scanSites(src, 'x.js').has('charat-upper-case')).toBe(false);
 	});

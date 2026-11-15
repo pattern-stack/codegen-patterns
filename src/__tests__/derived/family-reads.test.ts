@@ -54,21 +54,64 @@ describe('familyReadSurface', () => {
 describe('the derived family reads', () => {
 	const surfaces = deriveSet(baselineSet());
 
-	it('a child: findWithBase / findManyWithBase on both layers, caused by its inherits:', () => {
+	it('a child: the flat reads (findWithBase, findManyWithBase, listFlat, countFlat) on both layers, caused by its inherits:', () => {
 		for (const child of ['email', 'meeting']) {
 			const s = surfaces.get(child)!;
 			const origin = { from: 'yaml', at: { doc: { kind: 'entity', name: child }, path: ['inherits'] } };
-			const repo = s.repository.methods.filter((m) => m.kind === 'with_base');
-			expect(repo.map((m) => m.name)).toEqual(['findWithBase', 'findManyWithBase']);
-			expect(repo.map((m) => m.origin)).toEqual([origin, origin]);
-			expect(repo.map((m) => m.readOptions)).toEqual(['columns+with', 'columns+with']);
-			const svc = s.service.methods.filter((m) => m.kind === 'with_base');
-			expect(svc.map((m) => [m.name, m.delegatesTo?.method])).toEqual([
-				['findWithBase', 'findWithBase'],
-				['findManyWithBase', 'findManyWithBase'],
+			const flatKinds = ['with_base', 'list_flat', 'count_flat'];
+			const repo = s.repository.methods.filter((m) => flatKinds.includes(m.kind));
+			expect(repo.map((m) => [m.name, m.kind])).toEqual([
+				['findWithBase', 'with_base'],
+				['findManyWithBase', 'with_base'],
+				['listFlat', 'list_flat'],
+				['countFlat', 'count_flat'],
+			]);
+			expect(repo.map((m) => m.origin)).toEqual([origin, origin, origin, origin]);
+			expect(repo.map((m) => m.readOptions)).toEqual(['columns+with', 'columns+with', 'with', 'none']);
+			expect(repo.map((m) => m.returns)).toEqual(['one', 'many', 'many', 'count']);
+			// `listFlat` / `countFlat` read the BASE repository's `listKind` / `countKind` — named on the surface, not in the template.
+			expect(repo.map((m) => m.delegatesTo)).toEqual([
+				undefined,
+				undefined,
+				{ entity: 'communication', layer: 'repository', method: 'listKind' },
+				{ entity: 'communication', layer: 'repository', method: 'countKind' },
+			]);
+			const svc = s.service.methods.filter((m) => flatKinds.includes(m.kind));
+			expect(svc.map((m) => [m.name, m.kind, m.delegatesTo?.method])).toEqual([
+				['findWithBase', 'with_base', 'findWithBase'],
+				['findManyWithBase', 'with_base', 'findManyWithBase'],
+				['listFlat', 'list_flat', 'listFlat'],
+				['countFlat', 'count_flat', 'countFlat'],
 			]);
 			expect(s.repository.typedInclude).toBe(true);
 		}
+	});
+
+	it('a child\'s list use case names both roots: list / count, and listFlat / countFlat', () => {
+		for (const child of ['email', 'meeting']) {
+			const list = surfaces.get(child)!.useCases.find((u) => u.kind === 'list')!;
+			const ref = (method: string) => ({ entity: child, layer: 'service', method });
+			expect(list.calls).toEqual(ref('list'));
+			expect(list.alsoCalls).toEqual([ref('count'), ref('listFlat'), ref('countFlat')]);
+		}
+		expect(surfaces.get('communication')!.useCases.find((u) => u.kind === 'list')!.alsoCalls).toBeUndefined();
+	});
+
+	it('a delete use case records its pre-read only when the entity publishes `<entity>_deleted`', () => {
+		const matrix = RENDER_MATRIX.find((c) => c.id === 'matrix-family-every-kind-has-child')!;
+		// air_freight (a child) publishes its delete; sea_freight (a child) and shipment (the base) publish nothing
+		const entities = matrix.entities.map((d) =>
+			d.entity.name === 'air_freight' ? { ...d, emits: ['air_freight_deleted'] } : d,
+		);
+		const derived = deriveSet({ entities, junctions: [...matrix.junctions] });
+		const delete_ = (name: string) => derived.get(name)!.useCases.find((u) => u.kind === 'delete')!;
+		// a child reads the FLAT row, so a payload expression sees base fields too
+		expect(delete_('air_freight').preRead).toEqual({ entity: 'air_freight', layer: 'service', method: 'findWithBase' });
+		// no delete event: the delete makes no read first, and says so
+		expect(delete_('sea_freight').preRead).toBeUndefined();
+		expect(delete_('shipment').preRead).toBeUndefined();
+		// an entity that emits other events but not its delete has none either
+		expect(surfaces.get('contact')!.useCases.find((u) => u.kind === 'delete')!.preRead).toBeUndefined();
 	});
 
 	it('a base: the five cross-kind reads, caused by its discriminator:, naming the child kinds', () => {

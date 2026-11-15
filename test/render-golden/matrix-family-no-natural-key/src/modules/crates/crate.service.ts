@@ -15,8 +15,9 @@ import type {
 } from './crate.repository';
 import { CRATE_BASE_KEYS } from './crate.repository';
 import type { DrizzleTx } from '@shared/types/drizzle';
-import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
+import type { ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
 import type { crates, Crate } from './crate.entity';
+import type { parcels } from '../parcels/parcel.entity';
 
 @Injectable()
 export class CrateService extends WithAnalytics(
@@ -83,6 +84,19 @@ export class CrateService extends WithAnalytics(
     opts?: ReadOptions<W, C>,
   ): Promise<Array<CrateFlat<W, C>>> {
     return this.repository.findManyWithBase<W, C>(ids, opts);
+  }
+
+  /** This kind's rows, flat, filtered and sorted on the base's columns — the base's `listKind` (RFC-0006 §3.3). What the HTTP list reads. */
+  listFlat<W extends CrateInclude = CrateNoInclude>(
+    query?: ListOptions<typeof parcels>,
+    opts?: { with?: W },
+  ): Promise<Array<CrateFlat<W>>> {
+    return this.repository.listFlat<W>(query, opts);
+  }
+
+  /** How many rows `listFlat` ranges over, on the same scope. */
+  countFlat(where?: RowFilter<typeof parcels>): Promise<number> {
+    return this.repository.countFlat(where);
   }
 
   // ═══════════════════════════════════════════════════════════════════════

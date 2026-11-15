@@ -4,7 +4,7 @@ import { EmailService } from '../email.service';
 import type {
   EmailInclude,
   EmailNoInclude,
-  EmailResult,
+  EmailFlat,
 } from '../email.repository';
 
 @Injectable()
@@ -12,17 +12,15 @@ export class FindEmailByIdUseCase {
   constructor(private readonly service: EmailService) {}
 
   /**
-   * `include` is a typed include TREE, not a client string — the controller has
-   * already resolved `?include=` against the route's allowlist and rejected
-   * anything it does not name (REL-2 §5). An internal caller passes the tree
-   * directly and gets the exact nested result type back, because `TWith` is
-   * inferred at the call site.
+   * RFC-0006 §3.2, §5: a email is read FLAT — `findWithBase`, one statement, the base's columns
+   * hoisted to the root — so the base relation is never an include. `include` is a typed include TREE, not a client
+   * string: the controller already resolved `?include=` against the route's allowlist (REL-2 §5).
    */
-  async execute<TWith extends EmailInclude = EmailNoInclude>(
+  async execute<TWith extends EmailInclude & { communication?: never } = EmailNoInclude>(
     id: string,
     include?: TWith,
-  ): Promise<EmailResult<TWith>> {
-    const entity = await this.service.findById<TWith>(
+  ): Promise<EmailFlat<TWith>> {
+    const entity = await this.service.findWithBase<TWith>(
       id,
       include === undefined ? undefined : { with: include },
     );

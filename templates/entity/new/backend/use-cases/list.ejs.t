@@ -3,10 +3,32 @@ to: "<%= outputPaths.listUseCase %>"
 force: true
 ---
 <%- generatedBanner %>
-import { Injectable } from '@nestjs/common';
+<%_
+// RFC-0006 §3.2–§3.3 (S5): a child's list has two roots. By default it is BASE-rooted — `service.listFlat` is the base's
+// `listKind` — so the default sort and a sort on a base column (`created_at`, `occurred_at`) work. A sort on a CHILD
+// column, or any `where` (a child's queries name only its own columns, R7), reads through the child's own `list` and
+// `flattenBase` instead. Both are one statement.
+const _sortTable = isInheritanceChild ? familyChild.baseTable : entityNamePlural; // the table the DEFAULT root sorts on
+const _sortTimestamps = isInheritanceChild ? familyChild.baseTimestamps : hasTimestamps;
+const _E = classNames.entity;
+// The base-rooted reads, by kind: the derivation names them (`list_flat` / `count_flat`); a plain entity has neither.
+const _listFlat = apiSurface.service.methods.find((m) => m.kind === 'list_flat');
+const _countFlat = apiSurface.service.methods.find((m) => m.kind === 'count_flat');
+_%>
+import { <% if (isInheritanceChild) { %>BadRequestException, <% } %>Injectable } from '@nestjs/common';
 import { buildPage, resolveListQuery, type ListQuery, type Page } from '<%= paginationImport %>';
 import { hasColumn, type RowFilter, type SortTerm } from '<%= baseRepositoryImport %>';
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
+<% if (isInheritanceChild) { -%>
+import { <%= familyChild.baseTable %> } from '<%= familyChild.baseImportPathFromSubdir %>';
+import { <%= entityNamePlural %> } from '../<%= entityFileStem %>.entity';
+import { flattenBase } from '<%= inheritanceImport %>';
+import type {
+  <%= _E %>Flat,
+  <%= _E %>Include,
+  <%= _E %>NoInclude,
+} from '../<%= entityFileStem %>.repository';
+<% } else { -%>
 import { <%= entityNamePlural %><% if (!apiSurface.repository.typedInclude) { %>, type <%= classNames.entity %><% } %> } from '../<%= entityFileStem %>.entity';
 <% if (apiSurface.repository.typedInclude) { -%>
 import type {
@@ -15,16 +37,22 @@ import type {
   <%= classNames.entity %>Result,
 } from '../<%= entityFileStem %>.repository';
 <% } -%>
+<% } -%>
 
 /**
  * Paginated list use-case for <%= entityNamePlural %> (pagination-by-default).
  *
+<% if (isInheritanceChild) { -%>
+ * Composes the flat list read (`service.listFlat`, or `service.list` + `flattenBase` when it is child-rooted) + its
+ * count into a `Page<<%- classNames.entity %>Flat>` envelope. Defaults: page 1,
+<% } else { -%>
  * Composes `service.list({ where, limit, offset, sort })` + `service.count(where)`
  * into a `Page<<%- classNames.entity %>>` envelope. Defaults: page 1,
-<% if (hasTimestamps) { -%>
+<% } -%>
+<% if (_sortTimestamps) { -%>
  * pageSize 50 (max 200), sort `created_at desc, id desc`. `total`/`pageCount`
 <% } else { -%>
- * pageSize 50 (max 200), sort `id desc` — <%= entityNamePlural %> declares no
+ * pageSize 50 (max 200), sort `id desc` — <%= _sortTable %> declares no
  * `timestamps` behavior, so there is no `created_at` to sort by; the uuid
  * primary key is already a total order, which is what the tie-break is for.
  * `total`/`pageCount`
@@ -37,7 +65,7 @@ import type {
  * its predicates and pages through here, so search and list share one
  * envelope (#744).
  *
-<% if (hasTimestamps) { -%>
+<% if (_sortTimestamps) { -%>
  * v1 ENGINE = OFFSET. `nextCursor` is computed from the last row and emitted
  * (contract-stable), but cursor-REQUEST honoring (keyset seek) is DEFERRED:
  * `resolved.cursor` is accepted and ignored here. The keyset swap belongs in
@@ -53,7 +81,29 @@ import type {
 export class <%= classNames.listUseCase %> {
   constructor(private readonly service: <%= classNames.service %>) {}
 
-<% if (apiSurface.repository.typedInclude) { -%>
+<% if (isInheritanceChild) { -%>
+  /**
+   * RFC-0006 §3.2, §3.3, §5: a <%= entityName %> list is FLAT. `include` is the typed include tree the controller
+   * resolved against the allowlist (REL-2 §5); the base relation is never one (it is in the body).
+   *
+   * Two roots, both ONE statement (charter I4):
+   *  - BASE-rooted (default): `service.listFlat` is the base's `listKind('<%= familyChild.as %>')`, so the default
+   *    sort and a sort on a base column work. The include rides the same statement.
+   *  - CHILD-rooted: a sort on a column of this table, or any `where` (a row filter on `<%= entityNamePlural %>`; a
+   *    search names only this table's columns, R7). It reads `service.list` with the base joined in and hoists the
+   *    base's columns (`flattenBase`). A base column cannot order this root (RFC-0006 §8), so a `sort_by` that names
+   *    one together with a `where` is a 400 (`sort_not_combinable`); with no `sort_by` the order is `id desc`.
+   *
+   * The roots treat a base row with no child row differently, on purpose: the base-rooted read throws
+   * `OrphanBaseError` (a whole page fails loudly, as the corruption it is), while the child-rooted read starts at
+   * this table and never sees the row.
+   */
+  async execute<TWith extends <%= _E %>Include = <%= _E %>NoInclude>(
+    listQuery?: ListQuery,
+    listOptions: { include?: TWith; where?: RowFilter<typeof <%= entityNamePlural %>> } = {},
+  ): Promise<Page<<%= _E %>Flat<TWith>>> {
+    const { include: includeTree, where: whereClause } = listOptions;
+<% } else if (apiSurface.repository.typedInclude) { -%>
   /**
    * `include` is a typed include tree the controller already resolved against the
    * route's allowlist (REL-2 §5); an internal caller passes one directly. Every
@@ -62,19 +112,19 @@ export class <%= classNames.listUseCase %> {
    */
   async execute<TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
     listQuery?: ListQuery,
-    listOptions: { include?: TWith; where?: RowFilter<typeof <%= entityNamePlural %>> } = {},
+    listOptions: { include?: TWith; where?: RowFilter<typeof <%= _sortTable %>> } = {},
   ): Promise<Page<<%= classNames.entity %>Result<TWith>>> {
     const { include: includeTree, where: whereClause } = listOptions;
 <% } else { -%>
   async execute(
     listQuery?: ListQuery,
-    listOptions: { where?: RowFilter<typeof <%= entityNamePlural %>> } = {},
+    listOptions: { where?: RowFilter<typeof <%= _sortTable %>> } = {},
   ): Promise<Page<<%= classNames.entity %>>> {
     const { where: whereClause } = listOptions;
 <% } -%>
     const resolvedQuery = resolveListQuery(listQuery);
 
-<% if (hasTimestamps) { -%>
+<% if (_sortTimestamps) { -%>
     // Default sort: `created_at desc, id desc` (id is the stable keyset
     // tie-break). A caller `sort_by` that names a real column is honored in the
     // requested direction with the id tie-break appended; an unknown column
@@ -92,21 +142,62 @@ export class <%= classNames.listUseCase %> {
     // Expressed as COLUMN KEYS, not a rendered SQL fragment: the repository
     // renders it against whichever table handle the executing path holds, and the
     // relational query builder (the `with`-include path) aliases the root table
-    // (REL-2 §2.4). A pre-rendered fragment would name `<%= entityNamePlural %>`,
+    // (REL-2 §2.4). A pre-rendered fragment would name `<%= _sortTable %>`,
     // which is not in scope there.
     const sortColumn = resolvedQuery.sortBy.replace(
       /_([a-z])/g,
       (_m: string, c: string) => c.toUpperCase(),
     );
+<% if (isInheritanceChild) { -%>
+    // `hasColumn` — the repository's own column test (an own-key check, so `?sort_by=to_string` is unknown).
+    // A column BOTH tables carry (`id`, `kind`, the tenant column) orders this table's own read when a filter makes
+    // the read child-rooted, and the base's otherwise — it is only a base column to refuse when this table lacks it.
+    const inBase = hasColumn(<%= familyChild.baseTable %>, sortColumn);
+    const inChild = hasColumn(<%= entityNamePlural %>, sortColumn);
+    const isChildColumn = inChild && (whereClause !== undefined || !inBase);
+    const isBaseColumn = inBase && !isChildColumn;
+    const childRooted = whereClause !== undefined || isChildColumn;
+    // RFC-0006 §8: no single read filters on this table's columns and sorts on the base's. A caller who NAMES a base
+    // column with a filter is refused, not answered in another order. (A request that names no `sort_by` is not
+    // refused: it gets the child-rooted default, `id desc`.)
+    if (whereClause !== undefined && isBaseColumn && listQuery?.sort_by !== undefined) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        code: 'sort_not_combinable',
+        message: `sort_by '${resolvedQuery.sortBy}' is a column of <%= familyChild.baseName %> and cannot be combined with this filter in v1: sort on a <%= entityName %> column, or drop the filter.`,
+      });
+    }
+    const sortTerms: SortTerm[] = childRooted
+      ? isChildColumn
+        ? [
+            { column: sortColumn, direction: resolvedQuery.sortOrder },
+            { column: 'id', direction: 'desc' },
+          ]
+        : [{ column: 'id', direction: 'desc' }]
+      : isBaseColumn
+        ? [
+            { column: sortColumn, direction: resolvedQuery.sortOrder },
+            { column: 'id', direction: 'desc' },
+          ]
+<% if (_sortTimestamps) { -%>
+        : [
+            { column: 'createdAt', direction: 'desc' },
+            { column: 'id', direction: 'desc' },
+          ];
+<% } else { -%>
+        : [{ column: 'id', direction: 'desc' }];
+<% } -%>
+<% } else { -%>
     // `hasColumn` — the repository's own column test (an own-key check, so
     // `?sort_by=to_string` is unknown, not `Object.prototype.toString`).
-    const isKnownColumn = hasColumn(<%= entityNamePlural %>, sortColumn);
+    const isKnownColumn = hasColumn(<%= _sortTable %>, sortColumn);
     const sortTerms: SortTerm[] = isKnownColumn
       ? [
           { column: sortColumn, direction: resolvedQuery.sortOrder },
           { column: 'id', direction: 'desc' },
         ]
-<% if (hasTimestamps) { -%>
+<% if (_sortTimestamps) { -%>
       : [
           { column: 'createdAt', direction: 'desc' },
           { column: 'id', direction: 'desc' },
@@ -114,12 +205,13 @@ export class <%= classNames.listUseCase %> {
 <% } else { -%>
       : [{ column: 'id', direction: 'desc' }];
 <% } -%>
+<% } -%>
 
     // The ListQuery owns only pagination + sort; filtering is the caller's
     // `where` (undefined = unfiltered). The same `where` goes to both `list`
     // and `count`, so `total`/`pageCount` describe the filtered set.
 
-<% if (hasTimestamps) { -%>
+<% if (_sortTimestamps) { -%>
     // KEYSET SEAM (deferred — v1 fetches by offset). When the keyset upgrade
     // lands, branch here on `resolvedQuery.cursor`: decode it and fetch by
     // `WHERE (created_at, id) < (cursorCreatedAt, cursorId)` LIMIT pageSize,
@@ -130,6 +222,33 @@ export class <%= classNames.listUseCase %> {
     // is nothing to seek from. Offset paging is the whole story until the YAML
     // adds the `timestamps` behavior.
 <% } -%>
+<% if (isInheritanceChild) { -%>
+    if (childRooted) {
+      const [childRows, childTotal] = await Promise.all([
+        this.service.list({
+          where: whereClause,
+          limit: resolvedQuery.pageSize,
+          offset: resolvedQuery.offset,
+          sort: sortTerms,
+          // The one cast: the typed `with` of a child read cannot name the base relation (it is not an include).
+          with: { ...includeTree, <%= familyChild.relKey %>: true as const } as never,
+        }),
+        this.service.count(whereClause),
+      ]);
+      const flatChildRows = (childRows as unknown as globalThis.Array<globalThis.Record<string, unknown>>).map(
+        (row) => flattenBase(row as never, '<%= familyChild.relKey %>'),
+      ) as unknown as Array<<%= _E %>Flat<TWith>>;
+      return buildPage(flatChildRows, childTotal, resolvedQuery);
+    }
+    const [pageRows, rowTotal] = await Promise.all([
+      this.service.<%= _listFlat.name %><TWith>(
+        { limit: resolvedQuery.pageSize, offset: resolvedQuery.offset, sort: sortTerms },
+        includeTree === undefined ? undefined : { with: includeTree },
+      ),
+      this.service.<%= _countFlat.name %>(),
+    ]);
+
+<% } else { -%>
     const [pageRows, rowTotal] = await Promise.all([
 <% if (apiSurface.repository.typedInclude) { -%>
       this.service.list<TWith>({
@@ -150,6 +269,7 @@ export class <%= classNames.listUseCase %> {
       this.service.count(whereClause),
     ]);
 
+<% } -%>
     return buildPage(pageRows, rowTotal, resolvedQuery);
   }
 }

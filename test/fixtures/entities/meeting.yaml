@@ -25,3 +25,16 @@ relationships:
     type: has_many
     target: meeting_transcript
     foreign_key: meeting_id
+
+queries:
+  # Filtered search (#744) on a child: a child-rooted read of this table's own column (S5, RFC-0006 §3.2).
+  - name: search
+    filters: [link]
+    search: title
+
+api:
+  includes:
+    list:
+      max_depth: 1
+      paths:
+        - transcripts

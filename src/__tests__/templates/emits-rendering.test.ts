@@ -72,6 +72,8 @@ function base(opts: BaseOpts = {}): Record<string, unknown> {
     entity: { name: 'contact', plural: 'contacts' },
     fields: { name: { type: 'string', required: true } },
     behaviors: ['timestamps'],
+    // The derived surface records the delete pre-read from this (`preRead`); the overlay below carries the rest.
+    emits: ['contact_created', 'contact_updated', 'contact_deleted'],
   };
   if (opts.eav) definition.entity.eav = true;
   if (opts.context) definition.entity.context = opts.context;

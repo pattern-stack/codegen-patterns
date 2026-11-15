@@ -10,6 +10,8 @@
 import { describe, expect, it } from 'bun:test';
 
 import type { EntityDefinitionInput } from '../../derived/api/entity';
+import { checkDelegate } from '../../derived/api/project';
+import { baselineSet } from './_inputs';
 import { deriveProjectFromSet } from './_project';
 
 const def = (d: Record<string, unknown>): EntityDefinitionInput => d as unknown as EntityDefinitionInput;
@@ -104,5 +106,24 @@ describe('D4 — every delegate resolves on its target, emitted or inherited', (
 
 	it('W2: pattern Integrated — exactly the one warning', () => {
 		expect(d4('Integrated')).toEqual([D4_WARNING]);
+	});
+});
+
+// ── a repository-layer delegate names the repository class ─────────────────
+describe('checkDelegate names the layer it checks', () => {
+	it('a child repository method whose base repository lacks the delegate is reported against the child repository class', () => {
+		const project = deriveProjectFromSet(baselineSet());
+		const email = project.entities.email;
+		const communication = project.entities.communication;
+		const method = email.repository.methods.find((m) => m.delegatesTo?.layer === 'repository');
+		expect(method).toBeDefined();
+		const to = method!.delegatesTo!;
+		const stripped = {
+			...communication,
+			repository: { ...communication.repository, methods: communication.repository.methods.filter((m) => m.name !== to.method) },
+		};
+		const warning = checkDelegate(email, 'repository', method!, to, stripped);
+		expect(warning).toContain(`\`${email.repository.className}.${method!.name}\` calls`);
+		expect(warning).not.toContain(email.service.className);
 	});
 });

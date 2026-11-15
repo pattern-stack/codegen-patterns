@@ -1,0 +1,1453 @@
+{
+	"case": "matrix-family-every-kind-has-child",
+	"covers": "a joined-table family whose every kind has a child table — the base has no create use case, route or provider; each child has all three writes",
+	"entities": {
+		"shipment": {
+			"entity": "shipment",
+			"plural": "shipments",
+			"className": "Shipment",
+			"repository": {
+				"className": "ShipmentRepository",
+				"baseClass": "BaseRepository",
+				"typedInclude": true,
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "find_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "find_by_ids",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "list",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "count",
+						"kind": "count",
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findAllKinds",
+						"kind": "all_kinds",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "shipment"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: air, sea"
+							}
+						}
+					},
+					{
+						"name": "findKindById",
+						"kind": "kind_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							}
+						],
+						"returns": "one",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "shipment"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: air, sea"
+							}
+						}
+					},
+					{
+						"name": "listKind",
+						"kind": "list_kind",
+						"emitted": true,
+						"params": [
+							{
+								"name": "kind"
+							},
+							{
+								"name": "query"
+							},
+							{
+								"name": "childWith"
+							}
+						],
+						"returns": "many",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "shipment"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: air, sea"
+							}
+						}
+					},
+					{
+						"name": "countKind",
+						"kind": "count_kind",
+						"emitted": true,
+						"params": [
+							{
+								"name": "kind"
+							},
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "shipment"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: air, sea"
+							}
+						}
+					},
+					{
+						"name": "findOrphans",
+						"kind": "orphans",
+						"emitted": true,
+						"params": [
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "shipment"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: air, sea"
+							}
+						}
+					},
+					{
+						"name": "update",
+						"kind": "kind_guard",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "input"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "one",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "shipment"
+								},
+								"path": [
+									"discriminator"
+								]
+							}
+						}
+					},
+					{
+						"name": "create",
+						"kind": "create_guard",
+						"emitted": true,
+						"params": [
+							{
+								"name": "input"
+							},
+							{
+								"name": "tx"
+							},
+							{
+								"name": "via"
+							}
+						],
+						"returns": "one",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "shipment"
+								},
+								"path": [
+									"discriminator"
+								]
+							}
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "upsertMany",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"service": {
+				"className": "ShipmentService",
+				"baseClass": "BaseService",
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "shipment",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "shipment",
+							"layer": "repository",
+							"method": "findByIds"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "listOptions"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "shipment",
+							"layer": "repository",
+							"method": "list"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findAllKinds",
+						"kind": "all_kinds",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "shipment",
+							"layer": "repository",
+							"method": "findAllKinds"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "shipment"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: air, sea"
+							}
+						}
+					},
+					{
+						"name": "findKindById",
+						"kind": "kind_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "shipment",
+							"layer": "repository",
+							"method": "findKindById"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "shipment"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: air, sea"
+							}
+						}
+					},
+					{
+						"name": "listKind",
+						"kind": "list_kind",
+						"emitted": true,
+						"params": [
+							{
+								"name": "kind"
+							},
+							{
+								"name": "query"
+							},
+							{
+								"name": "childWith"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "shipment",
+							"layer": "repository",
+							"method": "listKind"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "shipment"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: air, sea"
+							}
+						}
+					},
+					{
+						"name": "countKind",
+						"kind": "count_kind",
+						"emitted": true,
+						"params": [
+							{
+								"name": "kind"
+							},
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"delegatesTo": {
+							"entity": "shipment",
+							"layer": "repository",
+							"method": "countKind"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "shipment"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: air, sea"
+							}
+						}
+					},
+					{
+						"name": "findOrphans",
+						"kind": "orphans",
+						"emitted": true,
+						"params": [
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "shipment",
+							"layer": "repository",
+							"method": "findOrphans"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "shipment"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: air, sea"
+							}
+						}
+					},
+					{
+						"name": "count",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"useCases": [
+				{
+					"className": "FindShipmentByIdUseCase",
+					"kind": "find_by_id",
+					"calls": {
+						"entity": "shipment",
+						"layer": "service",
+						"method": "findById"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "ListShipmentsUseCase",
+					"kind": "list",
+					"calls": {
+						"entity": "shipment",
+						"layer": "service",
+						"method": "list"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "UpdateShipmentUseCase",
+					"kind": "update",
+					"calls": {
+						"entity": "shipment",
+						"layer": "service",
+						"method": "update"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "DeleteShipmentUseCase",
+					"kind": "delete",
+					"calls": {
+						"entity": "shipment",
+						"layer": "service",
+						"method": "delete"
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"http": {
+				"enabled": true,
+				"routes": [
+					{
+						"verb": "GET",
+						"path": "/shipments",
+						"controller": "ShipmentController",
+						"handler": "getAll",
+						"operationId": "listShipments",
+						"useCase": "ListShipmentsUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "GET",
+						"path": "/shipments/:id",
+						"controller": "ShipmentController",
+						"handler": "getById",
+						"operationId": "findShipmentById",
+						"useCase": "FindShipmentByIdUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "PATCH",
+						"path": "/shipments/:id",
+						"controller": "ShipmentController",
+						"handler": "update",
+						"operationId": "updateShipment",
+						"useCase": "UpdateShipmentUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "DELETE",
+						"path": "/shipments/:id",
+						"controller": "ShipmentController",
+						"handler": "remove",
+						"operationId": "deleteShipment",
+						"useCase": "DeleteShipmentUseCase",
+						"origin": {
+							"from": "base"
+						}
+					}
+				],
+				"includeRoutes": [],
+				"includesConst": "SHIPMENTS_API_INCLUDES"
+			},
+			"createDisabledBy": {
+				"doc": {
+					"kind": "entity",
+					"name": "shipment"
+				},
+				"path": [
+					"discriminator"
+				],
+				"note": "every kind has a child table: air, sea"
+			}
+		},
+		"air_freight": {
+			"entity": "air_freight",
+			"plural": "air_freights",
+			"className": "AirFreight",
+			"repository": {
+				"className": "AirFreightRepository",
+				"baseClass": "BaseRepository",
+				"typedInclude": true,
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "find_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "find_by_ids",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "list",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "count",
+						"kind": "count",
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findWithBase",
+						"kind": "with_base",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "air_freight"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "findManyWithBase",
+						"kind": "with_base",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "air_freight"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "listFlat",
+						"kind": "list_flat",
+						"delegatesTo": {
+							"entity": "shipment",
+							"layer": "repository",
+							"method": "listKind"
+						},
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "with",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "air_freight"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "countFlat",
+						"kind": "count_flat",
+						"delegatesTo": {
+							"entity": "shipment",
+							"layer": "repository",
+							"method": "countKind"
+						},
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "air_freight"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "create",
+						"kind": "pair_create",
+						"emitted": true,
+						"params": [
+							{
+								"name": "input"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "one",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "air_freight"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "update",
+						"kind": "pair_update",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "patch"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "one",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "air_freight"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "pair_delete",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "none",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "air_freight"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "upsertMany",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"service": {
+				"className": "AirFreightService",
+				"baseClass": "BaseService",
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "air_freight",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "air_freight",
+							"layer": "repository",
+							"method": "findByIds"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "listOptions"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "air_freight",
+							"layer": "repository",
+							"method": "list"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findWithBase",
+						"kind": "with_base",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "air_freight",
+							"layer": "repository",
+							"method": "findWithBase"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "air_freight"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "findManyWithBase",
+						"kind": "with_base",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "air_freight",
+							"layer": "repository",
+							"method": "findManyWithBase"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "air_freight"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "listFlat",
+						"kind": "list_flat",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "air_freight",
+							"layer": "repository",
+							"method": "listFlat"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "air_freight"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "countFlat",
+						"kind": "count_flat",
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"delegatesTo": {
+							"entity": "air_freight",
+							"layer": "repository",
+							"method": "countFlat"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "air_freight"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "create",
+						"kind": "pair_create",
+						"emitted": true,
+						"params": [
+							{
+								"name": "input"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "air_freight",
+							"layer": "repository",
+							"method": "create"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "air_freight"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "update",
+						"kind": "pair_update",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "patch"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "air_freight",
+							"layer": "repository",
+							"method": "update"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "air_freight"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "pair_delete",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "none",
+						"delegatesTo": {
+							"entity": "air_freight",
+							"layer": "repository",
+							"method": "delete"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "air_freight"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "count",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"useCases": [
+				{
+					"className": "FindAirFreightByIdUseCase",
+					"kind": "find_by_id",
+					"calls": {
+						"entity": "air_freight",
+						"layer": "service",
+						"method": "findWithBase"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "ListAirFreightsUseCase",
+					"kind": "list",
+					"calls": {
+						"entity": "air_freight",
+						"layer": "service",
+						"method": "list"
+					},
+					"alsoCalls": [
+						{
+							"entity": "air_freight",
+							"layer": "service",
+							"method": "count"
+						},
+						{
+							"entity": "air_freight",
+							"layer": "service",
+							"method": "listFlat"
+						},
+						{
+							"entity": "air_freight",
+							"layer": "service",
+							"method": "countFlat"
+						}
+					],
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "CreateAirFreightUseCase",
+					"kind": "create",
+					"calls": {
+						"entity": "air_freight",
+						"layer": "service",
+						"method": "create"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "UpdateAirFreightUseCase",
+					"kind": "update",
+					"calls": {
+						"entity": "air_freight",
+						"layer": "service",
+						"method": "update"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "DeleteAirFreightUseCase",
+					"kind": "delete",
+					"calls": {
+						"entity": "air_freight",
+						"layer": "service",
+						"method": "delete"
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"http": {
+				"enabled": true,
+				"routes": [
+					{
+						"verb": "GET",
+						"path": "/air_freights",
+						"controller": "AirFreightController",
+						"handler": "getAll",
+						"operationId": "listAirFreights",
+						"useCase": "ListAirFreightsUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "GET",
+						"path": "/air_freights/:id",
+						"controller": "AirFreightController",
+						"handler": "getById",
+						"operationId": "findAirFreightById",
+						"useCase": "FindAirFreightByIdUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "POST",
+						"path": "/air_freights",
+						"controller": "AirFreightController",
+						"handler": "create",
+						"operationId": "createAirFreight",
+						"useCase": "CreateAirFreightUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "PATCH",
+						"path": "/air_freights/:id",
+						"controller": "AirFreightController",
+						"handler": "update",
+						"operationId": "updateAirFreight",
+						"useCase": "UpdateAirFreightUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "DELETE",
+						"path": "/air_freights/:id",
+						"controller": "AirFreightController",
+						"handler": "remove",
+						"operationId": "deleteAirFreight",
+						"useCase": "DeleteAirFreightUseCase",
+						"origin": {
+							"from": "base"
+						}
+					}
+				],
+				"includeRoutes": [],
+				"includesConst": "AIR_FREIGHTS_API_INCLUDES"
+			}
+		}
+	}
+}

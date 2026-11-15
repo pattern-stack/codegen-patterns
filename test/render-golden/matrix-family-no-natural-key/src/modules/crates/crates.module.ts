@@ -13,6 +13,9 @@ import { UpdateCrateSchema } from './dto/update-crate.dto';
 import { CrateOutputSchema } from './dto/crate-output.dto';
 import { FindCrateByIdUseCase } from './use-cases/find-crate-by-id.use-case';
 import { ListCratesUseCase } from './use-cases/list-crates.use-case';
+import { CreateCrateUseCase } from './use-cases/create-crate.use-case';
+import { UpdateCrateUseCase } from './use-cases/update-crate.use-case';
+import { DeleteCrateUseCase } from './use-cases/delete-crate.use-case';
 
 @Module({
   imports: [
@@ -27,6 +30,9 @@ import { ListCratesUseCase } from './use-cases/list-crates.use-case';
     CrateService,
     FindCrateByIdUseCase,
     ListCratesUseCase,
+    CreateCrateUseCase,
+    UpdateCrateUseCase,
+    DeleteCrateUseCase,
   ],
   // ADR-002 (revised): the service is the public API; the repository is ALSO
   // exported so sibling modules that compose this entity cross-module (junction

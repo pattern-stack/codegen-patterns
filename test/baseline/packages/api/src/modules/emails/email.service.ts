@@ -15,8 +15,9 @@ import type {
 } from './email.repository';
 import { EMAIL_BASE_KEYS } from './email.repository';
 import type { DrizzleTx } from '@shared/types/drizzle';
-import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
+import type { ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
 import type { emails, Email } from './email.entity';
+import type { communications } from '../communications/communication.entity';
 import { EmailThreadRepository } from '../email-threads/email-thread.repository';
 import type { EmailThread } from '../email-threads/email-thread.entity';
 
@@ -86,6 +87,19 @@ export class EmailService extends WithAnalytics(
     opts?: ReadOptions<W, C>,
   ): Promise<Array<EmailFlat<W, C>>> {
     return this.repository.findManyWithBase<W, C>(ids, opts);
+  }
+
+  /** This kind's rows, flat, filtered and sorted on the base's columns — the base's `listKind` (RFC-0006 §3.3). What the HTTP list reads. */
+  listFlat<W extends EmailInclude = EmailNoInclude>(
+    query?: ListOptions<typeof communications>,
+    opts?: { with?: W },
+  ): Promise<Array<EmailFlat<W>>> {
+    return this.repository.listFlat<W>(query, opts);
+  }
+
+  /** How many rows `listFlat` ranges over, on the same scope. */
+  countFlat(where?: RowFilter<typeof communications>): Promise<number> {
+    return this.repository.countFlat(where);
   }
 
   // ═══════════════════════════════════════════════════════════════════════

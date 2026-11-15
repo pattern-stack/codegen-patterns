@@ -209,6 +209,26 @@ const crate = def({
 	fields: { label: { type: 'string', required: true } },
 });
 
+// ── A family whose every kind has a child table (RFC-0006 §4.1, S5): the base has no create of its own ──
+const shipment = def({
+	entity: { name: 'shipment', plural: 'shipments' },
+	discriminator: 'kind',
+	fields: {
+		kind: { type: 'enum', choices: ['air', 'sea'], required: true },
+		weight: { type: 'integer', required: true },
+	},
+});
+const airFreight = def({
+	entity: { name: 'air_freight', plural: 'air_freights' },
+	inherits: { base: 'shipment', as: 'air' },
+	fields: { flight: { type: 'string', required: true } },
+});
+const seaFreight = def({
+	entity: { name: 'sea_freight', plural: 'sea_freights' },
+	inherits: { base: 'shipment', as: 'sea' },
+	fields: { vessel: { type: 'string', required: true } },
+});
+
 export const RENDER_MATRIX: readonly MatrixCase[] = [
 	{
 		id: 'matrix-eav',
@@ -276,6 +296,14 @@ export const RENDER_MATRIX: readonly MatrixCase[] = [
 		covers: 'a joined-table family whose base has no `natural_key:` — the pair write and the kind guards, and no upsert',
 		subjects: ['parcel', 'crate'],
 		entities: [parcel, crate],
+		junctions: [],
+	},
+	{
+		id: 'matrix-family-every-kind-has-child',
+		covers:
+			'a joined-table family whose every kind has a child table — the base has no create use case, route or provider; each child has all three writes',
+		subjects: ['shipment', 'air_freight'],
+		entities: [shipment, airFreight, seaFreight],
 		junctions: [],
 	},
 	{

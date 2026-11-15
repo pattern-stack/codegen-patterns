@@ -148,7 +148,10 @@ describe('backend search templates — use-case rendering', () => {
     expect(output).toContain(`import type { ListQuery, Page } from '${locals.paginationImport}';`);
     expect(output).not.toContain('@shared/http/pagination');
     expect(output).toContain('private readonly listUseCase: ListOpportunitiesUseCase');
-    expect(output).toContain('return this.listUseCase.execute(searchInput, { where: rowFilter });');
+    // A where only when a declared filter is set: an always-defined closure would read as "filtered" to a child's list.
+    expect(output).toContain('return this.listUseCase.execute(searchInput, hasFilter ? { where: rowFilter } : {});');
+    expect(output).toContain('Boolean(searchInput.search),');
+    expect(output).toContain('searchInput.isClosed !== undefined,');
   });
 
   it('emits an ilike guard for the search field when declared', () => {

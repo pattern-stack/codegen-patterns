@@ -58,7 +58,7 @@ export class ProjectController {
       return resolveAllowedInclude(raw, allow);
     } catch (err: unknown) {
       if (err instanceof IncludeNotAllowedError) {
-        throw new BadRequestException({ code: err.code, path: err.path, message: err.message });
+        throw new BadRequestException({ statusCode: 400, error: 'Bad Request', code: err.code, path: err.path, message: err.message });
       }
       throw err;
     }
