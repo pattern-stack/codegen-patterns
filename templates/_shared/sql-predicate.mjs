@@ -1,7 +1,7 @@
 /**
  * Raw-SQL predicate renderer for `unique_indexes[].where` (#784).
  *
- * `renderSqlPredicate(predicate, columns)` returns the body of a
+ * `renderSqlPredicate(predicate, columns, tableParam)` returns the body of a
  * sql`...` template literal. Unquoted words that name a column of the table are
  * rewritten to `${<tableParam>.<prop>}` so drizzle-kit quotes them; everything else is
  * copied verbatim. Dependency-free so other raw-SQL readers (CHECK

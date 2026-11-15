@@ -1,6 +1,6 @@
 # RFC-0006 §13.1 — the base. Tenant-scoped (declared NOT NULL tenant column, R10),
 # `timestamps` on the base only (R5), no soft_delete: the tenant-only scope path.
-# `message` is a base-only kind (no child). Loaded by unit tests, never generated from.
+# `message` is a base-only kind (no child).
 
 entity:
   name: communication

@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import pluralizePkg from 'pluralize';
 import {
+  entityLookupFrom,
   entityModuleNaming,
   relativeModuleDir,
 } from '../../../_shared/entity-naming.mjs';
@@ -1101,8 +1102,9 @@ export function assertDistinctConstraints(tableConstraints, entityName) {
   const colSets = new Map();
   for (const c of tableConstraints) {
     // Two names that differ only after byte 63 are one name to Postgres: a silent collision (or a
-    // constraint the author cannot find by the name they read). Every emitted index, unique, FK and
-    // CHECK passes through here.
+    // constraint the author cannot find by the name they read). Only the names the entity table's extra-config
+    // callback declares pass through here; a single-column `.references()` FK is named by Drizzle and a
+    // junction / relationship table never calls this (a known gap, filed for a decision).
     if (Buffer.byteLength(c.name) > PG_IDENTIFIER_MAX_BYTES) {
       throw new Error(
         `[codegen] '${entityName}': the name '${c.name}' (${c.source}) is ${Buffer.byteLength(c.name)} bytes; ` +
@@ -2055,7 +2057,8 @@ export function buildBackendLocals(definition, baseLocals) {
   const inheritance = inheritanceFor({
     entityName,
     definition,
-    lookup: entityLookup,
+    // Locals built by hand (a unit test) carry no lookup: they have no cross-entity YAML to read.
+    lookup: entityLookup ?? entityLookupFrom([]),
     ownNaming,
     modulesDir,
     tenancyColumn: projectTenancyColumn,

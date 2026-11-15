@@ -127,7 +127,13 @@ function targetColumnField(targetDef, targetName, column, relName, entityName) {
  */
 export function matchReferrers(lookup, targetName) {
   const out = [];
-  for (const def of lookup?.definitions ? lookup.definitions() : []) {
+  if (!lookup?.definitions) {
+    throw new Error(
+      `[codegen] a \`match:\` referrer scan for '${targetName}' needs an entity lookup (none was supplied); ` +
+        `a hand-built local set passes \`entityLookupFrom([])\`.`,
+    );
+  }
+  for (const def of lookup.definitions()) {
     for (const [relName, rel] of Object.entries(def.relationships ?? {})) {
       if (rel?.type !== 'belongs_to' || rel.target !== targetName) continue;
       const pairs = matchPairsOf(rel);
@@ -232,8 +238,9 @@ export function inheritanceFor({
  * relationships (RFC-0006 §2.4).
  *
  * `existing` are the columns the table already emits under that name (its own
- * discriminator for M2's exception, or the child's carried kind / tenant): a
- * match on one of those derives nothing, and the FK uses the declared column.
+ * discriminator and declared fields — M2's exception): a match on one of those derives nothing,
+ * and the FK uses the declared column. (A match on a child's carried kind / tenant is refused by M2,
+ * so it never reaches here; the set is a defensive superset.)
  * Two relationships matching one local column share ONE derived column (M3).
  * `nullableByRel` is each relationship's resolved FK nullability (`processBelongsTo`):
  * the derived column is NOT NULL unless EVERY relationship matching it is nullable.

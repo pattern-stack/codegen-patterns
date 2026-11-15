@@ -1140,7 +1140,7 @@ names or fields from any host application (this repository is public).
 | `communication_part` | Second base, **with `soft_delete`**: the `EXISTS` scope path. `kind` is `choices_of: communication.kind` with `match: { kind: kind }` to `communication` (§2.4 case 1), natural key `(communication_id, sequence)`. |
 | `transcript_communication_part`, `email_communication_part` | Its children. The second has a typed link to `email`. |
 | `communication_participant_role`, `communication_participant` | `choices_of:` and two `match:` relationships on one column. |
-| `communication_note` | A `match:` whose every FK is nullable: the derived column is nullable and the entity carries the NULL-together CHECK. |
+| `communication_note` | A `match:` whose every FK is nullable: the derived column is nullable and the entity carries a CHECK per FK, `<fk> IS NULL OR <derived> IS NOT NULL` (not NULL-together). |
 
 Where they live, and when:
 
@@ -1154,7 +1154,7 @@ Where they live, and when:
 
 The harness sets are separate directories by design. Keep the copies field-identical.
 `src/__tests__/fixtures/inheritance-fixtures-agree.test.ts` parses all four locations and fails when a shared
-entity differs (it normalises `tenant_scoped` away, the one difference the smoke needs). The fixture family's
+entity differs (it compares `tenant_scoped` as the column it resolves to under each location's own `tenancy.column`, so only the spelling may differ, never whether the entity is scoped). The fixture family's
 plain target entity is `party` (relationship `party`, column `party_id`), not `person`: the baseline set already has
 a different `person`.
 
@@ -1239,7 +1239,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   barrels (`schema.ts`, `modules.ts`) and the relations manifest read the whole directory, so refusing only the
   family's own files would still emit exports and scopes for modules that were never written. A cross-entity
   violation (R1–R10, M1–M5) is a run-level rejection for the same reason. `natural_key:` alone is accepted: no emitter reads the key, and
-  `src/__tests__/cli/inheritance-refusal.test.ts` asserts the generated tree is byte-identical with and without
+  `src/__tests__/cli/inheritance-ddl.test.ts` asserts the generated tree is byte-identical with and without
   it.
 - **`checks:`** is not a key (OQ-11). The schema is `.strict()`, so writing it is an unknown-key error.
 - **The editor JSON schema.** `src/schema/generate-json-schema.ts` is a hand-kept mirror of the entity schema (it
@@ -1270,7 +1270,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   SQL and asserts the constraints (A4, A5's rejections).
 - Gates: `just test-baseline` (the snapshot diff is new modules and barrel lines only; the #680 expectation is
   untouched), `just test-smoke`, `just test-integration`.
-- Closes: A2 (tables), A3, A4, A5.
+- Closes: A2 (tables), A3, A4, A5 (rejections).
 
 **S2 as built (2026-11-13).** What the build settled, beyond the plan above:
 
@@ -1296,7 +1296,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
 - **S1's generation refusal is gone** (`unemittedInheritanceKeys`, `notGeneratedYetMessage`). A cross-entity rule
   violation (R1-R10, M1-M5) stays a run-level rejection.
 - **Names.** Constraint names: `<table>_<base>_<discriminator column>_fk`, `<table>_<base>_tenant_fk`,
-  `<table>_<discriminator column>_check`, `<table>_<relationship>_match_fk`, `<table>_id_<cols>_uniq`. All use the
+  `<table>_<discriminator column>_check`, `<table>_<relationship>_match_fk`, `<table>_<relationship>_match_check` (an all-nullable `match:`), `<table>_id_<cols>_uniq`. All use the
   SQL table name. A name over Postgres's 63 bytes is a generation error (Postgres would truncate it silently and
   two long names could collide).
 - **A child's columns** come right after `id`: the kind (the base's `pgEnum`, imported, `.$type<'<as>'>()`), then
@@ -1309,7 +1309,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   is NOT NULL unless the FK resolves nullable, and is emitted once per local name (M3). It is not a field, so it is
   absent from the create and update DTOs and from the entity's own `processedFields`; it is in the table type.
   M2's exception derives nothing and the FK uses the declared discriminator column.
-- **The extra-config callback parameter is `tCols` for every table and junction**, from one constant
+- **The extra-config callback parameter is `tCols` for every entity table and junction**, from one constant
   (`templates/_shared/table-callback.mjs`) that every builder reads, `renderSqlPredicate` included. A composite FK
   reads the other table's export inside the callback, and the emitted-name hygiene rule (#813) forbids a
   plural-shaped binding in such a function. (The first S2 build rewrote `t.` to `tCols.` in finished text for the
@@ -1318,11 +1318,16 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   importing only `drizzle-orm/pg-core`. The entity file imports and re-exports them; every cross-entity enum
   import (a child's `kind`, `choices_of:`, a `match:` column) points at the owner's leaf module. Junction and
   relationship tables keep theirs inline: nothing imports them.
-- **A name over 63 bytes is a generation error for every constraint and index**, not only S2's: the check is in
-  `assertDistinctConstraints` (C5), and the message names `entity.table:` (TABLE-0) as the way out.
+- **A name over 63 bytes is a generation error for every name an entity table's extra-config callback declares**
+  (index, unique, composite FK, CHECK), not only S2's: the check is in `assertDistinctConstraints` (C5), and the
+  message names `entity.table:` (TABLE-0) as the way out. Not covered: the names Drizzle derives for a single-column
+  `.references()` FK, `pgEnum` type names, and junction / relationship tables. Closing that gap changes names or
+  fails generation for existing long FK names, so it waits for a decision.
 - **`match:` shorthand and family discovery have one owner.** `matchPairsOf` and `inheritanceCounterpartNames` are in
-  `src/schema/inheritance.ts`, next to `inheritsOf`, and the schema, the parsed model, the validator and the
-  templates all read them. `lookup.definitions()` throws on a lookup that holds a block but no document.
+  `src/schema/inheritance.ts`, next to `inheritsOf`, `matchPairsOf` is read by the parsed model, the validator and the
+  templates (whose reverse walk, `matchReferrers`, is separate); `inheritanceCounterpartNames` only by the
+  validator. Both lookup constructors store a document for every block (`entityLookupFrom` wraps a bare block as
+  `{ entity: block }`), and `matchReferrers` throws when no lookup is supplied instead of answering "no referrers".
 - **Imports.** A table is imported from its entity file and an enum from its owner's `.enums` leaf; the two are never
   one statement, and an enum is never imported from an entity file (§2.1).
 - **No writes for a child.** The derivation lists no write use case for any child: no create, update or delete use case,
@@ -1348,7 +1353,8 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   `generate.writes`, so a child would get mutations aimed at routes that do not exist until S4/S5. A table with a derived
   `match:` column cannot be created through its generated `create` until S4: the column is NOT NULL, absent from
   the DTO, and filled by the repository's scalar subquery, which is A5's "the matched column is filled by the
-  insert" and lands in S4. S2's integration test covers A5's two rejections and the derived column's NOT NULL.
+  insert" and lands in S4. The column is absent from the output DTO too (§2.4 calls it read-only in the output; no slice owns that yet — an open
+  decision). S2's integration test covers A5's two rejections and the derived column's NOT NULL.
 - **Gates.** `test/scaffold/tests/inheritance-ddl.test.ts` asserts by SQLSTATE and constraint name, with a
   succeeding control for each rejection. A15, first half: with the kind FK left out of the template, the A4 cases
   (insert under another kind, update of the base kind) and the part-over-another-kind case went red; restored.
@@ -1382,7 +1388,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   child. Record the result in this RFC.
 - Adds: `test/scaffold/tests/inheritance-writes.test.ts`.
 - Gates: `just test-unit`, `just test-baseline`, `just test-smoke`, `just test-integration`.
-- Closes: A6, A7, A11.
+- Closes: A6, A7, A11, and the rest of A5 (the insert fills the matched column).
 
 **S5 — DTOs, use cases, controllers.**
 
@@ -1400,7 +1406,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   helper); the frontend smoke fixtures and `test/smoke/fixtures-frontend/usage/graph-usage.ts`; the golden
   snapshots under `test/frontend-graph-golden/`; `tools/studio/src/inspector/relationship-kinds.ts` and
   `tools/studio/src/graph/edge-kinds.ts` (one row each, colours as `{ light, dark }`); `CLAUDE.md`;
-  `consumer-skills/entities/yaml-reference.md` and `SKILL.md`; this RFC's status and any detail the build changed.
+  `consumer-skills/entities/yaml-reference.md` and `SKILL.md`; this RFC's status and any detail the build changed. S6's docs also cover three generator-wide changes S2 made that are not inheritance-specific: the `<entity>.enums.ts` leaf module, the `tCols` callback parameter, and the C5 name-length check; and `.claude/skills/codegen/SKILL.md`'s "every generated FK callback is `.references(…)`" (a `match:` `belongs_to` emits a composite `foreignKey(...)`).
 - Must not touch: the backend templates.
 - Gates: `just test-smoke-frontend`, `just test-studio`, `just test-all`.
 - Closes: A12, A13, A14, A15, A16.

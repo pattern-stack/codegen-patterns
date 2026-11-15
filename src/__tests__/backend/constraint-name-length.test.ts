@@ -1,10 +1,11 @@
 /**
- * C5 — every emitted index / unique / FK / CHECK name is at most 63 bytes.
+ * C5 — every name an entity table's extra-config callback declares (index, unique, composite FK, CHECK) is at most 63 bytes.
  *
  * Postgres keeps 63 bytes of an identifier and truncates the rest without a
  * word, so two names that differ only after byte 63 are one constraint to the
- * database. Every constraint passes through `assertDistinctConstraints`, so the
- * rule is stated once, there — including the names that predate RFC-0006.
+ * database. Those names pass through `assertDistinctConstraints`, so the
+ * rule is stated once, there. NOT covered: the names Drizzle derives for a single-column `.references()` FK,
+ * pgEnum type names, and junction / relationship tables.
  */
 
 import { describe, expect, it } from 'bun:test';

@@ -9,6 +9,7 @@ import {
 } from '../../../templates/entity/new/backend/entity-locals.js';
 import { resolveImpliedBehaviors } from '../../patterns/implied-behaviors';
 import { PROJECT_CONFIG_LOCALS, withEntities } from './_entity-lookup';
+import { entityLookupFrom } from '../../../templates/_shared/entity-naming.mjs';
 
 // Minimal base locals (the real version has many more fields, but we only need
 // the shape to test the extension itself). `runtimeMode: 'vendored'` keeps the
@@ -1163,8 +1164,7 @@ describe('library capability configs (CAP-3, ADR-041.1)', () => {
   };
 
   // What prompt.js passes: other entities' own `entity:` blocks, by name.
-  const lookupOf = (...blocks: Array<Record<string, unknown>>) => (name: string) =>
-    blocks.find((b) => b.name === name) ?? null;
+  const lookupOf = (...blocks: Array<Record<string, unknown>>) => entityLookupFrom(blocks as never);
   const withLookup = (...blocks: Array<Record<string, unknown>>) => ({
     ...EMPTY_BASE_LOCALS,
     entityLookup: lookupOf(...blocks),

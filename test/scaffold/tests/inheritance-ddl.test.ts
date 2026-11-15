@@ -4,7 +4,8 @@
  *
  * Rows go in through raw SQL, bypassing the repository: the subject is the
  * constraint, and the repository's pair write is S4. Every rejection is
- * asserted by SQLSTATE AND by constraint name, read from `(err.cause ?? err)`,
+ * asserted by SQLSTATE AND by constraint name, read from `(err.cause ?? err)` (one exception: where either of
+ * two composite FKs can fire first, the constraint must be one of the two names),
  * so a case is tied to the emitted constraint and not to some other one that
  * happens to fire first. Each rejection also has a control that succeeds, so a
  * constraint cannot "pass" by the insert being malformed.

@@ -83,10 +83,9 @@ describe('the RFC-0006 fixture family agrees across harness directories', () => 
 	for (const name of family) {
 		it(`${name} is identical wherever it appears`, () => {
 			const copies = byEntity.get(name)!;
-			const [firstLocation, first] = [...copies.entries()][0]!;
+			const [, first] = [...copies.entries()][0]!;
 			for (const [location, def] of copies) {
 				expect({ location, def }).toEqual({ location, def: first });
-				void firstLocation;
 			}
 		});
 	}

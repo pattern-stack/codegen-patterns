@@ -64,26 +64,15 @@ function makeLookup(load, where) {
    * The WHOLE YAML document of `name` (its `fields:`, `relationships:`,
    * `inherits:` …), not just the `entity:` block. Inheritance (RFC-0006) is the
    * reader: a child's table is rendered from its base's document, a target's
-   * from its `match:` referrers'. `null` when the lookup was built from
-   * `entity:` blocks alone (`entityLookupFrom` without `definitions`).
+   * from its `match:` referrers'. `null` only for a name the lookup does not hold; a
+   * block with no document of its own (`entityLookupFrom` without `definitions`) is `{ entity: block }`.
    */
   lookup.definition = (name) => get().defs.get(name) ?? null;
   /**
-   * Every document, in directory-walk order (see {@link lookup.definition}).
-   * Strict: a lookup in which some entity has a block but no document would answer
-   * "no referrers" for an entity it simply could not read, so it throws instead.
+   * Every document, in directory-walk order (see {@link lookup.definition}). Both constructors store a
+   * document for every block, so this is the whole entity set.
    */
-  lookup.definitions = () => {
-    const { byName, defs } = get();
-    if (defs.size < byName.size) {
-      const missing = [...byName.keys()].filter((n) => !defs.has(n));
-      throw new Error(
-        `[codegen] the entity lookup holds the entity: block but not the YAML document of ${missing.join(', ')}; ` +
-          `a cross-entity read (inheritance, match:) cannot run over it.`,
-      );
-    }
-    return [...defs.values()];
-  };
+  lookup.definitions = () => [...get().defs.values()];
   /** Why `name` did not resolve: the directory searched and the file expected. */
   lookup.missingEntity = (name) =>
     where.dir
