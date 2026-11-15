@@ -24,9 +24,6 @@ _%>
 import { Inject, Module,<% if (junctionFanOut.length > 0 || repositoryDepModules.some((d) => d.forwardRef)) { %> forwardRef,<% } %> type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '<%= openApiImport %>';
 import { DatabaseModule } from '@shared/database/database.module';
-<%_ if (familyChild) { _%>
-import { <%= familyChild.baseModuleClass %> } from '<%= familyChild.baseModuleImportPath %>';
-<%_ } _%>
 <%_ /* ADR-002: the home module of each composed entity (belongs_to + has_many targets, deduped) exports its repository */ _%>
 <%_ repositoryDepModules.forEach(dep => { _%>
 import { <%= dep.moduleClass %> } from '<%= dep.importPath %>';
@@ -75,11 +72,10 @@ import { <%= classNames.searchController %> } from './<%= entityFileStem %>-sear
 @Module({
   imports: [
     DatabaseModule,
-<%_ if (familyChild) { _%>
-    // A <%= entityName %> is a kind of <%= familyChild.baseName %>: its repository injects the base's, which that module exports.
-    <%= familyChild.baseModuleClass %>,
-<%_ } _%>
 <%_ repositoryDepModules.forEach(dep => { _%>
+<%_ if (dep.inherits) { _%>
+    // A <%= entityName %> is a kind of <%= dep.entity %>: its repository injects the base's, which that module exports.
+<%_ } _%>
 <%_ if (dep.forwardRef) { _%>
     forwardRef(() => <%= dep.moduleClass %>),
 <%_ } else { _%>

@@ -129,7 +129,7 @@
 			},
 			{
 				"name": "create",
-				"kind": "pair_write",
+				"kind": "pair_create",
 				"emitted": true,
 				"params": [
 					{
@@ -156,7 +156,7 @@
 			},
 			{
 				"name": "update",
-				"kind": "pair_write",
+				"kind": "pair_update",
 				"emitted": true,
 				"params": [
 					{
@@ -186,7 +186,7 @@
 			},
 			{
 				"name": "delete",
-				"kind": "pair_write",
+				"kind": "pair_delete",
 				"emitted": true,
 				"params": [
 					{
@@ -213,7 +213,7 @@
 			},
 			{
 				"name": "upsertByNaturalKey",
-				"kind": "upsert",
+				"kind": "upsert_through_base",
 				"emitted": true,
 				"params": [
 					{
@@ -398,7 +398,7 @@
 			},
 			{
 				"name": "create",
-				"kind": "pair_write",
+				"kind": "pair_create",
 				"emitted": true,
 				"params": [
 					{
@@ -429,7 +429,7 @@
 			},
 			{
 				"name": "update",
-				"kind": "pair_write",
+				"kind": "pair_update",
 				"emitted": true,
 				"params": [
 					{
@@ -463,7 +463,7 @@
 			},
 			{
 				"name": "upsertByNaturalKey",
-				"kind": "upsert",
+				"kind": "upsert_through_base",
 				"emitted": true,
 				"params": [
 					{

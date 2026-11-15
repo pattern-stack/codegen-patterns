@@ -151,6 +151,6 @@ describe('familyWriteSurface (RFC-0006 §4, #875 S4)', () => {
 			const names = surfaces.get('email')![layer].methods.map((m) => m.name);
 			expect(names.filter((n) => n === 'create')).toHaveLength(1);
 		}
-		expect(surfaces.get('email')!.repository.methods.find((m) => m.name === 'create')?.kind).toBe('pair_write');
+		expect(surfaces.get('email')!.repository.methods.find((m) => m.name === 'create')?.kind).toBe('pair_create');
 	});
 });

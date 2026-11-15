@@ -79,10 +79,16 @@ export interface RepositoryMethod {
 		| 'count_kind'
 		/** A base's `findOrphans` — a kind with a child table but no child row. */
 		| 'orphans'
-		/** A child's `create` / `update` / `delete` — both rows in one transaction (`inherits:`, RFC-0006 §4.1). */
-		| 'pair_write'
-		/** `upsertByNaturalKey` — `natural_key: true` on the entity's own index, or on its base's through `inherits:` (§4.2). */
-		| 'upsert'
+		/** A child's `create` — both rows in one transaction (`inherits:`, RFC-0006 §4.1). */
+		| 'pair_create'
+		/** A child's `update` — patch split across the two rows, one transaction. */
+		| 'pair_update'
+		/** A child's `delete` — both rows, one transaction. */
+		| 'pair_delete'
+		/** `upsertByNaturalKey` on `natural_key: true` of the entity's own index (§4.2). */
+		| 'upsert_own'
+		/** `upsertByNaturalKey` through the base's natural key, by way of `inherits:` (§4.2). */
+		| 'upsert_through_base'
 		/** A base's `update`, which refuses a `kind` change (`discriminator:`, §4.1). */
 		| 'kind_guard'
 		| 'inherited';
@@ -121,10 +127,14 @@ export interface ServiceMethod {
 		| 'count_kind'
 		/** The repository's `findOrphans`, forwarded. */
 		| 'orphans'
-		/** A child's `create` / `update`, narrowed to its flat input and wrapped in `BaseService`'s events. */
-		| 'pair_write'
-		/** `upsertByNaturalKey`, forwarded; emits the pair's events. */
-		| 'upsert'
+		/** A child's `create`, narrowed to its flat input and wrapped in `BaseService`'s events. */
+		| 'pair_create'
+		/** A child's `update`, likewise. */
+		| 'pair_update'
+		/** `upsertByNaturalKey` on the entity's own natural key, forwarded; emits the pair's events. */
+		| 'upsert_own'
+		/** `upsertByNaturalKey` through the base's natural key, forwarded; emits the pair's events. */
+		| 'upsert_through_base'
 		/** A base's `create`, which refuses a kind that has a child table (`KindRequiresChildError`). */
 		| 'kind_guard'
 		| 'inherited';

@@ -299,20 +299,20 @@ describe('HTTP', () => {
       },
     };
     contact.repository.methods.push(
-      { name: 'create', kind: 'pair_write', emitted: true, params: [{ name: 'input' }, { name: 'tx' }], returns: 'one', readOptions: 'none', origin: inherits },
-      { name: 'upsertByNaturalKey', kind: 'upsert', emitted: true, params: [{ name: 'input' }, { name: 'tx' }], returns: 'one', readOptions: 'none', origin: naturalKey },
+      { name: 'create', kind: 'pair_create', emitted: true, params: [{ name: 'input' }, { name: 'tx' }], returns: 'one', readOptions: 'none', origin: inherits },
+      { name: 'upsertByNaturalKey', kind: 'upsert_through_base', emitted: true, params: [{ name: 'input' }, { name: 'tx' }], returns: 'one', readOptions: 'none', origin: naturalKey },
     );
     contact.service.methods.push(
-      { name: 'upsertByNaturalKey', kind: 'upsert', emitted: true, params: [{ name: 'input' }, { name: 'tx' }], returns: 'one', origin: naturalKey },
+      { name: 'upsertByNaturalKey', kind: 'upsert_through_base', emitted: true, params: [{ name: 'input' }, { name: 'tx' }], returns: 'one', origin: naturalKey },
     );
     const repo = sectionOf(family, 'contact', 'repository');
-    expect(row(repo, 'create').kindLabel).toBe('pair write');
+    expect(row(repo, 'create').kindLabel).toBe('pair create');
     expect(row(repo, 'create').origin?.text).toBe('← inherits');
-    expect(row(repo, 'upsertByNaturalKey').kindLabel).toBe('upsert');
+    expect(row(repo, 'upsertByNaturalKey').kindLabel).toBe('upsert through base');
     expect(row(repo, 'upsertByNaturalKey').origin?.text).toBe(
       "← unique_indexes[0].natural_key (party's natural key, through contact's inherits)",
     );
-    expect(row(sectionOf(family, 'contact', 'service'), 'upsertByNaturalKey').kindLabel).toBe('upsert');
+    expect(row(sectionOf(family, 'contact', 'service'), 'upsertByNaturalKey').kindLabel).toBe('upsert through base');
   });
 
   test('a route that resolves ?include= says against which allowlist', () => {

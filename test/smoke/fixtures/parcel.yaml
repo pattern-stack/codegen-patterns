@@ -17,3 +17,12 @@ fields:
   weight:
     type: integer
     required: true
+
+# A base that relates to one of its own children: the module graph cycles, so the child's module needs `forwardRef`
+# on the base's (RFC-0006 §4.1, review fix).
+relationships:
+  favorite:
+    type: belongs_to
+    target: crate
+    foreign_key: favorite_id
+    nullable: true

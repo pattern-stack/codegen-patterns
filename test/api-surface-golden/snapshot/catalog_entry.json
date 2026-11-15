@@ -75,7 +75,7 @@
 			},
 			{
 				"name": "upsertByNaturalKey",
-				"kind": "upsert",
+				"kind": "upsert_own",
 				"emitted": true,
 				"params": [
 					{
@@ -233,7 +233,7 @@
 			},
 			{
 				"name": "upsertByNaturalKey",
-				"kind": "upsert",
+				"kind": "upsert_own",
 				"emitted": true,
 				"params": [
 					{

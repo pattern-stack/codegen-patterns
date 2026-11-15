@@ -85,10 +85,13 @@ export const REPOSITORY_KINDS: Record<RepositoryKind, KindDescriptor> = {
   list_kind: { label: 'list kind', section: 'repository', order: 11 },
   count_kind: { label: 'count kind', section: 'repository', order: 12 },
   orphans: { label: 'orphans', section: 'repository', order: 13 },
-  pair_write: { label: 'pair write', section: 'repository', order: 14 },
-  upsert: { label: 'upsert', section: 'repository', order: 15 },
-  kind_guard: { label: 'kind guard', section: 'repository', order: 16 },
-  inherited: { label: 'inherited', section: 'repository', order: 17 },
+  pair_create: { label: 'pair create', section: 'repository', order: 14 },
+  pair_update: { label: 'pair update', section: 'repository', order: 15 },
+  pair_delete: { label: 'pair delete', section: 'repository', order: 16 },
+  upsert_own: { label: 'upsert', section: 'repository', order: 17 },
+  upsert_through_base: { label: 'upsert through base', section: 'repository', order: 18 },
+  kind_guard: { label: 'kind guard', section: 'repository', order: 19 },
+  inherited: { label: 'inherited', section: 'repository', order: 20 },
 };
 
 export const SERVICE_KINDS: Record<ServiceKind, KindDescriptor> = {
@@ -109,10 +112,12 @@ export const SERVICE_KINDS: Record<ServiceKind, KindDescriptor> = {
   list_kind: { label: 'list kind', section: 'service', order: 14 },
   count_kind: { label: 'count kind', section: 'service', order: 15 },
   orphans: { label: 'orphans', section: 'service', order: 16 },
-  pair_write: { label: 'pair write', section: 'service', order: 17 },
-  upsert: { label: 'upsert', section: 'service', order: 18 },
-  kind_guard: { label: 'kind guard', section: 'service', order: 19 },
-  inherited: { label: 'inherited', section: 'service', order: 20 },
+  pair_create: { label: 'pair create', section: 'service', order: 17 },
+  pair_update: { label: 'pair update', section: 'service', order: 18 },
+  upsert_own: { label: 'upsert', section: 'service', order: 19 },
+  upsert_through_base: { label: 'upsert through base', section: 'service', order: 20 },
+  kind_guard: { label: 'kind guard', section: 'service', order: 21 },
+  inherited: { label: 'inherited', section: 'service', order: 22 },
 };
 
 export const USE_CASE_KINDS: Record<UseCaseKind, KindDescriptor> = {

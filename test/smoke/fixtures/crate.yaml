@@ -10,3 +10,12 @@ fields:
   label:
     type: string
     required: true
+
+# A child that relates to its own base: its module imports the base's module ONCE (RFC-0006 §4.1, review fix) — the
+# `inherits:` import and this relation's both name it.
+relationships:
+  home:
+    type: belongs_to
+    target: parcel
+    foreign_key: home_id
+    nullable: true

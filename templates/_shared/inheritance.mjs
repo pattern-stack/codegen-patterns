@@ -21,7 +21,7 @@
 
 import { camelCase, emittedStem } from '../../src/config/file-naming.js';
 import { resolveChildTenancy, resolveTenancy } from '../../src/schema/tenancy.js';
-import { entityClassName, FAMILY_METHOD, moduleClassName, repositoryClassName, serviceClassName } from '../../src/derived/api/names.js';
+import { entityClassName, FAMILY_METHOD, repositoryClassName, serviceClassName } from '../../src/derived/api/names.js';
 import { familyRelationKey, inheritanceChildrenOf, inheritsOf, matchPairsOf } from '../../src/schema/inheritance.js';
 import { entityModuleNaming, relativeModuleDir } from './entity-naming.mjs';
 
@@ -315,7 +315,7 @@ export function matchColumns({ entityName, relationships, lookup, existing, null
  *   child: null | { relKey: string, baseTable: string, baseImportPath: string,
  *                   baseScope: null | { softDelete: boolean, userTracking: boolean },
  *                   as: string, baseName: string, baseClass: string, baseRepositoryClass: string,
- *                   baseRepositoryImportPath: string, baseModuleClass: string, baseModuleImportPath: string,
+ *                   baseRepositoryImportPath: string, baseModuleDir: string,
  *                   discriminatorProp: string, baseTimestamps: boolean },
  *   base: null | { discriminator: string, discriminatorProp: string, kinds: string[],
  *                  children: Array<{ as: string, name: string, relKey: string, plural: string,
@@ -345,8 +345,7 @@ export function familyReads({ entityName, definition, lookup, ownNaming, modules
       discriminatorProp: camelCase(baseDef.discriminator),
       baseRepositoryClass: repositoryClassName(declaration.base),
       baseRepositoryImportPath: `${ref.dir}/${ref.stem}.repository`,
-      baseModuleClass: moduleClassName(ref.plural),
-      baseModuleImportPath: `${ref.dir}/${ref.pluralStem}.module`,
+      baseModuleDir: ref.dir,
       baseTimestamps: baseBehaviors.includes('timestamps'),
     };
   }

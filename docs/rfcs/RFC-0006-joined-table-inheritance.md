@@ -1601,7 +1601,10 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   another entity's repository (a `belongs_to` / `has_many` target) no longer provides it locally and repeats its
   dependencies: it imports that entity's **home module**, which exports the repository (ADR-002), with `forwardRef` only where
   the module graph really cycles (`moduleGraphEdges` in `entity-locals.js`: a superset, which is safe). A child's module
-  imports its base's the same way. The smoke's Nest DI boot caught the first attempt, a base repository provided locally in
+  imports its base's the same way — as the FIRST entry of `repositoryDepModules`, deduped by entity (a child that also
+  relates to its own base imports that module once), with `forwardRef` when the base reaches the child (a base with a
+  `belongs_to` to one of its children is a cycle). One owner, `entity-locals.js`; the template prints only a comment for
+  the inherited entry. The smoke's Nest DI boot caught the first attempt, a base repository provided locally in
   `MeetingTranscriptsModule`; that second path was deleted. This changes every composing module's emitted file.
 - **Sequencing: routes and use cases stay off.** A child still has no create / update / delete use case or route
   (`generateWrites` is false for it): the flat create / update DTOs are S5's, and a child-shaped DTO cannot carry the
@@ -1631,9 +1634,9 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   and the emitted SQL, against Postgres through the generated repositories and services). A15: with the transaction
   removed from the child `create`, `a failing child insert rolls the base row back` went red; restored.
 - **ADR-046 (phase R).** The write half is derived once in `src/derived/api/`. Kinds (extending S3's, no second table):
-  repository and service `pair_write` (a child's `create` / `update` / `delete` on the repository, `create` / `update` on
-  the service — origin the child's `inherits:`; the service entries `delegatesTo` the repository's), `upsert`
-  (`upsertByNaturalKey`) and `kind_guard` (a base's repository `update`, and a base-with-children's service `create` —
+  repository `pair_create` / `pair_update` / `pair_delete` and service `pair_create` / `pair_update` (a child's writes —
+  origin the child's `inherits:`; the service entries `delegatesTo` the repository's), `upsert_own` / `upsert_through_base`
+  (`upsertByNaturalKey`, on the entity's own natural key or its base's — the derivation says which) and `kind_guard` (a base's repository `update`, and a base-with-children's service `create` —
   origin the base's `discriminator:`; the service guard has no `delegatesTo`, its `create` is `BaseService`'s). The names are
   `FAMILY_METHOD` (`create`, `update`, `delete`, `upsertByNaturalKey` join the read names). An override takes the place of the
   pattern's `inherited` entry of the same name — the surface lists it once, as `emitted: true`. Existence:
@@ -1642,7 +1645,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   `kindGuardUpdate` (any `discriminator:`) and `kindGuardCreate` (a discriminator with at least one child table). The upsert's
   origin is the marker itself: `unique_indexes[i].natural_key` on the entity, or on the base's document for a child (its
   `note` reads "<base>'s natural key, through <child>'s inherits"). `naturalKeyIndexOf` and `inheritanceBaseOf` (`src/schema/inheritance.ts`) are the
-  one reader of the marker (the dead `ParsedEntity.naturalKey` is deleted; the R11 validator is the legitimate second reader); `entity-locals.js` reads it for the conflict target (`naturalKey`) only;
+  one reader of the marker (the dead `ParsedEntity.naturalKey` is deleted; the R11 validator is the legitimate second reader); `entity-locals.js` reads it for the conflict target (`naturalKey`) only (the write flags have two readers: the derivation and `family-reads.test.ts`);
   `deriveEntityApiSurface` takes `inheritanceBase` as a required input, and the templates read the entries (phase R2). **One decision this made that S4 had not:** a child of a base with **no**
   `natural_key:` emitted an `upsertByNaturalKey` calling a base method that does not exist (a TS error in the generated
   file); it now has none — new matrix case `matrix-family-no-natural-key`, and a `parcel` / `crate` family in
@@ -1655,15 +1658,16 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   (`surface-kinds.ts`, `surface-view.test.ts`).
 - **ADR-046 Phase B (phase R2).** Rebased onto S3's Phase-B tip (the five slice commits applied as one 3-way merge, the
   stack lands squash-merged): conflicts in `entity.ts`, `entity-locals.js`, both templates, the studio kind table and
-  this RFC. The write kinds print in Phase B's loops by `m.kind` only — `pair_write` (by `m.name`: `create` opens the
-  section and prints the create, `update` and `delete` print their own), `kind_guard`, `upsert` (a child's goes through
-  its base's key: told by the entity being a child, `with_base` present, not by a flag). Deleted: the `familyPairWrite` /
-  `familyUpsert` / `familyKindGuardUpdate` / `familyKindGuardCreate` locals. The derived-column (`match:`) hook is not a
+  this RFC. The write kinds print in Phase B's loops by `m.kind` only, one kind per body (S3's `across_kinds` split): repository
+  `pair_create` / `pair_update` / `pair_delete`, `kind_guard`, `upsert_own` / `upsert_through_base`; service
+  `pair_create` / `pair_update`, `kind_guard`, `upsert_own` / `upsert_through_base` (the derivation says whose natural
+  key — no template infers it from `with_base`). Signatures print `m.name` and `m.params[i].name`. Deleted: the
+  `familyPairWrite` / `familyUpsert` / `familyKindGuardUpdate` / `familyKindGuardCreate` locals. The derived-column (`match:`) hook is not a
   method, so it prints after the last read. The write entries sit right after the family reads (before the finders,
   and in the service before the finders and relations), which is where the bytes were: the baseline is byte-identical to
-  phase R. Render goldens: every `*.module.ts` in the matrix is re-blessed (S4's home-module imports replace the composed
+  phase R. Render goldens: 29 of the 30 `*.module.ts` in the matrix are re-blessed (`matrix-self-fk/categories.module.ts` is correctly unchanged) (S4's home-module imports replace the composed
   repositories as providers — Phase B kept the module's wiring in locals, so there was nothing to reconcile: the imports
-  still come from `repositoryDepModules` / `familyChild`), `matrix-discriminator-no-child` gains the base `update` guard,
+  still come from `repositoryDepModules`), `matrix-discriminator-no-child` gains the base `update` guard,
   and `matrix-family-no-natural-key` is new. The allowlist did not grow.
 
 **S5 — DTOs, use cases, controllers.**

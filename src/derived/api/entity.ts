@@ -203,8 +203,8 @@ export function familyReadSurface(
  * - `kindGuardCreate` — a base with at least one child table: its service's `create` refuses a kind that has one
  *   (`KindRequiresChildError`).
  *
- * The ONE owner: `entity-locals.js` reads it for the flags the templates print; `deriveEntityApiSurface` for the
- * methods. `inheritanceBase` is required, not defaulted: an absent base would read as "no upsert through it" and
+ * The ONE owner: its readers are `deriveEntityApiSurface` (the methods) and `family-reads.test.ts`; the templates
+ * read the methods, not this. `inheritanceBase` is required, not defaulted: an absent base would read as "no upsert through it" and
  * silently drop a child's.
  */
 export function familyWriteSurface(
@@ -448,9 +448,9 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 	};
 	if (writeFamily.pairWrite) {
 		repository.push(
-			{ name: FAMILY_METHOD.create, kind: 'pair_write', emitted: true, params: [{ name: 'input' }, { name: 'tx' }], returns: 'one', readOptions: 'none', origin: inheritsOrigin },
-			{ name: FAMILY_METHOD.update, kind: 'pair_write', emitted: true, params: [{ name: 'id' }, { name: 'patch' }, { name: 'tx' }], returns: 'one', readOptions: 'none', origin: inheritsOrigin },
-			{ name: FAMILY_METHOD.delete, kind: 'pair_write', emitted: true, params: [{ name: 'id' }, { name: 'tx' }], returns: 'none', readOptions: 'none', origin: inheritsOrigin },
+			{ name: FAMILY_METHOD.create, kind: 'pair_create', emitted: true, params: [{ name: 'input' }, { name: 'tx' }], returns: 'one', readOptions: 'none', origin: inheritsOrigin },
+			{ name: FAMILY_METHOD.update, kind: 'pair_update', emitted: true, params: [{ name: 'id' }, { name: 'patch' }, { name: 'tx' }], returns: 'one', readOptions: 'none', origin: inheritsOrigin },
+			{ name: FAMILY_METHOD.delete, kind: 'pair_delete', emitted: true, params: [{ name: 'id' }, { name: 'tx' }], returns: 'none', readOptions: 'none', origin: inheritsOrigin },
 		);
 	}
 	if (writeFamily.kindGuardUpdate) {
@@ -467,7 +467,7 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 	if (writeFamily.upsert !== null) {
 		repository.push({
 			name: FAMILY_METHOD.upsertByNaturalKey,
-			kind: 'upsert',
+			kind: writeFamily.upsert === 'own' ? 'upsert_own' : 'upsert_through_base',
 			emitted: true,
 			params: [{ name: 'input' }, { name: 'tx' }],
 			returns: 'one',
@@ -585,8 +585,8 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 	// The write half, forwarded: a child's pair write, a base's create guard, the upsert.
 	if (writeFamily.pairWrite) {
 		service.push(
-			{ name: FAMILY_METHOD.create, kind: 'pair_write', emitted: true, params: [{ name: 'input' }, { name: 'tx' }], returns: 'one', delegatesTo: repoRef(entityName, FAMILY_METHOD.create), origin: inheritsOrigin },
-			{ name: FAMILY_METHOD.update, kind: 'pair_write', emitted: true, params: [{ name: 'id' }, { name: 'patch' }, { name: 'tx' }], returns: 'one', delegatesTo: repoRef(entityName, FAMILY_METHOD.update), origin: inheritsOrigin },
+			{ name: FAMILY_METHOD.create, kind: 'pair_create', emitted: true, params: [{ name: 'input' }, { name: 'tx' }], returns: 'one', delegatesTo: repoRef(entityName, FAMILY_METHOD.create), origin: inheritsOrigin },
+			{ name: FAMILY_METHOD.update, kind: 'pair_update', emitted: true, params: [{ name: 'id' }, { name: 'patch' }, { name: 'tx' }], returns: 'one', delegatesTo: repoRef(entityName, FAMILY_METHOD.update), origin: inheritsOrigin },
 		);
 	}
 	if (writeFamily.kindGuardCreate) {
@@ -603,7 +603,7 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 	if (writeFamily.upsert !== null) {
 		service.push({
 			name: FAMILY_METHOD.upsertByNaturalKey,
-			kind: 'upsert',
+			kind: writeFamily.upsert === 'own' ? 'upsert_own' : 'upsert_through_base',
 			emitted: true,
 			params: [{ name: 'input' }, { name: 'tx' }],
 			returns: 'one',

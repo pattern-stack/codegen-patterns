@@ -19,16 +19,15 @@ const _ACROSS = ['all_kinds', 'kind_by_id', 'list_kind', 'count_kind'];
 const _isAcross = (m) => _ACROSS.includes(m.kind);
 const _child = apiSurface.service.methods.some((m) => m.kind === 'with_base') ? familyChild : null;
 const _base = apiSurface.service.methods.some(_isAcross) ? familyBase : null;
-// RFC-0006 (#875) S4 — the write half, likewise the derivation's call (`pair_write` / `kind_guard` / `upsert`): a
+// RFC-0006 (#875) S4 — the write half, likewise the derivation's call (`pair_create` / `pair_update` / `kind_guard` / `upsert_own` / `upsert_through_base`): a
 // child writes both rows (its flat input types, the pair events); a base refuses a kind that has a child table; an
 // entity with a natural key forwards its upsert and emits its events.
-const _EU = entityName.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+const _EU = familyConstPrefix;
 const _discProp = familyBase ? familyBase.discriminatorProp : null;
-const _isWrite = (m) => m.kind === 'pair_write' || m.kind === 'kind_guard' || m.kind === 'upsert';
-const _pairWrite = apiSurface.service.methods.some((m) => m.kind === 'pair_write');
-const _hasUpsert = apiSurface.service.methods.some((m) => m.kind === 'upsert');
-const _upsert = _hasUpsert && !_child;
-const _childUpsert = _hasUpsert && _child !== null;
+const _isWrite = (m) => m.kind === 'pair_create' || m.kind === 'pair_update' || m.kind === 'kind_guard' || m.kind === 'upsert_own' || m.kind === 'upsert_through_base';
+const _pairWrite = apiSurface.service.methods.some((m) => m.kind === 'pair_create' || m.kind === 'pair_update');
+const _upsert = apiSurface.service.methods.some((m) => m.kind === 'upsert_own');
+const _childUpsert = apiSurface.service.methods.some((m) => m.kind === 'upsert_through_base');
 const _guardCreate = apiSurface.service.methods.some((m) => m.kind === 'kind_guard');
 const _writes = _pairWrite || _upsert || _childUpsert || _guardCreate;
 const _readGenerics = _typedInclude
@@ -253,8 +252,7 @@ _%>
   }
 <%_ } _%>
 <%_ } _%>
-<%_ } else if (m.kind === 'pair_write') { _%>
-<%_ if (m.name === 'create') { _%>
+<%_ } else if (m.kind === 'pair_create') { _%>
 
   // ═══════════════════════════════════════════════════════════════════════
   // The pair write (RFC-0006 §4.1) — the repository's, wrapped in BaseService's events
@@ -263,12 +261,12 @@ _%>
   // FLAT row; `BaseService`'s are typed on the table row alone, so these narrow them to what actually flows.
   // ═══════════════════════════════════════════════════════════════════════
 
-  override create(input: <%= E %>Create, tx?: DrizzleTx): Promise<<%= E %>Flat> {
+  override <%= m.name %>(<%= m.params[0].name %>: <%= E %>Create, <%= m.params[1].name %>?: DrizzleTx): Promise<<%= E %>Flat> {
     return super.create(input as globalThis.Partial<<%= E %>>, tx) as Promise<<%= E %>Flat>;
   }
 
-<%_ } else { _%>
-  override update(id: string, patch: <%= E %>Update, tx?: DrizzleTx): Promise<<%= E %>Flat> {
+<%_ } else if (m.kind === 'pair_update') { _%>
+  override <%= m.name %>(<%= m.params[0].name %>: string, <%= m.params[1].name %>: <%= E %>Update, <%= m.params[2].name %>?: DrizzleTx): Promise<<%= E %>Flat> {
     return super.update(id, patch as globalThis.Partial<<%= E %>>, tx) as Promise<<%= E %>Flat>;
   }
 
@@ -277,7 +275,6 @@ _%>
     return this.repository.findWithBase(id);
   }
 
-<%_ } _%>
 <%_ } else if (m.kind === 'kind_guard') { _%>
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -285,26 +282,26 @@ _%>
   // ═══════════════════════════════════════════════════════════════════════
 
   /** A kind with a child table is created through the child (`KindRequiresChildError`); a base-only kind is created here. */
-  override async create(input: globalThis.Partial<<%= E %>>, tx?: unknown): Promise<<%= E %>> {
+  override async <%= m.name %>(<%= m.params[0].name %>: globalThis.Partial<<%= E %>>, <%= m.params[1].name %>?: unknown): Promise<<%= E %>> {
     assertBaseOnlyKind('<%= entityName %>', input.<%= _discProp %>, <%= _EU %>_CHILD_CREATE_PATH);
     return super.create(input, tx);
   }
-<%_ } else if (m.kind === 'upsert' && _child) { _%>
+<%_ } else if (m.kind === 'upsert_through_base') { _%>
   /** Base on its natural key, then this table on `id`, one transaction; emits `created` / `updated` under both names. */
-  async upsertByNaturalKey(
-    input: <%= E %>Create,
-    tx?: DrizzleTx,
+  async <%= m.name %>(
+    <%= m.params[0].name %>: <%= E %>Create,
+    <%= m.params[1].name %>?: DrizzleTx,
   ): Promise<{ row: <%= E %>Flat; created: boolean; baseCreated: boolean }> {
     const result = await this.repository.upsertByNaturalKey(input, tx);
     this.emitUpserted(result.row, result.created, result.baseCreated);
     return result;
   }
-<%_ } else if (m.kind === 'upsert') { _%>
+<%_ } else if (m.kind === 'upsert_own') { _%>
 
   // RFC-0006 §4.2 — `natural_key: true`: one statement, `INSERT … ON CONFLICT … DO UPDATE`.
-  async upsertByNaturalKey(
-    input: globalThis.Partial<<%= E %>>,
-    tx?: DrizzleTx,
+  async <%= m.name %>(
+    <%= m.params[0].name %>: globalThis.Partial<<%= E %>>,
+    <%= m.params[1].name %>?: DrizzleTx,
   ): Promise<{ row: <%= E %>; created: boolean }> {
 <%_ if (_guardCreate) { _%>
     assertBaseOnlyKind('<%= entityName %>', input.<%= _discProp %>, <%= _EU %>_CHILD_CREATE_PATH);

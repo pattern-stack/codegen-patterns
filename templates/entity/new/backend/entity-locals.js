@@ -1974,19 +1974,6 @@ export function buildBackendLocals(definition, baseLocals) {
     seen.add(from);
     return [...(moduleDependents.get(from) ?? [])].some((next) => reaches(next, to, seen));
   };
-  const repositoryDepModules = repositoryDeps
-    // The EAV definition's module is imported by the EAV block of the module template.
-    .filter((dep) => !(eavValueTable && dep.entity === eavDefinitionEntity))
-    .map((dep) => {
-      const depNaming = entityModuleNaming(entityLookup(dep.entity), modulesDir);
-      return {
-        entity: dep.entity,
-        moduleClass: moduleClassName(depNaming.plural),
-        importPath: `${dep.importDir}/${emittedStem(depNaming.plural)}.module`,
-        forwardRef: reaches(dep.entity, entityName),
-      };
-    });
-
   // JUNC-0 (#678): every junction naming this entity in `between:` is mirrored
   // onto its service + module here, from the junction YAML set — the parent's
   // own templates render the fan-out; nothing injects into them. A counterparty
@@ -2143,6 +2130,26 @@ export function buildBackendLocals(definition, baseLocals) {
     modulesDir,
     baseBehaviors: familyBaseBehaviors,
   });
+  // A joined-table child's repository injects its base's, which the base's module exports: the base is the FIRST
+  // entry, and one entry per entity — a child that also relates to its own base imports that module once.
+  const repositoryDepModules = [
+    ...(family.child ? [{ entity: family.child.baseName, importDir: family.child.baseModuleDir, inherits: true }] : []),
+    ...repositoryDeps
+      // The EAV definition's module is imported by the EAV block of the module template.
+      .filter((dep) => !(eavValueTable && dep.entity === eavDefinitionEntity)),
+  ]
+    .filter((dep, i, all) => all.findIndex((other) => other.entity === dep.entity) === i)
+    .map((dep) => {
+      const depNaming = entityModuleNaming(entityLookup(dep.entity), modulesDir);
+      return {
+        entity: dep.entity,
+        moduleClass: moduleClassName(depNaming.plural),
+        importPath: `${dep.importDir}/${emittedStem(depNaming.plural)}.module`,
+        forwardRef: reaches(dep.entity, entityName),
+        inherits: dep.inherits === true,
+      };
+    });
+
   // The entities that `inherits:` this one — the derivation's input (`inheritanceChildren`): a base's cross-kind
   // reads and a family member's typed include both follow from it (`apiSurface.repository.methods` / `.typedInclude`).
   // From `familyReads` — the one enumeration of the set (it throws where a base cannot enumerate); a base with no
@@ -2988,6 +2995,8 @@ export function buildBackendLocals(definition, baseLocals) {
     // RFC-0006 (#875) S3: a family member's scope. Its read surface is `apiSurface.repository.methods` /
     // `.service.methods` (the derivation), not a flag here; the base-edge and kind-union text is keyed below.
     familyChild: family.child,
+    // The constant names the repository and service share (`<EU>_BASE_KEYS`, `<EU>_CHILD_CREATE_PATH`, …): one derivation.
+    familyConstPrefix: entityName.toUpperCase().replace(/[^A-Z0-9]+/g, '_'),
     familyBase: family.base,
     matchFills,
     naturalKey,
