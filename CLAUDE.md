@@ -231,6 +231,11 @@ the nearer aspect; measured by `SchemaCanvas`, passed in as `targetAspect` — t
 layout reads no DOM; 16:10 until measured). Block order and packing read spine lines only, so a secondary
 line still moves no card — which means a secondary parent in another block may
 sit below its child. A resize that re-wraps the blocks re-fits the view.
+Every fit — the first, a re-wrap's, a panel toggle's, the Controls button — goes
+through `fitAvoidingCorner` (`graph/fit-corner.ts`), which keeps the legend's
+corner off the cards; never call ReactFlow's plain `fitView`. The inspector and
+drawer collapse through one reducer (`panels.ts`; `]` and `\`), and the inspector
+is hidden, never unmounted, because it holds unsaved YAML.
 Each line runs its horizontal segment on its own channel in the gap below its
 upper card's row, in that card's block (`channelY`, #890), so two lines never share one bar. A
 line meets each card on the sides that face each other

@@ -14,6 +14,8 @@ export interface GraphPaneProps {
   selection: Selection | null;
   onSelect: (selection: Selection | null) => void;
   onRetry: () => void;
+  /** Passed through to the canvas: changes when a panel toggle resizes it. */
+  fitKey?: string;
 }
 
 /** Filter chips, derived from the graph so they describe what is actually in it. */
@@ -36,6 +38,7 @@ export function GraphPane({
   selection,
   onSelect,
   onRetry,
+  fitKey,
 }: GraphPaneProps) {
   const [query, setQuery] = useState('');
   const [active, setActive] = useState<Record<string, boolean>>({});
@@ -84,6 +87,7 @@ export function GraphPane({
         edges={shownEdges}
         selection={selection}
         onSelect={onSelect}
+        fitKey={fitKey}
       />
     );
   };

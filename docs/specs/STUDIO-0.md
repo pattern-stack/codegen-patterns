@@ -66,6 +66,23 @@ lines by Studio's own `layout/tree-layout.ts` since STUDIO-3, each disconnected 
 fit the canvas since STUDIO-4 (the viewer keeps `elkjs`; see CLAUDE.md § Studio).
 When slice 3 adds the data explorer, its instance graph is the second view of the same components, not a new library.
 
+### Hiding the panels (STUDIO-4, 2026-11-14)
+
+The inspector collapses to a rail (`]`) and full-screen canvas (`\`) hides inspector and drawer together, restoring
+exactly the prior open/closed pair when invoked again; any single-panel toggle, or a run opening the drawer, ends
+full-screen with nothing stale left to restore. The state lives in one pure reducer, and the shortcut decision —
+including the guard that ignores the keys inside inputs, textareas, selects, `contenteditable` (CodeMirror) and with
+a modifier held — in one pure function, both in `tools/studio/src/panels.ts` and unit-tested. Selecting while the
+inspector is collapsed does not reopen it (reopening would shrink and refit the canvas on every exploratory click);
+the rail names the selection instead. A toggle refits the canvas only after its `ResizeObserver` reports the new box
+(`fitKey`, threaded through `GraphPane`); a drag-resize keeps the refit-on-re-wrap rule. The inspector is hidden
+with `display: none`, never unmounted, so unsaved YAML survives. Only the inspector's own open/closed choice is
+remembered (`localStorage`, `studio.inspector`; while full-screen that is what full-screen will restore,
+`rememberedInspectorOpen`). Every fit-to-view — the first, a re-wrap's, a toggle's and the Controls fit button, which
+Studio replaces with its own — goes through `fitAvoidingCorner` (`tools/studio/src/graph/fit-corner.ts`): ReactFlow's
+plain fit unless it would put a card under the legend's measured box, else the fit that gives up a bottom or right
+strip of the legend's size, whichever keeps the larger zoom (ties to the bottom).
+
 ### Theming — one palette table, two columns (2026-10-04)
 
 Studio follows the system appearance and can be pinned to either theme. It shipped dark-only; the light theme was

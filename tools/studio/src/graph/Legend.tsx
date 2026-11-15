@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { Ref } from 'react';
 import { EDGE_KIND_ORDER, EDGE_KIND_STYLES, TREE_ROLE_ORDER, TREE_ROLE_STYLES, edgeColor } from './edge-kinds';
 
 const NODE_KINDS = [
@@ -25,7 +26,7 @@ const NODE_KINDS = [
  * a panel that re-opened every time the window changed would be worse than one
  * that opened in the wrong place once.
  */
-export function Legend({ roomy }: { roomy: boolean }) {
+export function Legend({ roomy, boxRef }: { roomy: boolean; boxRef?: Ref<HTMLDivElement> }) {
   const [open, setOpen] = useState(roomy);
   const touched = useRef(false);
 
@@ -35,6 +36,8 @@ export function Legend({ roomy }: { roomy: boolean }) {
 
   return (
     <div
+      // The canvas reads this box at every fit-to-view, so no card is fitted under it.
+      ref={boxRef}
       style={{
         position: 'absolute',
         right: 'var(--sp-3)',

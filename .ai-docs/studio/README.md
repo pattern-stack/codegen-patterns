@@ -123,7 +123,7 @@ them. Steps 1–7 also exist as `.light.png`; `8-server-down.png` and `9-laptop-
 the theme toggle existed and are dark-only.
 
 **Layout.** A fixed header: project path, CLI version, `N entities · N junctions · N relationships`, the theme
-control (Auto / Light / Dark), the three run-step checkboxes (Generate / DB push / Restart), `Reload` and
+control (Auto / Light / Dark), the three run-step checkboxes (Generate / DB push / Restart), `Full screen`, `Reload` and
 `Generate`. When the header is short of room only the project path gives way.
 
 **Theme.** Studio follows the system's light/dark setting by default. Auto / Light / Dark in the header pins it,
@@ -132,6 +132,16 @@ hood it is `data-theme` on `<html>` — set it by hand in devtools and the whole
 edge colours follow. STUDIO-0 § Theming has the mechanism. The graph fills the left; a
 resizable inspector column is on the right (drag its left edge) and a resizable drawer along the bottom (drag
 its top edge). Nothing resizes itself, so a streaming run never shifts anything above it.
+
+**Hiding the panels.** `Hide ▸` at the right end of the inspector's tab bar, or `]`, collapses the inspector to a
+thin rail down the right edge; the rail's `Show ◂` (or `]` again) brings it back. Whether it is open is remembered in
+this browser (`localStorage`, `studio.inspector`). The drawer keeps its own `Hide ▾` / `Show ▴`. `Full screen` in
+the header, or `\`, hides both at once; pressing it again (the button reads `Exit full screen`) puts each back
+exactly as it was, and toggling either panel on its own — or a run opening the drawer — ends full-screen instead.
+Neither key fires while you are typing in the YAML editor or any field, or with ⌘ / Ctrl / Alt held. Selecting a
+card or a line while the inspector is hidden does not reopen it — clicking around *is* the exploration — so the
+rail names the selection and says the inspector is hidden. Every toggle refits the canvas to its new size; an
+unsaved YAML edit survives hide → show, because the inspector is hidden, never unmounted.
 
 **Model graph.** Entity and junction cards laid out with elk, each showing its fields with pk/fk markers and
 its behaviour badges; a junction also shows `from ↔ to` and its `temporal` / `sourced` flags. Clicking a card

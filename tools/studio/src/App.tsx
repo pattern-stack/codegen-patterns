@@ -10,12 +10,24 @@ import type { StudioEdgeData } from './graph/edge-kinds';
 import type { Selection } from './graph/selection';
 import { GraphPane } from './graph/GraphPane';
 import { Inspector } from './inspector/Inspector';
+import { InspectorRail } from './inspector/InspectorRail';
 import type { InspectorTab } from './inspector/Inspector';
 import type { SurfaceState } from './inspector/ApiTab';
 import { Drawer } from './drawer/Drawer';
 import { RUN_STEPS, initialRunState, isRunInFlight, runReducer } from './drawer/run-state';
 import { Button, Dot, Segmented, Spinner, Toggle } from './ui/primitives';
 import { useThemePreference } from './theme/use-theme';
+import {
+  FULLSCREEN_SHORTCUT,
+  INSPECTOR_SHORTCUT,
+  initialPanels,
+  isFullscreen,
+  loadInspectorOpen,
+  panelsReducer,
+  rememberedInspectorOpen,
+  shortcutAction,
+  storeInspectorOpen,
+} from './panels';
 import type { ThemePreference } from './theme/theme';
 
 const THEME_OPTIONS: readonly { id: ThemePreference; label: string; title: string }[] = [
@@ -23,6 +35,8 @@ const THEME_OPTIONS: readonly { id: ThemePreference; label: string; title: strin
   { id: 'light', label: 'Light', title: 'Always light' },
   { id: 'dark', label: 'Dark', title: 'Always dark' },
 ];
+
+const browserStorage = (): Storage | undefined => (typeof window === 'undefined' ? undefined : window.localStorage);
 
 const EMPTY_GRAPH: AdaptedGraph = { nodes: [], edges: [] };
 
@@ -39,7 +53,9 @@ interface GraphState {
  * Three regions, fixed in place: the model graph on the left, the inspector on
  * the right, the run log and diff in a drawer along the bottom. The inspector
  * and drawer are resizable; nothing resizes itself, so a streaming run cannot
- * move anything the reader is looking at.
+ * move anything the reader is looking at. Either side panel collapses (`]` for
+ * the inspector), and full-screen canvas (`\`) hides both and gives them back
+ * as they were (`panels.ts`).
  */
 export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -58,12 +74,43 @@ export function App() {
     dbPush: false,
     restart: false,
   });
-  const [drawerOpen, setDrawerOpen] = useState(true);
+  const [panels, dispatchPanels] = useReducer(panelsReducer, undefined, () =>
+    initialPanels(loadInspectorOpen(browserStorage)),
+  );
+  const { inspectorOpen, drawerOpen } = panels;
+  const fullscreen = isFullscreen(panels);
   const [drawerTab, setDrawerTab] = useState<'log' | 'diff'>('log');
   const [drawerHeight, setDrawerHeight] = useState(240);
   const [themePreference, setThemePreference] = useThemePreference();
 
   const unsubscribe = useRef<(() => void) | null>(null);
+
+  // ── Panels ───────────────────────────────────────────────────────────────
+
+  const rememberedInspector = rememberedInspectorOpen(panels);
+  useEffect(() => storeInspectorOpen(browserStorage, rememberedInspector), [rememberedInspector]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const action = shortcutAction({
+        key: event.key,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        altKey: event.altKey,
+        target: event.target instanceof Element ? event.target : null,
+      });
+      if (action == null) return;
+      event.preventDefault();
+      dispatchPanels(action);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // A change to which panels show changes the canvas's room, so the canvas
+  // refits once it has been re-measured. Dragging a panel's edge does not
+  // change this key and keeps the canvas's own rule (refit on a re-wrap).
+  const panelKey = `inspector:${inspectorOpen ? 'open' : 'closed'} drawer:${drawerOpen ? 'open' : 'closed'}`;
 
   // ── Loading ──────────────────────────────────────────────────────────────
 
@@ -144,7 +191,7 @@ export function App() {
     unsubscribe.current?.();
     dispatch({ type: 'start' });
     setDrawerTab('log');
-    setDrawerOpen(true);
+    dispatchPanels({ type: 'open-drawer' });
 
     api
       .generate(selectedSteps)
@@ -220,6 +267,15 @@ export function App() {
   };
 
   const inFlight = isRunInFlight(run);
+
+  const selectionName =
+    selectedNode?.label ??
+    (selectedEdge != null ? (selectedEdge.relationId ?? `${selectedEdge.source} → ${selectedEdge.target}`) : null);
+  const hideInspectorLabel = `Hide the inspector (${INSPECTOR_SHORTCUT})`;
+  const showInspectorLabel = `Show the inspector (${INSPECTOR_SHORTCUT})`;
+  const fullscreenLabel = fullscreen
+    ? `Exit full-screen canvas — restore the panels (${FULLSCREEN_SHORTCUT})`
+    : `Full-screen canvas — hide the inspector and drawer (${FULLSCREEN_SHORTCUT})`;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -311,6 +367,14 @@ export function App() {
               label={step.label}
             />
           ))}
+          <Button
+            size="sm"
+            onClick={() => dispatchPanels({ type: 'toggle-fullscreen' })}
+            title={fullscreenLabel}
+            ariaLabel={fullscreenLabel}
+          >
+            {fullscreen ? 'Exit full screen' : 'Full screen'}
+          </Button>
           <Button size="sm" onClick={reload} disabled={graph.loading}>
             Reload
           </Button>
@@ -336,18 +400,34 @@ export function App() {
             selection={selection}
             onSelect={select}
             onRetry={reload}
+            fitKey={panelKey}
           />
         </div>
 
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize the inspector"
-          onPointerDown={startInspectorDrag}
-          style={{ flex: '0 0 4px', cursor: 'col-resize', background: 'transparent' }}
-        />
+        {inspectorOpen && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize the inspector"
+            onPointerDown={startInspectorDrag}
+            style={{ flex: '0 0 4px', cursor: 'col-resize', background: 'transparent' }}
+          />
+        )}
 
-        <div style={{ flex: `0 0 ${inspectorWidth}px`, minWidth: 0 }}>
+        {!inspectorOpen && (
+          <InspectorRail
+            selectionName={selectionName}
+            onExpand={() => dispatchPanels({ type: 'toggle-inspector' })}
+            expandLabel={showInspectorLabel}
+          />
+        )}
+
+        {/* Hidden, never unmounted: the inspector holds unsaved YAML, and a
+            collapse must not throw the edit away. */}
+        <div
+          style={{ flex: `0 0 ${inspectorWidth}px`, minWidth: 0, display: inspectorOpen ? undefined : 'none' }}
+          aria-hidden={inspectorOpen ? undefined : true}
+        >
           <Inspector
             node={selectedNode}
             edge={selectedEdge}
@@ -359,6 +439,17 @@ export function App() {
             onRetrySurface={() => void loadSurface()}
             onProjectChanged={reload}
             onDirtyChange={setDirty}
+            trailing={
+              <Button
+                size="sm"
+                tone="ghost"
+                onClick={() => dispatchPanels({ type: 'toggle-inspector' })}
+                title={hideInspectorLabel}
+                ariaLabel={hideInspectorLabel}
+              >
+                Hide ▸
+              </Button>
+            }
           />
         </div>
       </div>
@@ -366,7 +457,7 @@ export function App() {
       <Drawer
         run={run}
         open={drawerOpen}
-        onToggle={() => setDrawerOpen((v) => !v)}
+        onToggle={() => dispatchPanels({ type: 'toggle-drawer' })}
         tab={drawerTab}
         onTabChange={setDrawerTab}
         height={drawerHeight}
