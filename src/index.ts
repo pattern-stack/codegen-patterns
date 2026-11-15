@@ -166,30 +166,6 @@ export async function analyzeDomain(
 	};
 }
 
-/**
- * Validate entity files without full analysis
- * Returns true if all files parse successfully
- */
-export function validateEntities(entitiesDir: string, nonEntityDirs: readonly string[]): {
-	valid: boolean;
-	errors: string[];
-} {
-	// Only the load errors are read; no table name leaves this function, so the
-	// prefix is the schema default rather than a parameter every caller threads.
-	const { entities, issues } = loadEntities(entitiesDir, {
-		tablePrefix: TablesConfigSchema.parse({}).prefix,
-		nonEntityDirs,
-	});
-	const errors = issues
-		.filter((i) => i.severity === 'error')
-		.map((i) => i.message);
-
-	return {
-		valid: errors.length === 0,
-		errors,
-	};
-}
-
 // Re-export types
 export * from './analyzer/types';
 

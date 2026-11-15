@@ -176,7 +176,7 @@ Runs YAML schema + cross-reference validation. Exits non-zero on errors.
 - `dir` — positional, optional. Defaults to `ctx.config.paths.entities`.
 - `--strict` — treat warnings as errors.
 
-**Behavior:** delegates to the existing `validateEntities()` in `src/index.ts`. Wraps output with `printSuccess` / `printWarning` / `printError` based on issue severity.
+**Behavior:** runs `analyzeDomain()` (which includes the loader's errors) plus the app-pattern load issues; `valid` and the exit code both derive from that one error list. Wraps output with `printSuccess` / `printWarning` / `printError` based on issue severity.
 
 **Exit codes:** 0 if no errors (and no warnings in `--strict` mode), 1 otherwise.
 
