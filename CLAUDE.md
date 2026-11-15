@@ -426,5 +426,6 @@ loops over `apiSurface` and branches on its flags. It never builds a name, never
 never decides existence. A new generated method starts as an entry there; the parity gate
 (`api-surface-parity.test.ts`) fails a template that emits one it does not list, and the golden
 (`test/api-surface-golden/`) pins its provenance. Studio and `codegen project surface` read the same
-derivation. Derivations not yet migrated are named in `no-name-derivation.allowlist.ts`; that list only
-shrinks.
+derivation. The entity backend (`templates/entity/new/backend/**`, `prompt.js`) derives no name inline; the
+derivations left elsewhere (the junction and relationship pipelines under #679, the broadcast bridge listener under
+#884) are each named, counted, in `no-name-derivation.allowlist.ts`, and that list only shrinks.

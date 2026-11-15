@@ -12,16 +12,17 @@ import { <%= classNames.repository %> } from './<%= entityFileStem %>.repository
 // READ-1 §7 — the service forwards the repository's read surface verbatim:
 // the same generics, the same options, the same result.
 const E = classNames.entity;
-const _readGenerics = includes
+const _typedInclude = apiSurface.repository.typedInclude;
+const _readGenerics = _typedInclude
   ? `<W extends ${E}Include = ${E}NoInclude, C extends ${E}Columns | undefined = undefined>`
   : `<C extends ${E}Columns | undefined = undefined>`;
-const _readArgs = includes ? '<W, C>' : '<C>';
-const _readOpts = includes ? 'ReadOptions<W, C>' : 'ReadOptions<never, C>';
-const _readResult = includes ? `${E}Result<W, C>` : `${E}Result<${E}NoInclude, C>`;
+const _readArgs = _typedInclude ? '<W, C>' : '<C>';
+const _readOpts = _typedInclude ? 'ReadOptions<W, C>' : 'ReadOptions<never, C>';
+const _readResult = _typedInclude ? `${E}Result<W, C>` : `${E}Result<${E}NoInclude, C>`;
 _%>
 import type {
   <%= E %>Columns,
-<% if (includes) { -%>
+<% if (_typedInclude) { -%>
   <%= E %>Include,
 <% } -%>
   <%= E %>NoInclude,
@@ -86,137 +87,176 @@ export class <%= classNames.service %> extends WithAnalytics(
   // The read surface (READ-1 §7) — pass-through, not composition
   //
   // DELEGATION ONLY: the repository's signatures, forwarded so a use case or the
-  // HTTP layer can carry a column mask<% if (includes) { %> and an allowlisted include<% } %> to the
+  // HTTP layer can carry a column mask<% if (_typedInclude) { %> and an allowlisted include<% } %> to the
   // one place that executes and scopes it. No join logic, no sibling-repository
   // calls, no navigator — the navigator is REL-3's (#588).
   // ═══════════════════════════════════════════════════════════════════════
+<%_
+// ADR-046 — this template PRINTS the service's methods: one loop over the
+// derivation's emitted `apiSurface.service.methods`, `m.kind` choosing the body.
+// Every method name, parameter name and callee (`m.delegatesTo.method`) is
+// printed, never built. A forwarder's body follows its callee's shape — the
+// repository method it delegates to. The TS text beside the names comes from
+// `queryTypes` / `relationTypes`, keyed by the derived name (PLAN §4.3).
+const _methods = apiSurface.service.methods.filter((m) => m.emitted);
+const _repoMethods = apiSurface.repository.methods;
+const _calleeKind = (m) => {
+  const callee = _repoMethods.find((r) => r.name === m.delegatesTo.method);
+  return callee ? callee.kind : null;
+};
+// Sections: a banner opens each group of kinds; the read surface closes with the
+// inherited-methods comment, the `queries:` forwarders with a blank line.
+const _group = (m) =>
+  m.kind.startsWith('junction_') ? 'junction'
+  : m.kind === 'relation_one' || m.kind === 'relation_many' ? 'relation'
+  : m.kind === 'eav_read' || m.kind === 'eav_write' ? 'eav'
+  : m.kind;
+_%>
+<%_ _methods.forEach((m, i) => { _%>
+<%_ const _prev = i > 0 ? _group(_methods[i - 1]) : null; _%>
+<%_ const _next = i + 1 < _methods.length ? _group(_methods[i + 1]) : null; _%>
+<%_ const _first = _prev !== _group(m); _%>
+<%_ const _last = _next !== _group(m); _%>
+<%_ if (m.kind === 'read') { _%>
+<%_ const _p = m.params[0].name; _%>
+<%_ const _callee = _calleeKind(m); _%>
+<%_ if (_callee === 'find_by_id') { _%>
 
-  override findById<%- _readGenerics %>(
-    id: string,
-    opts?: <%- _readOpts %>,
+  override <%= m.name %><%- _readGenerics %>(
+    <%= _p %>: string,
+    <%= m.params[1].name %>?: <%- _readOpts %>,
   ): Promise<<%- _readResult %> | null> {
-    return this.repository.findById<%- _readArgs %>(id, opts);
+    return this.repository.<%= m.delegatesTo.method %><%- _readArgs %>(<%= _p %>, <%= m.params[1].name %>);
   }
+<%_ } else if (_callee === 'find_by_ids') { _%>
 
-  override findByIds<%- _readGenerics %>(
-    ids: readonly string[],
-    opts?: <%- _readOpts %>,
+  override <%= m.name %><%- _readGenerics %>(
+    <%= _p %>: readonly string[],
+    <%= m.params[1].name %>?: <%- _readOpts %>,
   ): Promise<Array<<%- _readResult %>>> {
-    return this.repository.findByIds<%- _readArgs %>(ids, opts);
+    return this.repository.<%= m.delegatesTo.method %><%- _readArgs %>(<%= _p %>, <%= m.params[1].name %>);
   }
+<%_ } else { _%>
 
-  override list<%- _readGenerics %>(
-    listOptions?: ListOptions<typeof <%= entityNamePlural %>> & <%- _readOpts %>,
+  override <%= m.name %><%- _readGenerics %>(
+    <%= _p %>?: ListOptions<typeof <%= entityNamePlural %>> & <%- _readOpts %>,
   ): Promise<Array<<%- _readResult %>>> {
-    return this.repository.list<%- _readArgs %>(listOptions);
+    return this.repository.<%= m.delegatesTo.method %><%- _readArgs %>(<%= _p %>);
   }
+<%_ } _%>
+<%_ if (_last) { _%>
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
   // automatically by BaseService when the events subsystem is installed.
   //
   // Inherited from <%= serviceBaseClass %>:
+<%_ /* The pattern's declared lines, verbatim — the derivation lists the
+      inherited methods by name, not the lines a pattern groups them into. */ _%>
 <%_ serviceInheritedMethods.forEach(line => { _%>
   //   <%= line %>
 <%_ }) _%>
-<% if (hasDeclarativeQueries) { %>
+
+<%_ } _%>
+<%_ } else if (m.kind === 'finder') { _%>
+<%_ if (_first) { _%>
   // ═══════════════════════════════════════════════════════════════════════
   // Declarative queries (from queries: block in entity YAML)
   // Pass-through to repository — keeps use-cases on the service layer so
   // cross-cutting concerns (analytics, events) stay uniform.
   // ═══════════════════════════════════════════════════════════════════════
-<%_ processedQueries.forEach((q) => { _%>
-<%_ if (q.hasVia || q.hasSelect) { _%>
+<%_ } _%>
+<%_
+// The `by:` columns are the parameters that bind a field; their TS types come
+// from `queryTypes`, in the same order.
+const _t = queryTypes[m.name];
+const _cols = m.params.filter((p) => p.field !== undefined);
+const _sig = _cols.map((p, i) => `${p.name}: ${_t.params[i].tsType}`).join(', ');
+const _args = _cols.map((p) => p.name).join(', ');
+_%>
+<%_ if (_calleeKind(m) === 'finder_projection') { _%>
 
-  async <%= q.methodName %>(<%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
-    return this.repository.<%= q.methodName %>(<%= q.params.map(p => p.camelName).join(', ') %>);
+  async <%= m.name %>(<%- _sig %>): Promise<<%- _t.returnType %>> {
+    return this.repository.<%= m.delegatesTo.method %>(<%= _args %>);
   }
 <%_ } else { _%>
+<%_ const _opts = m.params[m.params.length - 1].name; _%>
 
-  <%= q.methodName %><%- _readGenerics %>(
-    <%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>,
-    opts?: <%- _readOpts %>,
-  ): Promise<<%- q.isUnique ? `${_readResult} | null` : `Array<${_readResult}>` %>> {
-    return this.repository.<%= q.methodName %><%- _readArgs %>(<%= q.params.map(p => p.camelName).join(', ') %>, opts);
+  <%= m.name %><%- _readGenerics %>(
+    <%- _sig %>,
+    <%= _opts %>?: <%- _readOpts %>,
+  ): Promise<<%- m.returns === 'one' ? `${_readResult} | null` : `Array<${_readResult}>` %>> {
+    return this.repository.<%= m.delegatesTo.method %><%- _readArgs %>(<%= _args %>, <%= _opts %>);
   }
 <%_ } _%>
-<%_ }) _%>
-<% } %>
+<%_ if (_last) { _%>
+
+<%_ } _%>
+<%_ } else if (m.kind === 'capability_forwarder') { _%>
 <%_ /* ADR-041 — capability forwarders. A capability's methods live on the
       repository (its mixin put them there); the service exposes the vocabulary
       the capability declared in `forwarderMethods`. Signatures are derived from
       the repository method, never re-declared (charter I1), and the forwarder is
       deliberately NOT `async`: `ReturnType<…>` is whatever the capability
       method returns, and `async` would require it to be a Promise. */ _%>
-<%_ if (capabilityForwarders.length > 0) { _%>
+<%_ if (_first) { _%>
   // ═══════════════════════════════════════════════════════════════════════
   // Capability forwarders (ADR-041)
   // Pass-through to the repository, where the capability's mixin lives.
   // ═══════════════════════════════════════════════════════════════════════
-<%_ capabilityForwarders.forEach((fwd) => { _%>
-
-  /** Contributed by the `<%= fwd.capability %>` capability. */
-  <%= fwd.method %>(
-    ...args: globalThis.Parameters<<%= classNames.repository %>['<%= fwd.method %>']>
-  ): globalThis.ReturnType<<%= classNames.repository %>['<%= fwd.method %>']> {
-    return this.repository.<%= fwd.method %>(...args);
-  }
-<%_ }) _%>
 <%_ } _%>
-<%_ /* CGP-358b — service-layer composition methods for relationships */ _%>
-<%_ const hasBelongsToComposition = belongsTo.length > 0; _%>
-<%_ const hasHasManyComposition = existingHasMany.length > 0; _%>
-<%_ if (hasBelongsToComposition || hasHasManyComposition) { _%>
+<%_ const _callee = m.delegatesTo.method; _%>
+
+  /** Contributed by the `<%= m.origin.capability %>` capability. */
+  <%= m.name %>(
+    <%= m.params[0].name %>: globalThis.Parameters<<%= classNames.repository %>['<%= _callee %>']>
+  ): globalThis.ReturnType<<%= classNames.repository %>['<%= _callee %>']> {
+    return this.repository.<%= _callee %>(<%= m.params[0].name %>);
+  }
+<%_ } else if (m.kind === 'relation_one' || m.kind === 'relation_many') { _%>
+<%_ /* CGP-358b — service-layer composition methods for relationships. The
+      repository a method reads is this entity's own (a self-reference) or the
+      composed one `relationTypes` names. */ _%>
+<%_ if (_first) { _%>
   // ═══════════════════════════════════════════════════════════════════════
   // Relationship composition methods (CGP-358b / CGP-62)
   // Two queries, no SQL JOIN.
   // ═══════════════════════════════════════════════════════════════════════
 <%_ } _%>
-<%_ if (hasBelongsToComposition) { _%>
-<%_ belongsTo.forEach(rel => { _%>
-<%_ const relCamel = rel.relatedEntity.replace(/_([a-z])/g, (_, c) => c.toUpperCase()); _%>
-<%_ const entityCamel = entityName.replace(/_([a-z])/g, (_, c) => c.toUpperCase()); _%>
+<%_ const _r = relationTypes[m.name]; _%>
+<%_ const _repo = _r.repoProperty ? `this.${_r.repoProperty}` : 'this.repository'; _%>
+<%_ const _id = m.params[0].name; _%>
+<%_ if (m.kind === 'relation_one') { _%>
 
   /**
-   * Fetch the <%= rel.relatedEntityPascal %> parent for this <%= entityNamePascal %>.
+   * Fetch the <%= _r.targetClass %> parent for this <%= entityNamePascal %>.
    * Two repo calls: find self by id → find target by FK.
    */
-  async <%= rel.relationKey %>(<%- entityCamel %>Id: string): Promise<<%= rel.relatedEntityPascal %> | null> {
-    const entity = await this.repository.findById(<%- entityCamel %>Id);
+  async <%= m.name %>(<%- _id %>: string): Promise<<%= _r.targetClass %> | null> {
+    const entity = await this.repository.findById(<%- _id %>);
     if (!entity) return null;
-<%_ if (rel.isSelfFk) { _%>
-    return entity.<%= rel.camelField %> ? this.repository.findById(entity.<%= rel.camelField %>) : null;
-<%_ } else { _%>
-    return entity.<%= rel.camelField %> ? this.<%= relCamel %>Repo.findById(entity.<%= rel.camelField %>) : null;
-<%_ } _%>
+    return entity.<%= _r.fkProperty %> ? <%- _repo %>.<%= m.delegatesTo.method %>(entity.<%= _r.fkProperty %>) : null;
   }
-<%_ }) _%>
-<%_ } _%>
-<%_ if (hasHasManyComposition) { _%>
-<%_ existingHasMany.forEach(rel => { _%>
-<%_ const relCamel = rel.target.replace(/_([a-z])/g, (_, c) => c.toUpperCase()); _%>
-<%_ const entityCamel = entityName.replace(/_([a-z])/g, (_, c) => c.toUpperCase()); _%>
-<%_ const fkPascal = rel.inverseForeignKeyPascal; _%>
+<%_ } else { _%>
 
   /**
-   * Fetch <%= rel.name %> for this <%= entityNamePascal %> by FK traversal.
+   * Fetch <%= _r.relationship %> for this <%= entityNamePascal %> by FK traversal.
    * Single repo call; `limit` caps it (ordered by `id`, so the subset is stable).
    */
-  async <%= rel.name %>(<%- entityCamel %>Id: string, opts?: { limit?: number }): Promise<<%= rel.targetClass %>[]> {
-<%_ if (rel.isSelfRef) { _%>
-    return this.repository.findBy<%= fkPascal %>(<%- entityCamel %>Id, opts);
-<%_ } else { _%>
-    return this.<%= relCamel %>Repo.findBy<%= fkPascal %>(<%- entityCamel %>Id, opts);
-<%_ } _%>
+  async <%= m.name %>(<%- _id %>: string, <%= m.params[1].name %>?: { limit?: number }): Promise<<%= _r.targetClass %>[]> {
+    return <%- _repo %>.<%= m.delegatesTo.method %>(<%- _id %>, <%= m.params[1].name %>);
   }
-<%_ }) _%>
 <%_ } _%>
+<%_ } else if (m.kind.startsWith('junction_')) { _%>
 <%_ /* JUNC-0 (#678) — junction fan-out, mirrored on both parents (CGP-60;
       docs/relationship-pattern-audit.md §1). Rendered here from the junction
       YAML set, so re-running `entity new` or `junction new` in any order gives
-      the same file. `forwardRef` resolves the parent ↔ junction module cycle. */ _%>
-<%_ if (junctionFanOut.length > 0) { _%>
+      the same file. `forwardRef` resolves the parent ↔ junction module cycle.
+      The junction's own facts (service class + property, link and row types,
+      the counterparty type) are the fan-out block's; the names are the
+      derivation's. */ _%>
+<%_ if (_first) { _%>
 <%_ /* the queries block ends on a blank line; the forwarder / composition blocks do not */ _%>
-<%_ if (capabilityForwarders.length > 0 || hasBelongsToComposition || hasHasManyComposition) { _%>
+<%_ if (_prev === 'capability_forwarder' || _prev === 'relation') { _%>
 
 <%_ } _%>
   // ═══════════════════════════════════════════════════════════════════════
@@ -225,79 +265,46 @@ export class <%= classNames.service %> extends WithAnalytics(
   // on the other parent.
   // ═══════════════════════════════════════════════════════════════════════
 <%_ } _%>
-<%_ junctionFanOut.forEach(fan => { _%>
+<%_ const fan = junctionFanOut.find((f) => f.junction.name === m.delegatesTo.entity); _%>
 <%_ const j = fan.junction; _%>
+<%_ const _self = m.params[0].name; _%>
+<%_ /* The junction's own methods take (left id, right id); this side's id is the first parameter. */ _%>
+<%_ const _pair = m.params.length > 1 ? (fan.side === 'left' ? `${_self}, ${m.params[1].name}` : `${m.params[1].name}, ${_self}`) : null; _%>
+<%_ if (m.kind === 'junction_attach') { _%>
 
   // <%= j.name %> — <%= fan.side %> side, fan-out to <%= fan.counterpartyPascal %>
   @Inject(forwardRef(() => <%= j.serviceClass %>))
   private readonly <%= j.serviceProperty %>!: <%= j.serviceClass %>;
 
-  async <%= fan.attachMethod %>(
-    <%= fan.selfIdParam %>: string,
-    <%= fan.counterpartyIdParam %>: string,
-    link<%= fan.linkRequired ? '' : '?' %>: <%= j.linkInputType %>,
+  async <%= m.name %>(
+    <%= _self %>: string,
+    <%= m.params[1].name %>: string,
+    <%= m.params[2].name %><%= fan.linkRequired ? '' : '?' %>: <%= j.linkInputType %>,
   ): Promise<<%= j.entityClass %>> {
-    return this.<%= j.serviceProperty %>.attach(<%= fan.leftIdParam %>, <%= fan.rightIdParam %>, link);
+    return this.<%= j.serviceProperty %>.<%= m.delegatesTo.method %>(<%= _pair %>, <%= m.params[2].name %>);
   }
+<%_ } else if (m.kind === 'junction_detach' || m.kind === 'junction_set_primary') { _%>
 
-  async <%= fan.detachMethod %>(
-    <%= fan.selfIdParam %>: string,
-    <%= fan.counterpartyIdParam %>: string,
+  async <%= m.name %>(
+    <%= _self %>: string,
+    <%= m.params[1].name %>: string,
   ): Promise<void> {
-    return this.<%= j.serviceProperty %>.detach(<%= fan.leftIdParam %>, <%= fan.rightIdParam %>);
+    return this.<%= j.serviceProperty %>.<%= m.delegatesTo.method %>(<%= _pair %>);
   }
+<%_ } else if (m.kind === 'junction_list') { _%>
 
-  async <%= fan.listMethod %>(
-    <%= fan.selfIdParam %>: string,
-    opts?: { cursor?: string; limit?: number },
+  async <%= m.name %>(
+    <%= _self %>: string,
+    <%= m.params[1].name %>?: { cursor?: string; limit?: number },
   ): Promise<Array<{ entity: <%= fan.counterpartyPascal %>; link: <%= j.entityClass %> }>> {
-    return this.<%= j.serviceProperty %>.listAssoc('<%= fan.side %>', <%= fan.selfIdParam %>, opts) as Promise<
+    return this.<%= j.serviceProperty %>.<%= m.delegatesTo.method %>('<%= fan.side %>', <%= _self %>, <%= m.params[1].name %>) as Promise<
       Array<{ entity: <%= fan.counterpartyPascal %>; link: <%= j.entityClass %> }>
     >;
   }
-<%_ if (fan.hasIsPrimary) { _%>
-
-  async <%= fan.setPrimaryMethod %>(
-    <%= fan.selfIdParam %>: string,
-    <%= fan.counterpartyIdParam %>: string,
-  ): Promise<void> {
-    return this.<%= j.serviceProperty %>.setPrimary(<%= fan.leftIdParam %>, <%= fan.rightIdParam %>);
-  }
 <%_ } _%>
-<%_ }) _%>
-<% if (eavEnabled) { %>
-  /**
-   * EAV paired read (ADR-13): fetch the entity and merge dynamic `field_values`
-   * into a single `fields` bag. FieldValueService owns the FieldDefinition
-   * lookup internally. Use this for frontend detail views, LLM context,
-   * exports.
-   */
-  async findByIdWithFields(
-    id: string,
-  ): Promise<(<%= classNames.entity %> & { fields: globalThis.Record<string, unknown> }) | null> {
-    const entity = await this.repository.findById(id);
-    if (!entity) return null;
-    const fields = await this.fieldValues.findMergedByEntity('<%= entityName %>', id);
-    return { ...entity, fields };
-  }
+<%_ } else if (m.kind === 'eav_write') { _%>
+<%_ const [_type, _eid, _uid, _fields, _tx] = m.params.map((p) => p.name); _%>
 
-  /**
-   * EAV paired read (ADR-13): list variant. Fetches all entities then merges
-   * each one's EAV fields via FieldValueService. Acceptable for modest result
-   * sets; page externally for large collections.
-   */
-  async listWithFields(): Promise<Array<<%= classNames.entity %> & { fields: globalThis.Record<string, unknown> }>> {
-    const entities = await this.repository.list();
-    if (entities.length === 0) return [];
-    return Promise.all(
-      entities.map(async (entity) => {
-        const fields = await this.fieldValues.findMergedByEntity('<%= entityName %>', entity.id);
-        return { ...entity, fields };
-      }),
-    );
-  }
-<% } -%>
-<% if (eavValueTable) { %>
   /**
    * EAV compound write (task #23) — upserts a bag of dynamic fields onto
    * an owning entity in a single transaction. Resolves field keys to
@@ -306,37 +313,79 @@ export class <%= classNames.service %> extends WithAnalytics(
    * caller is expected to have created the definitions first (auto-create
    * is a later step).
    */
-  async upsertFieldsTransactional(
-    entityType: string,
-    entityId: string,
-    userId: string,
-    fields: globalThis.Record<string, unknown>,
-    tx?: DrizzleTx,
+  async <%= m.name %>(
+    <%= _type %>: string,
+    <%= _eid %>: string,
+    <%= _uid %>: string,
+    <%= _fields %>: globalThis.Record<string, unknown>,
+    <%= _tx %>?: DrizzleTx,
   ): Promise<void> {
-    if (!fields || Object.keys(fields).length === 0) return;
+    if (!<%= _fields %> || Object.keys(<%= _fields %>).length === 0) return;
     const allDefs = await this.<%= eavDefinitionRepoProperty %>.list();
-    const defs = allDefs.filter((d) => (d as any).entityType === entityType);
+    const defs = allDefs.filter((d) => (d as any).entityType === <%= _type %>);
     const defIdByKey = new Map(defs.map((d) => [d.key, d.id]));
-    const rows = toEavRows(entityId, entityType, userId, fields, defIdByKey);
+    const rows = toEavRows(<%= _eid %>, <%= _type %>, <%= _uid %>, <%= _fields %>, defIdByKey);
     if (rows.length === 0) return;
-    await this.repository.upsertCurrentValues(rows as Array<globalThis.Partial<<%= classNames.entity %>>>, tx);
+    await this.repository.<%= m.delegatesTo.method %>(rows as Array<globalThis.Partial<<%= classNames.entity %>>>, <%= _tx %>);
   }
+<%_ } else if (m.kind === 'eav_read') { _%>
+<%_ const _callee = _calleeKind(m); _%>
+<%_ if (_callee === 'find_by_id') { _%>
+<%_ const _id = m.params[0].name; _%>
+
+  /**
+   * EAV paired read (ADR-13): fetch the entity and merge dynamic `field_values`
+   * into a single `fields` bag. FieldValueService owns the FieldDefinition
+   * lookup internally. Use this for frontend detail views, LLM context,
+   * exports.
+   */
+  async <%= m.name %>(
+    <%= _id %>: string,
+  ): Promise<(<%= classNames.entity %> & { fields: globalThis.Record<string, unknown> }) | null> {
+    const entity = await this.repository.<%= m.delegatesTo.method %>(<%= _id %>);
+    if (!entity) return null;
+    const fields = await this.fieldValues.findMergedByEntity('<%= entityName %>', <%= _id %>);
+    return { ...entity, fields };
+  }
+<%_ } else if (_callee === 'list') { _%>
+
+  /**
+   * EAV paired read (ADR-13): list variant. Fetches all entities then merges
+   * each one's EAV fields via FieldValueService. Acceptable for modest result
+   * sets; page externally for large collections.
+   */
+  async <%= m.name %>(): Promise<Array<<%= classNames.entity %> & { fields: globalThis.Record<string, unknown> }>> {
+    const entities = await this.repository.<%= m.delegatesTo.method %>();
+    if (entities.length === 0) return [];
+    return Promise.all(
+      entities.map(async (entity) => {
+        const fields = await this.fieldValues.findMergedByEntity('<%= entityName %>', entity.id);
+        return { ...entity, fields };
+      }),
+    );
+  }
+<%_ } else { _%>
+<%_ /* The value table's merged read: its callee is the Metadata repository's
+      `findByEntityIdAndType`, not a method this template generates. */ _%>
+<%_ const [_type, _eid] = m.params.map((p) => p.name); _%>
 
   /**
    * EAV paired read (task #23) — returns the current merged `{ key: value }`
    * bag for one owning entity. Resolves definition ids to keys internally.
    */
-  async findMergedByEntity(
-    entityType: string,
-    entityId: string,
+  async <%= m.name %>(
+    <%= _type %>: string,
+    <%= _eid %>: string,
   ): Promise<globalThis.Record<string, unknown>> {
     const [rows, allDefs] = await Promise.all([
-      this.repository.findByEntityIdAndType(entityId, entityType),
+      this.repository.<%= m.delegatesTo.method %>(<%= _eid %>, <%= _type %>),
       this.<%= eavDefinitionRepoProperty %>.list(),
     ]);
-    const defs = allDefs.filter((d) => (d as any).entityType === entityType);
+    const defs = allDefs.filter((d) => (d as any).entityType === <%= _type %>);
     const defsById = new Map(defs.map((d) => [d.id, { key: d.key }]));
     return mergeEavRows(rows as any, defsById);
   }
-<% } -%>
+<%_ } _%>
+<%_ } _%>
+<%_ }) _%>
 }

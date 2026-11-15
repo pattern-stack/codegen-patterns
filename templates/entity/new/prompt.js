@@ -29,6 +29,7 @@ import { deriveRoleRelationships } from "../../../src/roles/derive.js";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 import { projectEntityLookup } from "../../_shared/entity-naming.mjs";
 import { sqlTableName } from "../../../src/config/table-naming.js";
+import { camelCase } from "../../../src/config/file-naming.js";
 import { loadJunctionDefinitions } from "../../_shared/junction-fan-out.mjs";
 import {
   loadRuntimeMode,
@@ -364,7 +365,6 @@ export default {
       ? definition.emits
       : null;
 
-    const camelCase = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
     const camelName = camelCase(name);
 
     // ========================================================================
