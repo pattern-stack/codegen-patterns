@@ -663,8 +663,9 @@ entity, end-to-end through HTTP* waits for a harness with a boundary (§10 Found
   distance limit and not past it, a table with no relations, the declared spelling quoted).
 - **`src/__tests__/runtime/http/includes.spec.ts`** — 12 tests on the request-time resolver: parsing, the merge rule
   (deeper fragment wins, order-independent), non-mutation of the shared literals, and that an absent allowlist rejects.
-- **`src/__tests__/emitters/relations/route-name-parity.test.ts`** — the finder route key and the allowlist constant
-  name, asserted identical on the TS and hygen sides (#711).
+- ~~`src/__tests__/emitters/relations/route-name-parity.test.ts`~~ — the finder route key and the allowlist constant
+  name, asserted identical on the TS and hygen sides (#711). Deleted by ADR-046 B2 (finder half) and B3 (constant
+  half): each name has one rule in `src/derived/api/names.ts`, so there is nothing left to compare.
 - **`src/__tests__/emitters/relations/build-graph.test.ts`** — `entityScope` precedence, and that every edge carries its
   TARGET's scope (including `null` for a hop into the junction TABLE, which is §1.5's characterisation).
 - The **REL-1 golden snapshot** regenerates with the `where` clauses. Its fixture set is now deliberately mixed —
@@ -821,6 +822,10 @@ refactor across three pipelines, not this PR's.
 `entity-locals.js`, `templates/relationship/new/prompt.js` and `build-includes.ts#readRouteKeys` all read it;
 `src/schema/query-routes.ts` and the finder half of `route-name-parity.test.ts` are deleted.
 
+**Revision (2026-11-14, ADR-046 B3):** the allowlist constant's name went the same way — `includesConstName` in
+`src/derived/api/names.ts` is the one rule; `emit-includes.ts` and the controller template (through
+`apiSurface.http.includesConst`) both read it, and the rest of `route-name-parity.test.ts` is deleted.
+
 ### Found #8 — two harness facts the scaffold needed for a generated controller
 
 Mounting a generated module in the scaffold's Nest app surfaced two gaps, both fixed here:
@@ -885,6 +890,12 @@ The two halves now have to agree. `declaresOwnRelation(def)` in the emitter is t
 template, pinned by a parity test over five shapes, and an `api.includes` block on an entity that fails it is a
 **generation error** naming the entity and pointing at #679 — rather than a silent 400 at runtime. Same asymmetry
 #679 settles; until it does, the limitation is loud.
+
+**Revision (2026-11-14, ADR-046 B3):** there is one rule now, not two to pin. `declaresOwnRelation` and `apiEnabled`
+live in `src/derived/api/entity.ts`; the emitter calls them on the parsed definition, the derivation (and through it
+every backend template) on the raw YAML, and both accept either spelling. The schema's `apiEnabled` (which relied on
+zod's default and threw on a raw document with no `api:` key) and `build-includes.ts`'s copy are deleted. The
+five-shape test stays, now pinning the two input spellings to one answer.
 
 ---
 

@@ -16,10 +16,10 @@ import { describe, expect, it } from 'bun:test';
 import { buildRelationGraph } from '../../../emitters/relations/build-graph';
 import {
 	buildIncludeAllowlists,
-	declaresOwnRelation,
 	IncludeAllowlistError,
 	readRouteKeys,
 } from '../../../emitters/relations/build-includes';
+import { declaresOwnRelation } from '../../../derived/api/entity';
 import { buildApiIncludes } from '../../../emitters/relations/emit-includes';
 import type { RelationsEmitContext } from '../../../emitters/relations/types';
 import type { EntityRegistryEntry } from '../../../parser/entity-registry';
@@ -392,10 +392,11 @@ describe('buildApiIncludes — the emitted file', () => {
 	});
 });
 
-// The rule `declaresOwnRelation` encodes has a twin in the hygen half
-// (`includes`). They decide the same thing from the same YAML and must not
-// drift: if the emitter says "allowlist is fine" and the template says "no
-// include surface", every allowlisted path is a silent 400.
+// `declaresOwnRelation` (`src/derived/api/entity.ts`, ADR-046) is the one rule:
+// the emitter calls it on the parsed definition, and the hygen half's `includes`
+// local is the derivation's `typedInclude`, which calls it on the raw YAML. If
+// the two ever answered differently, every allowlisted path would be a silent
+// 400 — so the pair is still pinned, across both input spellings.
 describe('declaresOwnRelation matches the template’s includes', () => {
 	const cases: Array<{ name: string; relationships: unknown; expected: boolean }> = [
 		{ name: 'none declared', relationships: undefined, expected: false },

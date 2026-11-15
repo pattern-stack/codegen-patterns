@@ -21,11 +21,8 @@
  * `?include=` wire format all stay in relation keys.
  */
 
-import {
-  apiEnabled,
-  apiIncludes,
-  type EntityDefinition,
-} from '../../schema/entity-definition.schema';
+import { apiIncludes, type EntityDefinition } from '../../schema/entity-definition.schema';
+import { apiEnabled, declaresOwnRelation } from '../../derived/api/entity';
 import { finderName } from '../../derived/api/names';
 import type { RelationGraph } from './build-graph';
 import { levenshtein } from '../../utils/edit-distance';
@@ -81,19 +78,6 @@ export function readRouteKeys(def: EntityDefinition): string[] {
     .filter((q): q is Extract<typeof q, { by: string[] }> => 'by' in q)
     .map((q) => finderName(q));
   return ['find_by_id', 'list', ...finders];
-}
-
-/**
- * Does this entity declare a relationship that becomes an edge ON ITS OWN TABLE?
- *
- * MUST stay identical to the `clpIncludes` local in
- * `templates/entity/new/clean-lite-ps/prompt-extension.js`, which is what decides
- * whether a typed include surface is emitted at all. A unit test pins the pair.
- * Transitive (`through:`) relationships are excluded because REL-1 emits no edge
- * for them (#614).
- */
-export function declaresOwnRelation(def: EntityDefinition): boolean {
-  return Object.values(def.relationships ?? {}).some((rel) => !rel.through);
 }
 
 /** `{ a: { with: { b: true } } }` from `['a', 'b']`. */
