@@ -24,7 +24,13 @@ import { detectMethodCollisions } from '../../../../src/patterns/compose.js';
 import { resolvePatternComposition } from '../../../../src/patterns/resolve-composition.js';
 import '../../../../src/patterns/library/index.js';
 import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
-import { finderName, fkFinderName } from '../../../../src/derived/api/names.js';
+import {
+  finderName,
+  fkFinderName,
+  pascalCase,
+  queryUseCaseClassName,
+  relationMethodName,
+} from '../../../../src/derived/api/names.js';
 import { camelCase, emittedStem } from '../../../../src/config/file-naming.js';
 import { resolveImpliedBehaviors } from '../../../../src/patterns/implied-behaviors.js';
 import {
@@ -269,8 +275,6 @@ export { resolvePatternComposition };
 // Helper utilities
 // ============================================================================
 
-const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-const pascalCase = (s) => capitalize(camelCase(s));
 const pluralize = (s) => pluralizePkg.plural(s);
 
 // ============================================================================
@@ -747,22 +751,20 @@ function processBelongsTo(relationships, naming, fields = {}) {
     // as a has_many's member is — never the target's: two belongs_to onto one
     // target (`home_team` / `away_team` → `nba_team`) are two edges, and
     // keying by target gave them one method and one write key between them
-    // (#731). Casing is #494 / #697's, not changed here.
-    let relationKey;
-    if (rel.role) {
-      // CAP-2: a role names its own edge. Keying by target would give `host:
-      // contact` and `organizer: contact` one method name between them, and
-      // describe two graph edges with one name.
-      relationKey = camelCase(rel.role);
-    } else if (isSelfFk) {
-      // parent_account_id → parent_account → parentAccount
-      const base = field.endsWith('_id') ? field.slice(0, -3) : field;
-      relationKey = camelCase(base);
-    } else {
-      relationKey = relName;
-    }
+    // (#731). Casing is #494 / #697's, not changed here. A role names its own
+    // edge (CAP-2), so `host: contact` and `organizer: contact` stay two. The
+    // rule is the derivation's — the service method's name (ADR-046).
+    const relationKey = relationMethodName({
+      cardinality: 'one',
+      name: relName,
+      role: rel.role,
+      foreignKey: field,
+      isSelf: isSelfFk,
+    });
 
     result.push({
+      // The YAML key — joins this entry to the derived method its origin names.
+      name: relName,
       field,
       role: rel.role ?? null,
       camelField: camelCase(field),
@@ -1202,7 +1204,7 @@ function zodChainForOutput(field) {
  * Process declarative queries from YAML queries: block.
  * Produces typed query metadata for template generation.
  */
-function processQueries(queriesBlock, processedFields, entityNamePascal) {
+function processQueries(queriesBlock, processedFields, entityName, entityNamePascal) {
   if (!queriesBlock || !Array.isArray(queriesBlock) || queriesBlock.length === 0) {
     return [];
   }
@@ -1249,11 +1251,9 @@ function processQueries(queriesBlock, processedFields, entityNamePascal) {
       returnType = `${entityNamePascal}[]`;
     }
 
-    // Prefix class name with entity to guarantee uniqueness across modules.
-    // e.g. methodName 'findByDomain' on Account → 'FindAccountByDomainUseCase'
-    //      methodName 'findEmailsByOpportunityId' on Contact → 'FindContactEmailsByOpportunityIdUseCase'
-    const methodPascal = pascalCase(methodName);
-    const useCaseClassName = methodPascal.replace(/^Find/, `Find${entityNamePascal}`) + 'UseCase';
+    // The use-case class is the derivation's too (`queryUseCaseClassName`): the
+    // finder with the entity spliced in after `Find`, unique across modules.
+    const useCaseClassName = queryUseCaseClassName(methodName, entityName);
 
     return {
       by: byFields,
@@ -1735,7 +1735,6 @@ export function buildBackendLocals(definition, baseLocals) {
   // a library capability authors `@shared/base-classes/…`, an app capability's
   // own alias (`@modules/…`, `@/patterns/…`) passes through untouched.
   const capabilityMixins = [];
-  const capabilityForwarders = [];
   for (const cap of patternBase.capabilities) {
     const capConfigBlock =
       (definition.config && definition.config[cap.name]) ||
@@ -1769,9 +1768,6 @@ export function buildBackendLocals(definition, baseLocals) {
         // Read by `resolveLibraryCapabilityConfig` to validate at generation.
         configSchema: cap.configSchema,
       });
-    }
-    for (const method of cap.forwarderMethods ?? []) {
-      capabilityForwarders.push({ capability: cap.name, method });
     }
   }
 
@@ -1865,7 +1861,7 @@ export function buildBackendLocals(definition, baseLocals) {
   const byColumnQueries = Array.isArray(queriesBlock)
     ? queriesBlock.filter((q) => q && 'by' in q)
     : queriesBlock;
-  const processedQueries = processQueries(byColumnQueries, processedFields, entityNamePascal);
+  const processedQueries = processQueries(byColumnQueries, processedFields, entityName, entityNamePascal);
   // Process search query declaration (at most one per entity for now).
   const searchQuery = processSearchQueries(
     queriesBlock,
@@ -1878,7 +1874,6 @@ export function buildBackendLocals(definition, baseLocals) {
   );
 
   const hasDeclarativeQueries = processedQueries.length > 0;
-  const declarativeQueryClasses = processedQueries.map((q) => q.useCaseClassName);
   const hasMultiFieldQuery = processedQueries.some((q) => q.hasMultipleParams);
   const hasOrderedQuery = processedQueries.some((q) => q.hasOrder);
   const hasViaQuery = processedQueries.some((q) => q.hasVia);
@@ -2455,6 +2450,35 @@ export function buildBackendLocals(definition, baseLocals) {
     ]),
   );
 
+  // The TS text a relation method prints beside the derivation's names, keyed
+  // by the DERIVED method name and joined through the YAML declaration its
+  // origin names: the target's class, the FK property a to-one reads, and the
+  // composed repository it calls (`null`: its own, a self-reference).
+  const relationTypes = {};
+  for (const m of apiSurface.service.methods) {
+    if (m.kind !== 'relation_one' && m.kind !== 'relation_many') continue;
+    const [section, key] = m.origin.at.path;
+    const dep = repositoryDeps.find((d) => d.entity === m.delegatesTo.entity);
+    const repoProperty = m.delegatesTo.entity === entityName ? null : dep.property;
+    if (m.kind === 'relation_one') {
+      const rel = belongsTo.find((r) => (section === 'roles' ? r.role === key : r.name === key));
+      relationTypes[m.name] = { targetClass: rel.relatedEntityPascal, fkProperty: rel.camelField, repoProperty };
+    } else {
+      const rel = hasMany.find((r) => r.name === key);
+      relationTypes[m.name] = { relationship: rel.name, targetClass: rel.targetClass, repoProperty };
+    }
+  }
+
+  // Projections of the derivation, kept for the callers of `buildBackendLocals`
+  // that read them (no template does): the capability forwarders the service
+  // prints, and the `queries:` use-case classes the module registers.
+  const capabilityForwarders = apiSurface.service.methods
+    .filter((m) => m.kind === 'capability_forwarder')
+    .map((m) => ({ capability: m.origin.capability, method: m.name }));
+  const declarativeQueryClasses = apiSurface.useCases
+    .filter((u) => u.kind === 'query')
+    .map((u) => u.className);
+
   const backendLocals = {
     // NAME-2 — emitted file stems (kebab-case). The `*Name*` locals beside
     // them stay snake_case: they are the class-name and DB-identifier source.
@@ -2606,6 +2630,7 @@ export function buildBackendLocals(definition, baseLocals) {
     // ADR-046: the derived API surface, and the finder type text keyed by it
     apiSurface,
     queryTypes,
+    relationTypes,
 
     // Declarative queries
     processedQueries,

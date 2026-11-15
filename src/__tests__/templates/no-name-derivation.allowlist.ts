@@ -23,16 +23,7 @@ export interface AllowlistEntry {
 }
 
 export const NO_NAME_DERIVATION_ALLOWLIST: readonly AllowlistEntry[] = [
-	// ── The entity backend — ADR-046 Phase B empties these ─────────────────
-	{ file: 'templates/entity/new/backend/entity-locals.js', pattern: 'local-case-helper', count: 1, issue: 'ADR-046 Phase B' },
-	{ file: 'templates/entity/new/backend/service.ejs.t', pattern: 'inline-camel-case', count: 4, issue: 'ADR-046 Phase B' },
-	{ file: 'templates/entity/new/backend/service.ejs.t', pattern: 'string-built-finder', count: 2, issue: 'ADR-046 Phase B' },
-	{ file: 'templates/entity/new/prompt.js', pattern: 'inline-camel-case', count: 1, issue: 'ADR-046 Phase B' },
-	{ file: 'templates/entity/new/prompt.js', pattern: 'local-case-helper', count: 1, issue: 'ADR-046 Phase B' },
-
 	// ── Junction and relationship pipelines — converge under #679 ──────────
-	{ file: 'templates/_shared/junction-fan-out.mjs', pattern: 'inline-camel-case', count: 1, issue: '#679' },
-	{ file: 'templates/_shared/junction-fan-out.mjs', pattern: 'local-case-helper', count: 2, issue: '#679' },
 	{ file: 'templates/junction/new/prompt.js', pattern: 'inline-camel-case', count: 1, issue: '#679' },
 	{ file: 'templates/junction/new/prompt.js', pattern: 'local-case-helper', count: 2, issue: '#679' },
 	{ file: 'templates/junction/new/repository.ejs.t', pattern: 'string-built-finder', count: 2, issue: '#679' },

@@ -24,13 +24,17 @@ import yaml from 'yaml';
 import { junctionName, junctionPlural } from '../../src/config/junction-naming.js';
 import { junctionsDirFor } from '../../src/config/junctions-dir.js';
 import { findYamlFiles } from '../../src/utils/find-yaml-files.js';
-import { emittedStem } from '../../src/config/file-naming.js';
+import { camelCase, emittedStem } from '../../src/config/file-naming.js';
+import {
+  idParamName,
+  junctionAttachName,
+  junctionDetachName,
+  junctionListName,
+  junctionSetPrimaryName,
+  pascalCase,
+} from '../../src/derived/api/names.js';
 import { hasIdentityRole } from '../../src/schema/junction-definition.schema.js';
 import { entityModuleNaming, relativeModuleDir } from './entity-naming.mjs';
-
-const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-const camelCase = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-const pascalCase = (s) => capitalize(camelCase(s));
 
 /** A junction's name: its endpoints in `between:` order (`src/config/junction-naming.ts`). */
 export { junctionName };
@@ -152,20 +156,23 @@ export function junctionFanOutFor(entityName, ctx) {
     blocks.push({
       side,
       junction,
-      leftIdParam: `${camelCase(left)}Id`,
-      rightIdParam: `${camelCase(right)}Id`,
-      selfIdParam: `${camelCase(entityName)}Id`,
-      counterpartyIdParam: `${camelCase(counterparty)}Id`,
+      // The fan-out's method and id-parameter names are the derivation's
+      // (`src/derived/api/names.ts`); the parent's service prints them from
+      // `apiSurface.service.methods`, and these keys project the same rules.
+      leftIdParam: idParamName(left),
+      rightIdParam: idParamName(right),
+      selfIdParam: idParamName(entityName),
+      counterpartyIdParam: idParamName(counterparty),
       counterpartyPascal,
       counterpartyEntityImport:
         `${relativeModuleDir(selfModuleDir, counterpartyNaming.moduleDir)}/${emittedStem(counterparty)}.entity`,
       junctionServiceImport: `${junctionDir}/${emittedStem(name)}.service`,
       junctionEntityImport: `${junctionDir}/${emittedStem(name)}.entity`,
       junctionModuleImport: `${junctionDir}/${emittedStem(junction.plural)}.module`,
-      attachMethod: side === 'left' ? `attach${counterpartyPascal}` : `addTo${counterpartyPascal}`,
-      detachMethod: side === 'left' ? `detach${counterpartyPascal}` : `removeFrom${counterpartyPascal}`,
-      listMethod: `${counterpartyPlural}List`,
-      setPrimaryMethod: `${counterpartyPlural}SetPrimary`,
+      attachMethod: junctionAttachName(side, counterparty),
+      detachMethod: junctionDetachName(side, counterparty),
+      listMethod: junctionListName(counterpartyPlural),
+      setPrimaryMethod: junctionSetPrimaryName(counterpartyPlural),
       // `is_primary: false` junctions have no column to set, so no setPrimary.
       hasIsPrimary: def.is_primary !== false,
       // A `required: true` payload field makes the link argument required.

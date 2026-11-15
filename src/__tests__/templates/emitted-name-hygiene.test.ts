@@ -14,6 +14,7 @@ import promptModule from '../../../templates/relationship/new/prompt.js';
 import { buildBackendLocals } from '../../../templates/entity/new/backend/entity-locals.js';
 import { emittedNameViolations, libGlobalTypeNames } from '../../../test/_emitted-name-hygiene';
 import { withEntities } from '../backend/_entity-lookup';
+import { deriveRoleRelationships } from '../../roles/derive.js';
 
 const ROOT = path.resolve(import.meta.dir, '../../..');
 const BACKEND_ROOT = path.join(ROOT, 'templates/entity/new/backend');
@@ -129,6 +130,20 @@ const base = {
 	behaviors: ['timestamps'],
 };
 
+// A real capability, so the forwarders come from the derivation (`apiSurface.service.methods`) — the
+// service template reads nothing else. Communication's config resolves from `roles:`, merged into
+// `relationships:` here exactly as `prompt.js` merges it before the locals are built.
+const capabilityRoles = { host: { target: 'account', cardinality: 'one' } };
+const withCapabilityForwarders = {
+	...base,
+	entity: { ...base.entity, pattern: undefined, patterns: ['Base', 'Communication'] },
+	roles: capabilityRoles,
+	relationships: {
+		...base.relationships,
+		...deriveRoleRelationships(capabilityRoles as Parameters<typeof deriveRoleRelationships>[0]),
+	},
+};
+
 const MATRIX: [string, Record<string, unknown>, Record<string, unknown>][] = [
 	['an entity with plural options', { ...base, entity: { ...base.entity, plural: 'options' } }, {}],
 	[
@@ -167,17 +182,24 @@ const MATRIX: [string, Record<string, unknown>, Record<string, unknown>][] = [
 		{ ...base, queries: [{ by: ['status'], select: ['title', 'status'] }] },
 		{},
 	],
-	[
-		'a service with a capability forwarder',
-		base,
-		{ capabilityForwarders: [{ capability: 'searchable', method: 'searchText' }] },
-	],
+	['a service with a capability forwarder', withCapabilityForwarders, {}],
 ];
 
 describe('branch matrix', () => {
 	it.each(MATRIX)('%s', (_name, def, extra) => {
 		const files = renderAll(def, extra);
 		expect(fmt(emittedNameViolations(files))).toEqual([]);
+	});
+});
+
+// The forwarder case must reach its subject: a case that renders no forwarder would pass the hygiene check
+// above while testing nothing (CLAUDE.md § Testing, #726 shape c).
+describe('the capability-forwarder case renders its forwarders', () => {
+	it('the service carries every forwarder the capability declares', () => {
+		const service = renderAll(withCapabilityForwarders).find((f) => f.path === 'widget/service.ts');
+		expect(service?.text).toContain('/** Contributed by the `Communication` capability. */');
+		expect(service?.text).toContain('  findByRole(\n');
+		expect(service?.text).toContain('  participants(\n');
 	});
 });
 

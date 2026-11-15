@@ -29,6 +29,7 @@ interface InheritedCommentExpectation {
 
 const INHERITED_COMMENT_EXPECTATIONS: readonly InheritedCommentExpectation[] = [
 	{ file: 'templates/entity/new/backend/repository.ejs.t', local: 'repositoryInheritedMethods', issue: '#893' },
+	{ file: 'templates/entity/new/backend/service.ejs.t', local: 'serviceInheritedMethods', issue: '#893' },
 ];
 
 describe('named expectation — the inherited-methods comment is the only reader of the pattern list (#893)', () => {

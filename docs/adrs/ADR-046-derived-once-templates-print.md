@@ -95,4 +95,33 @@ its `order:`) is recorded and fixed afterwards as a one-place edit, never inside
 
 ## Revision notes
 
-(none yet — the last Phase B PR records what implementation changed)
+**Revision 1 — 2026-11-14, as built (Phase A + Phase B, slice 1).** The decision stands; implementation changed
+these details:
+
+- **Inputs.** `deriveEntityApiSurface` takes one more input than planned, `entityLookup` (NAME-0's cross-entity
+  lookup), so a junction counterparty's plural comes from its own YAML and `src/derived` never pluralises. It merges
+  `roles:` into `relationships` itself (`deriveRoleRelationships`, idempotent), so a role edge's origin is
+  `['roles', <role>]` on both the hygen and the CLI path. The pattern composition is an input, resolved by
+  `resolvePatternComposition`, which moved into `src/patterns/resolve-composition.ts` so the CLI no longer restates it.
+- **Decision 5, roles.** REL-1 has no role edge, so a role's relation comes from the definitions' `roles:` blocks
+  (kind `role`, `includeKeys: []`); every other relation comes from REL-1's edges, as decided.
+- **The copies are gone.** The `queries:` finder name has one rule (`finderName`; `src/schema/query-routes.ts` and
+  `deriveQueryMethodName` deleted, #711); `apiEnabled`, `declaresOwnRelation` and `includesConstName` have one reader
+  each under `src/derived/api/`; `route-name-parity.test.ts`, which compared the copies, is deleted. The entity
+  backend, `prompt.js` and the junction fan-out helper (`templates/_shared/junction-fan-out.mjs`) take their case
+  primitives from `src/config/file-naming.ts` / `src/derived/api/names.ts`; the allowlist has no entry for any of them.
+- **Type text beside the names (decision 4).** A template prints a derived name and takes the TypeScript beside it
+  from a local keyed by that name: `queryTypes` (finder param / return types and `order:`) and `relationTypes` (a
+  relation method's target class, FK property and composed repository). Slice 2 absorbs both.
+- **A forwarder's body follows its callee.** Service kinds that share one `kind` (`read`, `finder`, `eav_read`) choose
+  their body by the kind of the repository method `delegatesTo` names — no template branches on a method name.
+- **The inherited-methods comments** print the pattern's declared lines verbatim (`repositoryInheritedMethods` /
+  `serviceInheritedMethods`): the derivation lists inherited methods by name, not the lines a pattern groups them
+  into, so it cannot reproduce that text byte for byte.
+- **Projections kept for their test readers.** Some locals no template reads any more are still asserted by unit
+  tests, so they stay, each a one-line projection of the derivation or of `names.ts`: `apiEnabled`, `includes`,
+  `capabilityForwarders`, `declarativeQueryClasses`, `processedQueries[].methodName` / `.useCaseClassName`, the
+  `belongsTo[].relationKey` (now `relationMethodName`) and the fan-out `*Method` / `*IdParam` keys. Deleting them,
+  with their assertions repointed at `apiSurface`, is the owner's call.
+- Generated output is byte-identical across Phase B: `test/baseline`, the junction snapshots, the render goldens
+  (every file every backend template renders, for every entity of each matrix case) and the API-surface golden.
