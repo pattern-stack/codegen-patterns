@@ -222,8 +222,17 @@ from spine lines only — roots on the top row, each child directly under its
 parent, siblings side by side, parents centred over their children — so adding
 or removing a secondary line moves no card. (elk is no longer used: neither
 `layered` nor `mrtree` puts a child under its one chosen parent with roots on
-top.) Each line runs its horizontal segment on its own channel in the gap below
-its upper card's row (`channelY`, #890), so two lines never share one bar. A
+top.) Each disconnected tree is laid out that way as its own **block**, and the
+blocks wrap into rows that fit the canvas (STUDIO-4, `packBlocks`): biggest tree
+first (most cards, then root id), rows left-aligned, blocks top-aligned, 92 px
+between blocks and 192 px between rows of blocks, the row width chosen so
+fit-to-view shows the cards largest on the canvas container's aspect (ties to
+the nearer aspect; measured by `SchemaCanvas`, passed in as `targetAspect` — the
+layout reads no DOM; 16:10 until measured). Block order and packing read spine lines only, so a secondary
+line still moves no card — which means a secondary parent in another block may
+sit below its child. A resize that re-wraps the blocks re-fits the view.
+Each line runs its horizontal segment on its own channel in the gap below its
+upper card's row, in that card's block (`channelY`, #890), so two lines never share one bar. A
 line meets each card on the sides that face each other
 (`tools/studio/src/graph/edge-geometry.ts`); the card's handles are only a
 fallback until ReactFlow has measured it.

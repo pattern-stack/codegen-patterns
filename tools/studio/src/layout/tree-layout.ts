@@ -38,13 +38,23 @@ export function estimateNodeSize(node: GraphNodeData): { width: number; height: 
   return { width: isJunction ? 230 : 250, height: Math.max(height, 56) };
 }
 
+/** The aspect a layout is packed for when the canvas has not been measured: 16:10. */
+export const DEFAULT_TARGET_ASPECT = 16 / 10;
+
 export interface LayoutOptions {
   /** The least gap between rows; a row with many lines below it gets more. */
   spacing?: number;
   /** Gap between siblings in a row. */
   nodeSpacing?: number;
-  /** Gap between two trees side by side. */
+  /** Gap between two trees side by side in one row of blocks. */
   treeSpacing?: number;
+  /** Gap between two rows of blocks (STUDIO-4). */
+  blockRowSpacing?: number;
+  /**
+   * Width ÷ height the blocks are wrapped to (STUDIO-4) — the canvas
+   * container's, measured by the caller. The layout never reads the DOM.
+   */
+  targetAspect?: number;
 }
 
 export interface LayoutResult {
@@ -76,19 +86,118 @@ export function spineParents(present: ReadonlySet<string>, edges: readonly Studi
   return parentOf;
 }
 
+/** One disconnected tree, laid out on its own with its top-left card corner at (0, 0). */
+interface Block {
+  root: string;
+  ids: string[];
+  /** Each card's row in the block, and the block's own row tops, heights and gaps below. */
+  depth: Map<string, number>;
+  rowY: number[];
+  rowHeight: number[];
+  gap: number[];
+  /** Each card's x within the block. */
+  x: Map<string, number>;
+  width: number;
+  height: number;
+}
+
+/** A block's place on the canvas. */
+interface Placed {
+  block: Block;
+  left: number;
+  top: number;
+}
+
+const byId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
 /**
- * Lay the graph out as a tree (STUDIO-3).
+ * Wrap blocks into rows for a canvas of `targetAspect` (STUDIO-4).
+ *
+ * The blocks keep the order they are given; each row is filled left to right
+ * until the next block would pass a width limit, then a new row starts. Rows
+ * are left-aligned and each block is top-aligned in its row. The limit is
+ * chosen from every width a row can actually have (one block, or a run of
+ * consecutive blocks with their gaps): the one whose box fit-to-view shows
+ * largest on a canvas of that aspect — `min(aspect / width, 1 / height)`, the
+ * zoom at a canvas height of 1. That is what makes cards legible: a box whose
+ * aspect matches the canvas's is not enough if it is also bigger. A tie goes
+ * to the box whose aspect is nearer the canvas's (on a log scale), then to the
+ * narrower limit. One block is always one row.
+ */
+export function packBlocks(
+  sizes: readonly { width: number; height: number }[],
+  targetAspect: number,
+  gapX: number,
+  gapY: number,
+): { left: number; top: number }[] {
+  if (sizes.length === 0) return [];
+  const target = Number.isFinite(targetAspect) && targetAspect > 0 ? targetAspect : DEFAULT_TARGET_ASPECT;
+
+  const pack = (limit: number) => {
+    const at: { left: number; top: number }[] = [];
+    let left = 0;
+    let top = 0;
+    let rowHeight = 0;
+    let width = 0;
+    for (const size of sizes) {
+      if (left > 0 && left + size.width > limit) {
+        top += rowHeight + gapY;
+        left = 0;
+        rowHeight = 0;
+      }
+      at.push({ left, top });
+      width = Math.max(width, left + size.width);
+      rowHeight = Math.max(rowHeight, size.height);
+      left += size.width + gapX;
+    }
+    return { at, width, height: top + rowHeight };
+  };
+
+  const limits = new Set<number>();
+  for (let i = 0; i < sizes.length; i++) {
+    let run = -gapX;
+    for (let j = i; j < sizes.length; j++) {
+      run += sizes[j]!.width + gapX;
+      limits.add(run);
+    }
+  }
+
+  const EPS = 1e-9;
+  let best: { at: { left: number; top: number }[]; zoom: number; skew: number } | null = null;
+  for (const limit of [...limits].sort((a, b) => a - b)) {
+    const packed = pack(limit);
+    const width = Math.max(packed.width, 1);
+    const height = Math.max(packed.height, 1);
+    const zoom = Math.min(target / width, 1 / height);
+    const skew = Math.abs(Math.log(width / height / target));
+    const better =
+      best == null ||
+      zoom > best.zoom * (1 + EPS) ||
+      (zoom >= best.zoom * (1 - EPS) && skew < best.skew - EPS);
+    if (better) best = { at: packed.at, zoom, skew };
+  }
+  return best!.at;
+}
+
+/**
+ * Lay the graph out as a forest of tree blocks (STUDIO-3, STUDIO-4).
  *
  * Every node hangs under its spine parent (`StudioEdgeData.treeRole`), so the
- * picture is a forest: roots on the top row, each child directly under its
- * parent, siblings side by side in node order, each parent centred over its
- * children. Rows are top-aligned. Only spine lines are read; a secondary line
- * can be added or removed without moving a card.
+ * picture is a forest. Each disconnected tree is laid out as its own block:
+ * its root on the block's top row, each child directly under its parent,
+ * siblings side by side in node order, each parent centred over its children,
+ * rows top-aligned. Only spine lines are read; a secondary line can be added
+ * or removed without moving a card.
+ *
+ * The blocks are then wrapped into rows that fit `targetAspect`
+ * (`packBlocks`), biggest tree first — most cards, then the root's id — so a
+ * model of several trees is not one long, short strip that fit-to-view shrinks
+ * past reading.
  *
  * Then each line gets its own channel (#890): the lines whose upper end is in
- * one row run their horizontal segments at distinct heights in the gap below
- * it, so no two share one bar and their labels do not stack. The longest
- * runs turn first, so a fan out of one parent does not cross itself.
+ * one row of a block run their horizontal segments at distinct heights in the
+ * gap below it, so no two share one bar and their labels do not stack. The
+ * longest runs turn first, so a fan out of one parent does not cross itself.
  *
  * ReactFlow draws the lines; where each meets its cards comes from the
  * laid-out geometry (`../graph/edge-geometry`).
@@ -98,13 +207,20 @@ export function treeLayout(
   graphEdges: StudioEdgeData[],
   options: LayoutOptions = {},
 ): LayoutResult {
-  const { spacing = 96, nodeSpacing = 46, treeSpacing = 92 } = options;
+  const {
+    spacing = 96,
+    nodeSpacing = 46,
+    treeSpacing = 92,
+    blockRowSpacing = 2 * spacing,
+    targetAspect = DEFAULT_TARGET_ASPECT,
+  } = options;
 
   const sizes = new Map(graphNodes.map((n) => [n.id, estimateNodeSize(n)]));
   const present = new Set(graphNodes.map((n) => n.id));
   // A line to a node that is not on the canvas (filtered out, or a target the
   // analyzer could not resolve) has nothing to draw to.
   const drawable = graphEdges.filter((e) => present.has(e.source) && present.has(e.target));
+  const spines = drawable.filter((e) => e.treeRole === 'spine');
 
   const parentOf = spineParents(present, drawable);
   const childrenOf = new Map<string, string[]>();
@@ -115,81 +231,106 @@ export function treeLayout(
     else childrenOf.set(parent, [...(childrenOf.get(parent) ?? []), n.id]);
   }
 
-  // Rows.
-  const depth = new Map<string, number>();
-  const visit = (id: string, d: number) => {
-    depth.set(id, d);
-    for (const c of childrenOf.get(id) ?? []) visit(c, d + 1);
-  };
-  for (const r of roots) visit(r, 0);
-  const rows = Math.max(0, ...depth.values()) + 1;
+  const layBlock = (root: string): Block => {
+    // Rows.
+    const ids: string[] = [];
+    const depth = new Map<string, number>();
+    const visit = (id: string, d: number) => {
+      ids.push(id);
+      depth.set(id, d);
+      for (const c of childrenOf.get(id) ?? []) visit(c, d + 1);
+    };
+    visit(root, 0);
+    const rows = Math.max(...depth.values()) + 1;
 
-  const rowHeight = Array.from({ length: rows }, () => 0);
-  for (const [id, d] of depth) rowHeight[d] = Math.max(rowHeight[d]!, sizes.get(id)!.height);
+    const rowHeight = Array.from({ length: rows }, () => 0);
+    for (const [id, d] of depth) rowHeight[d] = Math.max(rowHeight[d]!, sizes.get(id)!.height);
 
-  // The lines that run through the gap below each row: their upper end is in it.
-  // The gap grows with the SPINE lines through it only — sized by every line, a
-  // secondary line added or removed would move each row below it.
-  const upperRow = (e: StudioEdgeData) => Math.min(depth.get(e.source)!, depth.get(e.target)!);
-  const spansRows = (e: StudioEdgeData) => depth.get(e.source) !== depth.get(e.target);
-  const spinesBelow = Array.from({ length: rows }, () => 0);
-  for (const e of drawable) if (e.treeRole === 'spine' && spansRows(e)) spinesBelow[upperRow(e)]!++;
-  const gap = spinesBelow.map((n) => Math.max(spacing, (n + 1) * CHANNEL_STEP));
-
-  const rowY: number[] = [];
-  let y = 0;
-  for (let d = 0; d < rows; d++) {
-    rowY.push(y);
-    y += rowHeight[d]! + gap[d]!;
-  }
-
-  // Columns: a subtree is as wide as its card or its children side by side.
-  const span = new Map<string, number>();
-  const widthOf = (id: string): number => {
-    const kids = childrenOf.get(id) ?? [];
-    const kidsWidth = kids.reduce((sum, c) => sum + widthOf(c), 0) + nodeSpacing * Math.max(0, kids.length - 1);
-    const w = Math.max(sizes.get(id)!.width, kidsWidth);
-    span.set(id, w);
-    return w;
-  };
-  const x = new Map<string, number>();
-  const place = (id: string, left: number) => {
-    const w = span.get(id)!;
-    x.set(id, left + (w - sizes.get(id)!.width) / 2);
-    const kids = childrenOf.get(id) ?? [];
-    const kidsWidth = kids.reduce((sum, c) => sum + span.get(c)!, 0) + nodeSpacing * Math.max(0, kids.length - 1);
-    let cursor = left + (w - kidsWidth) / 2;
-    for (const c of kids) {
-      place(c, cursor);
-      cursor += span.get(c)! + nodeSpacing;
+    // The gap below each row grows with the SPINE lines through it only —
+    // sized by every line, a secondary line added or removed would move each
+    // row below it. A spine line never leaves its block.
+    const spinesBelow = Array.from({ length: rows }, () => 0);
+    for (const e of spines) {
+      const ds = depth.get(e.source);
+      const dt = depth.get(e.target);
+      if (ds != null && dt != null && ds !== dt) spinesBelow[Math.min(ds, dt)]!++;
     }
-  };
-  let left = 0;
-  for (const r of roots) {
-    widthOf(r);
-    place(r, left);
-    left += span.get(r)! + treeSpacing;
-  }
+    const gap = spinesBelow.map((n) => Math.max(spacing, (n + 1) * CHANNEL_STEP));
 
-  // Channels.
-  const centreX = (id: string) => x.get(id)! + sizes.get(id)!.width / 2;
+    const rowY: number[] = [];
+    let y = 0;
+    for (let d = 0; d < rows; d++) {
+      rowY.push(y);
+      y += rowHeight[d]! + gap[d]!;
+    }
+
+    // Columns: a subtree is as wide as its card or its children side by side.
+    const span = new Map<string, number>();
+    const widthOf = (id: string): number => {
+      const kids = childrenOf.get(id) ?? [];
+      const kidsWidth = kids.reduce((sum, c) => sum + widthOf(c), 0) + nodeSpacing * Math.max(0, kids.length - 1);
+      const w = Math.max(sizes.get(id)!.width, kidsWidth);
+      span.set(id, w);
+      return w;
+    };
+    const x = new Map<string, number>();
+    const place = (id: string, left: number) => {
+      const w = span.get(id)!;
+      x.set(id, left + (w - sizes.get(id)!.width) / 2);
+      const kids = childrenOf.get(id) ?? [];
+      const kidsWidth = kids.reduce((sum, c) => sum + span.get(c)!, 0) + nodeSpacing * Math.max(0, kids.length - 1);
+      let cursor = left + (w - kidsWidth) / 2;
+      for (const c of kids) {
+        place(c, cursor);
+        cursor += span.get(c)! + nodeSpacing;
+      }
+    };
+    const width = widthOf(root);
+    place(root, 0);
+
+    return { root, ids, depth, rowY, rowHeight, gap, x, width, height: rowY[rows - 1]! + rowHeight[rows - 1]! };
+  };
+
+  // Biggest tree first, then by root id: the order does not depend on the
+  // order the analyzer happened to list the entities in.
+  const blocks = roots.map(layBlock).sort((a, b) => b.ids.length - a.ids.length || byId(a.root, b.root));
+  const at = packBlocks(blocks, targetAspect, treeSpacing, blockRowSpacing);
+  const placed: Placed[] = blocks.map((block, i) => ({ block, ...at[i]! }));
+
+  const where = new Map<string, Placed>();
+  for (const p of placed) for (const id of p.block.ids) where.set(id, p);
+  const cardX = (id: string) => where.get(id)!.left + where.get(id)!.block.x.get(id)!;
+  const cardY = (id: string) => {
+    const p = where.get(id)!;
+    return p.top + p.block.rowY[p.block.depth.get(id)!]!;
+  };
+
+  // Channels. A line runs through the gap below its upper card's row, in that
+  // card's block; two cards level with each other join side to side and need none.
+  const centreX = (id: string) => cardX(id) + sizes.get(id)!.width / 2;
+  const groups = new Map<string, { id: string; run: number; lowerX: number }[]>();
+  const gapOf = new Map<string, { bottom: number; gap: number }>();
+  for (const e of drawable) {
+    if (cardY(e.source) === cardY(e.target)) continue;
+    const upper = cardY(e.source) < cardY(e.target) ? e.source : e.target;
+    const lower = upper === e.source ? e.target : e.source;
+    const p = where.get(upper)!;
+    const d = p.block.depth.get(upper)!;
+    const key = `${p.block.root}\u0000${d}`;
+    gapOf.set(key, { bottom: p.top + p.block.rowY[d]! + p.block.rowHeight[d]!, gap: p.block.gap[d]! });
+    const line = { id: e.id, run: Math.abs(centreX(lower) - centreX(upper)), lowerX: centreX(lower) };
+    groups.set(key, [...(groups.get(key) ?? []), line]);
+  }
   const channelY = new Map<string, number>();
-  for (let d = 0; d < rows; d++) {
-    const lines = drawable
-      .filter((e) => spansRows(e) && upperRow(e) === d)
-      .map((e) => {
-        const upper = depth.get(e.source) === d ? e.source : e.target;
-        const lower = upper === e.source ? e.target : e.source;
-        return { id: e.id, run: Math.abs(centreX(lower) - centreX(upper)), lowerX: centreX(lower) };
-      })
-      .sort((a, b) => b.run - a.run || a.lowerX - b.lowerX || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-    const bottom = rowY[d]! + rowHeight[d]!;
-    lines.forEach((l, i) => channelY.set(l.id, bottom + ((i + 1) * gap[d]!) / (lines.length + 1)));
+  for (const [key, lines] of groups) {
+    const { bottom, gap } = gapOf.get(key)!;
+    lines.sort((a, b) => b.run - a.run || a.lowerX - b.lowerX || byId(a.id, b.id));
+    lines.forEach((l, i) => channelY.set(l.id, bottom + ((i + 1) * gap) / (lines.length + 1)));
   }
 
   const nodes: Node[] = graphNodes.map((n) => ({
     id: n.id,
-    position: { x: x.get(n.id)!, y: rowY[depth.get(n.id)!]! },
+    position: { x: cardX(n.id), y: cardY(n.id) },
     data: { ...n },
     type: 'schemaNode',
     // Width only. Height is left to the card so its content is never clipped

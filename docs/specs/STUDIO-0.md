@@ -62,7 +62,8 @@ CLI flattens to strings.
 `packages/graph-components` was built (graph-component-library spec) to serve **two** views from one set of
 components — the schema graph and a future instance graph. The Studio's graph pane is the schema view of exactly those
 components on an `@xyflow/react` canvas, the composition `tools/schema-graph-viewer` uses — laid out as a tree on spine
-lines by Studio's own `layout/tree-layout.ts` since STUDIO-3 (the viewer keeps `elkjs`; see CLAUDE.md § Studio).
+lines by Studio's own `layout/tree-layout.ts` since STUDIO-3, each disconnected tree a block wrapped into rows that
+fit the canvas since STUDIO-4 (the viewer keeps `elkjs`; see CLAUDE.md § Studio).
 When slice 3 adds the data explorer, its instance graph is the second view of the same components, not a new library.
 
 ### Theming — one palette table, two columns (2026-10-04)

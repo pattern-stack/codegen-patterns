@@ -8,7 +8,7 @@ import {
   useEdgesState,
   useNodesState,
 } from '@xyflow/react';
-import type { Edge, EdgeTypes, Node, NodeTypes } from '@xyflow/react';
+import type { Edge, EdgeTypes, Node, NodeTypes, ReactFlowInstance } from '@xyflow/react';
 import type { GraphNodeData } from '@pattern-stack/graph-components';
 import { useGraphSelection } from '@pattern-stack/graph-components';
 
@@ -19,7 +19,7 @@ import { EDGE_MARKERS } from './edge-kinds';
 import type { StudioEdgeData } from './edge-kinds';
 import { edgeHighlight, toggleSelection } from './selection';
 import type { Selection } from './selection';
-import { treeLayout } from '../layout/tree-layout';
+import { DEFAULT_TARGET_ASPECT, treeLayout } from '../layout/tree-layout';
 
 const nodeTypes: NodeTypes = { schemaNode: SchemaNode };
 
@@ -29,7 +29,7 @@ const MINIMAP_THRESHOLD = 12;
 /**
  * The canvas a fully expanded legend can sit on without covering a card.
  *
- * The panel is roughly 355×180 CSS px in the bottom-left. Below these bounds it
+ * The panel is roughly 355×180 CSS px in the bottom-right. Below these bounds it
  * takes a third of the canvas and lands on the node area — at 1280×720 it half
  * covered the junction card, which is the one node a relations demo is about.
  */
@@ -57,18 +57,13 @@ export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selection, 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  // The tree layout is pure and synchronous (`../layout/tree-layout`): a new
-  // graph is laid out in the same pass, so there is no stale layout to guard.
-  useEffect(() => {
-    const result = treeLayout(graphNodes, graphEdges);
-    setNodes(result.nodes);
-    setEdges(result.edges);
-  }, [graphNodes, graphEdges, setNodes, setEdges]);
-
   // Measured, not derived from the window: the inspector and the drawer both
   // take from the canvas, so the viewport says nothing about the room here.
   const host = useRef<HTMLDivElement>(null);
   const [roomy, setRoomy] = useState(true);
+  // The canvas's width ÷ height: the tree blocks are wrapped to it (STUDIO-4).
+  // The layout is handed the number; it never reads the DOM itself.
+  const [aspect, setAspect] = useState(DEFAULT_TARGET_ASPECT);
 
   useEffect(() => {
     const el = host.current;
@@ -77,10 +72,40 @@ export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selection, 
       const box = entry?.contentRect;
       if (!box) return;
       setRoomy(box.width >= LEGEND_MIN_WIDTH && box.height >= LEGEND_MIN_HEIGHT);
+      if (box.width > 0 && box.height > 0) setAspect(box.width / box.height);
     });
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  // The tree layout is pure and synchronous (`../layout/tree-layout`): a new
+  // graph is laid out in the same pass, so there is no stale layout to guard.
+  const laid = useMemo(() => treeLayout(graphNodes, graphEdges, { targetAspect: aspect }), [graphNodes, graphEdges, aspect]);
+  // Packing is discrete: most resizes leave every card where it was. A resize
+  // that re-wraps the blocks re-fits the view, so the new arrangement is shown
+  // whole; one that does not leaves the user's pan and zoom alone, and so does
+  // an edit to the model (as before STUDIO-4).
+  const placement = useMemo(
+    () => laid.nodes.map((n) => `${n.id}@${n.position.x},${n.position.y}`).join('|'),
+    [laid],
+  );
+  const flow = useRef<ReactFlowInstance | null>(null);
+  const fitted = useRef<{ placement: string; aspect: number } | null>(null);
+
+  useEffect(() => {
+    setNodes(laid.nodes);
+    setEdges(laid.edges);
+  }, [laid, setNodes, setEdges]);
+
+  useEffect(() => {
+    const last = fitted.current;
+    fitted.current = { placement, aspect };
+    // The first fit is ReactFlow's own (`fitView` below), once it has measured the cards.
+    if (last == null || flow.current == null) return;
+    if (last.aspect === aspect || last.placement === placement) return;
+    const frame = requestAnimationFrame(() => void flow.current?.fitView({ padding: 0.18 }));
+    return () => cancelAnimationFrame(frame);
+  }, [placement, aspect]);
 
   const selectedNodeId = selection?.kind === 'node' ? selection.id : null;
   const selectedEdgeId = selection?.kind === 'edge' ? selection.id : null;
@@ -168,6 +193,8 @@ export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selection, 
       </svg>
 
       <ReactFlow
+        // The legend sits bottom-right; keep React Flow's attribution visible beside it.
+        attributionPosition="bottom-left"
         nodes={shownNodes}
         edges={shownEdges}
         onNodesChange={onNodesChange}
@@ -177,6 +204,9 @@ export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selection, 
         onPaneClick={() => onSelect(null)}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
+        onInit={(instance) => {
+          flow.current = instance;
+        }}
         fitView
         fitViewOptions={{ padding: 0.18 }}
         minZoom={0.05}
@@ -193,7 +223,8 @@ export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selection, 
             nodeColor={miniMapColor}
             maskColor="var(--s-mask)"
             nodeStrokeWidth={0}
-            position="bottom-right"
+            // Top-right: the legend holds the bottom-right corner (STUDIO-4).
+            position="top-right"
             pannable
             zoomable
           />
