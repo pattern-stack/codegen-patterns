@@ -252,7 +252,7 @@ describe('backend search templates — schema union with by-column queries', () 
     // Legacy shape still processes; by-column queries appear in
     // processedQueries separately.
     expect(locals.processedQueries.length).toBe(1);
-    expect(locals.processedQueries[0].methodName).toBe('findByEmail');
+    expect(locals.apiSurface.useCases.filter((u: { kind: string }) => u.kind === 'query')[0].calls.method).toBe('findByEmail');
   });
 });
 

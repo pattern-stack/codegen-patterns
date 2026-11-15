@@ -44,6 +44,39 @@ const fanOut = (entity: string, junctions: unknown[], selfModuleDir: string) =>
 
 const CREW_PERSON = { pattern: 'Junction', between: ['crew', 'person'] };
 
+type Locals = Record<string, any>;
+const localsFor = (
+	entity: Record<string, unknown>,
+	junctions: unknown[],
+	relationships: Record<string, unknown> = {},
+): Locals =>
+	buildBackendLocals(
+		{
+			entity: { table: entity.plural, ...entity },
+			fields: { name: { type: 'string', required: true } },
+			relationships,
+			behaviors: ['timestamps'],
+		},
+		{ ...withEntities(), modulesDir: MODULES, entityLookup: lookup, junctions },
+	) as Locals;
+
+// ADR-046: the fan-out's method and id-parameter names, read from the parent's derived service surface. The
+// attach method's params are `[self, counterparty, link]`; `side` places self at the left or right endpoint.
+const fanOutNames = (locals: Locals, side: 'left' | 'right') => {
+	const method = (kind: string) => locals.apiSurface.service.methods.find((m: { kind: string }) => m.kind === kind);
+	const [self, counterparty] = method('junction_attach').params.map((p: { name: string }) => p.name);
+	return {
+		attachMethod: method('junction_attach').name,
+		detachMethod: method('junction_detach').name,
+		listMethod: method('junction_list').name,
+		setPrimaryMethod: method('junction_set_primary').name,
+		selfIdParam: self,
+		counterpartyIdParam: counterparty,
+		leftIdParam: side === 'left' ? self : counterparty,
+		rightIdParam: side === 'left' ? counterparty : self,
+	};
+};
+
 describe('junctionNaming — the one junction naming rule', () => {
 	it('is the CLI-side rule (deriveJunctionName reads src/config/junction-naming.ts too)', () => {
 		for (const between of [
@@ -77,7 +110,7 @@ describe('junctionNaming — the one junction naming rule', () => {
 describe('junctionFanOutFor', () => {
 	it('mirrors a junction onto both endpoints, with the side’s method vocabulary', () => {
 		const [left] = fanOut('crew', [CREW_PERSON], 'src/modules/org/crews');
-		expect(left).toMatchObject({
+		expect({ side: left.side, ...fanOutNames(localsFor(CREW, [CREW_PERSON]), left.side) }).toMatchObject({
 			side: 'left',
 			attachMethod: 'attachPerson',
 			detachMethod: 'detachPerson',
@@ -89,7 +122,7 @@ describe('junctionFanOutFor', () => {
 			rightIdParam: 'personId',
 		});
 		const [right] = fanOut('person', [CREW_PERSON], 'src/modules/persons');
-		expect(right).toMatchObject({
+		expect({ side: right.side, ...fanOutNames(localsFor(PERSON, [CREW_PERSON]), right.side) }).toMatchObject({
 			side: 'right',
 			attachMethod: 'addToCrew',
 			detachMethod: 'removeFromCrew',
@@ -160,22 +193,6 @@ describe('loadJunctionDefinitions', () => {
 });
 
 describe('the parent templates render the fan-out', () => {
-	type Locals = Record<string, any>;
-	const localsFor = (
-		entity: Record<string, unknown>,
-		junctions: unknown[],
-		relationships: Record<string, unknown> = {},
-	): Locals =>
-		buildBackendLocals(
-			{
-				entity: { table: entity.plural, ...entity },
-				fields: { name: { type: 'string', required: true } },
-				relationships,
-				behaviors: ['timestamps'],
-			},
-			{ ...withEntities(), modulesDir: MODULES, entityLookup: lookup, junctions },
-		) as Locals;
-
 	it('no junction → no fan-out, no forwardRef', () => {
 		const l = localsFor(ACCOUNT, [CREW_PERSON]);
 		expect(l.junctionFanOut).toEqual([]);

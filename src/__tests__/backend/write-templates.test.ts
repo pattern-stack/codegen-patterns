@@ -274,10 +274,10 @@ describe('backend write templates — module rendering', () => {
 });
 
 describe('backend api:false HTTP-surface suppression (ADR-043 §6)', () => {
-  it('apiEnabled defaults true and flips false when api: false', () => {
-    expect(buildBackendLocals(baseEntity, withEntities()).apiEnabled).toBe(true);
+  it('apiSurface.http.enabled defaults true and flips false when api: false', () => {
+    expect(buildBackendLocals(baseEntity, withEntities()).apiSurface.http.enabled).toBe(true);
     expect(
-      buildBackendLocals({ ...baseEntity, api: false }, withEntities()).apiEnabled,
+      buildBackendLocals({ ...baseEntity, api: false }, withEntities()).apiSurface.http.enabled,
     ).toBe(false);
   });
 
@@ -298,9 +298,9 @@ describe('backend api:false HTTP-surface suppression (ADR-043 §6)', () => {
     expect(output).toContain('controllers: [ContactController]');
   });
 
-  it('apiEnabled is false for the block form api: { enabled: false } (hygen half of the pair)', () => {
+  it('apiSurface.http.enabled is false for the block form api: { enabled: false } (hygen half of the pair)', () => {
     const locals = buildBackendLocals({ ...baseEntity, api: { enabled: false } }, withEntities());
-    expect(locals.apiEnabled).toBe(false);
+    expect(locals.apiSurface.http.enabled).toBe(false);
   });
 
   const barrelCases: Array<[string, Record<string, unknown>]> = [

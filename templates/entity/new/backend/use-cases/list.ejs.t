@@ -7,8 +7,8 @@ import { Injectable } from '@nestjs/common';
 import { buildPage, resolveListQuery, type ListQuery, type Page } from '<%= paginationImport %>';
 import { hasColumn, type RowFilter, type SortTerm } from '<%= baseRepositoryImport %>';
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
-import { <%= entityNamePlural %><% if (!includes) { %>, type <%= classNames.entity %><% } %> } from '../<%= entityFileStem %>.entity';
-<% if (includes) { -%>
+import { <%= entityNamePlural %><% if (!apiSurface.repository.typedInclude) { %>, type <%= classNames.entity %><% } %> } from '../<%= entityFileStem %>.entity';
+<% if (apiSurface.repository.typedInclude) { -%>
 import type {
   <%= classNames.entity %>Include,
   <%= classNames.entity %>NoInclude,
@@ -53,7 +53,7 @@ import type {
 export class <%= classNames.listUseCase %> {
   constructor(private readonly service: <%= classNames.service %>) {}
 
-<% if (includes) { -%>
+<% if (apiSurface.repository.typedInclude) { -%>
   /**
    * `include` is a typed include tree the controller already resolved against the
    * route's allowlist (REL-2 §5); an internal caller passes one directly. Every
@@ -131,7 +131,7 @@ export class <%= classNames.listUseCase %> {
     // adds the `timestamps` behavior.
 <% } -%>
     const [pageRows, rowTotal] = await Promise.all([
-<% if (includes) { -%>
+<% if (apiSurface.repository.typedInclude) { -%>
       this.service.list<TWith>({
         where: whereClause,
         limit: resolvedQuery.pageSize,

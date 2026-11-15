@@ -28,7 +28,6 @@ import {
   finderName,
   fkFinderName,
   pascalCase,
-  queryUseCaseClassName,
   relationMethodName,
 } from '../../../../src/derived/api/names.js';
 import { camelCase, emittedStem } from '../../../../src/config/file-naming.js';
@@ -1204,7 +1203,7 @@ function zodChainForOutput(field) {
  * Process declarative queries from YAML queries: block.
  * Produces typed query metadata for template generation.
  */
-function processQueries(queriesBlock, processedFields, entityName, entityNamePascal) {
+function processQueries(queriesBlock, processedFields, entityNamePascal) {
   if (!queriesBlock || !Array.isArray(queriesBlock) || queriesBlock.length === 0) {
     return [];
   }
@@ -1236,9 +1235,6 @@ function processQueries(queriesBlock, processedFields, entityName, entityNamePas
       orderDirection = parts[1] || 'asc';
     }
 
-    // The finder's name is the derivation's (ADR-046, #711) — one rule, `src/derived/api/names.ts`.
-    const methodName = finderName({ by: byFields, select: selectFields });
-
     let returnType;
     if (isUnique) {
       returnType = `${entityNamePascal} | null`;
@@ -1251,10 +1247,6 @@ function processQueries(queriesBlock, processedFields, entityName, entityNamePas
       returnType = `${entityNamePascal}[]`;
     }
 
-    // The use-case class is the derivation's too (`queryUseCaseClassName`): the
-    // finder with the entity spliced in after `Find`, unique across modules.
-    const useCaseClassName = queryUseCaseClassName(methodName, entityName);
-
     return {
       by: byFields,
       unique: isUnique,
@@ -1262,7 +1254,6 @@ function processQueries(queriesBlock, processedFields, entityName, entityNamePas
       order: q.order ?? null,
       limit: q.limit ?? null,
       via: viaTable,
-      methodName,
       returnType,
       params,
       isUnique,
@@ -1271,7 +1262,6 @@ function processQueries(queriesBlock, processedFields, entityName, entityNamePas
       viaTable,
       viaTableCamel: viaTable ? camelCase(viaTable) : null,
       selectFields: selectFields.map((f) => camelCase(f)),
-      useCaseClassName,
       hasVia: viaTable != null,
       hasSelect: selectFields.length > 0,
       hasOrder: q.order != null,
@@ -1554,7 +1544,8 @@ export function buildBackendLocals(definition, baseLocals) {
   const queriesBlock = definition.queries || null;
   // ADR-043 §6 `api: false` and REL-2 §2.5's typed include are decided once, in
   // the derivation (`apiEnabled` / `declaresOwnRelation`, `src/derived/api/
-  // entity.ts`); the `apiEnabled` and `includes` locals below are its answers.
+  // entity.ts`); the templates read its answers as `apiSurface.http.enabled` /
+  // `apiSurface.repository.typedInclude`.
 
   // The module tree's root: the resolved `paths.modules_dir` (PATH-1, #645) —
   // prompt.js threads BASE_PATHS.modulesDir here. Callers that build locals by
@@ -1861,7 +1852,7 @@ export function buildBackendLocals(definition, baseLocals) {
   const byColumnQueries = Array.isArray(queriesBlock)
     ? queriesBlock.filter((q) => q && 'by' in q)
     : queriesBlock;
-  const processedQueries = processQueries(byColumnQueries, processedFields, entityName, entityNamePascal);
+  const processedQueries = processQueries(byColumnQueries, processedFields, entityNamePascal);
   // Process search query declaration (at most one per entity for now).
   const searchQuery = processSearchQueries(
     queriesBlock,
@@ -2382,7 +2373,7 @@ export function buildBackendLocals(definition, baseLocals) {
       })),
     {
       source: "the entity's `queries:` block",
-      methods: processedQueries.map((q) => q.methodName),
+      methods: processedQueries.map((q) => finderName(q)),
       capability: false,
     },
     {
@@ -2441,7 +2432,7 @@ export function buildBackendLocals(definition, baseLocals) {
   // slice 2 absorbs it.
   const queryTypes = Object.fromEntries(
     processedQueries.map((q) => [
-      q.methodName,
+      finderName(q),
       {
         params: q.params.map((p) => ({ tsType: p.tsType })),
         returnType: q.returnType,
@@ -2469,16 +2460,6 @@ export function buildBackendLocals(definition, baseLocals) {
     }
   }
 
-  // Projections of the derivation, kept for the callers of `buildBackendLocals`
-  // that read them (no template does): the capability forwarders the service
-  // prints, and the `queries:` use-case classes the module registers.
-  const capabilityForwarders = apiSurface.service.methods
-    .filter((m) => m.kind === 'capability_forwarder')
-    .map((m) => ({ capability: m.origin.capability, method: m.name }));
-  const declarativeQueryClasses = apiSurface.useCases
-    .filter((u) => u.kind === 'query')
-    .map((u) => u.className);
-
   const backendLocals = {
     // NAME-2 — emitted file stems (kebab-case). The `*Name*` locals beside
     // them stay snake_case: they are the class-name and DB-identifier source.
@@ -2497,11 +2478,6 @@ export function buildBackendLocals(definition, baseLocals) {
     // TABLE-0: the SQL table name (pgTable argument); never a TS identifier.
     entityTableName,
 
-    // ADR-043 §6: HTTP surface gate — the derivation's answer (ADR-046). The
-    // backend templates read `apiSurface.http.enabled`; this local is for
-    // callers of `buildBackendLocals` that ask the question directly.
-    apiEnabled: apiSurface.http.enabled,
-
     // Pattern — registry-driven (ADR-031)
     patternName,
     hasPatternConfig,
@@ -2515,7 +2491,6 @@ export function buildBackendLocals(definition, baseLocals) {
     // entity that declares no capability, and then `repositoryExtendsClause` is
     // exactly the string the template used to build inline.
     capabilityMixins,
-    capabilityForwarders,
     capabilityConfigImports,
     composedBaseClass,
     composedBaseImport,
@@ -2579,13 +2554,6 @@ export function buildBackendLocals(definition, baseLocals) {
     relationsImport,
     apiIncludesImport,
     typedEventBusImport,
-    // REL-2 §2.5: does this entity carry a typed include (a `with`)? The
-    // derivation's `typedInclude` — read by the service and use-case templates
-    // until they print from `apiSurface` too. The include routes and the
-    // allowlist constant's name are `apiSurface.http.includeRoutes` /
-    // `.includesConst` (one owner: `includesConstName`, `src/derived/api/names.ts`).
-    includes: apiSurface.repository.typedInclude,
-
     // Output paths
     outputPaths: outputPaths,
 
@@ -2635,7 +2603,6 @@ export function buildBackendLocals(definition, baseLocals) {
     // Declarative queries
     processedQueries,
     hasDeclarativeQueries,
-    declarativeQueryClasses,
     hasMultiFieldQuery,
     hasOrderedQuery,
     hasViaQuery,
