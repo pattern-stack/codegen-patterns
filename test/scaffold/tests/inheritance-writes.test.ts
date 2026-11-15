@@ -452,6 +452,14 @@ d('A11 — a child write emits under both names', () => {
     expect(typesOf(bus)).toEqual(['communication.updated', 'meeting.updated']);
   });
 
+  test('update: an id that is another kind\'s row emits nothing, writes nothing and returns undefined', async () => {
+    const bus = recordingBus();
+    const email = await asA(() => emailRepo().create({ ...meetingInput({ externalId: 'ext-mail' }), subject: 'hi' } as any));
+    expect(await asA(() => meetingService(bus).update(email.id, { source: 'hijack' }))).toBeUndefined();
+    expect(bus.published).toEqual([]);
+    expect(await count('communications', `id = '${email.id}' AND source = 'src'`)).toBe(1);
+  });
+
   test('delete: an id that is another kind\'s row emits nothing, and the row is untouched', async () => {
     const bus = recordingBus();
     const email = await asA(() => emailRepo().create({ ...meetingInput({ externalId: 'ext-mail' }), subject: 'hi' } as any));

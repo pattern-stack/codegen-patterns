@@ -1257,7 +1257,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   derivation's first consumer is S2. The rebase onto the ADR-046 `main` only reconciled `ParsedRelationship.onDelete`
   (main added it; S1 carries `nullable` and `match` beside it) and `ParsedEntity.uniqueIndexes` beside S1's
   `inherits` / `discriminator` / `naturalKey`.
-- **Service `delete` (Gate 2.5).** A child service's `delete` is the `pair_delete` kind: it pre-reads the flat row (`findWithBase`, scoped) and returns without emitting when the id is not a row of this kind, because the repository's delete is a no-op there and `BaseService.delete` would otherwise publish `communication.deleted` for a base row that still exists.
+- **Service `delete` (Gate 2.5).** A child service's `update` and `delete` decide by a pre-read, the same way. `update` (`pair_update`) returns `undefined` without writing or emitting when the id is not a row of this kind (`BaseService.update` would otherwise snapshot `undefined`); `delete` is the `pair_delete` kind: it pre-reads the flat row (`findWithBase`, scoped) and returns without emitting when the id is not a row of this kind, because the repository's delete is a no-op there and `BaseService.delete` would otherwise publish `communication.deleted` for a base row that still exists.
 - **ADR-046 Phase B (phase R2).** Rebased onto `main` with Phase B (#888–#898): no conflicts, nothing to print — S1 has no
   template, no `entity-locals.js` change and no flag local, so there is nothing to move onto `apiSurface`; the
   allowlist did not grow and generated output (`test-baseline`) is byte-identical.

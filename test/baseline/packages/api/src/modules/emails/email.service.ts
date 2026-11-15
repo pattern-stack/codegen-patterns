@@ -99,7 +99,9 @@ export class EmailService extends WithAnalytics(
     return super.create(input as globalThis.Partial<Email>, tx) as Promise<EmailFlat>;
   }
 
-  override update(id: string, patch: EmailUpdate, tx?: DrizzleTx): Promise<EmailFlat> {
+  /** Not a email in scope: nothing is written (the repository's update is a no-op) and nothing is emitted — `BaseService` would snapshot `undefined`. */
+  override async update(id: string, patch: EmailUpdate, tx?: DrizzleTx): Promise<EmailFlat> {
+    if ((await this.repository.findWithBase(id)) === null) return undefined as unknown as EmailFlat;
     return super.update(id, patch as globalThis.Partial<Email>, tx) as Promise<EmailFlat>;
   }
 

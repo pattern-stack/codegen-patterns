@@ -99,7 +99,9 @@ export class MeetingService extends WithAnalytics(
     return super.create(input as globalThis.Partial<Meeting>, tx) as Promise<MeetingFlat>;
   }
 
-  override update(id: string, patch: MeetingUpdate, tx?: DrizzleTx): Promise<MeetingFlat> {
+  /** Not a meeting in scope: nothing is written (the repository's update is a no-op) and nothing is emitted — `BaseService` would snapshot `undefined`. */
+  override async update(id: string, patch: MeetingUpdate, tx?: DrizzleTx): Promise<MeetingFlat> {
+    if ((await this.repository.findWithBase(id)) === null) return undefined as unknown as MeetingFlat;
     return super.update(id, patch as globalThis.Partial<Meeting>, tx) as Promise<MeetingFlat>;
   }
 

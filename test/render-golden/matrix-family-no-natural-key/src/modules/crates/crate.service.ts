@@ -96,7 +96,9 @@ export class CrateService extends WithAnalytics(
     return super.create(input as globalThis.Partial<Crate>, tx) as Promise<CrateFlat>;
   }
 
-  override update(id: string, patch: CrateUpdate, tx?: DrizzleTx): Promise<CrateFlat> {
+  /** Not a crate in scope: nothing is written (the repository's update is a no-op) and nothing is emitted — `BaseService` would snapshot `undefined`. */
+  override async update(id: string, patch: CrateUpdate, tx?: DrizzleTx): Promise<CrateFlat> {
+    if ((await this.repository.findWithBase(id)) === null) return undefined as unknown as CrateFlat;
     return super.update(id, patch as globalThis.Partial<Crate>, tx) as Promise<CrateFlat>;
   }
 

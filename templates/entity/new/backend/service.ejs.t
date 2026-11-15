@@ -268,7 +268,9 @@ _%>
 
 <%_ } else if (m.kind === 'pair_update') { _%>
 <%_ const _p = m.params.map((x) => x.name); _%>
-  override <%= m.name %>(<%= _p[0] %>: string, <%= _p[1] %>: <%= E %>Update, <%= _p[2] %>?: DrizzleTx): Promise<<%= E %>Flat> {
+  /** Not a <%= entityName %> in scope: nothing is written (the repository's update is a no-op) and nothing is emitted — `BaseService` would snapshot `undefined`. */
+  override async <%= m.name %>(<%= _p[0] %>: string, <%= _p[1] %>: <%= E %>Update, <%= _p[2] %>?: DrizzleTx): Promise<<%= E %>Flat> {
+    if ((await this.repository.findWithBase(<%= _p[0] %>)) === null) return undefined as unknown as <%= E %>Flat;
     return super.update(<%= _p[0] %>, <%= _p[1] %> as globalThis.Partial<<%= E %>>, <%= _p[2] %>) as Promise<<%= E %>Flat>;
   }
 
