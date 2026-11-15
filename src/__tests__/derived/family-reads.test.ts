@@ -104,6 +104,6 @@ describe('a base with no entity lookup', () => {
     // A lookup that resolves names but cannot enumerate the set: the children are unknowable, not absent.
     const hidden = new Proxy(full, { get: (t, k) => (k === 'definitions' ? undefined : (t as any)[k]) });
     const base = { ...withEntities(), entityLookup: hidden };
-    expect(() => buildBackendLocals(raw, base)).toThrow(/'notice' declares discriminator 'kind', but no entity lookup/);
+    expect(() => buildBackendLocals(raw, base)).toThrow(/a `match:` referrer scan for 'notice' needs an entity lookup/);
   });
 });
