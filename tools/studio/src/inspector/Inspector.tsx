@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { GraphNodeData } from '@pattern-stack/graph-components';
 import { DetailPanel } from '@pattern-stack/graph-components';
 import type { StudioFile, YamlRef, ZodIssueLike } from '@studio-shared';
@@ -39,6 +40,8 @@ export interface InspectorProps {
   onProjectChanged: () => void;
   /** Reported upward so the window's beforeunload guard can see it. */
   onDirtyChange: (dirty: boolean) => void;
+  /** The tab bar's trailing slot — the app puts the hide control here. */
+  trailing?: ReactNode;
 }
 
 interface FileState {
@@ -70,6 +73,7 @@ export function Inspector({
   onRetrySurface,
   onProjectChanged,
   onDirtyChange,
+  trailing,
 }: InspectorProps) {
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [file, setFile] = useState<FileState | null>(null);
@@ -218,7 +222,7 @@ export function Inspector({
         background: 'var(--s-panel)',
       }}
     >
-      <Tabs tabs={tabs} active={tab} onSelect={onTabChange} />
+      <Tabs tabs={tabs} active={tab} onSelect={onTabChange} trailing={trailing} />
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {tab === 'detail' &&

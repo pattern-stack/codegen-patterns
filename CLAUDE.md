@@ -222,8 +222,33 @@ from spine lines only — roots on the top row, each child directly under its
 parent, siblings side by side, parents centred over their children — so adding
 or removing a secondary line moves no card. (elk is no longer used: neither
 `layered` nor `mrtree` puts a child under its one chosen parent with roots on
-top.) Each line runs its horizontal segment on its own channel in the gap below
-its upper card's row (`channelY`, #890), so two lines never share one bar. A
+top.) Each disconnected tree is laid out that way as its own **block**, and the
+blocks wrap into rows that fit the canvas (STUDIO-4, `packBlocks`): biggest tree
+first (most cards, then root id), rows left-aligned, blocks top-aligned, 92 px
+between blocks and 192 px between rows of blocks, the row width chosen so
+fit-to-view shows the cards largest on the canvas container's aspect (ties to
+the nearer aspect; measured by `SchemaCanvas`, passed in as `targetAspect` — the
+layout reads no DOM; 16:10 until measured). Block order and packing read spine lines only, so a secondary
+line still moves no card — which means a secondary parent in another block may
+sit below its child — with one exception, **docking** (`dockLoneTrees`): a
+one-card tree whose card is the parent end of a secondary line from a card in a
+block of more than one card is not wrapped; it joins that block, x-centred under
+the referencing card, a row spacing (96 px) below the block's lowest card, so its
+place is the same at every canvas width. Several referencers: the first secondary
+line in declaration order wins. No chains (never under a one-card tree). Two
+docked under one block whose spots overlap are pushed apart by the sibling gap,
+in their referencers' left-to-right order. Docking is the one place a secondary
+line places a card: adding or removing such a line docks or undocks that one card;
+no other card moves within its block, but the block's footprint grows, so the
+packing may change. A multi-card secondary parent still wraps by its block's size
+(#778). A resize that re-wraps the blocks re-fits the view.
+Every fit — the first, a re-wrap's, a panel toggle's, the Controls button — goes
+through `fitAvoidingCorner` (`graph/fit-corner.ts`), which keeps the legend's
+corner off the cards; never call ReactFlow's plain `fitView`. The inspector and
+drawer collapse through one reducer (`panels.ts`; `]` and `\`), and the inspector
+is hidden, never unmounted, because it holds unsaved YAML.
+Each line runs its horizontal segment on its own channel in the gap below its
+upper card's row, in that card's block (`channelY`, #890), so two lines never share one bar. A
 line meets each card on the sides that face each other
 (`tools/studio/src/graph/edge-geometry.ts`); the card's handles are only a
 fallback until ReactFlow has measured it.

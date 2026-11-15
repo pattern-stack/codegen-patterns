@@ -26,6 +26,8 @@ export interface ButtonProps {
   disabled?: boolean;
   size?: 'sm' | 'md';
   title?: string;
+  /** The accessible name, when the visible label is a glyph or abbreviated. */
+  ariaLabel?: string;
   type?: 'button' | 'submit';
   /** Rendered before the label — a glyph, a spinner, a status dot. */
   icon?: ReactNode;
@@ -39,6 +41,7 @@ export function Button({
   disabled,
   size = 'md',
   title,
+  ariaLabel,
   type = 'button',
   icon,
   style,
@@ -49,6 +52,7 @@ export function Button({
       onClick={onClick}
       disabled={disabled}
       title={title}
+      aria-label={ariaLabel}
       style={{
         display: 'inline-flex',
         alignItems: 'center',

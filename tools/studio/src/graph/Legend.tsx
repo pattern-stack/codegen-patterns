@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { Ref } from 'react';
 import { EDGE_KIND_ORDER, EDGE_KIND_STYLES, TREE_ROLE_ORDER, TREE_ROLE_STYLES, edgeColor } from './edge-kinds';
 
 const NODE_KINDS = [
@@ -11,7 +12,10 @@ const NODE_KINDS = [
  * A legend maintained by hand drifts from the canvas the first time a kind
  * changes colour; this one cannot.
  *
- * It collapses to a chip, because expanded it covers the bottom-left of the
+ * It sits in the bottom-RIGHT corner (STUDIO-4): the tree blocks wrap into
+ * left-aligned rows, so the last row's right end is the part of the canvas
+ * most often empty, and the bottom-left is exactly where a wrapped block lands.
+ * It collapses to a chip, because expanded it still covers a corner of the
  * canvas — on a short viewport that is a node the reader wanted to see. The
  * swatches stay visible while collapsed, so the chip is still a key.
  *
@@ -22,7 +26,7 @@ const NODE_KINDS = [
  * a panel that re-opened every time the window changed would be worse than one
  * that opened in the wrong place once.
  */
-export function Legend({ roomy }: { roomy: boolean }) {
+export function Legend({ roomy, boxRef }: { roomy: boolean; boxRef?: Ref<HTMLDivElement> }) {
   const [open, setOpen] = useState(roomy);
   const touched = useRef(false);
 
@@ -32,9 +36,11 @@ export function Legend({ roomy }: { roomy: boolean }) {
 
   return (
     <div
+      // The canvas reads this box at every fit-to-view, so no card is fitted under it.
+      ref={boxRef}
       style={{
         position: 'absolute',
-        left: 'var(--sp-3)',
+        right: 'var(--sp-3)',
         bottom: 'var(--sp-3)',
         zIndex: 5,
         background: 'color-mix(in srgb, var(--s-chrome) 92%, transparent)',
