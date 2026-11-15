@@ -25,6 +25,7 @@ import {
   tenantAxisPredicate,
   tenantPredicateFor,
   userScopePredicateFor,
+  type BaseScope,
   type ScopeConfig,
   type TenantAxis,
 } from './scope-filters';
@@ -113,6 +114,12 @@ export type BehaviorConfig = TenantAxis & {
   timestamps: boolean;
   softDelete: boolean;
   userTracking: boolean;
+  /**
+   * `inherits:` (RFC-0006 §2.3): a child's reads are in scope only while its
+   * base row is — the base's `soft_delete` / `user_tracking`, which the child
+   * does not declare. Absent for a plain entity and for a tenant-only family.
+   */
+  baseScope?: BaseScope;
 };
 
 /** One ordering term, as a COLUMN KEY rather than a rendered expression. */
@@ -406,7 +413,7 @@ export abstract class BaseRepository<
       .$dynamic();
 
     const scoped = this.scopeAnd(where?.(this.table), {
-      softDelete: this.behaviors.softDelete,
+      softDelete: true,
     });
 
     const rows = await (scoped ? query.where(scoped) : query);
@@ -518,7 +525,7 @@ export abstract class BaseRepository<
    */
   protected baseQuery(extra?: SQL) {
     const query = this.db.select().from(this.tableRef).$dynamic();
-    const where = this.scopeAnd(extra, { softDelete: this.behaviors.softDelete });
+    const where = this.scopeAnd(extra, { softDelete: true });
     const scoped = where ? query.where(where) : query;
     // The builder was fed the WIDENED table (`tableRef`), so Drizzle types its
     // rows as an index signature; what it actually selects is this table's
@@ -534,15 +541,22 @@ export abstract class BaseRepository<
    * the entity's YAML declaration, which is what keeps the root and the hops from
    * drifting apart (charter I1/I3).
    *
-   * `softDelete` is per-CALL, not read from `behaviors`: the by-id write paths
-   * (`update` / `delete`) must still match a soft-deleted row. Everything else is
-   * a property of the entity.
+   * `softDelete` is per-CALL: reads pass `true` (apply the lifecycle guards), the by-id
+   * write paths (`update` / `delete`) pass nothing and must still match a soft-deleted
+   * row. Everything else is a property of the entity.
    */
   protected scopeConfigFor(opts?: { softDelete?: boolean }): ScopeConfig {
+    // `opts.softDelete` means "apply the lifecycle guards": every READ passes `true`, a by-id write passes nothing
+    // (or `false`) and still matches a soft-deleted row. What it applies is decided by the declaration — this
+    // entity's own `soft_delete`, and a joined-table child's base's (`baseScope`) — so the flag has one meaning,
+    // and a caller that wants deleted rows gets them on the child as on the table.
+    const guards = opts?.softDelete === true;
+    const base = this.behaviors.baseScope;
     const rest = {
-      softDelete: opts?.softDelete === true,
+      softDelete: guards && this.behaviors.softDelete,
       userTracking: this.behaviors.userTracking,
       enforcement: this.scopeEnforcement,
+      ...(base === undefined ? {} : { baseScope: { ...base, softDelete: guards && base.softDelete } }),
     };
     return this.behaviors.tenantScoped
       ? { tenantScoped: true, tenantColumn: this.tenantColumn, ...rest }
@@ -630,7 +644,7 @@ export abstract class BaseRepository<
    */
   protected rootFilter<T extends PgTable>(where?: RowFilter<T>): (table: T) => SQL {
     return (table: T) =>
-      this.scopeAndOn(table, where?.(table), { softDelete: this.behaviors.softDelete }) ?? sql`true`;
+      this.scopeAndOn(table, where?.(table), { softDelete: true }) ?? sql`true`;
   }
 
   /**
@@ -985,7 +999,7 @@ export abstract class BaseRepository<
    * a forgotten boundary fails the same way whatever the input.
    */
   protected assertReadScope(): void {
-    this.scopeAnd(undefined, { softDelete: this.behaviors.softDelete });
+    this.scopeAnd(undefined, { softDelete: true });
   }
 
   /**

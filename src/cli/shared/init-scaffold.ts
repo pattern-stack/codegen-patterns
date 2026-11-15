@@ -169,6 +169,9 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	// guards. Missing either file breaks the manifest, not just the base class.
 	{ runtime: 'base-classes/scope-filters.ts', target: 'base-classes/scope-filters.ts' },
 	{ runtime: 'base-classes/table-columns.ts', target: 'base-classes/table-columns.ts' },
+	// Joined-table inheritance (RFC-0006, #875) — `flattenBase` / `asKind` / `OrphanBaseError`, imported by a
+	// generated family's repositories.
+	{ runtime: 'base-classes/inheritance.ts', target: 'base-classes/inheritance.ts' },
 	{ runtime: 'base-classes/base-service.ts', target: 'base-classes/base-service.ts' },
 	// The generated read surface's ownership check — imported by base-repository.ts and base-service.ts (READ-1 §3.4)
 	{ runtime: 'base-classes/read-surface.ts', target: 'base-classes/read-surface.ts' },

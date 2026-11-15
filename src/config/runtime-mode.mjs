@@ -118,6 +118,8 @@ export function runtimeImportLocals(mode) {
     withAnalyticsImport: runtimeImport(mode, "base-classes/with-analytics"),
     integrationUpsertConfigImport: runtimeImport(mode, "base-classes/integration-upsert-config"),
     baseRepositoryImport: runtimeImport(mode, "base-classes/base-repository"),
+    // Joined-table inheritance read helpers (RFC-0006, #875): flattenBase, asKind, OrphanBaseError.
+    inheritanceImport: runtimeImport(mode, "base-classes/inheritance"),
     eavHelpersImport: runtimeImport(mode, "eav-helpers"),
     zodValidationPipeImport: runtimeImport(mode, "pipes/zod-validation.pipe"),
     // OpenAPI barrel: the runtime source lives at `runtime/shared/openapi`, but

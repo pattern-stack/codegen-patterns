@@ -32,6 +32,29 @@ export function inheritsOf(
 	return { base: raw.base, as: raw.as ?? def.entity.name };
 }
 
+/** One child of a base, across an entity set: its name and the kind value it is `as`. */
+export interface InheritanceChild {
+	name: string;
+	as: string;
+}
+
+/**
+ * The children of `baseName` across a whole entity set — every entity whose `inherits:` names it, sorted by kind
+ * value. The ONE answer to "does this base have child tables, and which": the generated family reads, the derived
+ * API surface and the includes gate all read it (RFC-0006 §3.3, ADR-046).
+ */
+export function inheritanceChildrenOf(
+	baseName: string,
+	definitions: Iterable<Pick<EntityDefinition, 'inherits'> & { entity: { name: string } }>,
+): InheritanceChild[] {
+	const out: InheritanceChild[] = [];
+	for (const def of definitions) {
+		const d = inheritsOf(def);
+		if (d !== null && d.base === baseName) out.push({ name: def.entity.name, as: d.as });
+	}
+	return out.sort((a, b) => (a.as < b.as ? -1 : a.as > b.as ? 1 : 0));
+}
+
 /**
  * `match:` as `[local column, target column]` pairs — the ONE normaliser of the
  * two spellings (the object form, and the `[col]` shorthand for `{ col: col }`).

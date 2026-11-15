@@ -3,7 +3,12 @@ import { Injectable } from '@nestjs/common';
 import { buildPage, resolveListQuery, type ListQuery, type Page } from '@shared/http/page';
 import { hasColumn, type RowFilter, type SortTerm } from '@shared/base-classes/base-repository';
 import { CommunicationService } from '../communication.service';
-import { communications, type Communication } from '../communication.entity';
+import { communications } from '../communication.entity';
+import type {
+  CommunicationInclude,
+  CommunicationNoInclude,
+  CommunicationResult,
+} from '../communication.repository';
 
 /**
  * Paginated list use-case for communications (pagination-by-default).
@@ -29,11 +34,17 @@ import { communications, type Communication } from '../communication.entity';
 export class ListCommunicationsUseCase {
   constructor(private readonly service: CommunicationService) {}
 
-  async execute(
+  /**
+   * `include` is a typed include tree the controller already resolved against the
+   * route's allowlist (REL-2 §5); an internal caller passes one directly. Every
+   * hop of it is scoped by the relations manifest, so pagination composes with a
+   * nested read without widening what the reader can see.
+   */
+  async execute<TWith extends CommunicationInclude = CommunicationNoInclude>(
     listQuery?: ListQuery,
-    listOptions: { where?: RowFilter<typeof communications> } = {},
-  ): Promise<Page<Communication>> {
-    const { where: whereClause } = listOptions;
+    listOptions: { include?: TWith; where?: RowFilter<typeof communications> } = {},
+  ): Promise<Page<CommunicationResult<TWith>>> {
+    const { include: includeTree, where: whereClause } = listOptions;
     const resolvedQuery = resolveListQuery(listQuery);
 
     // Default sort: `created_at desc, id desc` (id is the stable keyset
@@ -72,11 +83,12 @@ export class ListCommunicationsUseCase {
     // `WHERE (created_at, id) < (cursorCreatedAt, cursorId)` LIMIT pageSize,
     // dropping the offset. The envelope + nextCursor below are unchanged.
     const [pageRows, rowTotal] = await Promise.all([
-      this.service.list({
+      this.service.list<TWith>({
         where: whereClause,
         limit: resolvedQuery.pageSize,
         offset: resolvedQuery.offset,
         sort: sortTerms,
+        ...(includeTree === undefined ? {} : { with: includeTree }),
       }),
       this.service.count(whereClause),
     ]);

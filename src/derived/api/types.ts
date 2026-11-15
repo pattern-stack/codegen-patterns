@@ -67,6 +67,12 @@ export interface RepositoryMethod {
 		/** `belongs_to` — the FK-traversal finder. */
 		| 'fk_finder'
 		| 'eav_upsert'
+		/** A child's flat read through its base row (`findWithBase`, `findManyWithBase`) — `inherits:` (RFC-0006 §3.2). */
+		| 'with_base'
+		/** A base's cross-kind read (`findAllKinds`, `findKindById`, `listKind`, `countKind`) — `discriminator:` (RFC-0006 §3.3). */
+		| 'across_kinds'
+		/** A base's `findOrphans` — a kind with a child table but no child row. */
+		| 'orphans'
 		| 'inherited';
 	/** `false`: the method lives on the base class or a capability mixin, not in the generated class body. */
 	emitted: boolean;
@@ -94,6 +100,12 @@ export interface ServiceMethod {
 		| 'junction_set_primary'
 		| 'eav_read'
 		| 'eav_write'
+		/** The repository's `with_base` reads, forwarded. */
+		| 'with_base'
+		/** The repository's `across_kinds` reads, forwarded. */
+		| 'across_kinds'
+		/** The repository's `findOrphans`, forwarded. */
+		| 'orphans'
 		| 'inherited';
 	emitted: boolean;
 	params: Param[];

@@ -750,7 +750,7 @@ The gate is deliberately answered from the entity's OWN YAML rather than by re-d
 (charter I1). The cost is recorded: **a junction-ONLY entity gets no typed include from the entity pipeline.** That
 loses a feature rather than breaking a build, and #679's junction/relationship convergence is where it is decided — this
 PR does not prejudge it. What it does do is make the limitation LOUD rather than silent: the allowlist compiler shares
-the rule (`declaresOwnRelation`) and refuses an `api.includes` block on such an entity, because otherwise the compiled
+the rule (`hasTypedInclude`, `src/derived/api/entity.ts`: an own non-`through:` relationship, a `cardinality: one` role edge, a child, or a base with children) and refuses an `api.includes` block on such an entity, because otherwise the compiled
 map is emitted and never read (§10 Found #10). The residual risk in the other direction is narrow: an entity all of whose declared
 relationships are skipped by REL-1 (every `target:` missing from the entity set) would emit a repository that does not
 compile. REL-1 warns on that today; nothing in the repo is in that state.
@@ -882,12 +882,12 @@ un-threaded form is always wrong, so there is no overload to pick wrongly (chart
 
 `buildIncludeAllowlists` resolves dot paths against the WHOLE relation graph, junction-derived edges included. The
 controller only wires the emitted map when the entity carries a typed include at all — which is gated on the entity's
-OWN `relationships:` (Found #1). For an entity whose every edge comes from a junction YAML the two disagreed: a
+OWN edges — `hasTypedInclude`'s rule (Found #1). For an entity whose every edge comes from a junction YAML the two disagreed: a
 perfectly valid allowlist was compiled and emitted, the controller never read it, and every allowlisted path was a
 `400` with nothing to explain it.
 
-The two halves now have to agree. `declaresOwnRelation(def)` in the emitter is the same rule as `clpIncludes` in the
-template, pinned by a parity test over five shapes, and an `api.includes` block on an entity that fails it is a
+The two halves now have to agree. `hasTypedInclude(def, children)` (`src/derived/api/entity.ts`) is the one rule the template's `includes` and the
+emitter both read, pinned by a test over the shapes, and an `api.includes` block on an entity that fails it is a
 **generation error** naming the entity and pointing at #679 — rather than a silent 400 at runtime. Same asymmetry
 #679 settles; until it does, the limitation is loud.
 

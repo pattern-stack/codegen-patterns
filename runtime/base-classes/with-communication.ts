@@ -150,7 +150,7 @@ export function WithCommunication<TBase extends RepositoryCtor>(
 				role: sql<string>`${role}::text`.as('role'),
 				target: sql<string>`${edge.target}::text`.as('target'),
 			};
-			const guard = { softDelete: this.behaviors.softDelete };
+			const guard = { softDelete: true };
 			if (edge.cardinality === 'one') {
 				const fk = this.col(edge.column);
 				return this.db

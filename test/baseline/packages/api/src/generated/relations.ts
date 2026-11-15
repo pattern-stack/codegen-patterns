@@ -9,12 +9,14 @@
 import { defineRelations } from 'drizzle-orm';
 import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';
 
-import { scopedRoot, tableScope, UNSCOPED, type ScopeConfig } from '@shared/base-classes/scope-filters';
+import { hopScope, scopedRoot, tableScope, UNSCOPED, type ScopeConfig } from '@shared/base-classes/scope-filters';
 import * as schema from './schema';
 
 export const COMMUNICATIONS_SCOPE = tableScope(schema.communications, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: false, userTracking: false, enforcement: 'strict' });
 export const CONTACTS_SCOPE = tableScope(schema.contacts, { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' });
 export const DEALS_SCOPE = tableScope(schema.deals, { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' });
+export const EMAILS_SCOPE = tableScope(schema.emails, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: false, userTracking: false, enforcement: 'strict' });
+export const MEETINGS_SCOPE = tableScope(schema.meetings, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: false, userTracking: false, enforcement: 'strict' });
 
 /**
  * Every entity table's declared root scope (READ-1 §5), each bound to its table. The
@@ -29,9 +31,9 @@ export const SCOPES = {
 	deal_states: tableScope(schema.deal_states, UNSCOPED),
 	deals: DEALS_SCOPE,
 	email_threads: tableScope(schema.email_threads, UNSCOPED),
-	emails: tableScope(schema.emails, UNSCOPED),
+	emails: EMAILS_SCOPE,
 	meeting_transcripts: tableScope(schema.meeting_transcripts, UNSCOPED),
-	meetings: tableScope(schema.meetings, UNSCOPED),
+	meetings: MEETINGS_SCOPE,
 	opportunities: tableScope(schema.opportunities, UNSCOPED),
 	organizations: tableScope(schema.organizations, UNSCOPED),
 	persons: tableScope(schema.persons, UNSCOPED),
@@ -58,6 +60,10 @@ export const rootScope = {
 };
 
 export const relations = defineRelations(schema, (r) => ({
+	communications: {
+		email: r.one.emails({ from: r.communications.id, to: r.emails.id, optional: true, where: { RAW: (t) => hopScope(t, EMAILS_SCOPE, 'communications.email') } }),
+		meeting: r.one.meetings({ from: r.communications.id, to: r.meetings.id, optional: true, where: { RAW: (t) => hopScope(t, MEETINGS_SCOPE, 'communications.meeting') } }),
+	},
 	contacts: {
 		account: r.one.accounts({ from: r.contacts.accountId, to: r.accounts.id, optional: true }),
 		user: r.one.users({ from: r.contacts.userId, to: r.users.id, optional: false }),
@@ -71,12 +77,14 @@ export const relations = defineRelations(schema, (r) => ({
 		owner: r.one.users({ from: r.deals.ownerId, to: r.users.id, optional: false }),
 	},
 	emails: {
+		communication: r.one.communications({ from: r.emails.id, to: r.communications.id, optional: false, where: { RAW: (t) => hopScope(t, COMMUNICATIONS_SCOPE, 'emails.communication') } }),
 		thread: r.one.email_threads({ from: r.emails.threadId, to: r.email_threads.id, optional: true }),
 	},
 	meeting_transcripts: {
-		meeting: r.one.meetings({ from: r.meeting_transcripts.meetingId, to: r.meetings.id, optional: false }),
+		meeting: r.one.meetings({ from: r.meeting_transcripts.meetingId, to: r.meetings.id, optional: true, where: { RAW: (t) => hopScope(t, MEETINGS_SCOPE, 'meeting_transcripts.meeting') } }),
 	},
 	meetings: {
+		communication: r.one.communications({ from: r.meetings.id, to: r.communications.id, optional: false, where: { RAW: (t) => hopScope(t, COMMUNICATIONS_SCOPE, 'meetings.communication') } }),
 		transcripts: r.many.meeting_transcripts({ from: r.meetings.id, to: r.meeting_transcripts.meetingId }),
 	},
 	opportunities: {

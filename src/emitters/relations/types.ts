@@ -39,11 +39,17 @@ export interface ScopeConfigLiteral {
 	softDelete: boolean;
 	userTracking: boolean;
 	enforcement: 'lenient' | 'strict';
+	/**
+	 * `inherits:` (RFC-0006 §2.3): the BASE's lifecycle scope, on a child. Present
+	 * only when the base declares `soft_delete` or `user_tracking`; `table` is the
+	 * base's schema export. The runtime renders it as one `EXISTS` on the base row.
+	 */
+	baseScope?: { table: string; softDelete: boolean; userTracking: boolean };
 }
 
 /** Nothing declared ⇒ no `where` is emitted for a hop into this table. */
 export function isUnscopedConfig(cfg: ScopeConfigLiteral): boolean {
-	return !cfg.tenantScoped && !cfg.softDelete && !cfg.userTracking;
+	return !cfg.tenantScoped && !cfg.softDelete && !cfg.userTracking && cfg.baseScope === undefined;
 }
 
 /** One end of a relation, as a reference into the relations builder. */
@@ -71,6 +77,14 @@ export interface RelationEdge {
 	to: ColumnRef;
 	/** `one()` only — drives the include's result nullability. */
 	optional?: boolean;
+	/**
+	 * `inherits:` (RFC-0006 §3.1): which end of a joined-table inheritance pair this
+	 * edge is — `'base'` on a child's edge to its base, `'child'` on a base's edge to
+	 * one of its children. Absent on every other edge. The backend reads it for the
+	 * `optional: false` exception; the frontend emitter reads it to inner-join the
+	 * child-to-base hop (S6).
+	 */
+	inherits?: 'base' | 'child';
 	/**
 	 * The TARGET entity's declared scope, or `null` when the target declares no
 	 * scope at all (a junction table, or a plain entity with no behaviors).

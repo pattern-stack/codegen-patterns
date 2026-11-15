@@ -36,9 +36,13 @@ export function scopeConstName(table: string): string {
  */
 function renderScopeLiteral(cfg: ScopeConfigLiteral): string {
 	const tenantColumn = cfg.tenantColumn ? `tenantColumn: '${cfg.tenantColumn}', ` : '';
+	const baseScope = cfg.baseScope
+		? `, baseScope: { table: schema.${cfg.baseScope.table}, softDelete: ${cfg.baseScope.softDelete}, ` +
+			`userTracking: ${cfg.baseScope.userTracking} }`
+		: '';
 	return (
 		`{ tenantScoped: ${cfg.tenantScoped}, ${tenantColumn}softDelete: ${cfg.softDelete}, ` +
-		`userTracking: ${cfg.userTracking}, enforcement: '${cfg.enforcement}' }`
+		`userTracking: ${cfg.userTracking}, enforcement: '${cfg.enforcement}'${baseScope} }`
 	);
 }
 

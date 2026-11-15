@@ -5,7 +5,7 @@
 	"repository": {
 		"className": "CommunicationRepository",
 		"baseClass": "ActivityEntityRepository",
-		"typedInclude": false,
+		"typedInclude": true,
 		"methods": [
 			{
 				"name": "findById",
@@ -20,7 +20,7 @@
 					}
 				],
 				"returns": "one",
-				"readOptions": "columns",
+				"readOptions": "columns+with",
 				"origin": {
 					"from": "base"
 				}
@@ -38,7 +38,7 @@
 					}
 				],
 				"returns": "many",
-				"readOptions": "columns",
+				"readOptions": "columns+with",
 				"origin": {
 					"from": "base"
 				}
@@ -53,7 +53,7 @@
 					}
 				],
 				"returns": "many",
-				"readOptions": "columns",
+				"readOptions": "columns+with",
 				"origin": {
 					"from": "base"
 				}
@@ -71,6 +71,137 @@
 				"readOptions": "none",
 				"origin": {
 					"from": "base"
+				}
+			},
+			{
+				"name": "findAllKinds",
+				"kind": "across_kinds",
+				"emitted": true,
+				"params": [
+					{
+						"name": "query"
+					}
+				],
+				"returns": "many",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: email, meeting"
+					}
+				}
+			},
+			{
+				"name": "findKindById",
+				"kind": "across_kinds",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					}
+				],
+				"returns": "one",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: email, meeting"
+					}
+				}
+			},
+			{
+				"name": "listKind",
+				"kind": "across_kinds",
+				"emitted": true,
+				"params": [
+					{
+						"name": "kind"
+					},
+					{
+						"name": "query"
+					}
+				],
+				"returns": "many",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: email, meeting"
+					}
+				}
+			},
+			{
+				"name": "countKind",
+				"kind": "across_kinds",
+				"emitted": true,
+				"params": [
+					{
+						"name": "kind"
+					},
+					{
+						"name": "where"
+					}
+				],
+				"returns": "count",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: email, meeting"
+					}
+				}
+			},
+			{
+				"name": "findOrphans",
+				"kind": "orphans",
+				"emitted": true,
+				"params": [
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: email, meeting"
+					}
 				}
 			},
 			{
@@ -248,6 +379,157 @@
 				},
 				"origin": {
 					"from": "base"
+				}
+			},
+			{
+				"name": "findAllKinds",
+				"kind": "across_kinds",
+				"emitted": true,
+				"params": [
+					{
+						"name": "query"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "communication",
+					"layer": "repository",
+					"method": "findAllKinds"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: email, meeting"
+					}
+				}
+			},
+			{
+				"name": "findKindById",
+				"kind": "across_kinds",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "communication",
+					"layer": "repository",
+					"method": "findKindById"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: email, meeting"
+					}
+				}
+			},
+			{
+				"name": "listKind",
+				"kind": "across_kinds",
+				"emitted": true,
+				"params": [
+					{
+						"name": "kind"
+					},
+					{
+						"name": "query"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "communication",
+					"layer": "repository",
+					"method": "listKind"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: email, meeting"
+					}
+				}
+			},
+			{
+				"name": "countKind",
+				"kind": "across_kinds",
+				"emitted": true,
+				"params": [
+					{
+						"name": "kind"
+					},
+					{
+						"name": "where"
+					}
+				],
+				"returns": "count",
+				"delegatesTo": {
+					"entity": "communication",
+					"layer": "repository",
+					"method": "countKind"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: email, meeting"
+					}
+				}
+			},
+			{
+				"name": "findOrphans",
+				"kind": "orphans",
+				"emitted": true,
+				"params": [
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "communication",
+					"layer": "repository",
+					"method": "findOrphans"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: email, meeting"
+					}
 				}
 			},
 			{

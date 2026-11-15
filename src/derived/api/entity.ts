@@ -15,7 +15,7 @@
 
 import { entityModuleNaming } from '../../config/module-tree.js';
 import { junctionName } from '../../config/junction-naming.js';
-import { inheritsOf } from '../../schema/inheritance.js';
+import { inheritsOf, type InheritanceChild } from '../../schema/inheritance.js';
 import { deriveRoleRelationships, type RoleDefinition } from '../../roles/derive.js';
 import {
 	controllerClassName,
@@ -29,6 +29,7 @@ import {
 	junctionListName,
 	junctionSetPrimaryName,
 	operationId,
+	FAMILY_METHOD,
 	paramName,
 	queryUseCaseClassName,
 	relationMethodName,
@@ -94,6 +95,8 @@ export interface EntityDefinitionInput {
 	generate?: { writes?: boolean } | null;
 	/** `inherits:` (RFC-0006) — a bare base name or `{ base, as? }`. */
 	inherits?: string | { base: string; as?: string };
+	/** The base's kind column (RFC-0006 §1.1). */
+	discriminator?: string;
 	eav?: boolean;
 	eav_value_table?: boolean;
 }
@@ -117,6 +120,54 @@ export function writesDisabledBy(definition: {
 	if (inheritsOf(definition) !== null) return ['inherits'];
 	if (definition.generate?.writes === false) return ['generate', 'writes'];
 	return null;
+}
+
+/**
+ * A `roles:` block merged into `relationships` (CAP-2: a `cardinality: one` role IS a belongs_to), exactly as
+ * `prompt.js` merges it, so a definition that arrives already merged comes out the same.
+ */
+function mergedRelationships(definition: EntityDefinitionInput): Record<string, RelationshipInput> {
+	return {
+		...(definition.relationships ?? {}),
+		...deriveRoleRelationships(definition.roles ?? undefined),
+	};
+}
+
+/**
+ * Can this entity's repository name a `with` — is there a typed include? REL-2 (#587) §2.5: yes when its table
+ * carries an edge in the relations manifest. Three things put one there: a direct relationship of its own
+ * (`through:` ones emit no edge), a child's `inherits:` (its base edge), and a base's children (one edge per
+ * child table, RFC-0006 §3.1) — edges its own YAML does not declare, so a family member has a typed include
+ * whatever it writes under `relationships:`.
+ *
+ * The ONE owner: `entity-locals.js` reads it for `includes`, `deriveEntityApiSurface` for `typedInclude` and every
+ * read's `readOptions`, and the include-allowlist gate (`build-includes.ts`) for "would this allowlist ever be
+ * reached".
+ */
+export function hasTypedInclude(
+	definition: EntityDefinitionInput,
+	inheritanceChildren: readonly InheritanceChild[],
+): boolean {
+	return (
+		Object.values(mergedRelationships(definition)).some((rel) => !rel.through) ||
+		inheritsOf(definition) !== null ||
+		inheritanceChildren.length > 0
+	);
+}
+
+/**
+ * Which half of the family read surface this entity carries (RFC-0006 §3, #875): a child (it `inherits:`) gets the
+ * flat reads through its base; a base gets the cross-kind reads only when it has at least one child table — a base
+ * with none has every kind base-only and its discriminator is just an enum.
+ */
+export function familyReadSurface(
+	definition: EntityDefinitionInput,
+	inheritanceChildren: readonly InheritanceChild[],
+): { child: boolean; crossKind: boolean } {
+	return {
+		child: inheritsOf(definition) !== null,
+		crossKind: typeof definition.discriminator === 'string' && inheritanceChildren.length > 0,
+	};
 }
 
 /** A junction YAML (`pattern: Junction`). */
@@ -148,6 +199,11 @@ export interface EntityApiInput {
 	 * A self-reference is always wired; a target with no YAML never is.
 	 */
 	wiredTargets: Iterable<string>;
+	/**
+	 * The entities that `inherits:` THIS one, across the whole set (`inheritanceChildrenOf`). Required, not
+	 * defaulted: an absent list would read as "no family" and silently drop a base's cross-kind reads.
+	 */
+	inheritanceChildren: readonly InheritanceChild[];
 	/** Another entity's `entity:` block, by name (NAME-0) — `null` when it has no YAML. */
 	entityLookup: (name: string) => EntityBlockInput | null;
 }
@@ -188,19 +244,6 @@ export function apiEnabled(def: Pick<EntityDefinitionInput, 'api'>): boolean {
 	return true;
 }
 
-/**
- * Does this entity declare a relationship that becomes an edge ON ITS OWN TABLE? Only then can its repository
- * name a `with` (REL-2 §2.5: `DBQueryConfig` has no `with` slot for a relation-less table), so this decides
- * whether a typed include surface is emitted at all — and `build-includes.ts` rejects an allowlist on an entity
- * where it is false. Transitive (`through:`) relationships are excluded because REL-1 emits no edge for them
- * (#614).
- */
-export function declaresOwnRelation(def: {
-	relationships?: Readonly<Record<string, Pick<RelationshipInput, 'through'>>> | null;
-}): boolean {
-	return Object.values(def.relationships ?? {}).some((rel) => !rel.through);
-}
-
 // ============================================================================
 // The derivation
 // ============================================================================
@@ -220,15 +263,12 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 
 	// CAP-2 — a `cardinality: one` role IS a belongs_to. Merged exactly as prompt.js merges it, so a definition
 	// that arrives already merged comes out the same.
-	const relationships: Record<string, RelationshipInput> = {
-		...(definition.relationships ?? {}),
-		...deriveRoleRelationships(definition.roles ?? undefined),
-	};
+	const relationships = mergedRelationships(definition);
 	const relPath = (name: string, rel: RelationshipInput): YamlPath =>
 		rel.role ? ['roles', rel.role] : ['relationships', name];
 
-	// REL-2 §2.5 — a `with` exists only when this entity's own table carries an edge.
-	const typedInclude = declaresOwnRelation({ relationships });
+	// REL-2 §2.5 — a `with` exists only when this entity's own table carries an edge (its own, or its family's).
+	const typedInclude = hasTypedInclude(definition, input.inheritanceChildren);
 	const readOptions: ReadOptionsShape = typedInclude ? 'columns+with' : 'columns';
 
 	const belongsTo = Object.entries(relationships)
@@ -282,6 +322,49 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 		{ name: 'list', kind: 'list', emitted: true, params: [{ name: 'query' }], returns: 'many', readOptions, origin: BASE },
 		{ name: 'count', kind: 'count', emitted: true, params: [{ name: 'where' }], returns: 'count', readOptions: 'none', origin: BASE },
 	];
+
+	// ── The family reads (RFC-0006 §3, #875) ────────────────────────────────
+	const family = familyReadSurface(definition, input.inheritanceChildren);
+	const inheritsOrigin = fromYaml(['inherits']);
+	// A base's cross-kind reads are caused by its `discriminator:`; the children that make them exist are named.
+	const discriminatorOrigin: Origin = {
+		from: 'yaml',
+		at: {
+			...ref(['discriminator']),
+			note: `kinds with a child table: ${input.inheritanceChildren.map((c) => c.as).join(', ')}`,
+		},
+	};
+	if (family.child) {
+		repository.push(
+			{
+				name: FAMILY_METHOD.findWithBase,
+				kind: 'with_base',
+				emitted: true,
+				params: [{ name: 'id' }, { name: 'opts' }],
+				returns: 'one',
+				readOptions: 'columns+with',
+				origin: inheritsOrigin,
+			},
+			{
+				name: FAMILY_METHOD.findManyWithBase,
+				kind: 'with_base',
+				emitted: true,
+				params: [{ name: 'ids' }, { name: 'opts' }],
+				returns: 'many',
+				readOptions: 'columns+with',
+				origin: inheritsOrigin,
+			},
+		);
+	}
+	if (family.crossKind) {
+		repository.push(
+			{ name: FAMILY_METHOD.findAllKinds, kind: 'across_kinds', emitted: true, params: [{ name: 'query' }], returns: 'many', readOptions: 'none', origin: discriminatorOrigin },
+			{ name: FAMILY_METHOD.findKindById, kind: 'across_kinds', emitted: true, params: [{ name: 'id' }], returns: 'one', readOptions: 'none', origin: discriminatorOrigin },
+			{ name: FAMILY_METHOD.listKind, kind: 'across_kinds', emitted: true, params: [{ name: 'kind' }, { name: 'query' }], returns: 'many', readOptions: 'none', origin: discriminatorOrigin },
+			{ name: FAMILY_METHOD.countKind, kind: 'across_kinds', emitted: true, params: [{ name: 'kind' }, { name: 'where' }], returns: 'count', readOptions: 'none', origin: discriminatorOrigin },
+			{ name: FAMILY_METHOD.findOrphans, kind: 'orphans', emitted: true, params: [{ name: 'opts' }], returns: 'many', readOptions: 'none', origin: discriminatorOrigin },
+		);
+	}
 
 	for (const f of finders) {
 		if (finderLosesToFk(f)) continue;
@@ -374,6 +457,20 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 			origin: BASE,
 		},
 	];
+
+	// The family reads, forwarded verbatim — right after the core reads, as the repository has them (same names, same params, the repository's result).
+	for (const m of repository) {
+		if (m.kind !== 'with_base' && m.kind !== 'across_kinds' && m.kind !== 'orphans') continue;
+		service.push({
+			name: m.name,
+			kind: m.kind,
+			emitted: true,
+			params: m.params,
+			returns: m.returns,
+			delegatesTo: repoRef(entityName, m.name),
+			origin: m.origin,
+		});
+	}
 
 	// Every finder is forwarded — the service applies no precedence skip; a forwarder whose finder lost to an
 	// FK finder calls the FK finder of the same name.

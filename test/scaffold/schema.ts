@@ -49,6 +49,7 @@ export * from '@gen/modules/meeting-transcripts/meeting-transcript.entity';
 export * from '@gen/modules/communication-parts/communication-part.entity';
 export * from '@gen/modules/transcript-communication-parts/transcript-communication-part.entity';
 export * from '@gen/modules/email-communication-parts/email-communication-part.entity';
+export * from '@gen/modules/message-communication-parts/message-communication-part.entity';
 export * from '@gen/modules/communication-participant-roles/communication-participant-role.entity';
 export * from '@gen/modules/communication-participants/communication-participant.entity';
 export * from '@gen/modules/parties/party.entity';

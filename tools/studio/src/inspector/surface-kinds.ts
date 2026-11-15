@@ -79,7 +79,10 @@ export const REPOSITORY_KINDS: Record<RepositoryKind, KindDescriptor> = {
   finder: { label: 'finder', section: 'repository', order: 5 },
   finder_projection: { label: 'projection finder', section: 'repository', order: 6 },
   eav_upsert: { label: 'EAV upsert', section: 'repository', order: 7 },
-  inherited: { label: 'inherited', section: 'repository', order: 8 },
+  with_base: { label: 'with base', section: 'repository', order: 8 },
+  across_kinds: { label: 'across kinds', section: 'repository', order: 9 },
+  orphans: { label: 'orphans', section: 'repository', order: 10 },
+  inherited: { label: 'inherited', section: 'repository', order: 11 },
 };
 
 export const SERVICE_KINDS: Record<ServiceKind, KindDescriptor> = {
@@ -94,7 +97,10 @@ export const SERVICE_KINDS: Record<ServiceKind, KindDescriptor> = {
   capability_forwarder: { label: 'capability', section: 'service', order: 8 },
   eav_read: { label: 'EAV read', section: 'service', order: 9 },
   eav_write: { label: 'EAV write', section: 'service', order: 10 },
-  inherited: { label: 'inherited', section: 'service', order: 11 },
+  with_base: { label: 'with base', section: 'service', order: 11 },
+  across_kinds: { label: 'across kinds', section: 'service', order: 12 },
+  orphans: { label: 'orphans', section: 'service', order: 13 },
+  inherited: { label: 'inherited', section: 'service', order: 14 },
 };
 
 export const USE_CASE_KINDS: Record<UseCaseKind, KindDescriptor> = {

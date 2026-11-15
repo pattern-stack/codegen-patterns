@@ -251,6 +251,39 @@ describe('HTTP', () => {
     expect(sectionOf(DEMO, 'contact', 'useCases').off).toBeUndefined();
   });
 
+  test('a base reads across its kinds, credited to its discriminator: (#875 S3)', () => {
+    // The derivation's own shape (test/api-surface-golden/snapshot/communication.json): five reads on the repository,
+    // forwarded on the service, each caused by `discriminator:`, the child kinds in the note.
+    const family = structuredClone(DEMO);
+    const contact = family.entities.contact!;
+    const origin = {
+      from: 'yaml' as const,
+      at: { doc: { kind: 'entity' as const, name: 'contact' }, path: ['discriminator'], note: 'kinds with a child table: email' },
+    };
+    contact.repository.methods.push({
+      name: 'findAllKinds',
+      kind: 'across_kinds',
+      emitted: true,
+      params: [{ name: 'query' }],
+      returns: 'many',
+      readOptions: 'none',
+      origin,
+    });
+    contact.service.methods.push({
+      name: 'findAllKinds',
+      kind: 'across_kinds',
+      emitted: true,
+      params: [{ name: 'query' }],
+      returns: 'many',
+      origin,
+    });
+    for (const id of ['repository', 'service'] as const) {
+      const r = sectionOf(family, 'contact', id).rows.find((x) => x.name === 'findAllKinds');
+      expect(r?.kindLabel).toBe('across kinds');
+      expect(r?.origin?.text).toBe('← discriminator (kinds with a child table: email)');
+    }
+  });
+
   test('a route that resolves ?include= says against which allowlist', () => {
     const http = sectionOf(VARIANTS, 'account', 'http');
     expect(row(http, 'GET /accounts/:id').flags).toEqual(['operationId findAccountById', '?include= find_by_id']);
