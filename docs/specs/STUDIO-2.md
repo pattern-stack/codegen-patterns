@@ -157,7 +157,7 @@ node is selected (as `relate` does). The tab is `inspector/ApiTab.tsx`; the pure
   `inverseRelationId`; selecting it opens the panel on the `belongs_to`, whose **inverse** group is the other side.
   An unpaired `has_many` is its own line with its own `relationId`.
 - **Spine or secondary (STUDIO-3).** Every line is one or the other (`treeRole`), and the panel's first line prints
-  why, exactly as the adapter wrote it on the line (`treeReason`): `spine: unique FK (1:1)`, or
+  why, exactly as the adapter wrote it on the line (`treeReason`): `spine: inherits` for a child's `inherits:`, or
   `secondary: chart's spine is catalog (first declared)`. The line's tooltip prints the same string. Selection is
   unchanged by the role: a secondary line selects its relation and shows both sides like any other.
 - **Where the panel shows.** Selecting an edge opens the inspector's API tab, which renders `inspector/EdgePanel.tsx`
@@ -165,7 +165,9 @@ node is selected (as `relate` does). The tab is `inspector/ApiTab.tsx`; the pure
   failure and loading states apply to the edge panel unchanged — an error still outranks the selection.
 - **`relationId`.** `StudioEdgeData.relationId` is set where the edge is built (`relationIdOf` in
   `adapters/schema-adapter.ts`) from the edge's own fields: `<from>.relationships.<name>`, or `<from>.roles.<role>`
-  for a role-derived edge — the derivation's spelling for both. Nothing parses an edge id. A junction's two halves
+  for a role-derived edge — the derivation's spelling for both — and `<child>.inherits` for an `inherits:` line (#875:
+  read off the serialized entity's `inherits.relationId`, which the derivation's `inheritsRelationId` spells; the line is
+  one relation of kind `inherits`, child → base, not half of a pair). Nothing parses an edge id. A junction's two halves
   carry none. `schema-adapter.test.ts` pins every demo edge's `relationId` / `inverseRelationId` and asserts the set of
   both equals the ids in a real `project surface --json` payload of the same graph.
 - **Panel** (`inspector/edge-view.ts`, pure). A heading chip — the relation's id, in its edge kind's colour, linked to

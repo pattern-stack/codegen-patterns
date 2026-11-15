@@ -50,16 +50,18 @@ export interface WriteRoutes {
 }
 
 /**
- * Which mutations the backend generates for this entity — read from its derived `useCases`, so the answer is the
- * backend's (`generate: { writes: false }` removes all three; a discriminator base whose every kind has a child
- * removes `create`, RFC-0006 §4.1). The api client, the hooks, the store and the field capabilities all ask here, so
- * no mutation is emitted for a route that does not exist.
+ * Which mutations the backend generates for this entity — read from its derived HTTP routes
+ * (`apiSurface.http.routes`, the list the backend's controller template prints), because the frontend calls REST
+ * routes: an `api: false` entity has use cases but no routes, so it has no mutation here either
+ * (`generate: { writes: false }` removes all three; a discriminator base whose every kind has a child removes
+ * `create`, RFC-0006 §4.1). The api client, the hooks, the store and the field capabilities all ask here, so no
+ * mutation is emitted for a route that does not exist.
  */
 export function writeRoutes(entity: EntityRegistryEntry, ctx: FrontendEmitContext): WriteRoutes {
 	const surface = projectSurface(ctx)?.entities[entity.name];
 	if (!surface) return { create: true, update: true, delete: true };
-	const has = (kind: 'create' | 'update' | 'delete'): boolean => surface.useCases.some((u) => u.kind === kind);
-	return { create: has('create'), update: has('update'), delete: has('delete') };
+	const has = (handler: string): boolean => surface.http.routes.some((r) => r.handler === handler);
+	return { create: has('create'), update: has('update'), delete: has('remove') };
 }
 
 /**

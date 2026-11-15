@@ -223,7 +223,7 @@ function inheritsEdit(
 		);
 	}
 	const value = as && as !== req.from ? { base: req.to, as } : req.to;
-	// \`doc.setIn\` APPENDS the key at the end of the mapping (after \`fields:\`, \`relationships:\`, …), which is where it lands;
+	// `doc.setIn` APPENDS the key at the end of the mapping (after `fields:`, `relationships:`, …), which is where it lands;
 	// the schema is key-order-free. The edit keeps every comment and the file's other keys where they were.
 	doc.setIn(['inherits'], doc.createNode(value));
 	const content = doc.toString();

@@ -13,8 +13,8 @@ describe('serializeDomainGraph — inherits', () => {
 	const graph = serializeDomainGraph(buildDomainGraph(loadFamily(), []));
 
 	it('carries the base and the kind value on a child, long form and short', () => {
-		expect(graph.entities.meeting?.inherits).toEqual({ base: 'communication', as: 'meeting' });
-		expect(graph.entities.transcript_communication_part?.inherits).toEqual({ base: 'communication_part', as: 'meeting' });
+		expect(graph.entities.meeting?.inherits).toEqual({ base: 'communication', as: 'meeting', relationId: 'meeting.inherits' });
+		expect(graph.entities.transcript_communication_part?.inherits).toEqual({ base: 'communication_part', as: 'meeting', relationId: 'transcript_communication_part.inherits' });
 	});
 
 	it('omits the key on a base and on a plain entity', () => {

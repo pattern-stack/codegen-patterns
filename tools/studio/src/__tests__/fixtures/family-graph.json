@@ -1,0 +1,657 @@
+{
+ "graph": {
+  "entities": {
+   "communication": {
+    "name": "communication",
+    "plural": "communications",
+    "table": "communications",
+    "patterns": [
+     "Activity"
+    ],
+    "fields": {
+     "tenant_id": {
+      "name": "tenant_id",
+      "type": "uuid",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     },
+     "kind": {
+      "name": "kind",
+      "type": "enum",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false,
+      "choices": [
+       "meeting",
+       "email",
+       "message"
+      ]
+     },
+     "occurred_at": {
+      "name": "occurred_at",
+      "type": "datetime",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     },
+     "source": {
+      "name": "source",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     },
+     "external_id": {
+      "name": "external_id",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {},
+    "behaviors": [
+     "timestamps"
+    ],
+    "sourcePath": "entities/communication.yaml"
+   },
+   "communication_note": {
+    "name": "communication_note",
+    "plural": "communication_notes",
+    "table": "communication_notes",
+    "fields": {
+     "body": {
+      "name": "body",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {
+     "communication": {
+      "name": "communication",
+      "type": "belongs_to",
+      "target": "communication",
+      "foreignKey": "communication_id",
+      "resolved": true,
+      "onDelete": "restrict"
+     },
+     "role": {
+      "name": "role",
+      "type": "belongs_to",
+      "target": "communication_participant_role",
+      "foreignKey": "role_id",
+      "resolved": true,
+      "onDelete": "restrict"
+     }
+    },
+    "behaviors": [],
+    "sourcePath": "entities/communication_note.yaml"
+   },
+   "communication_part": {
+    "name": "communication_part",
+    "plural": "communication_parts",
+    "table": "communication_parts",
+    "fields": {
+     "tenant_id": {
+      "name": "tenant_id",
+      "type": "uuid",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     },
+     "kind": {
+      "name": "kind",
+      "type": "enum",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     },
+     "sequence": {
+      "name": "sequence",
+      "type": "integer",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {
+     "communication": {
+      "name": "communication",
+      "type": "belongs_to",
+      "target": "communication",
+      "foreignKey": "communication_id",
+      "resolved": true,
+      "onDelete": "cascade"
+     }
+    },
+    "behaviors": [
+     "soft_delete"
+    ],
+    "sourcePath": "entities/communication_part.yaml"
+   },
+   "communication_participant": {
+    "name": "communication_participant",
+    "plural": "communication_participants",
+    "table": "communication_participants",
+    "fields": {
+     "tenant_id": {
+      "name": "tenant_id",
+      "type": "uuid",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {
+     "communication": {
+      "name": "communication",
+      "type": "belongs_to",
+      "target": "communication",
+      "foreignKey": "communication_id",
+      "resolved": true,
+      "onDelete": "cascade"
+     },
+     "role": {
+      "name": "role",
+      "type": "belongs_to",
+      "target": "communication_participant_role",
+      "foreignKey": "role_id",
+      "resolved": true,
+      "onDelete": "restrict"
+     },
+     "party": {
+      "name": "party",
+      "type": "belongs_to",
+      "target": "party",
+      "foreignKey": "party_id",
+      "resolved": true,
+      "onDelete": "restrict"
+     }
+    },
+    "behaviors": [],
+    "sourcePath": "entities/communication_participant.yaml"
+   },
+   "communication_participant_role": {
+    "name": "communication_participant_role",
+    "plural": "communication_participant_roles",
+    "table": "communication_participant_roles",
+    "fields": {
+     "kind": {
+      "name": "kind",
+      "type": "enum",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     },
+     "role": {
+      "name": "role",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {},
+    "behaviors": [],
+    "sourcePath": "entities/communication_participant_role.yaml"
+   },
+   "email": {
+    "name": "email",
+    "plural": "emails",
+    "table": "emails",
+    "fields": {
+     "subject": {
+      "name": "subject",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {
+     "thread": {
+      "name": "thread",
+      "type": "belongs_to",
+      "target": "email_thread",
+      "foreignKey": "thread_id",
+      "resolved": true,
+      "onDelete": "restrict"
+     }
+    },
+    "behaviors": [],
+    "inherits": {
+     "base": "communication",
+     "as": "email",
+     "relationId": "email.inherits"
+    },
+    "sourcePath": "entities/email.yaml"
+   },
+   "email_communication_part": {
+    "name": "email_communication_part",
+    "plural": "email_communication_parts",
+    "table": "email_communication_parts",
+    "fields": {
+     "text": {
+      "name": "text",
+      "type": "string",
+      "required": false,
+      "nullable": true,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {
+     "resolves_to": {
+      "name": "resolves_to",
+      "type": "belongs_to",
+      "target": "email",
+      "foreignKey": "resolves_to_email_id",
+      "resolved": true,
+      "onDelete": "restrict"
+     }
+    },
+    "behaviors": [],
+    "inherits": {
+     "base": "communication_part",
+     "as": "email",
+     "relationId": "email_communication_part.inherits"
+    },
+    "sourcePath": "entities/email_communication_part.yaml"
+   },
+   "email_thread": {
+    "name": "email_thread",
+    "plural": "email_threads",
+    "table": "email_threads",
+    "fields": {
+     "topic": {
+      "name": "topic",
+      "type": "string",
+      "required": false,
+      "nullable": true,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {},
+    "behaviors": [],
+    "sourcePath": "entities/email_thread.yaml"
+   },
+   "meeting": {
+    "name": "meeting",
+    "plural": "meetings",
+    "table": "meetings",
+    "fields": {
+     "title": {
+      "name": "title",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     },
+     "starts_at": {
+      "name": "starts_at",
+      "type": "datetime",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     },
+     "ends_at": {
+      "name": "ends_at",
+      "type": "datetime",
+      "required": false,
+      "nullable": true,
+      "unique": false,
+      "index": false
+     },
+     "link": {
+      "name": "link",
+      "type": "string",
+      "required": false,
+      "nullable": true,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {
+     "transcripts": {
+      "name": "transcripts",
+      "type": "has_many",
+      "target": "meeting_transcript",
+      "foreignKey": "meeting_id",
+      "resolved": true,
+      "onDelete": "restrict"
+     }
+    },
+    "behaviors": [],
+    "inherits": {
+     "base": "communication",
+     "as": "meeting",
+     "relationId": "meeting.inherits"
+    },
+    "queries": [],
+    "sourcePath": "entities/meeting.yaml"
+   },
+   "meeting_transcript": {
+    "name": "meeting_transcript",
+    "plural": "meeting_transcripts",
+    "table": "meeting_transcripts",
+    "fields": {
+     "language": {
+      "name": "language",
+      "type": "string",
+      "required": false,
+      "nullable": true,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {
+     "meeting": {
+      "name": "meeting",
+      "type": "belongs_to",
+      "target": "meeting",
+      "foreignKey": "meeting_id",
+      "resolved": true,
+      "onDelete": "cascade"
+     }
+    },
+    "behaviors": [],
+    "sourcePath": "entities/meeting_transcript.yaml"
+   },
+   "message_communication_part": {
+    "name": "message_communication_part",
+    "plural": "message_communication_parts",
+    "table": "message_communication_parts",
+    "fields": {
+     "text": {
+      "name": "text",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     },
+     "reaction_count": {
+      "name": "reaction_count",
+      "type": "integer",
+      "required": false,
+      "nullable": true,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {},
+    "behaviors": [],
+    "inherits": {
+     "base": "communication_part",
+     "as": "message",
+     "relationId": "message_communication_part.inherits"
+    },
+    "sourcePath": "entities/message_communication_part.yaml"
+   },
+   "party": {
+    "name": "party",
+    "plural": "parties",
+    "table": "parties",
+    "fields": {
+     "name": {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {},
+    "behaviors": [],
+    "sourcePath": "entities/party.yaml"
+   },
+   "transcript_communication_part": {
+    "name": "transcript_communication_part",
+    "plural": "transcript_communication_parts",
+    "table": "transcript_communication_parts",
+    "fields": {
+     "text": {
+      "name": "text",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     },
+     "start_ms": {
+      "name": "start_ms",
+      "type": "integer",
+      "required": false,
+      "nullable": true,
+      "unique": false,
+      "index": false
+     },
+     "end_ms": {
+      "name": "end_ms",
+      "type": "integer",
+      "required": false,
+      "nullable": true,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {
+     "transcript": {
+      "name": "transcript",
+      "type": "belongs_to",
+      "target": "meeting_transcript",
+      "foreignKey": "transcript_id",
+      "resolved": true,
+      "onDelete": "cascade"
+     },
+     "participant": {
+      "name": "participant",
+      "type": "belongs_to",
+      "target": "communication_participant",
+      "foreignKey": "participant_id",
+      "resolved": true,
+      "onDelete": "restrict"
+     }
+    },
+    "behaviors": [],
+    "inherits": {
+     "base": "communication_part",
+     "as": "meeting",
+     "relationId": "transcript_communication_part.inherits"
+    },
+    "sourcePath": "entities/transcript_communication_part.yaml"
+   }
+  },
+  "relationshipDefinitions": {},
+  "edges": [
+   {
+    "from": "communication_note",
+    "to": "communication",
+    "relationship": {
+     "name": "communication",
+     "type": "belongs_to",
+     "target": "communication",
+     "foreignKey": "communication_id",
+     "resolved": true,
+     "onDelete": "restrict"
+    },
+    "cardinality": "N:1",
+    "bidirectional": false
+   },
+   {
+    "from": "communication_note",
+    "to": "communication_participant_role",
+    "relationship": {
+     "name": "role",
+     "type": "belongs_to",
+     "target": "communication_participant_role",
+     "foreignKey": "role_id",
+     "resolved": true,
+     "onDelete": "restrict"
+    },
+    "cardinality": "N:1",
+    "bidirectional": false
+   },
+   {
+    "from": "communication_part",
+    "to": "communication",
+    "relationship": {
+     "name": "communication",
+     "type": "belongs_to",
+     "target": "communication",
+     "foreignKey": "communication_id",
+     "resolved": true,
+     "onDelete": "cascade"
+    },
+    "cardinality": "N:1",
+    "bidirectional": false
+   },
+   {
+    "from": "communication_participant",
+    "to": "communication",
+    "relationship": {
+     "name": "communication",
+     "type": "belongs_to",
+     "target": "communication",
+     "foreignKey": "communication_id",
+     "resolved": true,
+     "onDelete": "cascade"
+    },
+    "cardinality": "N:1",
+    "bidirectional": false
+   },
+   {
+    "from": "communication_participant",
+    "to": "communication_participant_role",
+    "relationship": {
+     "name": "role",
+     "type": "belongs_to",
+     "target": "communication_participant_role",
+     "foreignKey": "role_id",
+     "resolved": true,
+     "onDelete": "restrict"
+    },
+    "cardinality": "N:1",
+    "bidirectional": false
+   },
+   {
+    "from": "communication_participant",
+    "to": "party",
+    "relationship": {
+     "name": "party",
+     "type": "belongs_to",
+     "target": "party",
+     "foreignKey": "party_id",
+     "resolved": true,
+     "onDelete": "restrict"
+    },
+    "cardinality": "N:1",
+    "bidirectional": false
+   },
+   {
+    "from": "email",
+    "to": "email_thread",
+    "relationship": {
+     "name": "thread",
+     "type": "belongs_to",
+     "target": "email_thread",
+     "foreignKey": "thread_id",
+     "resolved": true,
+     "onDelete": "restrict"
+    },
+    "cardinality": "N:1",
+    "bidirectional": false
+   },
+   {
+    "from": "email_communication_part",
+    "to": "email",
+    "relationship": {
+     "name": "resolves_to",
+     "type": "belongs_to",
+     "target": "email",
+     "foreignKey": "resolves_to_email_id",
+     "resolved": true,
+     "onDelete": "restrict"
+    },
+    "cardinality": "N:1",
+    "bidirectional": false
+   },
+   {
+    "from": "meeting",
+    "to": "meeting_transcript",
+    "relationship": {
+     "name": "transcripts",
+     "type": "has_many",
+     "target": "meeting_transcript",
+     "foreignKey": "meeting_id",
+     "resolved": true,
+     "onDelete": "restrict"
+    },
+    "cardinality": "1:N",
+    "bidirectional": true
+   },
+   {
+    "from": "meeting_transcript",
+    "to": "meeting",
+    "relationship": {
+     "name": "meeting",
+     "type": "belongs_to",
+     "target": "meeting",
+     "foreignKey": "meeting_id",
+     "resolved": true,
+     "onDelete": "cascade"
+    },
+    "cardinality": "N:1",
+    "bidirectional": true
+   },
+   {
+    "from": "transcript_communication_part",
+    "to": "meeting_transcript",
+    "relationship": {
+     "name": "transcript",
+     "type": "belongs_to",
+     "target": "meeting_transcript",
+     "foreignKey": "transcript_id",
+     "resolved": true,
+     "onDelete": "cascade"
+    },
+    "cardinality": "N:1",
+    "bidirectional": false
+   },
+   {
+    "from": "transcript_communication_part",
+    "to": "communication_participant",
+    "relationship": {
+     "name": "participant",
+     "type": "belongs_to",
+     "target": "communication_participant",
+     "foreignKey": "participant_id",
+     "resolved": true,
+     "onDelete": "restrict"
+    },
+    "cardinality": "N:1",
+    "bidirectional": false
+   }
+  ]
+ }
+}

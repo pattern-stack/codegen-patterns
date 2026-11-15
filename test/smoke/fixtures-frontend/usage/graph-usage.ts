@@ -138,6 +138,8 @@ export function typeGate(id: string): unknown {
 	auditEntryApi.create({ note: 'x' });
 	// @ts-expect-error the api's `update` takes `never`
 	auditEntryApi.update('a', { note: 'x' });
+	// @ts-expect-error the api's `delete` takes `never`
+	auditEntryApi.delete('a');
 
 	// ── S6 review: a child's REST client speaks the FLAT contract ─────────────
 	// A create body carries the base's fields (`occurredAt`, `source`, `externalId`) with the child's, and no `kind`.

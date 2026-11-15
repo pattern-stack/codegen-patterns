@@ -20,14 +20,15 @@
  */
 
 import { afterAll, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+import { emittedNameViolations } from '../../../../test/_emitted-name-hygiene';
 import { buildBackendLocals } from '../../../../templates/entity/new/backend/entity-locals.js';
 import { withEntities } from '../../backend/_entity-lookup';
 import { deriveProjectApiSurface } from '../../../derived/api/project';
-import { writeRoutes } from '../../../emitters/frontend/emit-utils';
+import { projectSurface, writeRoutes } from '../../../emitters/frontend/emit-utils';
 import { createEntityLookup } from '../../../../templates/_shared/entity-naming.mjs';
 import { buildClientGraph, emitFrontendSet, loadFrontendEmitContext } from '../../../emitters/frontend/index';
 import { buildRelationGraph } from '../../../emitters/relations/build-graph';
@@ -222,17 +223,42 @@ describe('an entity generated without writes has no mutation (S6 R2: the emitter
 		expect(fields).toContain('list: true,');
 	});
 
-	it('agrees with the derived surface on every entity: a mutation exists iff its use case does', () => {
-		for (const entity of ctx.entities) {
-			const surface = deriveProjectApiSurface({
-				relations: { entities: ctx.entities, definitions: ctx.definitions!, junctions: ctx.junctions ?? [], tenancyColumn: ctx.config.tenancyColumn },
-				relationships: [],
-			}).entities[entity.name]!;
-			const routes = writeRoutes(entity, ctx);
-			for (const kind of ['create', 'update', 'delete'] as const) {
-				expect(routes[kind], `${entity.name} ${kind}`).toBe(surface.useCases.some((u) => u.kind === kind));
+	// Item 7 (S6 R2 fixes): the previous test here compared `writeRoutes` with the `useCases` it used to read, i.e.
+	// itself. It is deleted; the gate is the test in the S5 describe above, which pins `writeRoutes` against the
+	// `apiSurface.http.routes` the backend's REAL `buildBackendLocals` prints its controller from.
+});
+
+describe('the emitted api clients obey the name hygiene rule (S6 R2 fixes)', () => {
+	it('names no lib global (type or `new X`) without `globalThis.` in a file that imports an entity type', () => {
+		const files: { path: string; text: string }[] = [];
+		const walk = (d: string): void => {
+			for (const e of readdirSync(d, { withFileTypes: true })) {
+				if (e.isDirectory()) walk(join(d, e.name));
+				else if (e.name.endsWith('.ts')) files.push({ path: join(d, e.name), text: readFileSync(join(d, e.name), 'utf-8') });
 			}
-		}
+		};
+		walk(join(outDir, 'api'));
+		expect(emittedNameViolations(files, { values: true })).toEqual([]);
+	});
+});
+
+describe('an entity with `api: false` has no REST mutation (S6 R2 fixes: writeRoutes reads http.routes)', () => {
+	it('has use cases but no routes, so the frontend emits no create / update / delete for it', () => {
+		const dir = mkdtempSync(join(tmpRoot, 'api-false-'));
+		writeFileSync(
+			join(dir, 'ledger_note.yaml'),
+			'entity:\n  name: ledger_note\n  plural: ledger_notes\n  sync: electric\n\napi: false\n\nfields:\n  note:\n    type: string\n    required: true\n',
+		);
+		const c = load(dir);
+		const entity = c.entities.find((e) => e.name === 'ledger_note')!;
+		const surface = projectSurface(c)!.entities.ledger_note!;
+		expect(surface.http.routes).toEqual([]);
+		expect(surface.useCases.some((u) => u.kind === 'create')).toBe(true); // the use cases exist; the routes do not
+		expect(writeRoutes(entity, c)).toEqual({ create: false, update: false, delete: false });
+		const out = join(dir, 'out');
+		emitFrontendSet(c, out);
+		expect(readFileSync(join(out, 'api/ledger-note.ts'), 'utf-8')).not.toMatch(/'(POST|PATCH|DELETE)'/);
+		expect(readFileSync(join(out, 'entities/ledger-note.ts'), 'utf-8')).not.toMatch(/useCreateLedgerNote\b/);
 	});
 });
 

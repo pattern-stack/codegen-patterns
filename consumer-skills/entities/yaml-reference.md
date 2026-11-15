@@ -320,7 +320,7 @@ unique_indexes:
 
 At most one entry per entity, every column NOT NULL, none on a child (a child upserts on its base's key). It adds
 **`upsertByNaturalKey(input, tx?)`** to the repository and service of that entity — family or not — returning
-`{ row, created }` (a child: `{ row, created, baseCreated }`). One statement per table, one transaction. An existing
+`{ row, created }` (a child: `{ row, created, baseCreated }` through its base's key; a child of a keyless base has no upsert). One statement per table, one transaction. An existing
 soft-deleted row is updated and **stays deleted**; under `tenant_scoped` the tenant is part of the key; a key that
 already exists under another kind throws `KindMismatchError` and writes nothing.
 

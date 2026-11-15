@@ -15,6 +15,8 @@ import {
 } from '../adapters/schema-adapter';
 
 import demoSurface from './fixtures/demo-surface-with-relationship.json';
+import familyGraph from './fixtures/family-graph.json';
+import familySurface from './fixtures/family-surface.json';
 
 type Entity = SerializedDomainGraph['entities'][string];
 type RelDef = SerializedDomainGraph['relationshipDefinitions'][string];
@@ -241,7 +243,7 @@ describe('buildEdges', () => {
       graph({
         entities: {
           communication: entity('communication'),
-          meeting: entity('meeting', { inherits: { base: 'communication', as: 'meeting' } }),
+          meeting: entity('meeting', { inherits: { base: 'communication', as: 'meeting', relationId: 'meeting.inherits' } }),
         },
       }),
     );
@@ -266,7 +268,7 @@ describe('buildEdges', () => {
         entities: {
           communication: entity('communication'),
           account: entity('account'),
-          meeting: entity('meeting', { inherits: { base: 'communication', as: 'meeting' } }),
+          meeting: entity('meeting', { inherits: { base: 'communication', as: 'meeting', relationId: 'meeting.inherits' } }),
         },
         edges: [
           {
@@ -647,6 +649,26 @@ describe('the canvas counts differently from the API, on purpose', () => {
     // A paired line (#778) draws two relations: its own and its inverse.
     const ids = edges.flatMap((e) => [e.relationId, e.inverseRelationId].filter((id) => id != null)).sort();
     expect(ids).toEqual(surface.relations.map((r) => r.id).sort());
+  });
+});
+
+describe('the inherits line against a real derived surface (one owner of `<child>.inherits`)', () => {
+  test("every `inherits:` line's relation id is a relation of kind `inherits` the family's derived surface lists", () => {
+    // Real `project graph --json` / `project surface --json` of the RFC-0006 family — not hand-built.
+    const surface = familySurface.surface as unknown as ProjectApiSurface;
+    const { edges } = adaptDomainGraph(familyGraph.graph as unknown as SerializedDomainGraph);
+    const inherits = edges.filter((e) => e.studioKind === 'inherits');
+    expect(inherits.length).toBeGreaterThan(0);
+    const listed = new Map(surface.relations.map((r) => [r.id, r]));
+    for (const e of inherits) {
+      const relation = listed.get(e.relationId ?? '');
+      expect(relation, `${e.source} → ${e.target}`).toBeDefined();
+      expect(relation).toMatchObject({ kind: 'inherits', from: e.source, to: e.target });
+    }
+    // and the other way: the surface lists no inherits relation the canvas does not draw
+    expect(surface.relations.filter((r) => r.kind === 'inherits').map((r) => r.id).sort()).toEqual(
+      inherits.map((e) => e.relationId ?? "").sort(),
+    );
   });
 });
 

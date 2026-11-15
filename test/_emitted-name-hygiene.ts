@@ -111,7 +111,7 @@ function entityTypeInScope(sf: ts.SourceFile): boolean {
   return found;
 }
 
-function rule1(path: string, sf: ts.SourceFile, out: HygieneViolation[]): void {
+function rule1(path: string, sf: ts.SourceFile, out: HygieneViolation[], values: boolean): void {
   if (!entityTypeInScope(sf)) return;
   const lib = libGlobalTypeNames();
   const bound = fileLevelBindings(sf);
@@ -131,6 +131,9 @@ function rule1(path: string, sf: ts.SourceFile, out: HygieneViolation[]): void {
   const visit = (n: ts.Node) => {
     if (ts.isTypeReferenceNode(n)) check(n.typeName);
     else if (ts.isExpressionWithTypeArguments(n) && ts.isHeritageClause(n.parent)) check(n.expression);
+    // Opt-in (`values: true`; many older emitters still `new Map`/`new Set` bare). Value position (`new Error(…)`): an entity `error` imports a *type* named `Error`, and a type-only import used
+    // as a value is TS1361 — so a lib global read as a value needs `globalThis.` just as a type reference does.
+    else if (values && ts.isNewExpression(n)) check(n.expression);
     ts.forEachChild(n, visit);
   };
   visit(sf);
@@ -241,12 +244,15 @@ function rule2(path: string, sf: ts.SourceFile, out: HygieneViolation[]): void {
   visit(sf);
 }
 
-export function emittedNameViolations(files: readonly EmittedFile[]): HygieneViolation[] {
+export function emittedNameViolations(
+  files: readonly EmittedFile[],
+  opts: { readonly values?: boolean } = {},
+): HygieneViolation[] {
   const out: HygieneViolation[] = [];
   for (const f of files) {
     if (!/\.tsx?$/.test(f.path)) continue;
     const sf = ts.createSourceFile(f.path, f.text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS);
-    rule1(f.path, sf, out);
+    rule1(f.path, sf, out, opts.values === true);
     rule2(f.path, sf, out);
   }
   return out;

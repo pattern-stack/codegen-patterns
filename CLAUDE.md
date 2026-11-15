@@ -125,7 +125,9 @@ is the design and, in its "as built" notes, the truth; `consumer-skills/entities
   those lists and the frontend reads them too (`projectSurface` / `writeRoutes` in `emit-utils.ts` run `deriveProjectApiSurface` once per
   emit — this also covers `generate: { writes: false }`, which removes all three mutations). The frontend types a missing mutation away
   (`createEntityHooks<Base, never>`, `create: (_data: never)`, `capabilities.create: false`; no `useCreate` / `useUpdate` / `useDelete`
-  re-export) — not a stub that rejects. `createEntityHooks` has no type parameter for delete, so only the re-export, api method and capability go. A child's REST client is typed flat (`<Child>WithBase`, `<Child>FlatInput`, in `api/<child>.ts`).
+  re-export) — not a stub that rejects. `writeRoutes` reads the derived **HTTP routes** (`apiSurface.http.routes`), so an `api: false` entity gets no mutation either.
+  `createEntityHooks` has no type parameter for delete, so `<e>Hooks.useDelete().mutate(…)` **still compiles** (frontend-patterns' own type); what goes is the
+  `useDelete<Class>` re-export and `capabilities.delete`, and `<e>Api.delete` is typed `(_id: never)`, so `<e>Api.delete('a')` is a compile error. A child's REST client is typed flat (`<Child>WithBase`, `<Child>FlatInput`, in `api/<child>.ts`).
 - **Frontend.** A child's hop to its base is **inner-joined and typed without `| undefined`**; every `electric` child gets
   `<Child>WithBase`, `<plural>WithBase(q)`, `use<Plural>WithBase()`, `use<Child>WithBase(id)` in `graph/<child>.ts`. Base and
   children share one sync mode (R8). Studio draws one `inherits` edge, child → base, and it is the child's spine.

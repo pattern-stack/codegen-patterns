@@ -319,8 +319,9 @@ export function buildEdges(graph: SerializedDomainGraph): StudioEdgeData[] {
       type: libraryType('inherits'),
       bidirectional: false,
       studioKind: 'inherits',
-      // The derivation lists the relation `<child>.inherits` (`relationSurfaces`), whose methods carry that origin.
-      relationId: `${entity.name}.inherits`,
+      // The derivation's own id for the relation (`inheritsRelationId`, handed over by the serialized graph), whose
+      // methods carry that origin — Studio holds no second spelling of it.
+      relationId: entity.inherits.relationId,
     })) candidate(id, entity.name, entity.inherits.base, { ...NO_SIGNALS, inherits: true });
   }
 

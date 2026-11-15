@@ -1860,20 +1860,23 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   `Date` in it. A child has no `timestamps` (R5), so a child with no date field of its own (`email`: a subject) did not
   compile. `emit-collections.ts` now drops the date-family parsers (`timestamptz`, `timestamp`, `date`) from an entity whose
   table has no date field and neither `timestamps` nor `soft_delete`. Entity-general, found by the family.
-- **No create route for an all-kinds base, typed away.** `communication_part` has no `POST` route after S5, and the frontend
-  emitted `useCreateCommunicationPart` aimed at it. The derivation's `createDisabledBy` (`src/derived/api/entity.ts`, ADR-046) is the **one owner**
-  of "every kind has a child" (over `baseOnlyKinds`, `discriminatorKindsOf` and the one `choices_of` resolver `enumChoices`, all
-  in `src/schema/inheritance.ts`): the backend's `generateCreate` (`entity-locals.js`) and the frontend's `hasCreateRoute`
-  (`emit-utils.ts`) both call it. The frontend calls `createDisabledBy` directly rather than a whole `deriveProjectApiSurface`,
-  which needs the relation graph's inputs the emitter has no other use for; it hands over the same two facts the project
-  derivation does (`inheritanceChildrenOf`, `discriminatorKindsOf`). Phase R deleted S6's own `enumChoices` / `baseOnlyKinds` /
-  `baseHasNoCreateRoute`. `inherits-graph.test.ts` pins `hasCreateRoute` against the backend's **real** `generateCreate`
-  (`buildBackendLocals`) for every entity of the family, so a change there turns it red. Three places follow `hasCreateRoute`: `entities/<e>.ts` emits
-  `createEntityHooks<Base, never>` and no `useCreate<Class>` (also not in `entities/index.ts`); `api/<e>.ts`'s `create` takes `never`
-  and issues no request; `fields/<e>.ts` has `capabilities.create: false`. `store/index.ts` casts only those entries to
-  `EntityHooks<any, any, any>` (`createStore` does not accept `TCreate = never`; the store never creates). The usage gate has a
-  `@ts-expect-error` on `communicationPartHooks.useCreate().mutate({})` and on `communicationPartApi.create({})`.
-  `hasCreateRoute` does not read `generate.writes` (below).
+- **No create route for an all-kinds base, typed away; every write follows the derived HTTP routes.** `communication_part` has no
+  `POST` route after S5, and the frontend emitted `useCreateCommunicationPart` aimed at it. The derivation's `createDisabledBy`
+  (`src/derived/api/entity.ts`, ADR-046) is the **one owner** of "every kind has a child" (over `baseOnlyKinds`, `discriminatorKindsOf`
+  and the one `choices_of` resolver `enumChoices`, all in `src/schema/inheritance.ts`); it removes the base's `create` use case and
+  route, and the backend's templates print those lists. Phase R2: the frontend no longer calls `createDisabledBy` itself.
+  `projectSurface` / `writeRoutes` (`emit-utils.ts`) run `deriveProjectApiSurface` once per emit, fed the same relation inputs
+  `buildClientGraph` hands REL-1, and `writeRoutes` answers create / update / delete from **`apiSurface.http.routes`** (handlers
+  `create`, `update`, `remove`) — decided in the R2 fixes, not from `useCases`: the frontend calls REST routes, and an `api: false`
+  entity has use cases but **no routes**, so reading use cases still gave it REST mutations aimed at routes that do not exist.
+  `inherits-graph.test.ts` pins `writeRoutes` against the `apiSurface.http.routes` the backend's **real** `buildBackendLocals`
+  prints its controller from, for every entity of the set (the earlier second test, which compared `writeRoutes` with the very
+  `useCases` it read, was deleted), and has a unit test for an `api: false` entity (no mutation). Three places follow
+  `writeRoutes`: `entities/<e>.ts` emits `createEntityHooks<Base, never>` and no `useCreate<Class>` (also not in
+  `entities/index.ts`); `api/<e>.ts`'s `create` takes `never` and issues no request; `fields/<e>.ts` has `capabilities.create:
+  false`. `store/index.ts` casts only those entries to `EntityHooks<any, any, any>` (`createStore` does not accept `TCreate =
+  never`; the store never creates). The usage gate has a `@ts-expect-error` on `communicationPartHooks.useCreate().mutate({})` and
+  on `communicationPartApi.create({})`. Phase R deleted S6's own `enumChoices` / `baseOnlyKinds` / `baseHasNoCreateRoute`.
 - **A child's REST client speaks the flat contract.** `api/<child>.ts` (both sync modes) defines `<Child>WithBase` (base columns
   minus the base's discriminator, and the child's) and `<Child>FlatInput` (`Partial` of it without `id` and the discriminator);
   `get` / `list` / `listAll` return the former, `create` / `update` take the latter, and `createEntityHooks<Child, FlatInput,
@@ -1890,9 +1893,16 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
 - **Known, not fixed (FE-REL, older than this stack):** the nested-import loop in `buildEntityGraphFile` imports the collections and
   row types of a branch target's to-one hops whether or not a given include uses them, so a consumer compiling with
   `noUnusedLocals` sees TS6133 on them. Recorded only.
-- **`generate.writes` on the frontend: not fixed here.** The frontend emitter still ignores an entity's `generate: { writes: false }`
-  and emits create / update / delete against routes the backend does not generate. That is entity-general, older than `inherits:`
-  (S2's note), and children have write routes after S5, so no family case remains. It is reported to the coordinator, not changed.
+- **`generate.writes` on the frontend: closed in R2** (it was entity-general and older than `inherits:`; S2's note had flagged it).
+  The frontend emitter now reads the derived routes, so `generate: { writes: false }` removes all three mutations: no
+  `useCreate` / `useUpdate` / `useDelete<Class>` re-export, `create` / `update` typed `never` in `api/<e>.ts`, `delete: (_id: never)`
+  (so `<e>Api.delete('a')` does not compile; `EntityApi.delete` is method syntax, hence bivariant, hence assignable), and
+  `capabilities.create/update/delete: false`. **The one limit:** `createEntityHooks` has no type parameter for delete, so
+  `<e>Hooks.useDelete().mutate(…)` still compiles (frontend-patterns' own type); only the re-export, the api method and the
+  capability go. The fixture is `audit_entry` (`test/smoke/fixtures-frontend/entities/`, not part of the family), and the gates are
+  its `@ts-expect-error`s in `usage/graph-usage.ts`, the runner's text assertions, and `inherits-graph.test.ts`. Its stubs throw
+  `new globalThis.Error(…)`: an entity named `error` imports a *type* `Error`, and `new Error` then fails with TS1361;
+  `emittedNameViolations(files, { values: true })` (opt-in; many older emitters still `new Map` bare) checks the emitted `api/` files.
 - **Fixtures.** `test/smoke/fixtures-frontend/entities/` holds the whole family (13 entities, `sync: electric`; see §13.1), their
   row types are `test/smoke/fixtures-frontend/consumer/<entity>.ts`, and the agreement test covers the location.
 - **Gates.** `test/smoke/run-smoke-frontend.ts` asserts the inner joins by their text in `graph/meeting.ts` and the absence of the
@@ -1916,22 +1926,27 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   #778 pair — a pair is found on a foreign-key column (`foreignKeyOf`), and a child has none in the payload (its `id` is the
   base's), nor any inverse `has_many` — so it stays exactly one line, child → base. It **is** the child's spine: STUDIO-3's
   first tier (`inherits`) was reserved for this issue, `buildEdges` now feeds it from `SerializedEntity.inherits`, and a child hangs
-  directly under its base whatever `belongs_to`s it also declares (those stay secondary lines). The lower tiers stay: a unique-FK
-  1:1 that is not an inheritance is still a modelling choice the rule should place sensibly; `inherits:` is how an author says
-  "is a". `spine.test.ts` pins the tier, `schema-adapter.test.ts` pins that a child with a `belongs_to` of its own keeps its base
+  directly under its base whatever `belongs_to`s it also declares (those stay secondary lines). Phase R2 **deleted the unique-FK tier**
+  (and the payload's `fkUnique`, `fkColumnUnique` and their parity test): a unique FK is a modelling accident, `inherits:` is how an
+  author says "is a", and STUDIO-3 had recorded that this issue would delete it. What remains is `inherits`, then `on_delete:
+  cascade`, then first declared. The `inherits` line's `relationId` is `<child>.inherits`, the derivation's own id
+  (`inheritsRelationId`, handed to Studio on the serialized entity's `inherits.relationId`, one owner), and a Studio test checks
+  every such line against a real derived surface of the family. `spine.test.ts` pins the tier, `schema-adapter.test.ts` pins that a child with a `belongs_to` of its own keeps its base
   as spine and that the inheritance line is never absorbed into a pair.
 - **ADR-046 (phase R).** S6 adds frontend files and a Studio edge, not backend API surface. What changed is ownership: S6's own
-  copies of `enumChoices`, `baseOnlyKinds` and `baseHasNoCreateRoute` are gone, and (phase R2) so is Studio's own `choices_of` reader
-  (`baseKinds` in `src/studio/server/relationships.ts` now calls `discriminatorKindsOf`, so an empty `choices: []` reads as
-  "unknown" there exactly as in the generator). The frontend reads route existence from `deriveProjectApiSurface` (above).
-  The one derivation addition is the `inherits` relation (`RelationApiSurface.kind`), which changes the project goldens only by
-  those entries.
+  copies of `enumChoices`, `baseOnlyKinds` and `baseHasNoCreateRoute` are gone, and (phase R2) so is Studio's own `choices_of`
+  reader (`baseKinds` in `src/studio/server/relationships.ts` now calls `discriminatorKindsOf`, so an empty `choices: []` reads as
+  "unknown" there exactly as in the generator). The frontend reads route existence from `deriveProjectApiSurface` (above). The one
+  derivation addition is the `inherits` relation (`RelationApiSurface.kind`; `relationSurfaces` lists `<child>.inherits`, whose
+  `includeKeys` are REL-1's child → base edge), which **re-blesses three project goldens** (`baseline`,
+  `matrix-family-every-kind-has-child`, `matrix-family-no-natural-key` under `test/api-surface-golden/project/`) by those entries
+  only.
 - **ADR-046 Phase B (phase R2).** Rebased onto S5's Phase-B tip with no conflicts: S6 touches no template, no `entity-locals.js` and
   has no flag local, so there was nothing to move onto `apiSurface`; the kind renames (`all_kinds`, `pair_create`, `list_flat`, …) were
   already in `surface-kinds.ts`, whose tables are `Record`s over every kind (the Studio typecheck is the coverage check). Generated
-  backend output is byte-identical; the frontend output changes only for an entity with `generate: { writes: false }` (none in the
-  baseline). The `/api/relationships` inherits write has a test where `validateContent` itself refuses (a child declaring its own
-  `timestamps`, R5), so "validates like every Studio write" can fail.
+  backend output is byte-identical; the frontend output changes only for an entity whose derived routes lack a mutation
+  (`generate: { writes: false }`, `api: false`; none in the baseline). The `/api/relationships` inherits write has a test where
+  `validateContent` itself refuses (a child declaring its own `timestamps`, R5), so "validates like every Studio write" can fail.
 
 **S7 — `Integrated` on a child. Not in v1.** Described in §4.2. S7 also widens R11 to accept behavior columns in a natural key (§4.2). File it as its own issue when a consumer writes a
 family through the generated sink.

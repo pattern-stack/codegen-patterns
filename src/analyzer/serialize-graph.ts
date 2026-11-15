@@ -4,6 +4,7 @@
  * Used by the CLI `codegen project graph` command to produce JSON
  * that the schema-graph-viewer can consume via its SchemaAdapter.
  */
+import { inheritsRelationId } from '../derived/api/project.js';
 import type {
   DomainGraph,
   ParsedEntity,
@@ -29,7 +30,7 @@ export interface SerializedEntity {
   relationships: Record<string, SerializedRelationship>;
   behaviors: string[];
   /** `inherits:` (RFC-0006): this entity is a child of `base`, as the kind value `as`. Absent on a base or a plain entity. */
-  inherits?: { base: string; as: string };
+  inherits?: { base: string; as: string; /** The derived surface's id for this relation (`inheritsRelationId`). */ relationId: string };
   queries?: Array<{ by: string[]; unique?: boolean; order?: string }>;
   sourcePath: string;
 }
@@ -147,7 +148,7 @@ export function serializeDomainGraph(graph: DomainGraph): SerializedDomainGraph 
       fields: serializeFields(entity.fields),
       relationships: serializeRelationships(entity),
       behaviors: entity.behaviors,
-      ...(entity.inherits ? { inherits: entity.inherits } : {}),
+      ...(entity.inherits ? { inherits: { ...entity.inherits, relationId: inheritsRelationId(entity.name) } } : {}),
       queries: entity.queries?.map((q) => ({
         by: q.by,
         unique: q.unique,

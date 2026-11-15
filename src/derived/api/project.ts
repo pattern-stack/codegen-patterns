@@ -169,6 +169,15 @@ export function deriveProjectApiSurface(ctx: ProjectApiContext): ProjectApiSurfa
 // 2. Delegates
 // ============================================================================
 
+/**
+ * The id of the `inherits` relation of a child — `<child>.inherits` — the one spelling of it: the derivation lists the
+ * relation under it, a method names it as its origin, and the serialized graph hands it to Studio so the canvas line
+ * and the edge panel look the same relation up (no second literal).
+ */
+export function inheritsRelationId(child: string): string {
+	return `${child}.inherits`;
+}
+
 /** The declaration a method's origin names, as REL-1 spells an origin: `contact.relationships.account`. */
 function originId(origin: Origin): string | undefined {
 	if (origin.from !== 'yaml') return undefined;
@@ -295,12 +304,12 @@ function relationSurfaces(
 	}
 
 	// `inherits:` (RFC-0006) — one relation per child, child → base. It is a key of the entity, not an entry of
-	// `relationships:`, and REL-1's graph has no edge for it (a child's reads reach the base through the repository's
-	// own join, not a relation include), so `includeKeys` is empty; the methods that name `<child>.inherits` as their
-	// origin are what it generates.
+	// `relationships:`, but REL-1's graph does carry its edge (child → base, `email.inherits` in the golden: the
+	// base is a relation, `with: { communication: true }`). `surfaceOf` reads that edge's keys, so `includeKeys` is not
+	// empty; the methods that name `<child>.inherits` as their origin are what it generates.
 	for (const def of definitions) {
 		const decl = inheritsOf(def);
-		if (decl) relations.push(surfaceOf(`${def.entity.name}.inherits`, def.entity.name, decl.base, 'inherits'));
+		if (decl) relations.push(surfaceOf(inheritsRelationId(def.entity.name), def.entity.name, decl.base, 'inherits'));
 	}
 
 	// Junctions — REL-1's `junction <name>` origin; the fan-out methods on each parent name the junction.

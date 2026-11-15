@@ -55,6 +55,12 @@ describe('emitted-name hygiene helper', () => {
 			'export async function f(): Promise<Array<Date>> { return []; }';
 		expect(emittedNameViolations(entityFile(src))).toEqual([]);
 	});
+	it('flags `new Error(…)` read as a value (an entity `error` imports a type named Error: TS1361)', () => {
+		const v = emittedNameViolations(entityFile("export const f = () => new Error('x');"), { values: true });
+		expect(v.map((x) => x.name)).toEqual(['Error']);
+		expect(emittedNameViolations(entityFile("export const f = () => new globalThis.Error('x');"), { values: true })).toEqual([]);
+		expect(emittedNameViolations(entityFile('export const f = () => new Date();'), { values: true })).toEqual([]);
+	});
 	it('ignores a file with no entity import', () => {
 		expect(emittedNameViolations([{ path: 'b.ts', text: 'export type X = Record<string, never>;' }])).toEqual([]);
 	});
