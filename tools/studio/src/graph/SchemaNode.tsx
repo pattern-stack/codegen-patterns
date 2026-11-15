@@ -12,7 +12,7 @@ const ROLE_GLYPH: Record<string, string> = { pk: '◆', fk: '→' };
  * A schema entity or junction, as a card on the canvas.
  *
  * Card height is derived from the same field cap the layout uses
- * (`../layout/elk-layout`), so elk reserves the space the card actually takes
+ * (`../layout/tree-layout`), so the layout reserves the space the card actually takes
  * and nothing overlaps after the first paint.
  */
 export const SchemaNode = memo(function SchemaNode({ data, selected }: NodeProps) {

@@ -188,7 +188,7 @@ Three rules the server holds to, and that any change here must preserve:
 project (`src/studio/demo/`), whose Postgres derives from
 `test/scaffold/harness-env.ts` — never a second derivation.
 
-The UI (`tools/studio/`, Vite + React 19 + `@xyflow/react` + `elkjs` + CodeMirror
+The UI (`tools/studio/`, Vite + React 19 + `@xyflow/react` + CodeMirror
 6) grew out of `tools/schema-graph-viewer/`, which stays as it is for `codegen
 project graph`. It renders entities from the component library in
 `packages/graph-components` rather than duplicating them, and imports every wire
@@ -208,12 +208,36 @@ with its inverse `has_many` / `has_one` is two entries in `graph.edges` but
 four edges. `buildEdges` says so — the difference is not drift, and neither half
 is wrong.
 
-The layout ranks parents above children (#778): elk `layered`, direction `DOWN`,
-fed each edge as `parent` → `child` (set by the adapter) rather than as drawn, so
-a `belongs_to` — drawn FK holder → referenced — does not rank the parent last.
-A line meets each card on the sides that face each other
+The canvas is a tree (STUDIO-3). Every node has at most one **spine** parent,
+chosen by `chooseSpines` (`tools/studio/src/graph/spine.ts`) from the
+`belongs_to`s it declares, first match wins: an explicit `inherits` (#875 — until
+it lands this tier never matches; then delete the inference, no shim), a
+`belongs_to` whose FK column is unique (`fkUnique` on the payload), one with
+`on_delete: cascade` (`onDelete`), the first declared; ties go to the first
+declared. A junction row hangs under its `from` end. Every other line is
+**secondary** — drawn lighter (`TREE_ROLE_STYLES` in `graph/edge-kinds.ts`) and
+never read by the layout. The reason rides on the line (`treeReason`) and is
+printed by the edge panel and the line's tooltip. `layout/tree-layout.ts` places
+from spine lines only — roots on the top row, each child directly under its
+parent, siblings side by side, parents centred over their children — so adding
+or removing a secondary line moves no card. (elk is no longer used: neither
+`layered` nor `mrtree` puts a child under its one chosen parent with roots on
+top.) Each line runs its horizontal segment on its own channel in the gap below
+its upper card's row (`channelY`, #890), so two lines never share one bar. A
+line meets each card on the sides that face each other
 (`tools/studio/src/graph/edge-geometry.ts`); the card's handles are only a
 fallback until ReactFlow has measured it.
+
+`fkUnique` is a **temporary duplicate** of the generator's uniqueness rule:
+`fkColumnUnique` (`src/analyzer/serialize-graph.ts`) restates what
+`fieldUniqueEntries` + `processUniqueIndexes` (`templates/entity/new/backend/entity-locals.js`)
+decide over the raw YAML. `src/__tests__/analyzer/serialize-graph-fk-unique-parity.test.ts`
+holds the two equal, read from generated output; fold both into one owner rather
+than editing either alone.
+
+The header names every count's unit: entities, junction **files**, relationship
+**files** (first-class relationship YAMLs — a model of plain foreign keys has
+none), and the canvas's **lines**, split spine / secondary.
 
 Two vocabularies are single tables, and every surface renders *from* them rather
 than branching on a literal:

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { EDGE_KIND_ORDER, EDGE_KIND_STYLES, edgeColor } from './edge-kinds';
+import { EDGE_KIND_ORDER, EDGE_KIND_STYLES, TREE_ROLE_ORDER, TREE_ROLE_STYLES, edgeColor } from './edge-kinds';
 
 const NODE_KINDS = [
   { glyph: '▣', label: 'entity', color: 'var(--graph-entity-color)' },
@@ -122,6 +122,48 @@ export function Legend({ roomy }: { roomy: boolean }) {
                     {style.label}
                   </span>
                   <span style={{ fontSize: 10, color: 'var(--t-muted)' }}>{style.description}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* The tree roles, drawn in the densest kind's colour: a role changes
+              a line's weight, never its hue. */}
+          <div
+            style={{
+              display: 'grid',
+              gap: 5,
+              marginTop: 'var(--sp-3)',
+              paddingTop: 'var(--sp-2)',
+              borderTop: '1px solid var(--s-line)',
+            }}
+          >
+            {TREE_ROLE_ORDER.map((role) => {
+              const tree = TREE_ROLE_STYLES[role];
+              const base = EDGE_KIND_STYLES[EDGE_KIND_ORDER[0]!];
+              return (
+                <div key={role} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
+                  <svg width={26} height={8} aria-hidden style={{ flex: '0 0 auto' }}>
+                    <line
+                      x1={0}
+                      y1={4}
+                      x2={26}
+                      y2={4}
+                      style={{ stroke: edgeColor(base), opacity: tree.opacity }}
+                      strokeWidth={base.width * tree.widthScale}
+                    />
+                  </svg>
+                  <span
+                    style={{
+                      flex: '0 0 auto',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 10.5,
+                      color: 'var(--t-secondary)',
+                    }}
+                  >
+                    {tree.label}
+                  </span>
+                  <span style={{ fontSize: 10, color: 'var(--t-muted)' }}>{tree.description}</span>
                 </div>
               );
             })}

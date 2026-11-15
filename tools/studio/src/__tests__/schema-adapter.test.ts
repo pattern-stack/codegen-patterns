@@ -596,3 +596,69 @@ describe('the canvas counts differently from the API, on purpose', () => {
     expect(ids).toEqual(surface.relations.map((r) => r.id).sort());
   });
 });
+
+describe('buildEdges — spine and secondary lines (STUDIO-3)', () => {
+  /**
+   * The owner's shape: a child that `belongs_to` parent A through a unique FK
+   * with cascade, and `belongs_to` parent B plainly — B declared first, so
+   * only the signals can pick A.
+   */
+  const OWNER_SHAPE = graph({
+    entities: { child: entity('child'), parent_a: entity('parent_a'), parent_b: entity('parent_b') },
+    edges: [
+      {
+        from: 'child',
+        to: 'parent_b',
+        relationship: relationship({ name: 'parent_b', target: 'parent_b', foreignKey: 'parent_b_id', onDelete: 'restrict', fkUnique: false }),
+        cardinality: 'N:1',
+        bidirectional: false,
+      },
+      {
+        from: 'child',
+        to: 'parent_a',
+        relationship: relationship({ name: 'parent_a', target: 'parent_a', foreignKey: 'parent_a_id', onDelete: 'cascade', fkUnique: true }),
+        cardinality: 'N:1',
+        bidirectional: false,
+      },
+    ],
+  });
+
+  test('picks the unique-FK parent as the spine, and says why on the line', () => {
+    const edges = buildEdges(OWNER_SHAPE);
+    expect(edges.map((e) => [e.target, e.treeRole, e.treeReason])).toEqual([
+      ['parent_b', 'secondary', "secondary: child's spine is parent_a (unique FK (1:1))"],
+      ['parent_a', 'spine', 'spine: unique FK (1:1)'],
+    ]);
+  });
+
+  test('a junction hangs under its `from` end; its `to` half is secondary', () => {
+    const edges = buildEdges(
+      graph({
+        entities: { member: entity('member'), skill: entity('skill') },
+        relationshipDefinitions: { member_skill: relDef('member_skill', 'member', 'skill') },
+      }),
+    );
+    expect(edges.map((e) => [e.source, e.target, e.treeRole, e.treeReason])).toEqual([
+      ['member', 'member_skill', 'spine', 'spine: first declared'],
+      ['member_skill', 'skill', 'secondary', "secondary: member_skill's spine is member (first declared)"],
+    ]);
+  });
+
+  test('an unpaired inverse is never a spine — the holder declared no belongs_to', () => {
+    const edges = buildEdges(
+      graph({
+        entities: { owner: entity('owner'), item: entity('item') },
+        edges: [
+          {
+            from: 'owner',
+            to: 'item',
+            relationship: relationship({ name: 'items', type: 'has_many', target: 'item', foreignKey: 'owner_id' }),
+            cardinality: '1:N',
+            bidirectional: false,
+          },
+        ],
+      }),
+    );
+    expect(edges.map((e) => [e.treeRole, e.treeReason])).toEqual([['secondary', 'secondary: item has no spine']]);
+  });
+});

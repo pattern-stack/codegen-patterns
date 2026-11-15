@@ -12,11 +12,14 @@
  *  - graph.edges                      → StudioEdgeData, classified by kind,
  *                                       one line per foreign key
  *  - each relationship definition      → a pair of junction edges through it
+ *  - every line                        → spine or secondary (`../graph/spine`)
  */
 import type { GraphNodeData } from '@pattern-stack/graph-components';
 import type { SerializedDomainGraph } from '@studio-shared';
 import { pairedLabel } from '../graph/edge-kinds';
 import type { StudioEdgeData, StudioEdgeKind } from '../graph/edge-kinds';
+import { NO_SIGNALS, chooseSpines, secondaryReason } from '../graph/spine';
+import type { SpineCandidate, SpineSignals } from '../graph/spine';
 import { RELATIONSHIPS_KEY, ROLES_KEY } from '../inspector/surface-kinds';
 
 type Entities = SerializedDomainGraph['entities'];
@@ -206,6 +209,13 @@ function foreignKeyOf(edge: SerializedEdge): string | undefined {
  * between the two; do not "fix" it by keeping the skipped edge, by dropping the
  * junction node, or by drawing each inverse again.
  *
+ * **Every line is spine or secondary (STUDIO-3).** Each node hangs under at
+ * most one parent — its spine, chosen by `chooseSpines` from the `belongs_to`s
+ * it declares (a junction row: its two halves, `from` first) — and every other
+ * line is secondary: drawn lighter and never read by the layout. The reason
+ * rides on the line as `treeReason`, so the panel and the tooltip print it
+ * rather than re-deriving it.
+ *
  * An inline edge carries `relationId`, the key the edge panel looks its
  * methods up by — for a paired line, the `belongs_to`'s, whose `inverseOf` the
  * panel follows to show the other side. A junction half carries none — it is
@@ -213,16 +223,25 @@ function foreignKeyOf(edge: SerializedEdge): string | undefined {
  * than showing nothing.
  */
 export function buildEdges(graph: SerializedDomainGraph): StudioEdgeData[] {
-  const edges: StudioEdgeData[] = [];
+  const edges: UntreedEdge[] = [];
+  const candidates: SpineCandidate[] = [];
+  /** Per child, how many candidates it has declared so far — the tie-break order. */
+  const declared = new Map<string, number>();
+  const candidate = (edgeId: string, child: string, parent: string, signals: SpineSignals) => {
+    const order = declared.get(child) ?? 0;
+    declared.set(child, order + 1);
+    candidates.push({ edgeId, child, parent, order, signals });
+  };
   const junctionNames = new Set(Object.keys(graph.relationshipDefinitions));
   const seen = new Set<string>();
 
-  const push = (edge: StudioEdgeData) => {
+  const push = (edge: UntreedEdge): boolean => {
     // Two entities can declare the two halves of one association; the id is
     // derived from the pair, so dedupe rather than stacking identical strokes.
-    if (seen.has(edge.id)) return;
+    if (seen.has(edge.id)) return false;
     seen.add(edge.id);
     edges.push(edge);
+    return true;
   };
 
   const inline = graph.edges.filter(
@@ -255,8 +274,9 @@ export function buildEdges(graph: SerializedDomainGraph): StudioEdgeData[] {
     // A `belongs_to` points at its parent; an unpaired inverse points away from it.
     const pointsAtParent = e.relationship.type === 'belongs_to';
 
-    push({
-      id: `${kind}-${e.from}-${e.relationship.name}-${e.to}`,
+    const id = `${kind}-${e.from}-${e.relationship.name}-${e.to}`;
+    const pushed = push({
+      id,
       source: e.from,
       target: e.to,
       parent: pointsAtParent ? e.to : e.from,
@@ -270,12 +290,19 @@ export function buildEdges(graph: SerializedDomainGraph): StudioEdgeData[] {
       relationId: relationIdOf(e),
       ...(inverse ? { inverseRelationId: relationIdOf(inverse) } : {}),
     });
+    // Only a `belongs_to` (a role is one underneath) can be a spine: the rule
+    // reads what the FK holder declared, and an unpaired inverse declares
+    // nothing on the holder's side.
+    if (pushed && pointsAtParent) candidate(id, e.from, e.to, spineSignalsOf(e));
   }
 
   for (const relDef of Object.values(graph.relationshipDefinitions)) {
-    // The junction row holds both foreign keys, so it ranks below both ends.
-    push({
-      id: `junction-${relDef.from}-${relDef.name}`,
+    // The junction row holds both foreign keys, so it hangs under one end —
+    // `from`, its first declared — and reaches the other by a secondary line.
+    const fromId = `junction-${relDef.from}-${relDef.name}`;
+    const toId = `junction-${relDef.name}-${relDef.to}`;
+    if (push({
+      id: fromId,
       source: relDef.from,
       target: relDef.name,
       parent: relDef.from,
@@ -283,9 +310,9 @@ export function buildEdges(graph: SerializedDomainGraph): StudioEdgeData[] {
       cardinality: '1:N',
       type: 'junction',
       studioKind: 'junction',
-    });
-    push({
-      id: `junction-${relDef.name}-${relDef.to}`,
+    })) candidate(fromId, relDef.name, relDef.from, NO_SIGNALS);
+    if (push({
+      id: toId,
       source: relDef.name,
       target: relDef.to,
       parent: relDef.to,
@@ -293,10 +320,32 @@ export function buildEdges(graph: SerializedDomainGraph): StudioEdgeData[] {
       cardinality: 'N:1',
       type: 'junction',
       studioKind: 'junction',
-    });
+    })) candidate(toId, relDef.name, relDef.to, NO_SIGNALS);
   }
 
-  return edges;
+  const spines = chooseSpines(candidates);
+  const spineIds = new Set([...spines.values()].map((s) => s.edgeId));
+  return edges.map((e): StudioEdgeData => {
+    const spine = spines.get(e.child);
+    return spineIds.has(e.id)
+      ? { ...e, treeRole: 'spine', treeReason: spine!.reason }
+      : { ...e, treeRole: 'secondary', treeReason: secondaryReason(e.child, spine) };
+  });
+}
+
+/** A line before the spine rule has placed it in the tree. */
+type UntreedEdge = Omit<StudioEdgeData, 'treeRole' | 'treeReason' | 'channelY'>;
+
+/**
+ * What a `belongs_to` tells the spine rule, read off the payload. `inherits`
+ * (#875) is not in the payload yet, so it is never set.
+ */
+export function spineSignalsOf(edge: SerializedEdge): SpineSignals {
+  return {
+    inherits: false,
+    fkUnique: edge.relationship.fkUnique === true,
+    cascade: edge.relationship.onDelete === 'cascade',
+  };
 }
 
 export interface AdaptedGraph {

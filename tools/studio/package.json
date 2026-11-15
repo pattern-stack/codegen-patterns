@@ -24,7 +24,6 @@
     "@pattern-stack/graph-components": "file:../../packages/graph-components",
     "@xyflow/react": "^12.0.0",
     "codemirror": "^6.0.1",
-    "elkjs": "^0.9.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "yaml": "^2.8.3"

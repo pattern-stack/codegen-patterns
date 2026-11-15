@@ -99,6 +99,14 @@ export interface ParsedRelationship {
 	through?: string; // For transitive relationships: "owned_opportunities.updates"
 	resolved: boolean;
 	/**
+	 * The YAML `on_delete:` as parsed (ADR-021) — `restrict` when the YAML says
+	 * nothing, which is the schema's own default. Meaningful on a `belongs_to`
+	 * only; a role-derived `belongs_to` carries its role's `on_delete:`. Absent
+	 * only on the `has_many` the graph builder synthesizes for a junction, which
+	 * was never parsed from an `on_delete:` of its own.
+	 */
+	onDelete?: 'restrict' | 'cascade' | 'set_null' | 'no_action';
+	/**
 	 * CAP-2: set when this relationship was DERIVED from a `roles:` entry of
 	 * that name. Consumers that care about the edge treat it like any other
 	 * `belongs_to`; consumers that care about *why* it exists (the semantic
@@ -146,6 +154,14 @@ export interface ParsedManyRole extends ParsedRoleBase {
  * many-role always has `via`.
  */
 export type ParsedRole = ParsedOneRole | ParsedManyRole;
+
+/** One `unique_indexes:` entry as authored. */
+export interface ParsedUniqueIndex {
+	fields: string[];
+	name?: string;
+	where?: string;
+	nulls_not_distinct?: boolean;
+}
 
 export interface ParsedQuery {
 	by: string[];
@@ -216,6 +232,12 @@ export interface ParsedEntity {
 	behaviors: string[];
 	/** The entity's `tenant_scoped:` declaration (`true`, `{ column }`, absent). Read via `tenantColumnName`. */
 	tenantScoped?: TenantScopedDeclaration;
+	/**
+	 * The entity's `unique_indexes:` entries as authored (#356, #784) — `[]` when
+	 * there are none. Raw: the generator's tenant prefix and naming are applied
+	 * where the constraint is emitted, not here.
+	 */
+	uniqueIndexes: ParsedUniqueIndex[];
 	queries?: ParsedQuery[];
 	integration?: ParsedIntegration;
 	events?: ParsedEvent[];

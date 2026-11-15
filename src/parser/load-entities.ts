@@ -121,6 +121,7 @@ function transformToEntity(result: LoadResult, tablePrefix: string): ParsedEntit
 		relationships: new Map(),
 		behaviors: definition.behaviors.map((b) => (typeof b === 'string' ? b : b.name)),
 		tenantScoped: definition.tenant_scoped,
+		uniqueIndexes: (definition.unique_indexes ?? []).map((ui) => ({ ...ui, fields: [...ui.fields] })),
 		queries,
 		sourcePath: filePath,
 	};
@@ -160,6 +161,7 @@ function transformToEntity(result: LoadResult, tablePrefix: string): ParsedEntit
 				inverse: relDef.inverse,
 				through: relDef.through,
 				resolved: false,
+				onDelete: relDef.on_delete,
 			};
 			entity.relationships.set(name, relationship);
 		}
@@ -209,6 +211,7 @@ function transformToEntity(result: LoadResult, tablePrefix: string): ParsedEntit
 				target: derived.target,
 				foreignKey: derived.foreign_key,
 				resolved: false,
+				onDelete: derived.on_delete,
 				role: name,
 			});
 		}

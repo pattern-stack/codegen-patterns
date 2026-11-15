@@ -184,6 +184,11 @@ export function App() {
     [graph.data.edges, selection],
   );
 
+  const lines = useMemo(() => {
+    const spine = graph.data.edges.filter((e) => e.treeRole === 'spine').length;
+    return { spine, secondary: graph.data.edges.length - spine };
+  }, [graph.data.edges]);
+
   const entityNames = useMemo(
     () => graph.data.nodes.filter((n) => n.kind === 'entity').map((n) => n.id).sort(),
     [graph.data.nodes],
@@ -283,9 +288,15 @@ export function App() {
               whiteSpace: 'nowrap',
             }}
           >
+            {/* Each count names its unit: junction and relationship counts are
+                YAML files, not lines — a model with foreign keys and no
+                relationship file draws lines and still has 0 relationship files. */}
             <span>{count(graph.counts.entities, 'entity', 'entities')}</span>
-            <span>{count(graph.counts.junctions, 'junction')}</span>
-            <span>{count(graph.counts.relationships, 'relationship')}</span>
+            <span>{count(graph.counts.junctions, 'junction file')}</span>
+            <span>{count(graph.counts.relationships, 'relationship file')}</span>
+            <span title="Lines on the canvas: spine lines shape the tree, secondary lines are every other foreign key">
+              {count(lines.spine + lines.secondary, 'line')} ({lines.spine} spine, {lines.secondary} secondary)
+            </span>
           </span>
         )}
 

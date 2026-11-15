@@ -26,11 +26,20 @@ export interface EdgePanelProps extends LinkProps {
 export function EdgePanel({ edge, surface, ...link }: EdgePanelProps) {
   const view = useMemo(() => edgePanelView(surface, edge), [surface, edge]);
 
-  if (view.state === 'noRelation') return <EmptyState title={view.title} body={view.body} />;
-  if (view.state === 'undescribed') return <EmptyState title={view.title} body={view.body} />;
+  if (view.state === 'noRelation' || view.state === 'undescribed') {
+    return (
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: 'var(--sp-3) var(--sp-3) 0' }}>
+          <TreeRole edge={edge} />
+        </div>
+        <EmptyState title={view.title} body={view.body} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 'var(--sp-3)' }}>
+      <TreeRole edge={edge} />
       <div
         style={{
           display: 'flex',
@@ -49,6 +58,27 @@ export function EdgePanel({ edge, surface, ...link }: EdgePanelProps) {
       {view.groups.map((group) => (
         <Group key={group.id} group={group} {...link} />
       ))}
+    </div>
+  );
+}
+
+/**
+ * The line's place in the tree and why — `spine: unique FK (1:1)` — exactly as
+ * the adapter wrote it on the line (`treeReason`); the canvas tooltip prints
+ * the same string.
+ */
+function TreeRole({ edge }: { edge: StudioEdgeData }) {
+  return (
+    <div
+      data-testid="edge-tree-role"
+      style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: 11,
+        color: 'var(--t-secondary)',
+        marginBottom: 'var(--sp-2)',
+      }}
+    >
+      {edge.treeReason}
     </div>
   );
 }
