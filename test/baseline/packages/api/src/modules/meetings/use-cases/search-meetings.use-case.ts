@@ -35,6 +35,14 @@ export class SearchMeetingsUseCase {
       return and(...whereTerms);
     };
 
-    return this.listUseCase.execute(searchInput, { where: rowFilter });
+    // No declared filter set = no `where`. A row filter that happens to render to nothing is still a defined
+    // closure, and a child's list routes on whether a `where` is present (RFC-0006 §8): an empty search must read
+    // as the plain list, with its default order, not as a filtered one.
+    const hasFilter = [
+      Boolean(searchInput.link),
+      Boolean(searchInput.search),
+    ].some(Boolean);
+
+    return this.listUseCase.execute(searchInput, hasFilter ? { where: rowFilter } : {});
   }
 }

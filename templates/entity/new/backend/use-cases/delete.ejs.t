@@ -37,7 +37,7 @@ export class <%= classNames.deleteUseCase %> {
 <% if (isInheritanceChild) { -%>
       // The flat row: the event payload reads base fields too (RFC-0006 §5).
 <% } -%>
-      const entity = await this.service.<%= apiSurface.useCases.find((u) => u.kind === 'delete').alsoCalls[0].method %>(id);
+      const entity = await this.service.<%= apiSurface.useCases.find((u) => u.kind === 'delete').preRead.method %>(id);
       if (!entity) {
         throw new NotFoundException(`<%= classNames.entity %> with id ${id} not found`);
       }

@@ -653,13 +653,6 @@
 						"layer": "service",
 						"method": "delete"
 					},
-					"alsoCalls": [
-						{
-							"entity": "call",
-							"layer": "service",
-							"method": "findById"
-						}
-					],
 					"origin": {
 						"from": "base"
 					}

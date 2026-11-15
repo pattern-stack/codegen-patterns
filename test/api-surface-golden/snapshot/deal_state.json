@@ -348,13 +348,6 @@
 				"layer": "service",
 				"method": "delete"
 			},
-			"alsoCalls": [
-				{
-					"entity": "deal_state",
-					"layer": "service",
-					"method": "findById"
-				}
-			],
 			"origin": {
 				"from": "base"
 			}

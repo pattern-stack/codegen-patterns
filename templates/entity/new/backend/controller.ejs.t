@@ -35,9 +35,10 @@ const _decorator = (r) => {
 const _typedInclude = apiSurface.repository.typedInclude;
 const _includeRoutes = apiSurface.http.includeRoutes;
 const _allow = (r) => (r.includeRoute ? `${apiSurface.http.includesConst}.${r.includeRoute}` : 'undefined');
+const _kindGuarded = isInheritanceChild || familyBase !== null;
 _%>
 <% if (_list) { -%>
-import { BadRequestException, Controller<% if (isInheritanceChild || familyBase) { %>, ConflictException<% } %>, Get<% if (_create) { %>, Post<% } %><% if (_writes) { %>, Patch, Delete, Body<% } %>, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import { BadRequestException, Controller<% if (_kindGuarded) { %>, ConflictException<% } %>, Get<% if (_create) { %>, Post<% } %><% if (_writes) { %>, Patch, Delete, Body<% } %>, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiBearerAuth, <% if (_writes) { %>ApiBody, <% } %>ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { ZodValidationPipe } from '<%= zodValidationPipeImport %>';
 import type { Page } from '<%= paginationImport %>';
@@ -67,7 +68,7 @@ import type { <%= classNames.entity %>Flat } from './<%= entityFileStem %>.repos
 <% } else { -%>
 import type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 <% } -%>
-<% if (isInheritanceChild || familyBase) { -%>
+<% if (_kindGuarded) { -%>
 import {
   KindImmutableError,
   KindMismatchError,
@@ -246,7 +247,6 @@ export class <%= _list.controller %> {
   }
 <% } %>
 <%_ const _W = isInheritanceChild ? `${classNames.entity}Flat` : classNames.entity; _%>
-<%_ const _kindGuarded = isInheritanceChild || familyBase !== null; _%>
 <% if (_writes) { %>
 <%_ if (_kindGuarded) { _%>
   /**

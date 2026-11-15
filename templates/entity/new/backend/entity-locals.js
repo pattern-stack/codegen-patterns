@@ -36,6 +36,8 @@ import '../../../../src/patterns/library/index.js';
 import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
 import {
   familyConstName,
+  dtoFileStem,
+  dtoSchemaNames,
   finderName,
   fkFinderName,
   moduleClassName,
@@ -2523,12 +2525,12 @@ export function buildBackendLocals(definition, baseLocals) {
     deleteUseCase: hasUseCase('delete')
       ? `${useCasesDir}/${emittedStem('delete', entityName)}.use-case.ts`
       : null,
-    createDto: `${moduleDir}/dto/${emittedStem('create', entityName)}.dto.ts`,
-    updateDto: `${moduleDir}/dto/${emittedStem('update', entityName)}.dto.ts`,
-    outputDto: `${moduleDir}/dto/${emittedStem(entityName, 'output')}.dto.ts`,
+    createDto: `${moduleDir}/dto/${dtoFileStem(entityName, 'create')}.dto.ts`,
+    updateDto: `${moduleDir}/dto/${dtoFileStem(entityName, 'update')}.dto.ts`,
+    outputDto: `${moduleDir}/dto/${dtoFileStem(entityName, 'output')}.dto.ts`,
     // RFC-0006 §5: a base with child tables also emits the cross-kind output (`<Base>OfKindSchema`).
     ofKindDto: family.base !== null && family.base.children.length > 0
-      ? `${moduleDir}/dto/${emittedStem(entityName, 'of-kind')}.dto.ts`
+      ? `${moduleDir}/dto/${dtoFileStem(entityName, 'ofKind')}.dto.ts`
       : null,
     // Pagination-by-default: the universal list query DTO (page/cursor/pageSize
     // + sort). Always emitted — the list endpoint is unconditional.
@@ -2588,12 +2590,9 @@ export function buildBackendLocals(definition, baseLocals) {
     createDto: `Create${entityNamePascal}Dto`,
     updateDto: `Update${entityNamePascal}Dto`,
     outputDto: `${entityNamePascal}OutputDto`,
-    createSchema: `Create${entityNamePascal}Schema`,
-    updateSchema: `Update${entityNamePascal}Schema`,
-    outputSchema: `${entityNamePascal}OutputSchema`,
-    // RFC-0006 §5: a child's own columns alone, and a base's output across its kinds.
-    ownOutputSchema: `${entityNamePascal}OwnOutputSchema`,
-    ofKindSchema: `${entityNamePascal}OfKindSchema`,
+    // RFC-0006 §5: a child's own columns alone, and a base's output across its kinds — one owner of every schema
+    // name, which a child's import of its base's schema reads too.
+    ...dtoSchemaNames(entityName),
     ofKindDto: `${entityNamePascal}OfKindDto`,
     // Pagination-by-default: list query DTO + schema (re-export of the shared
     // ListQuerySchema). Named per-entity so the controller import is unambiguous.
@@ -2921,6 +2920,9 @@ export function buildBackendLocals(definition, baseLocals) {
     typedEventBusImport,
     // Output paths
     outputPaths: outputPaths,
+    // The DTO file stems the module's own index and of-kind file import (one owner: `dtoFileStem`).
+    outputDtoStem: dtoFileStem(entityName, 'output'),
+    ofKindDtoStem: dtoFileStem(entityName, 'ofKind'),
 
     // Architecture-specific imports (ADR-033.1 §8 — integration-source closes #267)
     imports,

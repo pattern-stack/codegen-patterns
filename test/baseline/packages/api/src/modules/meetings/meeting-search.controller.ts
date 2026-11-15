@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { ZodValidationPipe } from '@shared/pipes/zod-validation.pipe';
 import { ListQuerySchema, type Page } from '@shared/http/page';
 import { SearchMeetingsUseCase } from './use-cases/search-meetings.use-case';
-import type { Meeting } from './meeting.entity';
+import type { MeetingFlat } from './meeting.repository';
 
 /**
  * The list endpoint's query (page / pageSize / cursor / sort_by / sort_order)
@@ -29,7 +29,7 @@ export class MeetingSearchController {
   async search(
     @Query(new ZodValidationPipe(MeetingFiltersSchema))
     query: z.infer<typeof MeetingFiltersSchema>,
-  ): Promise<Page<Meeting>> {
+  ): Promise<Page<MeetingFlat>> {
     return this.searchUseCase.execute(query);
   }
 }

@@ -629,13 +629,6 @@
 						"layer": "service",
 						"method": "delete"
 					},
-					"alsoCalls": [
-						{
-							"entity": "shipment",
-							"layer": "service",
-							"method": "findById"
-						}
-					],
 					"origin": {
 						"from": "base"
 					}
@@ -1365,13 +1358,6 @@
 						"layer": "service",
 						"method": "delete"
 					},
-					"alsoCalls": [
-						{
-							"entity": "air_freight",
-							"layer": "service",
-							"method": "findWithBase"
-						}
-					],
 					"origin": {
 						"from": "base"
 					}

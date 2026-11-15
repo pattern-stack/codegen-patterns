@@ -14,7 +14,11 @@
  * The one allowed difference is in HOW tenancy is spelled, never in WHETHER the
  * entity is tenant-scoped: the smoke sets `tenancy.column: organization_id` for
  * its whole project, so its three tenant-scoped entities spell their column out
- * (`tenant_scoped: { column: tenant_id }`). `tenant_scoped` is therefore compared
+ * (`tenant_scoped: { column: tenant_id }`).
+ *
+ * The other allowed difference is the baseline's `meeting`, which alone declares `emits:` / `events:` so the
+ * baseline's `tsc` compiles a child's flat event-payload paths (RFC-0006 §5). The other sets run without an event
+ * bus wired for it, so the keys are dropped from the BASELINE copy before comparing — nothing else is. `tenant_scoped` is therefore compared
  * as what it resolves to under each location's OWN project tenancy column
  * (`resolveTenancy`) — a copy that drops it, or resolves to another column,
  * differs.
@@ -54,6 +58,10 @@ function loadAll(): Map<string, Map<string, unknown>> {
 			if (!res.success) continue; // a file another test owns may be deliberately invalid
 			const def = JSON.parse(JSON.stringify(res.definition)) as Record<string, unknown>;
 			const name = (def.entity as { name: string }).name;
+			if (location === 'baseline') {
+				delete def.emits;
+				delete def.events;
+			}
 			def.tenant_scoped = resolveTenancy(name, def as never, PROJECT_TENANCY_COLUMN[location]!)?.column ?? null;
 			if (!byEntity.has(name)) byEntity.set(name, new Map());
 			byEntity.get(name)!.set(location, def);

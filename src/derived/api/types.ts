@@ -50,8 +50,10 @@ export interface MethodRef {
 	method: string;
 }
 
-/** The read options a repository read takes (READ-1 §2.3). */
-/** `with`: only the typed include (`{ with }`), no column selection — a child's `listFlat`. */
+/**
+ * The read options a repository read takes (READ-1 §2.3). `with`: only the typed include (`{ with }`), no column
+ * selection — a child's `listFlat`.
+ */
 export type ReadOptionsShape = 'none' | 'columns' | 'with' | 'columns+with';
 
 export interface RepositoryMethod {
@@ -176,6 +178,11 @@ export interface UseCase {
 	 * default and `service.list` / `count` when a child column sorts or a filter applies (RFC-0006 §3.3, S5).
 	 */
 	alsoCalls?: MethodRef[];
+	/**
+	 * The read a delete makes before it deletes, because the event it publishes (`<entity>_deleted`) takes its payload
+	 * from the row — `findById`, or a child's `findWithBase` (RFC-0006 §5). Absent when the delete publishes nothing.
+	 */
+	preRead?: MethodRef;
 	origin: Origin;
 }
 

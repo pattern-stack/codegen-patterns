@@ -803,13 +803,6 @@
 				"layer": "service",
 				"method": "delete"
 			},
-			"alsoCalls": [
-				{
-					"entity": "email",
-					"layer": "service",
-					"method": "findWithBase"
-				}
-			],
 			"origin": {
 				"from": "base"
 			}

@@ -6,7 +6,7 @@ force: true
 <%- generatedBanner %>
 <% if (familyBase && outputPaths.ofKindDto) { -%>
 import { z } from 'zod';
-import { <%= classNames.outputSchema %> } from './<%= entityFileStem %>-output.dto';
+import { <%= classNames.outputSchema %> } from './<%= outputDtoStem %>.dto';
 <% familyBase.children.forEach((c) => { -%>
 import { <%= c.ownOutputSchema %> } from '<%= c.outputImportPath %>';
 <% }) -%>

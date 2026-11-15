@@ -22,7 +22,11 @@ import { z } from 'zod';
 import { ZodValidationPipe } from '<%= zodValidationPipeImport %>';
 import { ListQuerySchema, type Page } from '<%= paginationImport %>';
 import { <%= _search.useCase %> } from './use-cases/search-<%= entityPluralFileStem %>.use-case';
+<% if (isInheritanceChild) { -%>
+import type { <%= classNames.entity %>Flat } from './<%= entityFileStem %>.repository';
+<% } else { -%>
 import type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
+<% } -%>
 
 /**
  * The list endpoint's query (page / pageSize / cursor / sort_by / sort_order)
@@ -61,7 +65,7 @@ export class <%= _search.controller %> {
   async <%= _search.handler %>(
     @Query(new ZodValidationPipe(<%= searchQuery.filtersSchemaName %>))
     query: z.infer<typeof <%= searchQuery.filtersSchemaName %>>,
-  ): Promise<Page<<%= classNames.entity %>>> {
+  ): Promise<Page<<%= classNames.entity %><%= isInheritanceChild ? 'Flat' : '' %>>> {
     return this.searchUseCase.execute(query);
   }
 }

@@ -101,6 +101,8 @@ export interface EntityDefinitionInput {
 	unique_indexes?: readonly { natural_key?: boolean }[] | null;
 	eav?: boolean;
 	eav_value_table?: boolean;
+	/** `emits:` (EVT-7) — the event types the entity's writes publish. Absent / `[]`: none. */
+	emits?: readonly string[] | null;
 }
 
 /**
@@ -899,9 +901,11 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 				className: useCaseClassName(kind, entityName, plural),
 				kind,
 				calls: serviceRef(entityName, method),
-				// A child's delete reads the flat row first: the event payload reads base fields too (RFC-0006 §5).
-				...(kind === 'delete'
-					? { alsoCalls: [serviceRef(entityName, family.child ? FAMILY_METHOD.findWithBase : 'findById')] }
+				// A delete that publishes `<entity>_deleted` reads the row first, because the payload reads it; a child
+				// reads the flat row, since the payload reads base fields too (RFC-0006 §5). A delete with no event
+				// makes no such read, so none is recorded.
+				...(kind === 'delete' && (definition.emits ?? []).includes(`${entityName}_deleted`)
+					? { preRead: serviceRef(entityName, family.child ? FAMILY_METHOD.findWithBase : 'findById') }
 					: {}),
 				origin: BASE,
 			});

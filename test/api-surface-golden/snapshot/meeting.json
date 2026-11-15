@@ -776,13 +776,11 @@
 				"layer": "service",
 				"method": "delete"
 			},
-			"alsoCalls": [
-				{
-					"entity": "meeting",
-					"layer": "service",
-					"method": "findWithBase"
-				}
-			],
+			"preRead": {
+				"entity": "meeting",
+				"layer": "service",
+				"method": "findWithBase"
+			},
 			"origin": {
 				"from": "base"
 			}

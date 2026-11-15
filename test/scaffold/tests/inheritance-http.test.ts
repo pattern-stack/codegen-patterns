@@ -215,6 +215,28 @@ d('a child over HTTP is flat (A10)', () => {
     await request.get('/meetings?sort_by=occurred_at').set('x-tenant-id', TENANT_A).expect(200);
   });
 
+  test('an UNFILTERED child search is the plain list: its default order and a base-column sort, never a 400', async () => {
+    const { SearchMeetingsUseCase } = await import('@gen/modules/meetings/use-cases/search-meetings.use-case');
+    const { withRequester } = await import('@shared/base-classes/tenant-context');
+    const asA = (input: any) =>
+      withRequester({ userId: USER, organizationId: null, tenantId: TENANT_A }, () => app.get(SearchMeetingsUseCase).execute(input));
+    await createMeeting({ title: 'first' });
+    await createMeeting({ title: 'second' });
+    await createMeeting({ title: 'third' });
+    // no filter set: the same default order as GET /meetings (created_at desc, id desc), not `id desc`
+    const listed = await request.get('/meetings').set('x-tenant-id', TENANT_A).expect(200);
+    const searched = await asA({});
+    expect(searched.items.map((m: any) => m.id)).toEqual(listed.body.items.map((m: any) => m.id));
+    expect(searched.total).toBe(3);
+    // a base-column sort with no filter is answered (it is the base-rooted read), not refused as "combined with a filter"
+    const bySource = await asA({ sort_by: 'occurred_at' });
+    expect(bySource.items).toHaveLength(3);
+    // empty-string filters are not filters either
+    expect((await asA({ search: '', sort_by: 'occurred_at' })).items).toHaveLength(3);
+    // a filter on a column both tables carry sorts the child-rooted read: `id` is not "a column of communication"
+    expect((await asA({ search: 'first', sort_by: 'id' })).items).toHaveLength(1);
+  });
+
   test('a child search filters on its own column, flat, scoped to the tenant', async () => {
     await createMeeting({ title: 'quarterly review' });
     await createMeeting({ title: 'standup' });
@@ -385,6 +407,15 @@ d('the family`s domain errors are HTTP answers', () => {
     );
   };
 
+  // The whole body, not a subset: a regression that dropped `error`, `message`, `kind` or `createPath` must fail.
+  const bodyOf = (err: any, status: number, code: string) => ({
+    statusCode: status,
+    error: status === 400 ? 'Bad Request' : 'Conflict',
+    code,
+    ...(code === 'kind_requires_child' ? { kind: err.kind, createPath: err.createPath } : {}),
+    message: err.message,
+  });
+
   const cases: Array<[string, () => Error, number, string]> = [
     ['KindImmutableError', () => new errors.KindImmutableError('meeting'), 400, 'kind_immutable'],
     ['KindRequiresChildError', () => new errors.KindRequiresChildError('communication', 'meeting', 'POST /meetings'), 400, 'kind_requires_child'],
@@ -399,16 +430,19 @@ d('the family`s domain errors are HTTP answers', () => {
         const meeting = meetingBody();
         const viaChild = await http.post('/meetings').send(meeting);
         expect(viaChild.status).toBe(status);
-        expect(viaChild.body).toMatchObject({ statusCode: status, code });
+        expect(viaChild.body).toEqual(bodyOf(make(), status, code));
+        if (code === 'kind_requires_child') expect(viaChild.body.createPath).toBe('POST /meetings');
         const patchChild = await http.patch(`/meetings/${NO_SUCH}`).send({ title: 'x' });
         expect(patchChild.status).toBe(status);
+        expect(patchChild.body).toEqual(bodyOf(make(), status, code));
         const viaBase = await http
           .post('/communications')
           .send({ kind: 'message', occurredAt: at(1), source: 's', externalId: 'e' });
         expect(viaBase.status).toBe(status);
-        expect(viaBase.body).toMatchObject({ statusCode: status, code });
+        expect(viaBase.body).toEqual(bodyOf(make(), status, code));
         const patchBase = await http.patch(`/communications/${NO_SUCH}`).send({ source: 'x' });
         expect(patchBase.status).toBe(status);
+        expect(patchBase.body).toEqual(bodyOf(make(), status, code));
       } finally {
         await local.close();
       }

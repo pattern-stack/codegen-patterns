@@ -186,6 +186,10 @@ async function main(): Promise<void> {
 			if ('communication' in (flat.properties ?? {})) fail(`MeetingOutputDto nests 'communication'; a child is flat`);
 
 			// A base whose every kind has a child table has no create route, so it registers no create schema either.
+			// Positive controls first: the module is mounted (its list route and its update schema exist), so the
+			// two absences below cannot pass because the module is missing.
+			if (!document.paths['/communication_parts']?.get) fail(`paths['/communication_parts'].get is missing`);
+			if (!presentSchemas.includes('UpdateCommunicationPartDto')) fail('UpdateCommunicationPartDto is not registered');
 			if (presentSchemas.includes('CreateCommunicationPartDto')) {
 				fail('CreateCommunicationPartDto is registered, but communication_part has no create route');
 			}

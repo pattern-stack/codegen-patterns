@@ -9,7 +9,7 @@
  * ship in the package's `files`. The case primitive is `src/config/file-naming.ts`'s — never a local copy.
  */
 
-import { camelCase } from '../../config/file-naming.js';
+import { camelCase, emittedStem } from '../../config/file-naming.js';
 
 /** `deal_state` → `DealState`. */
 export function pascalCase(name: string): string {
@@ -33,6 +33,40 @@ export function idParamName(entityName: string): string {
 
 export function entityClassName(entityName: string): string {
 	return pascalCase(entityName);
+}
+
+/**
+ * The Zod schema names a module's DTO files export, and the file stem of each (no folder, no extension) — the one
+ * owner of both, so a child's import of its base's schema and the base's own export cannot drift (RFC-0006 §5).
+ */
+export function dtoSchemaNames(entityName: string): {
+	createSchema: string;
+	updateSchema: string;
+	outputSchema: string;
+	ownOutputSchema: string;
+	ofKindSchema: string;
+} {
+	const c = entityClassName(entityName);
+	return {
+		createSchema: `Create${c}Schema`,
+		updateSchema: `Update${c}Schema`,
+		outputSchema: `${c}OutputSchema`,
+		ownOutputSchema: `${c}OwnOutputSchema`,
+		ofKindSchema: `${c}OfKindSchema`,
+	};
+}
+
+export function dtoFileStem(entityName: string, kind: 'create' | 'update' | 'output' | 'ofKind'): string {
+	switch (kind) {
+		case 'create':
+			return emittedStem('create', entityName);
+		case 'update':
+			return emittedStem('update', entityName);
+		case 'output':
+			return emittedStem(entityName, 'output');
+		case 'ofKind':
+			return emittedStem(entityName, 'of-kind');
+	}
 }
 
 export function repositoryClassName(entityName: string): string {

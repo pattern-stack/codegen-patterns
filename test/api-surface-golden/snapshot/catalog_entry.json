@@ -378,13 +378,6 @@
 				"layer": "service",
 				"method": "delete"
 			},
-			"alsoCalls": [
-				{
-					"entity": "catalog_entry",
-					"layer": "service",
-					"method": "findById"
-				}
-			],
 			"origin": {
 				"from": "base"
 			}

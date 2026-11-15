@@ -535,13 +535,6 @@
 						"layer": "service",
 						"method": "delete"
 					},
-					"alsoCalls": [
-						{
-							"entity": "meeting",
-							"layer": "service",
-							"method": "findById"
-						}
-					],
 					"origin": {
 						"from": "base"
 					}

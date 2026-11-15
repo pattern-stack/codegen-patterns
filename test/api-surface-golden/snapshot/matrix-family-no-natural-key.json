@@ -644,13 +644,6 @@
 						"layer": "service",
 						"method": "delete"
 					},
-					"alsoCalls": [
-						{
-							"entity": "parcel",
-							"layer": "service",
-							"method": "findById"
-						}
-					],
 					"origin": {
 						"from": "base"
 					}
@@ -1401,13 +1394,6 @@
 						"layer": "service",
 						"method": "delete"
 					},
-					"alsoCalls": [
-						{
-							"entity": "crate",
-							"layer": "service",
-							"method": "findWithBase"
-						}
-					],
 					"origin": {
 						"from": "base"
 					}

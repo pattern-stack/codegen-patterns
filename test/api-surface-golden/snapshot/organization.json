@@ -439,13 +439,6 @@
 				"layer": "service",
 				"method": "delete"
 			},
-			"alsoCalls": [
-				{
-					"entity": "organization",
-					"layer": "service",
-					"method": "findById"
-				}
-			],
 			"origin": {
 				"from": "base"
 			}

@@ -19,8 +19,8 @@ export { <%= classNames.controller %> } from './<%= entityFileStem %>.controller
 export type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 export type { <%= classNames.createDto %> } from './dto/create-<%= entityFileStem %>.dto';
 export type { <%= classNames.updateDto %> } from './dto/update-<%= entityFileStem %>.dto';
-export type { <%= classNames.outputDto %> } from './dto/<%= entityFileStem %>-output.dto';
+export type { <%= classNames.outputDto %> } from './dto/<%= outputDtoStem %>.dto';
 <% if (outputPaths.ofKindDto) { -%>
-export type { <%= classNames.ofKindDto %> } from './dto/<%= entityFileStem %>-of-kind.dto';
+export type { <%= classNames.ofKindDto %> } from './dto/<%= ofKindDtoStem %>.dto';
 <% } -%>
 export type { <%= classNames.listQueryDto %> } from './dto/list-<%= entityPluralFileStem %>.query';

@@ -21,7 +21,7 @@
 
 import { camelCase, emittedStem } from '../../src/config/file-naming.js';
 import { resolveChildTenancy, resolveTenancy } from '../../src/schema/tenancy.js';
-import { entityClassName, repositoryClassName, routePath } from '../../src/derived/api/names.js';
+import { dtoFileStem, dtoSchemaNames, entityClassName, repositoryClassName, routePath } from '../../src/derived/api/names.js';
 import { baseOnlyKinds, enumChoices, familyRelationKey, inheritanceChildrenOf, inheritsOf, matchPairsOf } from '../../src/schema/inheritance.js';
 import { entityModuleNaming, relativeModuleDir } from './entity-naming.mjs';
 
@@ -318,10 +318,14 @@ export function matchColumns({ entityName, relationships, lookup, existing, null
  *                   baseScope: null | { softDelete: boolean, userTracking: boolean },
  *                   as: string, baseName: string, baseClass: string, baseRepositoryClass: string,
  *                   baseRepositoryImportPath: string, baseModuleDir: string,
- *                   discriminatorProp: string, baseTimestamps: boolean },
+ *                   discriminatorProp: string, baseTimestamps: boolean,
+ *                   baseImportPathFromSubdir: string, baseCreateSchema: string, baseCreateImportPath: string,
+ *                   baseOutputSchema: string, baseOutputImportPath: string },
  *   base: null | { discriminator: string, discriminatorProp: string, kinds: string[],
  *                  children: Array<{ as: string, name: string, relKey: string, plural: string,
- *                                    className: string, entityImportPath: string, createPath: string }> },
+ *                                    className: string, entityImportPath: string, createPath: string,
+ *                                    ownOutputSchema: string, outputImportPath: string }> ,
+ *                  baseOnlyKinds: string[] },
  * }}
  */
 export function familyReads({ entityName, definition, lookup, ownNaming, modulesDir, baseBehaviors }) {
@@ -352,10 +356,10 @@ export function familyReads({ entityName, definition, lookup, ownNaming, modules
       // S5 — the flat DTOs (their paths are as seen from `<module>/dto/`): the base's schemas are the owner, the child extends them (RFC-0006 §5).
       // The same entity file as seen from a file one folder deeper (`dto/`, `use-cases/`).
       baseImportPathFromSubdir: `../${ref.importPath}`,
-      baseCreateSchema: `Create${baseClass}Schema`,
-      baseCreateImportPath: `../${ref.dir}/dto/${emittedStem('create', declaration.base)}.dto`,
-      baseOutputSchema: `${baseClass}OutputSchema`,
-      baseOutputImportPath: `../${ref.dir}/dto/${emittedStem(declaration.base, 'output')}.dto`,
+      baseCreateSchema: dtoSchemaNames(declaration.base).createSchema,
+      baseCreateImportPath: `../${ref.dir}/dto/${dtoFileStem(declaration.base, 'create')}.dto`,
+      baseOutputSchema: dtoSchemaNames(declaration.base).outputSchema,
+      baseOutputImportPath: `../${ref.dir}/dto/${dtoFileStem(declaration.base, 'output')}.dto`,
     };
   }
 
@@ -388,8 +392,8 @@ export function familyReads({ entityName, definition, lookup, ownNaming, modules
         // The create route a write through the base is told to use for this kind (KindRequiresChildError): the child's POST.
         createPath: `POST ${routePath(ref.plural)}`,
         // S5 — the child's own columns as an output schema (nested under its kind key in `<Base>OfKindSchema`).
-        ownOutputSchema: `${entityClassName(c.name)}OwnOutputSchema`,
-        outputImportPath: `../${ref.dir}/dto/${emittedStem(c.name, 'output')}.dto`,
+        ownOutputSchema: dtoSchemaNames(c.name).ownOutputSchema,
+        outputImportPath: `../${ref.dir}/dto/${dtoFileStem(c.name, 'output')}.dto`,
       };
     });
     base = {

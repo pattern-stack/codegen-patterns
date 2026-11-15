@@ -218,7 +218,7 @@ function useCaseSection(surface: ProjectApiSurface, e: EntityApiSurface): Surfac
       signature: u.className,
       kindLabel: kinds(u).label,
       flags: [],
-      calls: [u.calls, ...(u.alsoCalls ?? [])].map(methodRefText).join(', '),
+      calls: [u.calls, ...(u.preRead ? [u.preRead] : []), ...(u.alsoCalls ?? [])].map(methodRefText).join(', '),
       origin: originChip(surface, u.origin),
       shadows: shadowsOf(surface, u.origin),
     })),

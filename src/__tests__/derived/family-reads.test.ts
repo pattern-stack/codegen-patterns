@@ -97,6 +97,17 @@ describe('the derived family reads', () => {
 		expect(surfaces.get('communication')!.useCases.find((u) => u.kind === 'list')!.alsoCalls).toBeUndefined();
 	});
 
+	it('a delete use case records its pre-read only when the entity publishes `<entity>_deleted`', () => {
+		const delete_ = (name: string) => surfaces.get(name)!.useCases.find((u) => u.kind === 'delete')!;
+		// the baseline's meeting declares emits (a child: the flat row, so a payload sees base fields)
+		expect(delete_('meeting').preRead).toEqual({ entity: 'meeting', layer: 'service', method: 'findWithBase' });
+		// email declares none: the delete makes no read first, and says so
+		expect(delete_('email').preRead).toBeUndefined();
+		expect(delete_('communication').preRead).toBeUndefined();
+		// contact publishes created / merged / marked_champion but not `contact_deleted`: no pre-read
+		expect(delete_('contact').preRead).toBeUndefined();
+	});
+
 	it('a base: the five cross-kind reads, caused by its discriminator:, naming the child kinds', () => {
 		const s = surfaces.get('communication')!;
 		const repo = s.repository.methods.filter((m) => ['all_kinds', 'kind_by_id', 'list_kind', 'count_kind', 'orphans'].includes(m.kind));

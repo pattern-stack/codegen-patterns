@@ -47,6 +47,10 @@ export class ListMeetingsUseCase {
    *    search names only this table's columns, R7). It reads `service.list` with the base joined in and hoists the
    *    base's columns (`flattenBase`). A base column cannot order this root (RFC-0006 §8), so a `sort_by` that names
    *    one together with a `where` is a 400 (`sort_not_combinable`); with no `sort_by` the order is `id desc`.
+   *
+   * The roots treat a base row with no child row differently, on purpose: the base-rooted read throws
+   * `OrphanBaseError` (a whole page fails loudly, as the corruption it is), while the child-rooted read starts at
+   * this table and never sees the row.
    */
   async execute<TWith extends MeetingInclude = MeetingNoInclude>(
     listQuery?: ListQuery,
@@ -70,8 +74,12 @@ export class ListMeetingsUseCase {
       (_m: string, c: string) => c.toUpperCase(),
     );
     // `hasColumn` — the repository's own column test (an own-key check, so `?sort_by=to_string` is unknown).
-    const isBaseColumn = hasColumn(communications, sortColumn);
-    const isChildColumn = !isBaseColumn && hasColumn(meetings, sortColumn);
+    // A column BOTH tables carry (`id`, `kind`, the tenant column) orders this table's own read when a filter makes
+    // the read child-rooted, and the base's otherwise — it is only a base column to refuse when this table lacks it.
+    const inBase = hasColumn(communications, sortColumn);
+    const inChild = hasColumn(meetings, sortColumn);
+    const isChildColumn = inChild && (whereClause !== undefined || !inBase);
+    const isBaseColumn = inBase && !isChildColumn;
     const childRooted = whereClause !== undefined || isChildColumn;
     // RFC-0006 §8: no single read filters on this table's columns and sorts on the base's. A caller who NAMES a base
     // column with a filter is refused, not answered in another order. (A request that names no `sort_by` is not
@@ -116,8 +124,9 @@ export class ListMeetingsUseCase {
           limit: resolvedQuery.pageSize,
           offset: resolvedQuery.offset,
           sort: sortTerms,
-          with: { ...includeTree, communication: true as const },
-        } as never),
+          // The one cast: the typed `with` of a child read cannot name the base relation (it is not an include).
+          with: { ...includeTree, communication: true as const } as never,
+        }),
         this.service.count(whereClause),
       ]);
       const flatChildRows = (childRows as unknown as globalThis.Array<globalThis.Record<string, unknown>>).map(
