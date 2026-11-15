@@ -12,6 +12,8 @@ import {
 	buildCollectionFile,
 	buildCollectionsIndexFile,
 } from '../../../emitters/frontend/emit-collections';
+import { _unregisterLibraryPatternForTests, registerLibraryPattern } from '../../../patterns/registry';
+import { definePattern } from '../../../patterns/pattern-definition';
 import { config, ctx, entry, field, parsedEntity, parsedMap } from './_helpers';
 
 describe('emit-collections — electric (default) branch', () => {
@@ -70,6 +72,20 @@ describe('emit-collections — electric (default) branch', () => {
 			parsedEntity(email, { behaviors: ['soft_delete'] }),
 		]) {
 			expect(buildCollectionFile(email, ctx([email], { parsers }, parsedMap(dated)))).toContain('timestamptz:');
+		}
+	});
+
+	it('keeps the date parser when a PATTERN implies a timestamp behaviour (the backend\'s resolved-behaviours rule)', () => {
+		registerLibraryPattern(definePattern({ name: 'StampedForTest', impliedBehaviors: ['timestamps'], repositoryClass: 'BaseRepository', serviceClass: 'BaseService' }));
+		try {
+			const parsers = { timestamptz: '(date: string) => new Date(date)' };
+			const email = entry('email', 'emails');
+			const implied = ctx([email], { parsers }, parsedMap(parsedEntity(email, { pattern: 'StampedForTest' })));
+			expect(buildCollectionFile(email, implied)).toContain('timestamptz:');
+			const plain = ctx([email], { parsers }, parsedMap(parsedEntity(email)));
+			expect(buildCollectionFile(email, plain)).not.toContain('timestamptz');
+		} finally {
+			_unregisterLibraryPatternForTests('StampedForTest');
 		}
 	});
 

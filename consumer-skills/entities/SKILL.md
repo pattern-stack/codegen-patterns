@@ -83,11 +83,17 @@ codegen entity new entities/account.yaml
 ## Inheritance in one example
 
 ```yaml
-# entities/communication.yaml                 # entities/meeting.yaml
-discriminator: kind                           inherits: communication     # one level; the base owns timestamps,
-fields:                                       fields:                     # soft_delete, tenant_scoped
+# entities/communication.yaml — the base (it owns timestamps, soft_delete, tenant_scoped)
+discriminator: kind
+fields:
   kind: { type: enum, choices: [meeting, email, message], required: true }
-                                                title: { type: string, required: true }
+```
+
+```yaml
+# entities/meeting.yaml — the child (one level)
+inherits: communication
+fields:
+  title: { type: string, required: true }
 ```
 
 The child's `id` IS the base's `id`; the database refuses a `meeting` row under an `email` base row. Reads and writes treat the

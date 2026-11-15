@@ -24,6 +24,7 @@ import type { MeetingTranscript } from '@repo/db/entities/meeting_transcript';
 import type { MessageCommunicationPart } from '@repo/db/entities/message_communication_part';
 import type { Party } from '@repo/db/entities/party';
 import type { TranscriptCommunicationPart } from '@repo/db/entities/transcript_communication_part';
+import type { TranscriptCommunicationPartWithBase } from '../api/transcript-communication-part';
 
 /**
  * Read a key off an include literal that may omit it.
@@ -75,10 +76,10 @@ export interface TranscriptCommunicationPartGraphResult<I extends TranscriptComm
 }
 
 /**
- * The backend's `TranscriptCommunicationPartFlat`, on the client: the base's columns and the child's own.
- * `kind` is the child's copy of the base's discriminator.
+ * The backend's `TranscriptCommunicationPartFlat`, on the client. Owned by the api client (`api/transcript-communication-part.ts`, which every
+ * sync mode emits, so a `sync: api` child has it too) and re-exported here: one definition, one owner.
  */
-export type TranscriptCommunicationPartWithBase = globalThis.Omit<CommunicationPart, 'kind'> & TranscriptCommunicationPart;
+export type { TranscriptCommunicationPartWithBase };
 
 /**
  * transcriptCommunicationParts ⋈ communication_parts on id — a query fragment: add where / orderBy / limit to it.

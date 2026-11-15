@@ -24,11 +24,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { familyReads } from '../../../../templates/_shared/inheritance.mjs';
+import { buildBackendLocals } from '../../../../templates/entity/new/backend/entity-locals.js';
+import { withEntities } from '../../backend/_entity-lookup';
+import { hasCreateRoute } from '../../../emitters/frontend/emit-utils';
 import { createEntityLookup } from '../../../../templates/_shared/entity-naming.mjs';
 import { buildClientGraph, emitFrontendSet, loadFrontendEmitContext } from '../../../emitters/frontend/index';
 import { buildRelationGraph } from '../../../emitters/relations/build-graph';
-import { baseHasNoCreateRoute } from '../../../schema/inheritance';
 import type { FrontendEmitContext } from '../../../emitters/frontend/types';
 
 const ENTITIES = resolve(import.meta.dir, '../../../../test/smoke/fixtures-frontend/entities');
@@ -96,12 +97,41 @@ describe('inherits on the client graph — the child accessor (§3.4)', () => {
 		expect(meeting).not.toContain('{ communication: Communication | undefined }');
 	});
 
-	it('emits <Child>WithBase: the flat type, the inner-joined fragment, and both hooks', () => {
-		expect(meeting).toContain("export type MeetingWithBase = globalThis.Omit<Communication, 'kind'> & Meeting;");
+	it('emits <Child>WithBase: the fragment and both hooks here, the flat type owned by the api client', () => {
+		expect(meeting).toContain("import type { MeetingWithBase } from '../api/meeting';");
+		expect(meeting).toContain('export type { MeetingWithBase };');
+		expect(meeting).not.toContain('export type MeetingWithBase =');
 		expect(meeting).toContain('export function meetingsWithBase(q: InitialQueryBuilder)');
 		expect(meeting).toContain('.innerJoin({ base: communicationCollection }, ({ row, base }) => eq(row.id, base.id))');
 		expect(meeting).toContain('export function useMeetingsWithBase()');
 		expect(meeting).toContain('export function useMeetingWithBase(id: string | null | undefined)');
+		const api = read('api/meeting.ts');
+		expect(api).toContain("export type MeetingWithBase = globalThis.Omit<Communication, 'kind'> & Meeting;");
+		expect(api).toContain("export type MeetingFlatInput = globalThis.Partial<globalThis.Omit<MeetingWithBase, 'id' | 'kind'>>;");
+		expect(api).toContain('create: (data: MeetingFlatInput): Promise<MeetingWithBase>');
+		expect(api).toContain('get: (id: string): Promise<MeetingWithBase>');
+		expect(api).toContain('update: (id: string, data: MeetingFlatInput): Promise<MeetingWithBase>');
+		expect(read('entities/meeting.ts')).toContain('createEntityHooks<Meeting, MeetingFlatInput, MeetingFlatInput>');
+	});
+
+	it('omits the base’s OWN discriminator, not a hard-coded `kind`', () => {
+		const dir = join(tmpRoot, 'category-family');
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(
+			join(dir, 'item.yaml'),
+			'entity:\n  name: item\n  plural: items\n  sync: electric\ndiscriminator: category\nfields:\n  category:\n    type: enum\n    choices: [book, film]\n    required: true\n  kind:\n    type: string\n    required: true\n',
+		);
+		writeFileSync(
+			join(dir, 'book.yaml'),
+			'entity:\n  name: book\n  plural: books\n  sync: electric\ninherits: item\nfields:\n  title:\n    type: string\n    required: true\n',
+		);
+		const out = join(tmpRoot, 'category-out');
+		emitFrontendSet(load(dir), out);
+		const api = readFileSync(join(out, 'api/book.ts'), 'utf-8');
+		// the discriminator `category` is omitted; the base's ordinary field `kind` survives into the flat type
+		expect(api).toContain("globalThis.Omit<Item, 'category'> & Book");
+		expect(api).toContain("globalThis.Omit<BookWithBase, 'id' | 'category'>");
+		expect(api).not.toContain("'kind'");
 	});
 
 	it('names a child whose plural is not `<name>s` from its own YAML', () => {
@@ -146,26 +176,25 @@ describe('a base with a child for every kind has no create route (S5)', () => {
 		expect(read('entities/index.ts')).not.toMatch(/useCreateCommunicationPart\b/);
 		expect(read('api/communication.ts')).toContain("'POST'");
 		expect(read('entities/communication.ts')).toContain('useCreate: useCreateCommunication,');
+		// typed away, in all three places: the hooks, the api stub, the field capabilities
+		expect(read('entities/communication-part.ts')).toContain('createEntityHooks<CommunicationPart, never>');
+		expect(read('api/communication-part.ts')).toContain('create: (_data: never): Promise<CommunicationPart>');
+		expect(read('fields/communication-part.ts')).toContain('create: false,');
+		expect(read('fields/communication.ts')).toContain('create: true,');
 	});
 
-	it('agrees with the backend’s derivation (`familyReads`) for every entity of the set', () => {
+	it('agrees with the backend’s REAL `generateCreate` for every entity of the set', () => {
+		// buildBackendLocals is what renders the controller: a change to its `generateCreate` turns this red.
 		const lookup = createEntityLookup(ENTITIES, { tablePrefix: '' });
 		const definitions = ctx.definitions!;
-		let bases = 0;
-		for (const [name, def] of definitions) {
-			const backend = familyReads({
-				entityName: name,
-				definition: def,
-				lookup,
-				ownNaming: { moduleDir: '' },
-				modulesDir: 'modules',
-				baseBehaviors: [],
-			});
-			const backendNoCreate = backend.base !== null && backend.base.children.length > 0 && backend.base.baseOnlyKinds.length === 0;
-			expect(baseHasNoCreateRoute(def, definitions), name).toBe(backendNoCreate);
-			if (backend.base !== null) bases += 1;
+		let noCreate = 0;
+		for (const name of definitions.keys()) {
+			const locals = buildBackendLocals(lookup.definition(name), { ...withEntities(), entityLookup: lookup });
+			const has = hasCreateRoute(ctx.entities.find((e) => e.name === name)!, ctx);
+			expect(has, name).toBe(locals.generateCreate as boolean);
+			if (!has) noCreate += 1;
 		}
-		expect(bases).toBe(2); // communication (a base-only kind) and communication_part (none)
+		expect(noCreate).toBe(1); // communication_part; communication keeps its base-only kind `message`
 	});
 });
 

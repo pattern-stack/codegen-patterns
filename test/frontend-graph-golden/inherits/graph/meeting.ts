@@ -12,6 +12,7 @@ import type { Communication } from '@repo/db/entities/communication';
 import type { Email } from '@repo/db/entities/email';
 import type { Meeting } from '@repo/db/entities/meeting';
 import type { MeetingTranscript } from '@repo/db/entities/meeting_transcript';
+import type { MeetingWithBase } from '../api/meeting';
 
 /**
  * Read a key off an include literal that may omit it.
@@ -72,10 +73,10 @@ function withOf(value: unknown): globalThis.Record<string, unknown> {
 }
 
 /**
- * The backend's `MeetingFlat`, on the client: the base's columns and the child's own.
- * `kind` is the child's copy of the base's discriminator.
+ * The backend's `MeetingFlat`, on the client. Owned by the api client (`api/meeting.ts`, which every
+ * sync mode emits, so a `sync: api` child has it too) and re-exported here: one definition, one owner.
  */
-export type MeetingWithBase = globalThis.Omit<Communication, 'kind'> & Meeting;
+export type { MeetingWithBase };
 
 /**
  * meetings ⋈ communications on id — a query fragment: add where / orderBy / limit to it.

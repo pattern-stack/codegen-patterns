@@ -124,6 +124,36 @@ describe('`inherits` (RFC-0006, #875 S6)', () => {
 		expect(file?.content).toMatch(/inherits:\n {2}base: communication\n {2}as: email/);
 	});
 
+	it('refuses an `as:` the base does not list, and a short form whose own name is not a kind — naming the base', () => {
+		expect(() =>
+			previewRelationship(project, { from: 'meeting', to: 'communication', kind: 'inherits', options: { as: 'fax' } }),
+		).toThrow(/'communication' does not list 'fax' among its kinds \(kind: meeting, email\)/);
+		write('call', 'entity:\n  name: call\n  plural: calls\n');
+		expect(() => previewRelationship(project, { from: 'call', to: 'communication', kind: 'inherits' })).toThrow(
+			/'communication' does not list 'call'.*set `as`/,
+		);
+	});
+
+	it('refuses a base with no `discriminator:`, naming it', () => {
+		write('plain', 'entity:\n  name: plain\n  plural: plains\n');
+		expect(() => previewRelationship(project, { from: 'meeting', to: 'plain', kind: 'inherits' })).toThrow(
+			/'plain' declares no `discriminator:`/,
+		);
+	});
+
+	it('reads the kinds through `choices_of:` (one hop) for a second base', () => {
+		write(
+			'part',
+			'entity:\n  name: part\n  plural: parts\ndiscriminator: kind\nfields:\n  kind:\n    type: enum\n    choices_of: communication.kind\n    required: true\n',
+		);
+		write('email_part', 'entity:\n  name: email_part\n  plural: email_parts\nfields:\n  text:\n    type: string\n');
+		const [file] = previewRelationship(project, { from: 'email_part', to: 'part', kind: 'inherits', options: { as: 'email' } });
+		expect(file?.content).toMatch(/base: part\n {2}as: email/);
+		expect(() =>
+			previewRelationship(project, { from: 'email_part', to: 'part', kind: 'inherits', options: { as: 'fax' } }),
+		).toThrow(/does not list 'fax'/);
+	});
+
 	it('refuses a child that already inherits, itself, and a base that does not exist', () => {
 		expect(() => previewRelationship(project, { from: 'email', to: 'communication', kind: 'inherits' })).toThrow(/already declares/);
 		expect(() => previewRelationship(project, { from: 'meeting', to: 'meeting', kind: 'inherits' })).toThrow(/cannot inherit itself/);

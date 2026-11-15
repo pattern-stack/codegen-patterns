@@ -21,7 +21,7 @@
 import { join } from 'node:path';
 import type { EntityRegistryEntry, FrontendEmitContext } from './types';
 import { sortEntities } from './types';
-import { hasCreateRoute, withBanner, writeFile } from './emit-utils';
+import { flatChild, hasCreateRoute, withBanner, writeFile } from './emit-utils';
 
 const SOURCE_DESC_SET = 'the entity set';
 
@@ -34,12 +34,21 @@ export function buildEntityHooksFile(
 	ctx: FrontendEmitContext,
 ): string {
 	const { camelName, className, name, fileStem } = entity;
-	// No `useCreate<Class>` for a base whose every kind has a child (RFC-0006 §4.1): its create route does not exist.
-	const useCreate = hasCreateRoute(entity, ctx) ? `\tuseCreate: useCreate${className},\n` : '';
+	// No `useCreate<Class>` for a base whose every kind has a child (RFC-0006 §4.1): its create route does not exist, so
+	// `TCreate` is `never` and `useCreate().mutate(...)` cannot be called. A child's create / update take the flat body.
+	const createRoute = hasCreateRoute(entity, ctx);
+	const flat = flatChild(entity, ctx);
+	const useCreate = createRoute ? `\tuseCreate: useCreate${className},\n` : '';
+	const typeArgs = flat
+		? `${className}, ${className}FlatInput, ${className}FlatInput`
+		: createRoute
+			? className
+			: `${className}, never`;
+	const apiImport = flat ? `import { ${camelName}Api, type ${className}FlatInput } from '../api/${fileStem}';` : `import { ${camelName}Api } from '../api/${fileStem}';`;
 
 	const body = `import { createEntityHooks } from '@pattern-stack/frontend-patterns';
 import { ${camelName}Collection } from '../collections/${fileStem}';
-import { ${camelName}Api } from '../api/${fileStem}';
+${apiImport}
 import { getSyncMode } from '../config';
 import type { ${className} } from '${ctx.config.dbEntitiesImport}/${name}';
 
@@ -50,7 +59,7 @@ import type { ${className} } from '${ctx.config.dbEntitiesImport}/${name}';
  * (\`getSyncMode('${name}')\`) — \`api\` mode is confirmed-write, everything else
  * is local-first (optimistic).
  */
-export const ${camelName}Hooks = createEntityHooks<${className}>({
+export const ${camelName}Hooks = createEntityHooks<${typeArgs}>({
 \tname: '${name}',
 \tcollection: ${camelName}Collection,
 \tapi: ${camelName}Api,

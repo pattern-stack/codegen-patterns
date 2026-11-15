@@ -41,7 +41,7 @@ import { join } from 'node:path';
 import type { ParsedEntity } from '../../analyzer/types';
 import type { EntityRegistryEntry, FrontendEmitContext } from './types';
 import { sortEntities } from './types';
-import { withBanner, writeFile } from './emit-utils';
+import { hasCreateRoute, withBanner, writeFile } from './emit-utils';
 import {
 	deriveFieldMeta,
 	hasExternalSyncShape,
@@ -321,6 +321,8 @@ export function buildEntityFieldsFile(
 	// Capabilities: write gated on repository|trpc exposure (default-on).
 	const expose = parsed?.expose ?? ['repository', 'rest', 'trpc'];
 	const canWrite = expose.includes('repository') || expose.includes('trpc');
+	// A base whose every kind has a child has no create route (RFC-0006 §4.1).
+	const canCreate = canWrite && hasCreateRoute(entity, ctx);
 
 	const body = `import type { FieldMeta, FieldType, FieldImportance } from './field-meta';
 import type { ${className} } from '${ctx.config.dbEntitiesImport}/${name}';
@@ -349,7 +351,7 @@ ${searchFields}
 \tdefaultSort: { field: '${defaultSortField}', direction: 'desc' as const },
 
 \tcapabilities: {
-\t\tcreate: ${canWrite},
+\t\tcreate: ${canCreate},
 \t\tupdate: ${canWrite},
 \t\tdelete: ${canWrite},
 \t\tlist: true,

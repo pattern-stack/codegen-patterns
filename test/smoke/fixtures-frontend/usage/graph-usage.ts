@@ -13,6 +13,7 @@
 //
 // It lives beside the `@repo/db/entities` fixtures because it is the same kind
 // of thing — consumer code the smoke compiles against the generated tree.
+import { communicationPartApi, meetingApi } from '../apps/frontend/src/generated/api/index';
 import * as entityHooks from '../apps/frontend/src/generated/entities/index';
 import {
 	graph,
@@ -113,6 +114,24 @@ export function typeGate(id: string): unknown {
 	const hasUpdateForPart = entityHooks.useUpdateCommunicationPart;
 	// @ts-expect-error no `useCreateCommunicationPart`: its create route does not exist
 	entityHooks.useCreateCommunicationPart;
+	// …and the factory's own `useCreate` and the api's `create` are typed away (TCreate = never), not merely unexported:
+	// @ts-expect-error nothing is assignable to a create body that does not exist
+	entityHooks.communicationPartHooks.useCreate().mutate({});
+	// @ts-expect-error the api's `create` takes `never`
+	communicationPartApi.create({});
+
+	// ── S6 review: a child's REST client speaks the FLAT contract ─────────────
+	// A create body carries the base's fields (`occurredAt`, `source`, `externalId`) with the child's, and no `kind`.
+	const created: Promise<MeetingWithBase> = meetingApi.create({
+		title: 'Weekly sync',
+		occurredAt: new Date(),
+		source: 'calendar',
+		externalId: 'evt-1',
+	});
+	// Reading a base field off `get` compiles (it would not on the table row type).
+	const fetchedAt: Promise<Date> = meetingApi.get(id).then((m) => m.occurredAt);
+	// @ts-expect-error `kind` is not a body field: the route is the kind
+	meetingApi.create({ title: 'x', kind: 'meeting' });
 
 	return {
 		meetingBase,
@@ -123,6 +142,8 @@ export function typeGate(id: string): unknown {
 		flatOccurredAt,
 		flatTitle,
 		one,
+		created,
+		fetchedAt,
 		hasCreateForCommunication,
 		hasUpdateForPart,
 		parent,

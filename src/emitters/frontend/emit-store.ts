@@ -28,7 +28,7 @@ import { join } from 'node:path';
 import type { ParsedRelationship } from '../../analyzer/types';
 import type { EntityRegistryEntry, FrontendEmitContext } from './types';
 import { sortEntities } from './types';
-import { withBanner, writeFile } from './emit-utils';
+import { hasCreateRoute, withBanner, writeFile } from './emit-utils';
 
 const SOURCE_DESC_SET = 'the entity set';
 
@@ -144,9 +144,17 @@ export function buildStoreIndexFile(ctx: FrontendEmitContext): string {
 		.map((e) => `import { ${e.camelName}Fields } from '../fields/${e.fileStem}';`)
 		.join('\n');
 
+	// An entity with no create route has `TCreate = never` (RFC-0006 §4.1), which `createStore`'s
+	// `EntityHooks<any, any, any>` does not accept (mutation variance). The store never calls create, so the
+	// one boundary cast is here, named, and only for those entities.
 	const entityEntries = entities
-		.map((e) => `\t\t${e.plural}: ${e.camelName}Hooks,`)
+		.map((e) =>
+			hasCreateRoute(e, ctx)
+				? `\t\t${e.plural}: ${e.camelName}Hooks,`
+				: `\t\t${e.plural}: ${e.camelName}Hooks as unknown as EntityHooks<any, any, any>,`,
+		)
 		.join('\n');
+	const needsHooksType = entities.some((e) => !hasCreateRoute(e, ctx));
 	const collectionEntries = entities
 		.map((e) => `\t\t${e.plural}: ${e.camelName}Collection,`)
 		.join('\n');
@@ -154,7 +162,7 @@ export function buildStoreIndexFile(ctx: FrontendEmitContext): string {
 		.map((e) => `\t\t${e.plural}: ${e.camelName}Fields,`)
 		.join('\n');
 
-	const body = `import { createStore } from '@pattern-stack/frontend-patterns';
+	const body = `import { createStore${needsHooksType ? ', type EntityHooks' : ''} } from '@pattern-stack/frontend-patterns';
 
 ${hookImports}
 

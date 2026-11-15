@@ -152,6 +152,34 @@ function editedEntity(
 }
 
 /**
+ * The base's discriminator field name and its kinds: literal `choices:`, or one hop of `choices_of: <entity>.<field>`
+ * through the owner's file. `discriminator` is null for a base that declares none; `kinds` is null when they do not
+ * resolve (the generator's own validation then speaks).
+ */
+function baseKinds(
+	projectDir: string,
+	baseFile: string,
+): { discriminator: string | null; kinds: string[] | null } {
+	const doc = parseDocument(fs.readFileSync(baseFile, 'utf-8'));
+	const discriminator = doc.get('discriminator');
+	if (typeof discriminator !== 'string') return { discriminator: null, kinds: null };
+	const literal = doc.getIn(['fields', discriminator, 'choices']);
+	const choicesOf = doc.getIn(['fields', discriminator, 'choices_of']);
+	const toList = (v: unknown): string[] | null => {
+		const json = (v as { toJSON?: () => unknown } | undefined)?.toJSON?.() ?? v;
+		return Array.isArray(json) ? json.map(String) : null;
+	};
+	if (typeof choicesOf === 'string') {
+		const [owner, ownerField] = choicesOf.split('.');
+		const ownerFile = owner ? entityFile(projectDir, owner) : null;
+		if (!ownerFile || !ownerField) return { discriminator, kinds: null };
+		const ownerDoc = parseDocument(fs.readFileSync(ownerFile, 'utf-8'));
+		return { discriminator, kinds: toList(ownerDoc.getIn(['fields', ownerField, 'choices'])) };
+	}
+	return { discriminator, kinds: toList(literal) };
+}
+
+/**
  * `inherits:` on the CHILD (`from`), naming the base (`to`) — RFC-0006. It is a key of
  * the entity, not an entry of `relationships:`, so it does not go through
  * `addRelationship`. The short form when the kind value is the entity's own name; the
@@ -165,7 +193,7 @@ function inheritsEdit(
 	if (req.from === req.to) {
 		throw new RelationshipRequestError(`'${req.from}' cannot inherit itself`);
 	}
-	requireEntityFile(projectDir, req.to);
+	const baseFile = requireEntityFile(projectDir, req.to);
 	const file = requireEntityFile(projectDir, req.from);
 	const doc = parseDocument(fs.readFileSync(file, 'utf-8'));
 	if (doc.errors.length > 0) {
@@ -177,8 +205,23 @@ function inheritsEdit(
 		throw new RelationshipRequestError(`'${req.from}' already declares \`inherits:\``);
 	}
 	const as = req.options?.as?.trim();
+	// The kind this child will be: `as`, else its own name. The base must list it (R1), so refuse here, naming the base,
+	// rather than propose a file that fails at generation.
+	const kind = as || req.from;
+	const { discriminator, kinds } = baseKinds(projectDir, baseFile);
+	if (discriminator === null) {
+		throw new RelationshipRequestError(
+			`'${req.to}' declares no \`discriminator:\`, so it cannot be inherited — add \`discriminator: <enum field>\` to ${toProjectRelative(projectDir, baseFile)} first`,
+		);
+	}
+	if (kinds !== null && !kinds.includes(kind)) {
+		throw new RelationshipRequestError(
+			`'${req.to}' does not list '${kind}' among its kinds (${discriminator}: ${kinds.join(', ')})${as ? '' : " — set `as` to one of them, or add it to the base's choices"}`,
+		);
+	}
 	const value = as && as !== req.from ? { base: req.to, as } : req.to;
-	// Sibling of `entity:`, directly after it, as every family YAML in the repo writes it.
+	// \`doc.setIn\` APPENDS the key at the end of the mapping (after \`fields:\`, \`relationships:\`, …), which is where it lands;
+	// the schema is key-order-free. The edit keeps every comment and the file's other keys where they were.
 	doc.setIn(['inherits'], doc.createNode(value));
 	const content = doc.toString();
 	const outcome = validateContent('entity', content);

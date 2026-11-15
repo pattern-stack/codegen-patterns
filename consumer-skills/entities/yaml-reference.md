@@ -307,7 +307,8 @@ declare it): it takes the target column's type and is filled by the insert from 
 unchanged. The one exception is the entity's own `discriminator:` field when its enum is the target column's (`choices_of:`):
 then `match: { kind: kind }` is the whole rule "a part's kind equals its communication's kind". The target column is NOT NULL, and
 the target entity is given a `unique(id, <cols>)` for it. A `match:` whose every FK is nullable makes the derived column
-nullable, with a CHECK that it is NULL together with them.
+nullable, with a one-directional CHECK per relationship, `<fk> IS NULL OR <derived> IS NOT NULL`: a **set** FK always has its
+derived column (so its composite FK is always checked); the reverse is allowed, a derived column with no FK is harmless.
 
 ### `natural_key: true` — the upsert key
 

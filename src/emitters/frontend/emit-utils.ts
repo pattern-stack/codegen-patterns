@@ -10,22 +10,28 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-import { baseHasNoCreateRoute } from '../../schema/inheritance.js';
+import { createDisabledBy } from '../../derived/api/entity.js';
+import { discriminatorKindsOf, inheritanceChildrenOf, inheritsOf } from '../../schema/inheritance.js';
 import { generating } from '../../utils/generated-file.js';
 import type { EntityRegistryEntry, FrontendEmitContext } from './types';
 
 /**
- * Whether the backend generates `POST /<plural>` for this entity. False for a
- * discriminator base whose every kind has a child table (RFC-0006 §4.1): a row of
- * any kind is created through its child, so the base has no create route. The
- * frontend must not emit a mutation aimed at a route that does not exist, so
- * every create emission asks here — and the answer is `baseHasNoCreateRoute`,
- * the same two facts the backend's `generateCreate` reads. A context built
+ * Whether the backend generates `POST /<plural>` for this entity, as far as a FAMILY decides it: false for a
+ * discriminator base whose every kind has a child table (RFC-0006 §4.1). The answer is the derivation's
+ * `createDisabledBy` (`src/derived/api/entity.ts`, ADR-046), the function the backend's `generateCreate` calls too;
+ * the frontend reaches it directly rather than through a whole `deriveProjectApiSurface`, which needs the relation
+ * graph's inputs this emitter has no other use for. The api client, the hooks and the field capabilities all
+ * ask here, so no create mutation is emitted for a route that does not exist.
+ *
+ * It does NOT read `generate: { writes: false }`, which the backend's `generateCreate` also reads: the frontend
+ * emitter ignores that key for every entity (a known, entity-general gap, RFC-0006 S6 as built). A context built
  * without `definitions` (a registry-only fixture) has no families.
  */
 export function hasCreateRoute(entity: EntityRegistryEntry, ctx: FrontendEmitContext): boolean {
 	const def = ctx.definitions?.get(entity.name);
-	return !(def && ctx.definitions && baseHasNoCreateRoute(def, ctx.definitions));
+	if (!def || !ctx.definitions) return true;
+	const all = [...ctx.definitions.values()];
+	return createDisabledBy(def, inheritanceChildrenOf(entity.name, all), discriminatorKindsOf(def, all)) === null;
 }
 
 /**
@@ -56,4 +62,25 @@ export function writeFile(outPath: string, content: string): void {
 		mkdirSync(dirname(outPath), { recursive: true });
 		writeFileSync(outPath, content);
 	});
+}
+
+/**
+ * The flat shape a joined-table CHILD speaks over HTTP and on the client (RFC-0006 §3.4, §5): the base's
+ * columns and its own. `null` for an entity that does not inherit. The ONE owner of that naming — the api
+ * client defines `<Child>WithBase` and `<Child>FlatInput` from it, and `graph/<child>.ts` re-exports them.
+ *
+ * `discriminatorProp` is the base's own discriminator column (`kind`, or whatever the base calls it), which the
+ * child's table also carries as a copy: the type omits exactly that one, never a hard-coded `'kind'`.
+ */
+export function flatChild(
+	entity: EntityRegistryEntry,
+	ctx: FrontendEmitContext,
+): { base: EntityRegistryEntry; discriminatorProp: string } | null {
+	const def = ctx.definitions?.get(entity.name);
+	const decl = def ? inheritsOf(def) : null;
+	if (!decl) return null;
+	const base = ctx.entities.find((e) => e.name === decl.base);
+	const discriminator = ctx.definitions?.get(decl.base)?.discriminator;
+	if (!base || typeof discriminator !== 'string') return null;
+	return { base, discriminatorProp: discriminator.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()) };
 }

@@ -120,11 +120,13 @@ is the design and, in its "as built" notes, the truth; `consumer-skills/entities
   `<Base>.findAllKinds` / `listKind` read across kinds in one statement; `findOrphans` finds a base with no child.
 - **Writes** go through the child's repository / service (the pair, one transaction; `KindImmutableError` on a `kind` in an
   update). **HTTP is flat** (`<Child>` DTOs extend the base's; unknown keys such as `kind` are stripped); the base's `POST`
-  accepts base-only kinds, and a base whose *every* kind has a child has **no create route** — and the frontend emits no
-  create hook or `POST` for it (`baseHasNoCreateRoute`).
+  accepts base-only kinds, and a base whose *every* kind has a child has **no create route**: `createDisabledBy`
+  (`src/derived/api/entity.ts`) is the one owner, called by the backend's `generateCreate` and the frontend's `hasCreateRoute`,
+  and the frontend types it away (`createEntityHooks<Base, never>`, `create: (_data: never)`, `capabilities.create: false`) —
+  not a stub that rejects. A child's REST client is typed flat (`<Child>WithBase`, `<Child>FlatInput`, in `api/<child>.ts`).
 - **Frontend.** A child's hop to its base is **inner-joined and typed without `| undefined`**; every `electric` child gets
   `<Child>WithBase`, `<plural>WithBase(q)`, `use<Plural>WithBase()`, `use<Child>WithBase(id)` in `graph/<child>.ts`. Base and
-  children share one sync mode (R8). Studio draws one `inherits` edge, child → base.
+  children share one sync mode (R8). Studio draws one `inherits` edge, child → base, and it is the child's spine.
 - **Generator-wide changes this build made** (any entity, not only a family): enums live in a leaf `<entity>.enums.ts` that
   imports only `drizzle-orm/pg-core` (importing an owner's enum from its entity file is a boot-time `ReferenceError` in a
   cycle); every table callback's one parameter is `tCols`; a module that composes another entity's repository imports that
@@ -251,8 +253,9 @@ is wrong.
 
 The canvas is a tree (STUDIO-3). Every node has at most one **spine** parent,
 chosen by `chooseSpines` (`tools/studio/src/graph/spine.ts`) from the
-`belongs_to`s it declares, first match wins: an explicit `inherits` (#875 — until
-it lands this tier never matches; then delete the inference, no shim), a
+`belongs_to`s it declares (and its `inherits:`), first match wins: an explicit
+`inherits:` (#875 — a child hangs under its base; `buildEdges` draws it as its own
+child → base line, never one half of a #778 pair), a
 `belongs_to` whose FK column is unique (`fkUnique` on the payload), one with
 `on_delete: cascade` (`onDelete`), the first declared; ties go to the first
 declared. A junction row hangs under its `from` end. Every other line is

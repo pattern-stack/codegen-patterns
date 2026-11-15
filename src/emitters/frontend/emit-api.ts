@@ -12,7 +12,7 @@
 import { join } from 'node:path';
 import type { EntityRegistryEntry, FrontendEmitContext } from './types';
 import { sortEntities } from './types';
-import { hasCreateRoute, withBanner, writeFile } from './emit-utils';
+import { flatChild, hasCreateRoute, withBanner, writeFile } from './emit-utils';
 
 const SOURCE_DESC_SET = 'the entity set';
 
@@ -142,24 +142,40 @@ export function buildEntityApiFile(
 ): string {
 	const { config } = ctx;
 	const { camelName, plural, className, name } = entity;
-	// A base whose every kind has a child has no `POST /<plural>` (RFC-0006 §4.1).
+	const flat = flatChild(entity, ctx);
+	// A child speaks the FLAT contract (RFC-0006 §5): reads return the base's columns and its own, and a write
+	// takes them too (no `kind`: the route is the kind). The row type `<Class>` is the table, which is neither.
+	const readType = flat ? `${className}WithBase` : className;
+	const inputType = flat ? `${className}FlatInput` : `globalThis.Partial<${className}>`;
+	const flatTypes = flat
+		? `
+/** The backend's \`${className}Flat\`, on the client: the base's columns and the child's own (RFC-0006 §3.4). */
+export type ${className}WithBase = globalThis.Omit<${flat.base.className}, '${flat.discriminatorProp}'> & ${className};
+
+/** A flat create / update body: the base's fields and the child's, without the discriminator (the route is the kind). */
+export type ${className}FlatInput = globalThis.Partial<globalThis.Omit<${className}WithBase, 'id' | '${flat.discriminatorProp}'>>;
+`
+		: '';
+	const baseImport = flat
+		? `import type { ${flat.base.className} } from '${config.dbEntitiesImport}/${flat.base.name}';\n`
+		: '';
+	// A base whose every kind has a child has no `POST /<plural>` (RFC-0006 §4.1): `create` takes `never`, so
+	// nothing can call it, and it issues no request. (`createEntityHooks` types `api.create` as required.)
 	const createMethod = hasCreateRoute(entity, ctx)
-		? `\tcreate: (data: globalThis.Partial<${className}>): Promise<${className}> =>\n\t\trequest<${className}>('POST', '/${plural}', data),\n\n`
-		: // `createEntityHooks` types its `api` with a required `create`, so the member stays — but it
-			// issues no request: it rejects, naming why. The entity file does not re-export `useCreate<Class>`.
-			`\t/** No \`POST /${plural}\`: every kind of ${name} is created through its child (RFC-0006 §4.1). */\n\tcreate: (_data: globalThis.Partial<${className}>): Promise<${className}> =>\n\t\tPromise.reject(new Error('${name} has no create route: create a row of any kind through its child')),\n\n`;
+		? `\tcreate: (data: ${inputType}): Promise<${readType}> =>\n\t\trequest<${readType}>('POST', '/${plural}', data),\n\n`
+		: `\t/** No \`POST /${plural}\`: every kind of ${name} is created through its child (RFC-0006 §4.1). */\n\tcreate: (_data: never): Promise<${className}> =>\n\t\tPromise.reject(new Error('${name} has no create route: create a row of any kind through its child')),\n\n`;
 
 	const body = `import { MAX_PAGE_SIZE, type ListQuery, type Page, request, toListQueryString } from './client';
 import type { ${className} } from '${config.dbEntitiesImport}/${name}';
-
+${baseImport}${flatTypes}
 export const ${camelName}Api = {
 \t/**
 \t * Fetch one page of ${plural} (pagination-by-default). Threads page/cursor/
 \t * pageSize/sort + arbitrary where-filters into the querystring; returns the
 \t * \`Page<${className}>\` envelope. Call with no args for the unfiltered first page.
 \t */
-\tlist: (query?: ListQuery): Promise<Page<${className}>> =>
-\t\trequest<Page<${className}>>('GET', \`/${plural}\${toListQueryString(query)}\`),
+\tlist: (query?: ListQuery): Promise<Page<${readType}>> =>
+\t\trequest<Page<${readType}>>('GET', \`/${plural}\${toListQueryString(query)}\`),
 
 \t/**
 \t * Full-fetch escape hatch (LANDMINE 1): every ${className} across all pages as a
@@ -169,12 +185,12 @@ export const ${camelName}Api = {
 \t * on another page would otherwise resolve to undefined. Used to hydrate the
 \t * store's resolvers/lookups; NOT for rendering a paged table.
 \t */
-\tlistAll: async (query?: globalThis.Omit<ListQuery, 'page' | 'pageSize' | 'cursor'>): Promise<${className}[]> => {
-\t\tconst all: ${className}[] = [];
+\tlistAll: async (query?: globalThis.Omit<ListQuery, 'page' | 'pageSize' | 'cursor'>): Promise<${readType}[]> => {
+\t\tconst all: ${readType}[] = [];
 \t\tlet page = 1;
 \t\tlet pageCount = 1;
 \t\tdo {
-\t\t\tconst result = await request<Page<${className}>>(
+\t\t\tconst result = await request<Page<${readType}>>(
 \t\t\t\t'GET',
 \t\t\t\t\`/${plural}\${toListQueryString({ ...query, page, pageSize: MAX_PAGE_SIZE })}\`,
 \t\t\t);
@@ -185,11 +201,11 @@ export const ${camelName}Api = {
 \t\treturn all;
 \t},
 
-\tget: (id: string): Promise<${className}> =>
-\t\trequest<${className}>('GET', \`/${plural}/\${id}\`),
+\tget: (id: string): Promise<${readType}> =>
+\t\trequest<${readType}>('GET', \`/${plural}/\${id}\`),
 
-${createMethod}\tupdate: (id: string, data: globalThis.Partial<${className}>): Promise<${className}> =>
-\t\trequest<${className}>('PATCH', \`/${plural}/\${id}\`, data),
+${createMethod}\tupdate: (id: string, data: ${inputType}): Promise<${readType}> =>
+\t\trequest<${readType}>('PATCH', \`/${plural}/\${id}\`, data),
 
 \tdelete: (id: string): Promise<void> =>
 \t\trequest<void>('DELETE', \`/${plural}/\${id}\`),

@@ -292,6 +292,10 @@ export function buildEntityGraphFile(
 		.sort((a, b) => a[0].localeCompare(b[0]))
 		.map(([file, className]) => `import type { ${className} } from '${dbEntities}/${file}';`)
 		.join('\n');
+	// The flat type is the api client's (one owner); this file imports it to use and re-exports it below.
+	const withBaseTypeImport = entity.className && node.relations.some(isInnerHop)
+		? `import type { ${entity.className}WithBase } from '../api/${entity.fileStem}';\n`
+		: '';
 
 	// ── the nested `with` types, one per to-many branch ───────────────────────
 	const withTypeName = (rel: ClientRelation): string =>
@@ -472,7 +476,7 @@ function withOf(value: unknown): globalThis.Record<string, unknown> {
 ${collectionImports}
 
 ${typeImports}
-
+${withBaseTypeImport}
 /**
  * Read a key off an include literal that may omit it.
  *
@@ -596,10 +600,10 @@ function buildWithBaseHelper(
 	const flat = '{ ...r.base, ...r.row }';
 	return `
 /**
- * The backend's \`${className}Flat\`, on the client: the base's columns and the child's own.
- * \`kind\` is the child's copy of the base's discriminator.
+ * The backend's \`${className}Flat\`, on the client. Owned by the api client (\`api/${entity.fileStem}.ts\`, which every
+ * sync mode emits, so a \`sync: api\` child has it too) and re-exported here: one definition, one owner.
  */
-export type ${type} = globalThis.Omit<${base.className}, 'kind'> & ${className};
+export type { ${type} };
 
 /**
  * ${pluralCamelName} ⋈ ${baseRel.target} on id — a query fragment: add where / orderBy / limit to it.
