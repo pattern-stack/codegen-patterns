@@ -78,6 +78,9 @@ export interface ParcelFlatByKind {
   crate: Flattened<Parcel & { crate: Crate }, 'crate'>;
 }
 
+/** A row filter over this table — what the cross-kind reads hand `list`. */
+type ParcelRowFilter = RowFilter<typeof parcels>;
+
 /** The relation key each child kind is read under, and the one `asKind` narrows by. */
 const PARCEL_CHILD_KEY_BY_KIND = {
   crate: 'crate',
@@ -226,25 +229,21 @@ export class ParcelRepository extends BaseRepository<Parcel, typeof parcels, Rel
     query?: ListOptions<typeof parcels> & { kinds?: readonly ParcelKind[] },
   ): Promise<ParcelOfKind[]> {
     const kinds = query?.kinds;
-    const sort = query?.sort;
-    const rows = await this.db.query.parcels.findMany({
-      where: { RAW: this.rootFilter((t) =>
-        and(query?.where?.(t), kinds === undefined ? undefined : inArray(t.kind, [...kinds])),
-      ) },
-      with: parcelKindJoins(kinds),
-      orderBy: sort === undefined || sort.length === 0 ? undefined : (t) => this.orderByOn(t, sort) ?? [],
+    const where: ParcelRowFilter = (t) =>
+      and(query?.where?.(t), kinds === undefined ? undefined : inArray(t.kind, [...kinds]));
+    const rows = await this.list({
+      where,
+      sort: query?.sort,
       limit: query?.limit,
       offset: query?.offset,
-    });
+      with: parcelKindJoins(kinds),
+    } as never);
     return rows.map((row) => asKind<ParcelOfKind>(row, 'kind', PARCEL_CHILD_KEY_BY_KIND));
   }
 
   /** One row by id with its child, narrowed by kind. `null` when absent or out of scope. */
   async findKindById(id: string): Promise<ParcelOfKind | null> {
-    const row = await this.db.query.parcels.findFirst({
-      where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
-      with: parcelKindJoins(undefined),
-    });
+    const row = await this.findById(id, { with: parcelKindJoins(undefined) } as never);
     return row ? asKind<ParcelOfKind>(row, 'kind', PARCEL_CHILD_KEY_BY_KIND) : null;
   }
 
@@ -256,14 +255,15 @@ export class ParcelRepository extends BaseRepository<Parcel, typeof parcels, Rel
     kind: K,
     query?: ListOptions<typeof parcels>,
   ): Promise<Array<ParcelFlatByKind[K]>> {
-    const sort = query?.sort;
-    const rows = await this.db.query.parcels.findMany({
-      where: { RAW: this.rootFilter((t) => and(eq(t.kind, kind), query?.where?.(t))) },
-      with: parcelKindJoins([kind]),
-      orderBy: sort === undefined || sort.length === 0 ? undefined : (t) => this.orderByOn(t, sort) ?? [],
+    const where: ParcelRowFilter = (t) =>
+      and(eq(t.kind, kind), query?.where?.(t));
+    const rows = await this.list({
+      where,
+      sort: query?.sort,
       limit: query?.limit,
       offset: query?.offset,
-    });
+      with: parcelKindJoins([kind]),
+    } as never);
     return rows.map((row) =>
       flattenBase(
         asKind<ParcelOfKind>(row, 'kind', PARCEL_CHILD_KEY_BY_KIND) as never,

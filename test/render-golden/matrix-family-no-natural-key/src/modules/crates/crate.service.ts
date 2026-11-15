@@ -71,14 +71,14 @@ export class CrateService extends WithAnalytics(
   }
 
   // RFC-0006 §3.2 — the base row, flat: the repository's `findWithBase` / `findManyWithBase`, forwarded.
-  findWithBase<W extends CrateInclude = CrateNoInclude, C extends CrateColumns | undefined = undefined>(
+  findWithBase<W extends CrateInclude & { parcel?: never } = CrateNoInclude, C extends CrateColumns | undefined = undefined>(
     id: string,
     opts?: ReadOptions<W, C>,
   ): Promise<CrateFlat<W, C> | null> {
     return this.repository.findWithBase<W, C>(id, opts);
   }
 
-  findManyWithBase<W extends CrateInclude = CrateNoInclude, C extends CrateColumns | undefined = undefined>(
+  findManyWithBase<W extends CrateInclude & { parcel?: never } = CrateNoInclude, C extends CrateColumns | undefined = undefined>(
     ids: readonly string[],
     opts?: ReadOptions<W, C>,
   ): Promise<Array<CrateFlat<W, C>>> {
