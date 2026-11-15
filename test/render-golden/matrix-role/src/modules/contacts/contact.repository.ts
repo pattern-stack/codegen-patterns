@@ -1,0 +1,165 @@
+
+import { Injectable, Inject } from '@nestjs/common';
+
+import { eq, inArray } from 'drizzle-orm';
+import { DRIZZLE } from '@shared/constants/tokens';
+import type { DrizzleClient } from '@shared/types/drizzle';
+// REL-2 (#587): the generated relation graph. `Relations` binds the repository's
+// third type parameter; `IncludeOf`/`ResultOf` are what make a `with` include
+// typed. Generated code reaching a generated manifest — the runtime package never
+// sees it (REL-1 §4).
+import type { ColumnsOf, IncludeOf, Relations, ResultOf } from '../../generated/relations';
+import { BaseRepository } from '@shared/base-classes/base-repository';
+import type { ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
+import { contacts, type Contact } from './contact.entity';
+
+/**
+ * The root column mask a contact read may take — `{ id?: boolean; … }`
+ * (READ-1 §2.2). Inclusion (`true`s) or exclusion (`false`s); never empty.
+ */
+export type ContactColumns = ColumnsOf<'contacts'>;
+
+/**
+ * The relation keys a contact read may include — the `with` surface of
+ * `contacts` in this project's graph.
+ *
+ * `TWith` / `TColumns` are inferred AT THE CALL SITE. Annotating an include or a
+ * mask literal with these types widens it and loses the exact result shape, so
+ * hoist one into a `const` WITHOUT a type annotation (or with `as const`).
+ */
+export type ContactInclude = IncludeOf<'contacts'>;
+
+/** The default `TWith` — no include. */
+export type ContactNoInclude = globalThis.Record<string, never>;
+
+/**
+ * The row a contact read resolves to: each included relation nested
+ * exactly as asked, the root narrowed by `TColumns` (`undefined` ⇒ every column).
+ * `ContactResult` alone is the plain row; `ContactResult<TWith>` is the row
+ * with that include. The mask is SECOND so a one-argument `ContactResult<…>`
+ * is always an include, never a mask (READ-1 §2.2).
+ */
+export type ContactResult<
+  TWith extends ContactInclude = ContactNoInclude,
+  TColumns extends ContactColumns | undefined = undefined,
+> = ResultOf<'contacts', TWith, TColumns>;
+
+/**
+ * The shape an HTTP read returns: the row, plus any allowlisted relation.
+ *
+ * The controller merges allowlisted fragments at REQUEST time, so which relations
+ * are present is not statically known — one of finitely many literals, but not a
+ * single one. So the handler's result type is the widened form: every relation
+ * OPTIONAL, the row's own columns required. `ContactResult<ContactInclude>`
+ * (the fully-included shape) would be wrong here — it claims every relation is
+ * always present, which no single request produces.
+ *
+ * Internal callers keep the exact inferred type, because `TWith` is inferred at
+ * the call site (REL-2 §2.3/§5.2).
+ */
+export type ContactApiResult = Contact &
+  globalThis.Partial<ContactResult<ContactInclude>>;
+
+@Injectable()
+export class ContactRepository extends BaseRepository<Contact, typeof contacts, Relations> {
+  readonly table = contacts;
+
+  constructor(@Inject(DRIZZLE) db: DrizzleClient<Relations>) {
+    super(db);
+    // Every read runs on db.query.contacts — fail HERE, naming the cause,
+    // if the injected client was built without the relations manifest.
+    this.requireRelationalQuery('contacts');
+    // findById / findByIds / list are defined below, so a pattern base class or
+    // capability mixin overriding one of them would never run — throw, naming it.
+    this.claimGeneratedReads(ContactRepository);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // The read surface (READ-1, docs/specs/READ-1.md; REL-2 #587)
+  //
+  // Every read takes the same shape knobs — a root `columns` mask — inferred at the call site. The signatures live HERE,
+  // not on the base: with `TRelations` and the table key as naked type
+  // parameters, `DBQueryConfig<…>['with']` is a TS2536 (REL-2 §2.1).
+  //
+  // ONE execution path for the read surface below — `findById`, `findByIds`,
+  // `list` and every plain `queries:` / `belongs_to` finder run on RQBv2
+  // (`db.query.contacts`), with or without options. (`count`, and a
+  // `via:` / `select:` finder, keep the core builder's `scopeAnd`.) The root
+  // predicate is ONE call — `this.rootFilter(where)`, the caller's row filter AND
+  // this repository's scope, both rendered against the table RQBv2 hands the
+  // callback. RQBv2 ALIASES the root (`"contacts" as "d0"`), so
+  // anything rendered against the real table name would not be in scope there
+  // (REL-2 §10 Found #9, #840). Every HOP is scoped by the relations manifest.
+  //
+  // Depth is uncapped here: charter I4 asks for ONE statement, not a shallow
+  // one. The depth cap is an HTTP concern (`api.includes.max_depth`).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  override async findById<C extends ContactColumns | undefined = undefined>(
+    id: string,
+    opts?: ReadOptions<never, C>,
+  ): Promise<ContactResult<ContactNoInclude, C> | null> {
+    const row = await this.db.query.contacts.findFirst({
+      where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
+      columns: this.checkColumns<C>(opts?.columns),
+    });
+    return (row as ContactResult<ContactNoInclude, C> | undefined) ?? null;
+  }
+
+  /**
+   * One statement for many ids (READ-1 §2.4): `[]` issues none (after the scope's
+   * boundary check), duplicates are
+   * read once, rows come back in INPUT order, and a missing / soft-deleted /
+   * out-of-scope id is simply absent. A mask that omits `id` still orders — `id`
+   * is selected and stripped again. Not chunked: Postgres caps a statement at
+   * 65 535 parameters.
+   */
+  override async findByIds<C extends ContactColumns | undefined = undefined>(
+    ids: readonly string[],
+    opts?: ReadOptions<never, C>,
+  ): Promise<Array<ContactResult<ContactNoInclude, C>>> {
+    const unique = this.uniqueIds(ids);
+    if (unique.length === 0) {
+      // No statement — but the same boundary check one would make (strict throws).
+      this.assertReadScope();
+      return [];
+    }
+    const mask = this.byIdsColumns(this.checkColumns<C>(opts?.columns));
+    const rows = await this.db.query.contacts.findMany({
+      where: { RAW: this.rootFilter((t) => inArray(t.id, unique)) },
+      columns: mask.columns,
+    });
+    return this.inInputOrder(rows, unique, mask.stripId) as Array<ContactResult<ContactNoInclude, C>>;
+  }
+
+  /**
+   * `where` is a ROW FILTER — `(t) => eq(t.name, x)` — never a pre-rendered SQL:
+   * it is handed the aliased root. `sort` is column keys, rendered the same way.
+   */
+  override async list<C extends ContactColumns | undefined = undefined>(
+    query?: ListOptions<typeof contacts> & ReadOptions<never, C>,
+  ): Promise<Array<ContactResult<ContactNoInclude, C>>> {
+    const sort = query?.sort;
+    const rows = await this.db.query.contacts.findMany({
+      where: { RAW: this.rootFilter(query?.where) },
+      columns: this.checkColumns<C>(query?.columns),
+      orderBy: sort === undefined || sort.length === 0 ? undefined : (t) => this.orderByOn(t, sort) ?? [],
+      limit: query?.limit,
+      offset: query?.offset,
+    });
+    return rows as Array<ContactResult<ContactNoInclude, C>>;
+  }
+
+  /**
+   * `where` is a ROW FILTER over THIS table. Overridden only to type it: inside a
+   * capability mixin the base's `count` is typed over `PgTable`, which would let
+   * another table's filter through — and, where column names coincide, count on
+   * the wrong predicate (READ-1 review R-1).
+   */
+  override async count(where?: RowFilter<typeof contacts>): Promise<number> {
+    return super.count(where);
+  }
+
+  // Inherited from BaseRepository:
+  //   findById, findByIds, list, count, exists, create, update, delete, upsertMany
+}

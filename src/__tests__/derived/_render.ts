@@ -99,3 +99,40 @@ export function renderEntities(set: DefinitionSet, entities: readonly string[]):
 	}
 	return files;
 }
+
+/** Every `*.ejs.t` under the backend templates, recursively, as `/`-separated paths relative to it, sorted. */
+function allBackendTemplates(): string[] {
+	return (readdirSync(BACKEND_TEMPLATES, { recursive: true }) as string[])
+		.map((f) => f.split('\\').join('/'))
+		.filter((f) => f.endsWith('.ejs.t'))
+		.sort();
+}
+
+/**
+ * Render `entities` of `set` through EVERY backend template (entity, module, index, DTOs, composed base,
+ * integration source, and the surface templates); path → text. The byte goldens (B1) pin this; the parity
+ * gate keeps reading `renderEntities`.
+ */
+export function renderAllBackendFiles(set: DefinitionSet, entities: readonly string[]): Map<string, string> {
+	const files = new Map<string, string>();
+	const base = promptLocals(set);
+	const templates = allBackendTemplates().map((rel) => ({ rel, ...readTemplate(rel) }));
+	for (const name of entities) {
+		const raw = set.entities.find((d) => d.entity.name === name);
+		if (!raw) throw new Error(`render: '${name}' is not in the set`);
+		// prompt.js merges a `cardinality: one` role into relationships before the backend extension runs.
+		const definition = structuredClone(raw) as typeof raw;
+		if (definition.roles) {
+			definition.relationships = { ...(definition.relationships ?? {}), ...deriveRoleRelationships(definition.roles) };
+		}
+		const locals = buildBackendLocals(definition, base);
+		for (const t of templates) {
+			const to = ejs.render(t.front.to ?? '', locals).trim();
+			if (to === '' || to === 'null' || to === 'undefined') continue;
+			if (t.front.skip_if !== undefined && ejs.render(t.front.skip_if, locals).trim() === 'true') continue;
+			if (files.has(to)) throw new Error(`render: two templates write ${to}`);
+			files.set(to, ejs.render(t.body, locals, { rmWhitespace: false }));
+		}
+	}
+	return files;
+}

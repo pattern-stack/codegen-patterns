@@ -1,0 +1,87 @@
+
+import { Injectable } from '@nestjs/common';
+import { buildPage, resolveListQuery, type ListQuery, type Page } from '@shared/http/page';
+import { hasColumn, type RowFilter, type SortTerm } from '@shared/base-classes/base-repository';
+import { UserService } from '../user.service';
+import { users, type User } from '../user.entity';
+
+/**
+ * Paginated list use-case for users (pagination-by-default).
+ *
+ * Composes `service.list({ where, limit, offset, sort })` + `service.count(where)`
+ * into a `Page<User>` envelope. Defaults: page 1,
+ * pageSize 50 (max 200), sort `id desc` — users declares no
+ * `timestamps` behavior, so there is no `created_at` to sort by; the uuid
+ * primary key is already a total order, which is what the tie-break is for.
+ * `total`/`pageCount`
+ * reflect the (optionally filtered) set, so pagination composes with where
+ * filters orthogonally — it works fully unfiltered too. `options.where` is the
+ * filter seam — a ROW FILTER, `(t) => eq(t.name, x)`, handed whichever table
+ * handle the executing path holds (READ-1 §4); the same value reaches `list` and
+ * `count`, so the page and its total describe one set: the entity's search use case, when its YAML declares one, ANDs
+ * its predicates and pages through here, so search and list share one
+ * envelope (#744).
+ *
+ * v1 ENGINE = OFFSET, and `nextCursor` is always null here: the cursor encodes
+ * `(created_at, id)`, which this entity has no `created_at` for. Add the
+ * `timestamps` behavior to the YAML if you want cursor paging.
+ */
+@Injectable()
+export class ListUsersUseCase {
+  constructor(private readonly service: UserService) {}
+
+  async execute(
+    listQuery?: ListQuery,
+    listOptions: { where?: RowFilter<typeof users> } = {},
+  ): Promise<Page<User>> {
+    const { where: whereClause } = listOptions;
+    const resolvedQuery = resolveListQuery(listQuery);
+
+    // Default sort: `id desc`. This entity has no `timestamps` behavior, so
+    // there is no `created_at` column to sort by — and none is needed: the uuid
+    // primary key is already a total order, which is the property the tie-break
+    // exists for. `resolveListQuery` still defaults `sort_by` to `created_at`,
+    // which simply does not resolve to a column here and falls through to this
+    // branch. A caller `sort_by` that names a real column is honored in the
+    // requested direction with the id tie-break appended.
+    //
+    // Expressed as COLUMN KEYS, not a rendered SQL fragment: the repository
+    // renders it against whichever table handle the executing path holds, and the
+    // relational query builder (the `with`-include path) aliases the root table
+    // (REL-2 §2.4). A pre-rendered fragment would name `users`,
+    // which is not in scope there.
+    const sortColumn = resolvedQuery.sortBy.replace(
+      /_([a-z])/g,
+      (_m: string, c: string) => c.toUpperCase(),
+    );
+    // `hasColumn` — the repository's own column test (an own-key check, so
+    // `?sort_by=to_string` is unknown, not `Object.prototype.toString`).
+    const isKnownColumn = hasColumn(users, sortColumn);
+    const sortTerms: SortTerm[] = isKnownColumn
+      ? [
+          { column: sortColumn, direction: resolvedQuery.sortOrder },
+          { column: 'id', direction: 'desc' },
+        ]
+      : [{ column: 'id', direction: 'desc' }];
+
+    // The ListQuery owns only pagination + sort; filtering is the caller's
+    // `where` (undefined = unfiltered). The same `where` goes to both `list`
+    // and `count`, so `total`/`pageCount` describe the filtered set.
+
+    // No KEYSET SEAM here: the cursor codec encodes `(created_at, id)` and this
+    // entity has no `created_at`, so `computeNextCursor` yields null and there
+    // is nothing to seek from. Offset paging is the whole story until the YAML
+    // adds the `timestamps` behavior.
+    const [pageRows, rowTotal] = await Promise.all([
+      this.service.list({
+        where: whereClause,
+        limit: resolvedQuery.pageSize,
+        offset: resolvedQuery.offset,
+        sort: sortTerms,
+      }),
+      this.service.count(whereClause),
+    ]);
+
+    return buildPage(pageRows, rowTotal, resolvedQuery);
+  }
+}
