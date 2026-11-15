@@ -26,6 +26,7 @@ import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { loadEntityRegistry } from '../../parser/entity-registry';
+import { assertNoInvalidDefinitions } from '../../utils/definition-invariant';
 import { loadEntities } from '../../parser/load-entities';
 import {
 	loadEntityDefinitions,
@@ -214,7 +215,8 @@ export function loadFrontendEmitContext(
 
 	const emitConfig = mapFrontendEmitConfig(config);
 	const { tablePrefix } = emitConfig;
-	const { registry } = loadEntityRegistry(entitiesDir, { tablePrefix });
+	const { registry, issues: registryIssues } = loadEntityRegistry(entitiesDir, { tablePrefix });
+	assertNoInvalidDefinitions(registryIssues);
 	const entities: EntityRegistryEntry[] = sortEntities([...registry.values()]);
 
 	if (entities.length === 0) {
@@ -223,7 +225,9 @@ export function loadFrontendEmitContext(
 		};
 	}
 
-	const parsedList = loadEntities(entitiesDir, { tablePrefix }).entities;
+	const loadedEntities = loadEntities(entitiesDir, { tablePrefix });
+	assertNoInvalidDefinitions(loadedEntities.issues);
+	const parsedList = loadedEntities.entities;
 	const parsed: Map<string, ParsedEntity> = new Map(
 		parsedList.map((p) => [p.name, p]),
 	);

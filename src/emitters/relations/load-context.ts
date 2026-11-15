@@ -18,8 +18,8 @@ import { loadEntityRegistry } from '../../parser/entity-registry';
 import type { EntityDefinition } from '../../schema/entity-definition.schema';
 import type { JunctionDefinition } from '../../schema/junction-definition.schema';
 import { findYamlFiles } from '../../utils/find-yaml-files';
+import { assertNoInvalidDefinitions, invalidDefinitionError } from '../../utils/definition-invariant';
 import {
-	detectYamlType,
 	loadEntityFromYaml,
 	loadJunctionFromYaml,
 } from '../../utils/yaml-loader';
@@ -64,10 +64,10 @@ export interface LoadRelationsEmitContextResult {
 export function loadJunctionDefinitions(junctionsDir: string): JunctionDefinition[] {
 	if (!existsSync(junctionsDir) || !statSync(junctionsDir).isDirectory()) return [];
 	const defs: JunctionDefinition[] = [];
+	// Every YAML under junctions/ is a junction definition (`loadJunctionSet`'s rule).
 	for (const file of findYamlFiles(junctionsDir)) {
-		if (detectYamlType(file) !== 'junction') continue;
 		const result = loadJunctionFromYaml(file);
-		if (!result.success) continue;
+		if (!result.success) throw invalidDefinitionError(result);
 		defs.push(result.definition);
 	}
 	return defs.sort((a, b) =>
@@ -83,7 +83,7 @@ export function loadEntityDefinitions(
 	if (!existsSync(entitiesDir) || !statSync(entitiesDir).isDirectory()) return defs;
 	for (const file of findYamlFiles(entitiesDir)) {
 		const result = loadEntityFromYaml(file);
-		if (!result.success) continue;
+		if (!result.success) throw invalidDefinitionError(result);
 		defs.set(result.definition.entity.name, result.definition);
 	}
 	return defs;
@@ -105,9 +105,10 @@ export function loadRelationsEmitContext(
 	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, JUNCTIONS_DIRNAME);
 	const outDir = path.resolve(cwd, config?.paths?.generated ?? GENERATED_DIRNAME);
 
-	const { registry } = loadEntityRegistry(entitiesDir, {
+	const { registry, issues } = loadEntityRegistry(entitiesDir, {
 		tablePrefix: TablesConfigSchema.parse(config?.tables ?? {}).prefix,
 	});
+	assertNoInvalidDefinitions(issues);
 	const mode: RuntimeMode = config?.runtime === 'vendored' ? 'vendored' : 'package';
 
 	return {

@@ -19,6 +19,7 @@ import { loadEntityRegistry, type EntityRegistryEntry } from '../../parser/entit
 import { loadEntities } from '../../parser/load-entities';
 import type { JunctionDefinition } from '../../schema/junction-definition.schema';
 import { findYamlFiles } from '../../utils/find-yaml-files';
+import { assertNoInvalidDefinitions, invalidDefinitionError } from '../../utils/definition-invariant';
 import { detectYamlType, loadJunctionFromYaml } from '../../utils/yaml-loader';
 import { junctionName } from '../../config/junction-naming.js';
 import { sortEntities, type SemanticEmitContext } from './types';
@@ -63,10 +64,10 @@ export const SEMANTIC_OUT_SUBDIR = 'semantic';
 export function loadJunctionDefinitions(junctionsDir: string): JunctionDefinition[] {
 	if (!existsSync(junctionsDir) || !statSync(junctionsDir).isDirectory()) return [];
 	const defs: JunctionDefinition[] = [];
+	// Every YAML under junctions/ is a junction definition (`loadJunctionSet`'s rule).
 	for (const file of findYamlFiles(junctionsDir)) {
-		if (detectYamlType(file) !== 'junction') continue;
 		const result = loadJunctionFromYaml(file);
-		if (!result.success) continue;
+		if (!result.success) throw invalidDefinitionError(result);
 		defs.push(result.definition);
 	}
 	return defs.sort((a, b) =>
@@ -90,7 +91,8 @@ export function loadSemanticEmitContext(
 	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, JUNCTIONS_DIRNAME);
 
 	const tablePrefix = TablesConfigSchema.parse(config?.tables ?? {}).prefix;
-	const { registry } = loadEntityRegistry(entitiesDir, { tablePrefix });
+	const { registry, issues: registryIssues } = loadEntityRegistry(entitiesDir, { tablePrefix });
+	assertNoInvalidDefinitions(registryIssues);
 	const entities: EntityRegistryEntry[] = sortEntities([...registry.values()]);
 
 	if (entities.length === 0) {
@@ -99,8 +101,10 @@ export function loadSemanticEmitContext(
 		};
 	}
 
+	const loadedEntities = loadEntities(entitiesDir, { tablePrefix });
+	assertNoInvalidDefinitions(loadedEntities.issues);
 	const parsed = new Map<string, ParsedEntity>(
-		loadEntities(entitiesDir, { tablePrefix }).entities.map((entity) => [entity.name, entity]),
+		loadedEntities.entities.map((entity) => [entity.name, entity]),
 	);
 
 	const outDir = path.resolve(

@@ -15,12 +15,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import {
-	detectYamlType,
-	loadEntityFromYaml,
-	loadEntitiesFromYaml,
-	loadRelationshipFromYaml,
-} from '../../utils/yaml-loader.js';
+import { loadEntityFromYaml, loadEntitiesFromYaml } from '../../utils/yaml-loader.js';
+import { relationshipFileFailure } from '../../utils/definition-invariant.js';
 import { junctionsDirFor } from '../../config/junctions-dir.js';
 import { junctionSetIssues, loadJunctionSet } from '../../parser/load-junctions.js';
 import { validateRolesForGeneration } from '../../roles/validate-roles.js';
@@ -120,11 +116,8 @@ export function definitionSetRejections(
 		...(extra.relationships ?? []),
 	]);
 	for (const file of [...relationshipFiles].sort()) {
-		const result = loadRelationshipFromYaml(file);
-		if (result.success) continue;
-		const named = (extra.relationships ?? []).includes(file) || detectYamlType(file) === 'relationship';
-		if (!named && !result.error.startsWith('Invalid YAML')) continue;
-		rejections.push({ file, message: result.error, details: result.details });
+		const failure = relationshipFileFailure(file, (extra.relationships ?? []).includes(file));
+		if (failure) rejections.push({ file, message: failure.error, details: failure.details });
 	}
 
 	for (const issue of loadJunctionSet(junctionsDirFor(ctx.cwd)).issues) {
@@ -191,6 +184,8 @@ export async function preflightEntityTargets(
 		validatedNames.has(e.name),
 	);
 	const mergedEventsForEmits = collectMergedEvents({
+		// Invalid entity files are already in `setRejections`; skipped here, reported once.
+		skipInvalid: true,
 		entitiesDir: entitiesDirForEmits,
 		eventsDir: eventsDirForEmits,
 	});

@@ -12,7 +12,10 @@
 import { execSync } from 'node:child_process';
 import { parse as parseYaml } from 'yaml';
 import { entityNewArgs } from '../src/cli/shared/hygen';
-import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, cpSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, cpSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { findYamlFiles } from '../src/utils/find-yaml-files';
+import { detectYamlType } from '../src/utils/yaml-loader';
 import { resolve, join, relative } from 'node:path';
 // Repo root — one level up from this file's directory (test/ → repo).
 // The legacy three-dots resolution dated back to when this runner lived
@@ -41,6 +44,26 @@ const FIXTURES_DIR = join(TEST_DIR, 'fixtures');
 // The baseline entity set — closed: every cross-entity reference resolves from
 // its target's own YAML here (`paths.entities` in the fixture config, NAME-0).
 const ENTITY_FIXTURES_DIR = join(FIXTURES_DIR, 'entities');
+
+/**
+ * The entity YAMLs anywhere under `fixtures/` — the closed `entities/` set plus
+ * the integration-pattern entities — copied, relative paths kept, into a scratch
+ * tree. The event and scope-union steps used to be pointed at `fixtures/` itself
+ * and relied on the generators silently skipping every non-entity file there
+ * (config, events, jobs, providers, relationships, junctions). They no longer
+ * skip (#915): a step reads a directory of entity definitions and nothing else.
+ */
+function stageEntityOnlyFixtures(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'baseline-entities-'));
+  process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
+  for (const file of findYamlFiles(FIXTURES_DIR)) {
+    if (detectYamlType(file) !== 'entity') continue;
+    const dest = join(dir, relative(FIXTURES_DIR, file));
+    mkdirSync(resolve(dest, '..'), { recursive: true });
+    cpSync(file, dest);
+  }
+  return dir;
+}
 const BASELINE_DIR = join(TEST_DIR, 'baseline');
 const GEN_DIR = join(TEST_DIR, 'gen');
 const TEST_CONFIG = join(FIXTURES_DIR, 'codegen.config.yaml');
@@ -216,7 +239,7 @@ function runCodegen() {
   // JOB-7: generate ScopeEntityType union from fixtures (mirrors EntityNewCommand post-step).
   console.log('   Generating: scope-entity-type.ts');
   execSync(
-    `bun -e "import { generateScopeEntityType } from './src/cli/shared/scope-entity-type-generator.js'; await generateScopeEntityType({ entitiesDir: '${FIXTURES_DIR}', outputPath: '${join(ROOT, 'runtime/subsystems/jobs/generated/scope-entity-type.ts')}' });"`,
+    `bun -e "import { generateScopeEntityType } from './src/cli/shared/scope-entity-type-generator.js'; await generateScopeEntityType({ entitiesDir: '${stageEntityOnlyFixtures()}', outputPath: '${join(ROOT, 'runtime/subsystems/jobs/generated/scope-entity-type.ts')}' });"`,
     { cwd: CODEGEN_DIR, stdio: 'pipe' },
   );
 
@@ -227,7 +250,7 @@ function runCodegen() {
   const eventsFixturesDir = join(FIXTURES_DIR, 'events');
   const eventCodegenOutputDir = join(ROOT, 'runtime/subsystems/events/generated');
   execSync(
-    `bun -e "import { generateEventCodegen } from './src/cli/shared/event-codegen-generator.js'; await generateEventCodegen({ entitiesDir: '${FIXTURES_DIR}', eventsDir: '${eventsFixturesDir}', outputDir: '${eventCodegenOutputDir}' });"`,
+    `bun -e "import { generateEventCodegen } from './src/cli/shared/event-codegen-generator.js'; await generateEventCodegen({ entitiesDir: '${stageEntityOnlyFixtures()}', eventsDir: '${eventsFixturesDir}', outputDir: '${eventCodegenOutputDir}' });"`,
     { cwd: CODEGEN_DIR, stdio: 'pipe' },
   );
 

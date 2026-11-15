@@ -44,6 +44,10 @@ Three defects in the generator's own plumbing, found by CAP-1, NAME-0 and NAME-1
   pre-flight, `relationship new` directly). The barrels, relations manifest and scope union read these directories whole,
   so a set missing a definition would be written silently over it. `relationship new --json` no longer falls through
   its own invalid targets. `--continue-on-error` still decides `emits:` / `roles:` rejections.
+  The loaders the whole-set steps read through (barrels, scope union, event codegen, relations / semantic / frontend
+  load-contexts) no longer skip an invalid file: they throw `InvalidDefinitionError` (`src/utils/definition-invariant.ts`),
+  naming the file and its first issue — an invariant breach, since the pre-flight stops the run first. The one tolerant
+  caller is the pre-flight's own `collectMergedEvents({ skipInvalid: true })`, which reports those files itself.
 - An entity whose `emits:` fails the cross-check is now rejected like a bad role, with the message
   `emits: validation failed` and one detail per error. It is not generated and counts as failed. Before, the default mode generated it anyway, and `prompt.js` emitted a TODO-only payload mapping for the
   unknown event. The EVT-7 comment already said "reported and skipped by default".

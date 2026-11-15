@@ -22,6 +22,7 @@ import path from 'node:path';
 
 import type { AnalysisIssue } from '../../analyzer/types.js';
 import { loadEntityFromYaml } from '../../utils/yaml-loader.js';
+import { invalidDefinitionError } from '../../utils/definition-invariant.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import {
 	desugarEntityEvents,
@@ -268,11 +269,13 @@ function aggregateTypeLiteral(ev: EventDefinition): string {
 
 /**
  * Walk `entitiesDir`, load each entity, and desugar its `events:` block into
- * `EventDefinition[]`. Entities that fail to load are silently skipped — the
- * entity loader / validator reports those elsewhere in the pipeline, and we
- * don't want a single bad entity to block event generation for the rest.
+ * `EventDefinition[]`. An entity that fails to load throws (#915); only the
+ * `entity new` pre-flight passes `skipInvalid`, having reported it already.
  */
-export function collectEntityEvents(entitiesDir: string): {
+export function collectEntityEvents(
+	entitiesDir: string,
+	opts: { skipInvalid?: boolean } = {},
+): {
 	events: EventDefinition[];
 	issues: AnalysisIssue[];
 } {
@@ -287,7 +290,10 @@ export function collectEntityEvents(entitiesDir: string): {
 
 	for (const filePath of files) {
 		const result = loadEntityFromYaml(filePath);
-		if (!result.success) continue;
+		if (!result.success) {
+			if (opts.skipInvalid) continue;
+			throw invalidDefinitionError(result);
+		}
 		try {
 			events.push(...desugarEntityEvents(result.definition));
 		} catch (err) {
@@ -357,6 +363,12 @@ export interface CollectMergedEventsOptions {
 	 * top-level `events/*.yaml` of the same `type` still wins (top-level-wins).
 	 */
 	extraSugarEvents?: EventDefinition[];
+	/**
+	 * Skip an entity YAML that fails the schema instead of throwing. Only the
+	 * `entity new` pre-flight sets it: it reports those files itself
+	 * (`definitionSetRejections`) and still needs the registry to run its other checks.
+	 */
+	skipInvalid?: boolean;
 }
 
 export interface CollectMergedEventsResult {
@@ -379,6 +391,7 @@ export function collectMergedEvents(
 	opts: CollectMergedEventsOptions,
 ): CollectMergedEventsResult {
 	const { entitiesDir, eventsDir } = opts;
+	const loadOpts = { skipInvalid: opts.skipInvalid };
 
 	// 1. Gather entity names (for loadEvents cross-validation).
 	const entityNames: string[] = [];
@@ -387,13 +400,14 @@ export function collectMergedEvents(
 		for (const f of entityFiles) {
 			const result = loadEntityFromYaml(f);
 			if (result.success) entityNames.push(result.definition.entity.name);
+			else if (!opts.skipInvalid) throw invalidDefinitionError(result);
 		}
 	}
 
 	// 2. Load top-level events and desugar entity events.
 	const topLevelResult = loadEvents(eventsDir, entityNames);
 	const { events: entitySugar, issues: sugarIssues } =
-		collectEntityEvents(entitiesDir);
+		collectEntityEvents(entitiesDir, loadOpts);
 
 	// 3. Merge (top-level wins on collision). Extra synthesized events (RFC-0005 #7
 	//    job-private scheduled ticks) ride the sugar arm alongside entity sugar.

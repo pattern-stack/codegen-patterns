@@ -45,6 +45,7 @@ import type { EntityDefinition } from '../../schema/entity-definition.schema.js'
 import type { PathsConfig } from '../../schema/codegen-config.schema.js';
 import { deriveJunctionName } from '../../schema/junction-definition.schema.js';
 import { generating } from '../../utils/generated-file.js';
+import { invalidDefinitionError, relationshipFileFailure } from '../../utils/definition-invariant.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -125,7 +126,7 @@ function collectEntities(entitiesDir: string): EntityInfo[] {
 	const entities: EntityInfo[] = [];
 	for (const file of files) {
 		const result = loadEntityFromYaml(file);
-		if (!result.success) continue;
+		if (!result.success) throw invalidDefinitionError(result);
 		const def: EntityDefinition = result.definition;
 		entities.push({
 			name: def.entity.name,
@@ -157,11 +158,14 @@ function listRelationshipYamls(relationshipsDir: string): string[] {
 }
 
 function collectRelationships(relationshipsDir: string): EntityInfo[] {
-	const files = listRelationshipYamls(relationshipsDir);
+	const files = fs.existsSync(relationshipsDir) ? findYamlFiles(relationshipsDir) : [];
 	const junctions: EntityInfo[] = [];
 	for (const file of files) {
+		const failure = relationshipFileFailure(file);
+		if (failure) throw invalidDefinitionError(failure);
+		if (detectYamlType(file) !== 'relationship') continue;
 		const result = loadRelationshipFromYaml(file);
-		if (!result.success) continue;
+		if (!result.success) throw invalidDefinitionError(result);
 		const rel = result.definition.relationship;
 		const name = rel.name;
 		const plural = rel.table ?? pluralize(name);
@@ -185,11 +189,12 @@ export function listJunctionYamls(junctionsDir: string): string[] {
 }
 
 function collectJunctions(junctionsDir: string): EntityInfo[] {
-	const files = listJunctionYamls(junctionsDir);
+	// Every YAML under junctions/ is a junction definition (`loadJunctionSet`'s rule).
+	const files = fs.existsSync(junctionsDir) ? findYamlFiles(junctionsDir) : [];
 	const junctions: EntityInfo[] = [];
 	for (const file of files) {
 		const result = loadJunctionFromYaml(file);
-		if (!result.success) continue;
+		if (!result.success) throw invalidDefinitionError(result);
 		const def = result.definition;
 		const name = deriveJunctionName(def);
 		const plural = junctionPlural(name);

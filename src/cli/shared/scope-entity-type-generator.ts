@@ -20,6 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { loadEntityFromYaml } from '../../utils/yaml-loader.js';
+import { invalidDefinitionError } from '../../utils/definition-invariant.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import { generating } from '../../utils/generated-file.js';
 
@@ -70,7 +71,7 @@ export function collectScopeableNames(entitiesDir: string): string[] {
 	const names: string[] = [];
 	for (const file of files) {
 		const result = loadEntityFromYaml(file);
-		if (!result.success) continue;
+		if (!result.success) throw invalidDefinitionError(result);
 		if (result.definition.entity.scopeable === true) {
 			names.push(result.definition.entity.name);
 		}
