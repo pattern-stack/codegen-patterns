@@ -21,7 +21,7 @@ export type Mutations = Record<string, (raw: RawYaml) => void>;
 
 /** The family through the real loader — no mutation. */
 export function loadFamily(): ParsedEntity[] {
-	const { entities, issues } = loadEntities(FAMILY_DIR, { tablePrefix: '' });
+	const { entities, issues } = loadEntities(FAMILY_DIR, { tablePrefix: '', nonEntityDirs: [] });
 	const errors = issues.filter((i) => i.severity === 'error');
 	if (errors.length > 0) {
 		throw new Error(`fixture family failed to load:\n${errors.map((e) => `${e.path}: ${e.message}`).join('\n')}`);
