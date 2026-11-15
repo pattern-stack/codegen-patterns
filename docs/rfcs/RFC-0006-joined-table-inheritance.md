@@ -1021,12 +1021,12 @@ Seventeen items the Gate 2.5 reviews marked `DECISION`. Each was decided as the 
 | D9 | Composing modules import their home modules instead of providing the repository. | Ratified. Every composing module imports the home module, all via `forwardRef`. | S4 |
 | D10 | S2's "`natural_key:` alone changes no emitted byte" assertion changed. | Ratified: the new form asserts the exact set of differing files. | S4 |
 | D11 | OQ-5: nested under the kind key or the relation key? | The relation key. §11.1's row is edited. | S1 |
-| D12 | `KindRequiresChildError`, `KindImmutableError` and `KindMismatchError` reach HTTP as 500s. | They are domain errors only: the controller's unreachable mapping goes; the DTO's zod issue refuses the request; `createPath` names the child's service method. | S5 |
+| D12 | `KindRequiresChildError`, `KindImmutableError` and `KindMismatchError` cannot reach an HTTP client: the DTO refuses or strips `kind` first, so the controller's mapping is dead code, and `createPath` handed in-process callers an HTTP route. | They are domain errors only: the controller's unreachable mapping goes; the DTO's zod issue refuses the request; `createPath` names the child's service method. | S5 |
 | D13 | The Studio writes-off test dropped its `origin.text` assertions. | Restore them with the current chip text. | S5 |
 | D14 | The client shows a child whose base is soft-deleted. | The client hides it: `<plural>WithBase` and the child-to-base root hop filter `deletedAt` when the base has `soft_delete`. | S6 |
 | D15 | A lib global in value position (`Map`, `URL`) in the emitted frontend. | `globalThis.*` across the emitted frontend; the `values` hygiene rule runs over the whole tree. | S6 |
 | D16 | Where "a kind with a child table is written only with its child row" lives. | Both kind invariants live in the repository, the one owner of the pair write. | S4 |
-| D17 | S4's remaining review items. | No change at S4. | — |
+| D17 | At S4's tip alone, the base's write routes return the new kind errors as 500s. | No change in S4. S5 settles what HTTP sees (D12), and the stack lands atomically. | — |
 
 ## 12. The issue (filed as #875)
 
