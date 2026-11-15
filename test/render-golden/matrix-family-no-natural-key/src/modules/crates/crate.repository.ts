@@ -94,7 +94,7 @@ export type CrateUpdate = CrateCreate;
 
 /** The base table's column keys: what a flat input is split by (`splitByOwner`). */
 const CRATE_BASE = parcels;
-export const CRATE_BASE_KEYS: globalThis.ReadonlySet<string> = new Set(Object.keys(getTableColumns(CRATE_BASE)));
+export const CRATE_BASE_KEYS: globalThis.ReadonlySet<string> = new globalThis.Set(globalThis.Object.keys(getTableColumns(CRATE_BASE)));
 
 @Injectable()
 export class CrateRepository extends BaseRepository<Crate, typeof crates, Relations> {
@@ -259,7 +259,7 @@ export class CrateRepository extends BaseRepository<Crate, typeof crates, Relati
   private assertOwnKind(baseSlice: globalThis.Record<string, unknown>): void {
     const named = baseSlice['kind'];
     if (named !== undefined && named !== 'crate') {
-      throw new KindMismatchError('crate', 'crate', `the input names kind '${String(named)}'`);
+      throw new KindMismatchError('crate', 'crate', `the input names kind '${globalThis.String(named)}'`);
     }
   }
 
@@ -308,10 +308,10 @@ export class CrateRepository extends BaseRepository<Crate, typeof crates, Relati
         .where(this.scopeAnd(eq(this.col('id'), id)));
       if (existing === undefined) return undefined as unknown as CrateFlat;
       const baseRow =
-        Object.keys(base).length > 0
+        globalThis.Object.keys(base).length > 0
           ? await this.baseRepo.update(id, base, txClient)
           : (await this.runner(txClient).select().from(CRATE_BASE).where(eq(CRATE_BASE.id, id)))[0];
-      if (Object.keys(own).length === 0) return this.flat(existing, baseRow as Parcel);
+      if (globalThis.Object.keys(own).length === 0) return this.flat(existing, baseRow as Parcel);
       const [childRow] = await this.runner(txClient)
         .update(this.table)
         .set(this.deriveColumns(own, 'update'))

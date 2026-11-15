@@ -39,9 +39,9 @@ export class SearchMeetingsUseCase {
     // closure, and a child's list routes on whether a `where` is present (RFC-0006 §8): an empty search must read
     // as the plain list, with its default order, not as a filtered one.
     const hasFilter = [
-      Boolean(searchInput.link),
-      Boolean(searchInput.search),
-    ].some(Boolean);
+      globalThis.Boolean(searchInput.link),
+      globalThis.Boolean(searchInput.search),
+    ].some(globalThis.Boolean);
 
     return this.listUseCase.execute(searchInput, hasFilter ? { where: rowFilter } : {});
   }

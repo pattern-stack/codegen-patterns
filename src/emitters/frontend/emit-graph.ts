@@ -457,7 +457,7 @@ export function buildEntityGraphFile(
 \t\t\t\t? ${source}
 ${nestedJoins ? `${nestedJoins}\n` : ''}${select}
 \t\t\t\t: undefined,
-\t\t[id, Boolean(inc.${rel.key})],
+\t\t[id, globalThis.Boolean(inc.${rel.key})],
 \t);`;
 		})
 		.join('\n\n');

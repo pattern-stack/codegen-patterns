@@ -179,7 +179,7 @@ export function useMeetingGraph<const I extends MeetingInclude>(
 						)
 						.select(({ row, meeting }) => ({ row, meeting }))
 				: undefined,
-		[id, Boolean(inc.transcripts)],
+		[id, globalThis.Boolean(inc.transcripts)],
 	);
 
 	const isLoading = root.isLoading || transcriptsBranch.isLoading;

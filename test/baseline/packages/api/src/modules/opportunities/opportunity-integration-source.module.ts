@@ -88,8 +88,8 @@ const OPPORTUNITY_DETECTION_CONFIGS: globalThis.Record<string, DetectionConfig> 
   }
 };
 
-export const OPPORTUNITY_POLL_FETCH_REGISTRY = Symbol('OPPORTUNITY_POLL_FETCH_REGISTRY');
-export const OPPORTUNITY_CHANGE_SOURCES = Symbol('OPPORTUNITY_CHANGE_SOURCES');
+export const OPPORTUNITY_POLL_FETCH_REGISTRY = globalThis.Symbol('OPPORTUNITY_POLL_FETCH_REGISTRY');
+export const OPPORTUNITY_CHANGE_SOURCES = globalThis.Symbol('OPPORTUNITY_CHANGE_SOURCES');
 
 @Module({
   providers: [
@@ -99,11 +99,11 @@ export const OPPORTUNITY_CHANGE_SOURCES = Symbol('OPPORTUNITY_CHANGE_SOURCES');
       useFactory: (
         fetches: globalThis.Record<string, PollFetchCallback<Opportunity>>,
       ): globalThis.ReadonlyMap<string, IChangeSource<Opportunity>> =>
-        new Map(
-          Object.entries(OPPORTUNITY_DETECTION_CONFIGS).map(([provider, cfg]) => {
+        new globalThis.Map(
+          globalThis.Object.entries(OPPORTUNITY_DETECTION_CONFIGS).map(([provider, cfg]) => {
             const fetch = fetches[provider];
             if (!fetch) {
-              throw new Error(
+              throw new globalThis.Error(
                 `OpportunityIntegrationSourceModule: missing fetch callback for provider '${provider}' in OPPORTUNITY_POLL_FETCH_REGISTRY`,
               );
             }

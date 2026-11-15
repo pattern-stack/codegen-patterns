@@ -135,7 +135,7 @@ export function useAccountGraph<const I extends AccountInclude>(
 						)
 						.select(({ row, account }) => ({ row, account }))
 				: undefined,
-		[id, Boolean(inc.contacts)],
+		[id, globalThis.Boolean(inc.contacts)],
 	);
 
 	// `opportunities` — one live query, disabled unless it was included.
@@ -153,7 +153,7 @@ export function useAccountGraph<const I extends AccountInclude>(
 						)
 						.select(({ row, account, primaryNote }) => ({ row, account, primaryNote }))
 				: undefined,
-		[id, Boolean(inc.opportunities)],
+		[id, globalThis.Boolean(inc.opportunities)],
 	);
 
 	const isLoading = root.isLoading || contactsBranch.isLoading || opportunitiesBranch.isLoading;

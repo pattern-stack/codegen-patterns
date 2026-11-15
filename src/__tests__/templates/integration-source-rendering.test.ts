@@ -73,17 +73,17 @@ const TWO_PROVIDERS = {
 describe('integration-source.ejs.t (ADR-033.1 c)', () => {
   it('emits exactly two exported runtime symbols + the module class', () => {
     const out = renderModule(TWO_PROVIDERS);
-    expect(out).toMatch(/export const OPPORTUNITY_POLL_FETCH_REGISTRY = Symbol\('OPPORTUNITY_POLL_FETCH_REGISTRY'\);/);
-    expect(out).toMatch(/export const OPPORTUNITY_CHANGE_SOURCES = Symbol\('OPPORTUNITY_CHANGE_SOURCES'\);/);
+    expect(out).toMatch(/export const OPPORTUNITY_POLL_FETCH_REGISTRY = globalThis.Symbol\('OPPORTUNITY_POLL_FETCH_REGISTRY'\);/);
+    expect(out).toMatch(/export const OPPORTUNITY_CHANGE_SOURCES = globalThis.Symbol\('OPPORTUNITY_CHANGE_SOURCES'\);/);
     expect(out).toMatch(/export class OpportunityIntegrationSourceModule \{\}/);
     // <ENTITY>_DETECTION_CONFIGS is module-internal; not exported.
     expect(out).not.toMatch(/export const OPPORTUNITY_DETECTION_CONFIGS/);
   });
 
-  it('returns ReadonlyMap (not Map) and uses Object.entries — no isMultiProvider branch', () => {
+  it('returns ReadonlyMap (not Map) and uses globalThis.Object.entries — no isMultiProvider branch', () => {
     const out = renderModule(TWO_PROVIDERS);
     expect(out).toContain('ReadonlyMap<string, IChangeSource<Opportunity>>');
-    expect(out).toContain('Object.entries(OPPORTUNITY_DETECTION_CONFIGS)');
+    expect(out).toContain('globalThis.Object.entries(OPPORTUNITY_DETECTION_CONFIGS)');
     expect(out).not.toMatch(/isMultiProvider/);
   });
 

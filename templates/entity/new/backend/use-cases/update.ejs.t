@@ -61,7 +61,7 @@ export class <%= classNames.updateUseCase %> {
       const { fields, ...core } = dto;
       const entity = await this.service.update(id, core as <%= classNames.updateDto %>, tx);
       if (!entity) return null;
-      if (fields && Object.keys(fields).length > 0) {
+      if (fields && globalThis.Object.keys(fields).length > 0) {
         await this.fields.upsertFieldsTransactional(
           '<%= entityName %>',
           entity.id,

@@ -87,10 +87,10 @@ export class FieldValueService extends WithAnalytics(
     fields: globalThis.Record<string, unknown>,
     tx?: DrizzleTx,
   ): Promise<void> {
-    if (!fields || Object.keys(fields).length === 0) return;
+    if (!fields || globalThis.Object.keys(fields).length === 0) return;
     const allDefs = await this.definitionRepo.list();
     const defs = allDefs.filter((d) => (d as any).entityType === entityType);
-    const defIdByKey = new Map(defs.map((d) => [d.key, d.id]));
+    const defIdByKey = new globalThis.Map(defs.map((d) => [d.key, d.id]));
     const rows = toEavRows(entityId, entityType, userId, fields, defIdByKey);
     if (rows.length === 0) return;
     await this.repository.upsertCurrentValues(rows as Array<globalThis.Partial<FieldValue>>, tx);
@@ -109,7 +109,7 @@ export class FieldValueService extends WithAnalytics(
       this.definitionRepo.list(),
     ]);
     const defs = allDefs.filter((d) => (d as any).entityType === entityType);
-    const defsById = new Map(defs.map((d) => [d.id, { key: d.key }]));
+    const defsById = new globalThis.Map(defs.map((d) => [d.id, { key: d.key }]));
     return mergeEavRows(rows as any, defsById);
   }
 }

@@ -65,13 +65,13 @@ export class <%= searchQuery.useCaseClassName %> {
 <% if (f.isBoolean) { -%>
       searchInput.<%= f.camelName %> !== undefined,
 <% } else { -%>
-      Boolean(searchInput.<%= f.camelName %>),
+      globalThis.Boolean(searchInput.<%= f.camelName %>),
 <% } -%>
 <% }) -%>
 <% if (searchQuery.searchField) { -%>
-      Boolean(searchInput.search),
+      globalThis.Boolean(searchInput.search),
 <% } -%>
-    ].some(Boolean);
+    ].some(globalThis.Boolean);
 
     return this.listUseCase.execute(searchInput, hasFilter ? { where: rowFilter } : {});
   }

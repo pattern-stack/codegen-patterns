@@ -140,7 +140,7 @@ export function useOpportunityGraph<const I extends OpportunityInclude>(
 						)
 						.select(({ row, account }) => ({ row, account }))
 				: undefined,
-		[id, Boolean(inc.contacts)],
+		[id, globalThis.Boolean(inc.contacts)],
 	);
 
 	// `opportunityContacts` — one live query, disabled unless it was included.
@@ -152,7 +152,7 @@ export function useOpportunityGraph<const I extends OpportunityInclude>(
 						.where(({ row }) => eq(row.opportunityId, id))
 						.select(({ row }) => ({ row }))
 				: undefined,
-		[id, Boolean(inc.opportunityContacts)],
+		[id, globalThis.Boolean(inc.opportunityContacts)],
 	);
 
 	const isLoading = root.isLoading || contactsBranch.isLoading || opportunityContactsBranch.isLoading;

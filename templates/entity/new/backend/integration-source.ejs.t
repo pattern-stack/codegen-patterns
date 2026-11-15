@@ -15,8 +15,8 @@ import type { <%= classNames.entity %> } from '<%= imports.integrationSourceToEn
 
 const <%= entityName.toUpperCase() %>_DETECTION_CONFIGS: globalThis.Record<string, DetectionConfig> = <%- detectionConfigsLiteral %>;
 
-export const <%= entityName.toUpperCase() %>_POLL_FETCH_REGISTRY = Symbol('<%= entityName.toUpperCase() %>_POLL_FETCH_REGISTRY');
-export const <%= entityName.toUpperCase() %>_CHANGE_SOURCES = Symbol('<%= entityName.toUpperCase() %>_CHANGE_SOURCES');
+export const <%= entityName.toUpperCase() %>_POLL_FETCH_REGISTRY = globalThis.Symbol('<%= entityName.toUpperCase() %>_POLL_FETCH_REGISTRY');
+export const <%= entityName.toUpperCase() %>_CHANGE_SOURCES = globalThis.Symbol('<%= entityName.toUpperCase() %>_CHANGE_SOURCES');
 
 @Module({
   providers: [
@@ -26,11 +26,11 @@ export const <%= entityName.toUpperCase() %>_CHANGE_SOURCES = Symbol('<%= entity
       useFactory: (
         fetches: globalThis.Record<string, PollFetchCallback<<%= classNames.entity %>>>,
       ): globalThis.ReadonlyMap<string, IChangeSource<<%= classNames.entity %>>> =>
-        new Map(
-          Object.entries(<%= entityName.toUpperCase() %>_DETECTION_CONFIGS).map(([provider, cfg]) => {
+        new globalThis.Map(
+          globalThis.Object.entries(<%= entityName.toUpperCase() %>_DETECTION_CONFIGS).map(([provider, cfg]) => {
             const fetch = fetches[provider];
             if (!fetch) {
-              throw new Error(
+              throw new globalThis.Error(
                 `<%= classNames.entity %>IntegrationSourceModule: missing fetch callback for provider '${provider}' in <%= entityName.toUpperCase() %>_POLL_FETCH_REGISTRY`,
               );
             }
