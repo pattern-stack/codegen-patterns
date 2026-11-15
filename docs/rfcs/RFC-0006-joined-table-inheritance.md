@@ -560,11 +560,13 @@ not an edge case. It is also the only correct one. A child's shape holds every c
 through, including a row whose base is outside the base's shape (or, if the proxy filters `deleted_at`, soft-deleted). A
 child row on its own says nothing about whether the thing still exists. Clients always read a child through its base.
 
-*As built (Gate 2.5, S6):* the inner join hides a child whose base is **absent from the client's base collection**. A
-**soft-deleted** base row is still synced (the generated collection reads the whole table, with no `where` on
-`deleted_at`), so the join still finds it: the client hides it only when the consumer's shape proxy filters `deleted_at`.
-The backend's reads hide it always (A8's `EXISTS`). Filtering the join on the base's `deleted_at` is a `DECISION` (it
-changes emitted behaviour), recorded as open.
+*As built (Gate 2.5, S6; decided D14, 2026-11-15):* the inner join hides a child whose base is **absent from the client's
+base collection**. A **soft-deleted** base row is still synced (the generated collection reads the whole table, with no
+`where` on `deleted_at`), so the join alone would still find it. When the base has `soft_delete` (declared or pattern-implied),
+the generator therefore adds `.where(({ base }) => isNull(base.deletedAt))` to `<plural>WithBase(q)` and to the child-to-base
+hop of the root query in `use<Child>Graph`, so the client drops such a child exactly as the backend's reads do (A8's `EXISTS`).
+A base without `soft_delete` gets no filter and no `isNull` import. A branch that reaches a child from another entity (the
+hop into a to-many) is unchanged.
 
 **What FE-REL's generated graph gives, with no new work.** The frontend graph calls the same `buildRelationGraph`,
 so both edges are in `graph/descriptor.ts`, and each `electric` entity's accessor carries them:
@@ -914,7 +916,7 @@ polymorphic identity map, no subclass instances, no lazy attribute load. A "meet
 whose type was computed by the generator.
 
 **What Electric clients do themselves.** Base and child are two shapes, and a child's shape still holds rows whose
-base is outside its shape (soft-deleted, only if the proxy filters it). Clients read a child through its base. §3.4 says what the generated graph gives for that join
+base is outside its shape; a soft-deleted base is hidden by the generated query (§3.4, D14). Clients read a child through its base. §3.4 says what the generated graph gives for that join
 and what v1 adds. A cross-kind list on the client is hand-written in v1.
 
 **Cost.**
@@ -1912,7 +1914,8 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   capability go. The fixture is `audit_entry` (`test/smoke/fixtures-frontend/entities/`, not part of the family), and the gates are
   its `@ts-expect-error`s in `usage/graph-usage.ts`, the runner's text assertions, and `inherits-graph.test.ts`. Its stubs throw
   `new globalThis.Error(…)`: an entity named `error` imports a *type* `Error`, and `new Error` then fails with TS1361;
-  `emittedNameViolations(files, { values: true })` (opt-in; many older emitters still `new Map` bare) checks the emitted `api/` files.
+  `emittedNameViolations(files, { values: true })` checks the **whole** emitted frontend tree (D15, Gate 2.5): the store and collections emitters now print `new globalThis.Map` / `new globalThis.URL`, and no directory is excluded. The option stays off for the backend's templates, which still `new Set` / `new Map` bare in places (their own issue).
+- **Soft-deleted base (D14).** `transcript_communication_part` (base `communication_part`, `soft_delete`) emits the `isNull(…deletedAt)` filter in its fragment and its root hop; `meeting` (base `communication`, none) emits none. Gates: `inherits-graph.test.ts` (text, both directions), `run-smoke-frontend.ts` (text), and `usage/graph-usage.ts` (the flat row's `deletedAt` is typed and the emitted tree compiles with `isNull`).
 - **Fixtures.** `test/smoke/fixtures-frontend/entities/` holds the whole family (13 entities, `sync: electric`; see §13.1), their
   row types are `test/smoke/fixtures-frontend/consumer/<entity>.ts`, and the agreement test covers the location.
 - **Gates.** `test/smoke/run-smoke-frontend.ts` asserts the inner joins by their text in `graph/meeting.ts` and the absence of the

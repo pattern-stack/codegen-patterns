@@ -52,6 +52,7 @@ import { join } from 'node:path';
 import type { FrontendEmitContext } from './types';
 import { type FlatChild, flatChild, withBanner, writeFile } from './emit-utils';
 import { emittedStem } from '../../config/file-naming.js';
+import { resolvedBehaviorNames } from '../../patterns/implied-behaviors.js';
 import {
 	accessorNodes,
 	type ClientGraph,
@@ -213,10 +214,25 @@ export class ReservedRelationAliasError extends Error {
  * A child's shape can hold rows whose base is not (or no longer) in the client's base collection — the base left
  * the base's shape — so the child row must not exist on the client until its base does, which makes the joined
  * row never absent, and the result type says so (no `| undefined`). The join sees only what the base collection
- * holds: a SOFT-DELETED base row is still synced (the collection reads the whole table), so it is hidden only if
- * the consumer's shape proxy filters `deleted_at` (RFC-0006 §3.4).
+ * holds: a SOFT-DELETED base row is still synced (the collection reads the whole table), so the query adds
+ * `isNull(base.deletedAt)` whenever the base has `soft_delete` (D14, RFC-0006 §3.4).
  */
 const isInnerHop = (rel: ClientRelation): boolean => rel.inherits === 'base';
+
+/**
+ * Whether the base behind a child's inner hop has `soft_delete` (declared or pattern-implied) — then the generated
+ * query also drops a child whose base row is soft-deleted, as the backend's base-lifecycle `EXISTS` does (D14,
+ * RFC-0006 §3.4). The base collection syncs the whole table, so the join alone would still find that row. A context
+ * with no `parsed` map cannot tell, and then the filter is not emitted (a registry-only fixture has no `deletedAt`
+ * to read).
+ */
+function baseIsSoftDeleted(baseEntityName: string, ctx: FrontendEmitContext): boolean {
+	const parsed = ctx.parsed.get(baseEntityName);
+	if (!parsed) return false;
+	return resolvedBehaviorNames(parsed.behaviors, { pattern: parsed.pattern, patterns: parsed.patterns }).includes(
+		'soft_delete',
+	);
+}
 
 /** The to-one relations of a node — the ones joinable into an existing query. */
 function toOneRelations(node: ClientGraphNode | undefined): ClientRelation[] {
@@ -398,7 +414,11 @@ export function buildEntityGraphFile(
 		.map((rel) => {
 			const t = naming.get(rel.key);
 			const join = isInnerHop(rel) ? 'innerJoin' : 'join';
-			return `\t\t\t\t\t\t.${join}({ ${rel.key}: ${t?.collectionVar} }, ({ row, ${rel.key} }) =>\n\t\t\t\t\t\t\teq(row.${rel.from}, ${rel.key}.${rel.to}),\n\t\t\t\t\t\t)`;
+			const live =
+				isInnerHop(rel) && t && baseIsSoftDeleted(t.entityFile, ctx)
+					? `\n\t\t\t\t\t\t.where(({ ${rel.key} }) => isNull(${rel.key}.deletedAt))`
+					: '';
+			return `\t\t\t\t\t\t.${join}({ ${rel.key}: ${t?.collectionVar} }, ({ row, ${rel.key} }) =>\n\t\t\t\t\t\t\teq(row.${rel.from}, ${rel.key}.${rel.to}),\n\t\t\t\t\t\t)${live}`;
 		})
 		.join('\n');
 	const rootSelectRefs = ['row', ...ones.map((r) => r.key)];
@@ -477,13 +497,17 @@ function withOf(value: unknown): globalThis.Record<string, unknown> {
 `
 			: '';
 
-	const withBase = flat && hasBaseHop ? buildWithBaseHelper(node, naming, flat) : '';
+	const withBase = flat && hasBaseHop ? buildWithBaseHelper(node, naming, flat, ctx) : '';
 	// The one hop that is not left-joined (RFC-0006 §3.4) — said only where it applies.
 	const innerNote = ones.some(isInnerHop)
 		? ' — except a child\'s hop to its base, which is inner-joined and so is \`T\`'
 		: '';
 
-	const body = `import { eq, useLiveQuery${withBase ? ', type InitialQueryBuilder' : ''} } from '@tanstack/react-db';
+	const usesIsNull = ones.some((r) => {
+		const t = naming.get(r.key);
+		return isInnerHop(r) && t !== undefined && baseIsSoftDeleted(t.entityFile, ctx);
+	});
+	const body = `import { eq, ${usesIsNull ? 'isNull, ' : ''}useLiveQuery${withBase ? ', type InitialQueryBuilder' : ''} } from '@tanstack/react-db';
 
 ${collectionImports}
 
@@ -601,6 +625,7 @@ function buildWithBaseHelper(
 	node: ClientGraphNode,
 	naming: Map<string, TargetNaming>,
 	flat: FlatChild,
+	ctx: FrontendEmitContext,
 ): string {
 	const entity = node.entity;
 	const baseRel = node.relations.find(isInnerHop);
@@ -611,6 +636,10 @@ function buildWithBaseHelper(
 	const type = flat.withBaseType;
 	const fragment = `${pluralCamelName}WithBase`;
 	const merged = '{ ...r.base, ...r.row }';
+	// D14: a soft-deleted base hides its child, as the backend's base-lifecycle EXISTS does.
+	const liveBase = baseIsSoftDeleted(base.entityFile, ctx)
+		? `\n\t\t.where(({ base }) => isNull(base.deletedAt))`
+		: '';
 	return `
 /**
  * The backend's \`${className}Flat\`, on the client. Owned by the api client (\`api/${entity.fileStem}.ts\`, which every
@@ -622,12 +651,12 @@ export type { ${type} };
  * ${pluralCamelName} ⋈ ${baseRel.target} on id — a query fragment: add where / orderBy / limit to it.
  *
  * An INNER join: a ${entity.name} row does not exist on the client until its base does
- * (RFC-0006 §3.4). Refs are \`row\` (the ${entity.name}) and \`base\` (the ${baseRel.key}).
+ * (RFC-0006 §3.4)${liveBase ? ', and not while its base is soft-deleted' : ''}. Refs are \`row\` (the ${entity.name}) and \`base\` (the ${baseRel.key}).
  */
 export function ${fragment}(q: InitialQueryBuilder) {
 	return q
 		.from({ row: ${camelName}Collection })
-		.innerJoin({ base: ${base.collectionVar} }, ({ row, base }) => eq(row.id, base.id));
+		.innerJoin({ base: ${base.collectionVar} }, ({ row, base }) => eq(row.id, base.id))${liveBase};
 }
 
 /** Every ${entity.name} with its base's columns — one live query. */

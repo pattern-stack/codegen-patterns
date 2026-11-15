@@ -142,6 +142,20 @@ describe('inherits on the client graph — the child accessor (§3.4)', () => {
 		expect(part).toContain('export function useTranscriptCommunicationPartsWithBase()');
 	});
 
+	it('hides a child whose base is soft-deleted when the base has soft_delete, and only then (D14)', () => {
+		const part = read('graph/transcript_communication_part.ts');
+		// the fragment and the root hop both carry the filter
+		expect(part).toContain(
+			'.innerJoin({ base: communicationPartCollection }, ({ row, base }) => eq(row.id, base.id))\n\t\t.where(({ base }) => isNull(base.deletedAt))',
+		);
+		expect(part).toContain('.where(({ communicationPart }) => isNull(communicationPart.deletedAt))');
+		expect(part).toMatch(/import \{ eq, isNull, useLiveQuery/);
+		// `communication` has no soft_delete: no filter, no import
+		const meeting = read('graph/meeting.ts');
+		expect(meeting).not.toContain('isNull');
+		expect(meeting).not.toContain('deletedAt');
+	});
+
 	it('gives the BASE no WithBase helper', () => {
 		expect(read('graph/communication.ts')).not.toContain('WithBase');
 	});
@@ -235,7 +249,7 @@ describe('an entity generated without writes has no mutation (S6 R2: the emitter
 	// `apiSurface.http.routes` the backend's REAL `buildBackendLocals` prints its controller from.
 });
 
-describe('the emitted api clients obey the name hygiene rule (S6 R2 fixes)', () => {
+describe('the whole emitted frontend tree obeys the name hygiene rule (S6 R2 fixes, D15)', () => {
 	it('names no lib global (type or `new X`) without `globalThis.` in a file that imports an entity type', () => {
 		const files: { path: string; text: string }[] = [];
 		const walk = (d: string): void => {
@@ -244,7 +258,8 @@ describe('the emitted api clients obey the name hygiene rule (S6 R2 fixes)', () 
 				else if (e.name.endsWith('.ts')) files.push({ path: join(d, e.name), text: readFileSync(join(d, e.name), 'utf-8') });
 			}
 		};
-		walk(join(outDir, 'api'));
+		walk(outDir);
+		expect(files.length).toBeGreaterThan(10);
 		expect(emittedNameViolations(files, { values: true })).toEqual([]);
 	});
 });

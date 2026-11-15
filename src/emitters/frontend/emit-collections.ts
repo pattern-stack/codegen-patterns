@@ -87,7 +87,7 @@ function buildElectricCollection(
 	// shapeOptions.url — SSR-guarded URL construction, two forms.
 	let urlBlock: string;
 	if (config.useTableParam) {
-		urlBlock = `\t\t\turl: new URL(
+		urlBlock = `\t\t\turl: new globalThis.URL(
 \t\t\t\t'${config.shapeUrl}',
 \t\t\t\t${SSR_ORIGIN_EXPR},
 \t\t\t).toString(),
@@ -96,7 +96,7 @@ function buildElectricCollection(
 \t\t\t},`;
 	} else {
 		const shapeUrl = baseUrlExpr(config.shapeUrl, plural, config.apiBaseUrlImport);
-		urlBlock = `\t\t\turl: new URL(
+		urlBlock = `\t\t\turl: new globalThis.URL(
 \t\t\t\t${shapeUrl},
 \t\t\t\t${SSR_ORIGIN_EXPR},
 \t\t\t).toString(),`;
@@ -226,7 +226,7 @@ export function buildJunctionCollectionFile(
 
 	let urlBlock: string;
 	if (config.useTableParam) {
-		urlBlock = `\t\t\turl: new URL(
+		urlBlock = `\t\t\turl: new globalThis.URL(
 \t\t\t\t'${config.shapeUrl}',
 \t\t\t\t${SSR_ORIGIN_EXPR},
 \t\t\t).toString(),
@@ -235,7 +235,7 @@ export function buildJunctionCollectionFile(
 \t\t\t},`;
 	} else {
 		const shapeUrl = baseUrlExpr(config.shapeUrl, plural, config.apiBaseUrlImport);
-		urlBlock = `\t\t\turl: new URL(
+		urlBlock = `\t\t\turl: new globalThis.URL(
 \t\t\t\t${shapeUrl},
 \t\t\t\t${SSR_ORIGIN_EXPR},
 \t\t\t).toString(),`;

@@ -89,13 +89,14 @@ describe('emitted-name hygiene helper', () => {
 
 describe('committed trees obey the rule', () => {
 	it.each([
-		['test/baseline/packages/api/src', /\.ts$/],
-		['test/frontend-golden/snapshot', /\.ts$/],
-		['test/frontend-graph-golden/snapshot', /\.ts$/],
-	])('%s', (dir, ext) => {
+		['test/baseline/packages/api/src', /\.ts$/, false],
+		// D15: the whole emitted frontend tree is held to the value-position rule, no directory scope within it.
+		['test/frontend-golden/snapshot', /\.ts$/, true],
+		['test/frontend-graph-golden/snapshot', /\.ts$/, true],
+	])('%s', (dir, ext, values) => {
 		const files = walk(path.join(ROOT, dir), ext);
 		expect(files.length).toBeGreaterThan(5);
-		expect(fmt(emittedNameViolations(files))).toEqual([]);
+		expect(fmt(emittedNameViolations(files, { values }))).toEqual([]);
 	});
 });
 

@@ -264,6 +264,17 @@ async function main(): Promise<number> {
 			throw new Error('graph/meeting.ts left-joins the child-to-base hop; RFC-0006 §3.4 says inner');
 		}
 
+		// D14: `communication_part` has soft_delete, so a child's inner hop to it also drops a soft-deleted base
+		// (the backend's base-lifecycle EXISTS); `communication` has none, so `meeting` carries no filter.
+		const partGraph = fs.readFileSync(path.join(frontendDir, 'graph', 'transcript_communication_part.ts'), 'utf8');
+		for (const needle of [
+			'.where(({ communicationPart }) => isNull(communicationPart.deletedAt))',
+			'.where(({ base }) => isNull(base.deletedAt))',
+		]) {
+			if (!partGraph.includes(needle)) throw new Error(`graph/transcript_communication_part.ts: missing \`${needle}\``);
+		}
+		if (meetingGraph.includes('deletedAt')) throw new Error('graph/meeting.ts filters deletedAt for a base with no soft_delete');
+
 		// RFC-0006 §4.1 (S5): `communication_part` has a child for every kind, so the
 		// backend generates no `POST /communication_parts`. Nothing emitted may aim a
 		// mutation at it; `communication` keeps a base-only kind and keeps its create.

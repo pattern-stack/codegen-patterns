@@ -142,7 +142,7 @@ describe('emit-store — resolvers (store/resolvers.ts)', () => {
 		const out = buildResolversFile(c);
 		// A module-level cache + a hydrate fn that pages the full set per entity.
 		expect(out).toContain('const hydrationCache = {');
-		expect(out).toContain('person: new Map<string, Person>(),');
+		expect(out).toContain('person: new globalThis.Map<string, Person>(),');
 		expect(out).toContain('export async function hydrateResolverCache(): Promise<void> {');
 		expect(out).toContain('personApi.listAll().then((rows) => {');
 		expect(out).toContain("import { personApi } from '../api/person';");

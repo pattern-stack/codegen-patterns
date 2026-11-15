@@ -131,7 +131,9 @@ function rule1(path: string, sf: ts.SourceFile, out: HygieneViolation[], values:
   const visit = (n: ts.Node) => {
     if (ts.isTypeReferenceNode(n)) check(n.typeName);
     else if (ts.isExpressionWithTypeArguments(n) && ts.isHeritageClause(n.parent)) check(n.expression);
-    // Opt-in (`values: true`; many older emitters still `new Map`/`new Set` bare). Value position (`new Error(…)`): an entity `error` imports a *type* named `Error`, and a type-only import used
+    // Value position, opted into with `values: true` — D15: on for the WHOLE emitted frontend tree (no directory scope).
+    // The backend's templates still `new Set` / `new Map` bare in places; they do not opt in (their own issue).
+    // (`new Error(…)`): an entity `error` imports a *type* named `Error`, and a type-only import used
     // as a value is TS1361 — so a lib global read as a value needs `globalThis.` just as a type reference does.
     else if (values && ts.isNewExpression(n)) check(n.expression);
     ts.forEachChild(n, visit);

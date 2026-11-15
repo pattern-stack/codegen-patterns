@@ -24,6 +24,7 @@ import {
 	useMeetingWithBase,
 	useOpportunityGraph,
 	useTagGraph,
+	useTranscriptCommunicationPartsWithBase,
 } from '../apps/frontend/src/generated/graph/index';
 import type { Account } from '../consumer/account';
 import type { Communication } from '../consumer/communication';
@@ -104,6 +105,11 @@ export function typeGate(id: string): unknown {
 	const one: MeetingWithBase | undefined = useMeetingWithBase(id).data;
 	// @ts-expect-error a field that is on neither the base nor the child
 	meetings[0]?.nonsense;
+
+	// D14: a child of a soft-delete base (`communication_part`) reads through the same flat shape; the emitted query
+	// also filters the base's `deletedAt` (compiling it proves `isNull` and the column ref are real), and the base's
+	// soft-delete column is on the flat row.
+	const partDeleted: Date | null | undefined = useTranscriptCommunicationPartsWithBase().data[0]?.deletedAt;
 
 	// ── S5: the base of every-kind-has-a-child has no create route ──────────
 	// `communication_part` has a child for each of its kinds, so the backend

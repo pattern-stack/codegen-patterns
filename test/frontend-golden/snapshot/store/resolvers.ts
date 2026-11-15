@@ -21,9 +21,9 @@ import type { User } from '@repo/db/entities/user';
  * resolvers fall back to them on a collection-state miss. Call it once on mount.
  */
 const hydrationCache = {
-	dealState: new Map<string, DealState>(),
-	person: new Map<string, Person>(),
-	user: new Map<string, User>(),
+	dealState: new globalThis.Map<string, DealState>(),
+	person: new globalThis.Map<string, Person>(),
+	user: new globalThis.Map<string, User>(),
 };
 
 /**
@@ -34,13 +34,13 @@ const hydrationCache = {
 export async function hydrateResolverCache(): Promise<void> {
 	await Promise.all([
 		dealStateApi.listAll().then((rows) => {
-			hydrationCache.dealState = new Map(rows.map((r) => [r.id as string, r]));
+			hydrationCache.dealState = new globalThis.Map(rows.map((r) => [r.id as string, r]));
 		}),
 		personApi.listAll().then((rows) => {
-			hydrationCache.person = new Map(rows.map((r) => [r.id as string, r]));
+			hydrationCache.person = new globalThis.Map(rows.map((r) => [r.id as string, r]));
 		}),
 		userApi.listAll().then((rows) => {
-			hydrationCache.user = new Map(rows.map((r) => [r.id as string, r]));
+			hydrationCache.user = new globalThis.Map(rows.map((r) => [r.id as string, r]));
 		}),
 	]);
 }
