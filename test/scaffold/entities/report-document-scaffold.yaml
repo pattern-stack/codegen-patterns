@@ -1,0 +1,17 @@
+# RFC-0006 (#875) — SCAFFOLD-ONLY child of `document` (Gate 2.5 D4). Fields only; `memo` stays base-only.
+
+entity:
+  name: report_document
+  plural: report_documents
+
+inherits:
+  base: document
+  as: report
+
+fields:
+  summary:
+    type: string
+    required: true
+  page_count:
+    type: integer
+    nullable: true

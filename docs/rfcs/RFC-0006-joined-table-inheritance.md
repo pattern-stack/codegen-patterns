@@ -1141,7 +1141,7 @@ names or fields from any host application (this repository is public).
 | `meeting`, `email` | Children. `message` stays a base-only kind of `communication`. |
 | `email_thread`, `meeting_transcript` | Plain entities a child points at and is pointed at by. |
 | `communication_part` | Second base, **with `soft_delete`**: the `EXISTS` scope path. `kind` is `choices_of: communication.kind` with `match: { kind: kind }` to `communication` (§2.4 case 1), natural key `(communication_id, sequence)`. |
-| `transcript_communication_part`, `email_communication_part`, `message_communication_part` | Its children (`message_communication_part` is a fields-only child, kind `message`, added in S3). The second has a typed link to `email`. **`communication_part` therefore has no base-only kind**: A10's restricted base create is covered on `communication` (`message` is base-only there) only. |
+| `transcript_communication_part`, `email_communication_part`, `message_communication_part` | Its children (`message_communication_part` is a fields-only child, kind `message`, added in S3). The second has a typed link to `email`. **`communication_part` therefore has no base-only kind.** Decided at Gate 2.5 (D4, §11.3): a scaffold-only soft-delete family — `document` (tenant-scoped, `soft_delete`, kinds `memo` / `report`) and its child `report_document` (kind `report`), in `test/scaffold/entities/` and no fixture set — covers a base-only kind (`memo`) on the soft-delete path. Read cases in `inheritance-reads.test.ts` (S3); create / upsert cases in S4, the HTTP case in S5. |
 | `communication_participant_role`, `communication_participant` | `choices_of:` and two `match:` relationships on one column. |
 | `communication_note` | A `match:` whose every FK is nullable: the derived column is nullable and the entity carries a CHECK per FK, `<fk> IS NULL OR <derived> IS NOT NULL` (not NULL-together). |
 
@@ -1423,6 +1423,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   child is `null`, and passes a base-only kind through bare. `OrphanBaseError` carries `id`, `kind` and `childKey`. It is in
   `VENDORED_RUNTIME_FILES` and has a `runtime-mode` import (`inheritanceImport`), like every runtime file a generated
   repository imports.
+- **Base-only kind on the soft-delete path (Gate 2.5 D4).** `test/scaffold/entities/document-scaffold.yaml` + `report-document-scaffold.yaml` (re-exported from `test/scaffold/schema.ts`; scaffold only, in no baseline / smoke / inheritance set) are a `soft_delete` family with `memo` base-only. `inheritance-reads.test.ts` "D4" checks: `findAllKinds` returns a `memo` bare and a `report` nested, a soft-deleted `memo` is absent, and a soft-deleted base hides its `report` at the root and at a hop. Red with the child-side base `soft_delete` guard removed from `baseScopePredicate`.
 - **The reads.** `findWithBase` / `findManyWithBase` take `ReadOptions<W, C>` like every other read and return
   `MeetingFlat<W, C>`; the base is joined as `with: { ...opts.with, communication: true }`, so a caller's own
   `communication: {...}` include is overridden by `true`. `findManyWithBase` has `findByIds`' contract. The base repository

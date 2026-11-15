@@ -36,6 +36,10 @@ const ids = {
   participant: 'd0000000-0000-4000-8000-000000000001',
   partLive: 'e0000000-0000-4000-8000-000000000001',
   partDeleted: 'e0000000-0000-4000-8000-000000000002',
+  memoLive: 'f0000000-0000-4000-8000-000000000001',
+  memoDeleted: 'f0000000-0000-4000-8000-000000000002',
+  reportLive: 'f0000000-0000-4000-8000-000000000003',
+  reportDeleted: 'f0000000-0000-4000-8000-000000000004',
 };
 
 let getTestDb: any;
@@ -50,6 +54,8 @@ let countingDb: any;
 let statementCount = 0;
 let endCountingPool: any;
 let TranscriptCommunicationPartRepository: any;
+let DocumentRepository: any;
+let ReportDocumentRepository: any;
 
 beforeAll(async () => {
   if (!SHOULD_RUN_SCAFFOLD) return;
@@ -76,6 +82,8 @@ beforeAll(async () => {
   ({ TranscriptCommunicationPartRepository } = await import(
     '@gen/modules/transcript-communication-parts/transcript-communication-part.repository'
   ));
+  ({ DocumentRepository } = await import('@gen/modules/documents/document.repository'));
+  ({ ReportDocumentRepository } = await import('@gen/modules/report-documents/report-document.repository'));
 });
 
 beforeEach(async () => {
@@ -291,6 +299,80 @@ d('A8 — soft_delete on the base: a child whose base is deleted is absent', () 
     await run(sql`UPDATE communication_parts SET deleted_at = NULL WHERE id = ${ids.partDeleted}`);
     await asA(async () => {
       expect((await repo.list()).map((p: any) => p.id).sort()).toEqual([ids.partLive, ids.partDeleted].sort());
+    });
+  });
+});
+
+/**
+ * Gate 2.5 D4 — the scaffold-only `document` family: a tenant-scoped `soft_delete` base whose kind `memo` has no
+ * child table and whose kind `report` has one. `communication_part` has a child for every kind, so the base-only
+ * kind on the soft-delete path is covered here and nowhere else.
+ */
+async function seedDocuments() {
+  const doc = (id: string, kind: string, title: string, deleted: boolean) =>
+    run(sql`INSERT INTO documents (id, tenant_id, kind, title, deleted_at)
+            VALUES (${id}, ${TENANT_A}, ${kind}, ${title}, ${deleted ? new Date() : null})`);
+  const report = (id: string, summary: string) =>
+    run(sql`INSERT INTO report_documents (id, tenant_id, summary) VALUES (${id}, ${TENANT_A}, ${summary})`);
+  await doc(ids.memoLive, 'memo', 'live memo', false);
+  await doc(ids.memoDeleted, 'memo', 'deleted memo', true);
+  await doc(ids.reportLive, 'report', 'live report', false);
+  await report(ids.reportLive, 'live summary');
+  await doc(ids.reportDeleted, 'report', 'deleted report', true);
+  await report(ids.reportDeleted, 'deleted summary');
+}
+
+d('D4 — a base-only kind on a soft-delete family (document: memo is base-only, report has a child)', () => {
+  test('findAllKinds returns a memo bare and a report nested; a soft-deleted memo is absent', async () => {
+    await seedDocuments();
+    const rows = await asA(() => new DocumentRepository(getTestDb()).findAllKinds());
+    // The soft-deleted memo AND the soft-deleted report are both absent.
+    expect(rows.map((r: any) => r.id).sort()).toEqual([ids.memoLive, ids.reportLive].sort());
+    const memo = rows.find((r: any) => r.id === ids.memoLive) as any;
+    const report = rows.find((r: any) => r.id === ids.reportLive) as any;
+    expect(memo.kind).toBe('memo');
+    expect(memo.title).toBe('live memo');
+    // Bare: no child key at all, not a null one.
+    expect('reportDocument' in memo).toBe(false);
+    expect(report.kind).toBe('report');
+    expect(report.reportDocument.summary).toBe('live summary');
+    // The memo is really there, only deleted.
+    const raw = await run(sql`SELECT count(*)::int AS n FROM documents WHERE id = ${ids.memoDeleted}`);
+    expect(raw.rows[0].n).toBe(1);
+  });
+
+  test('findKindById and countKind apply the soft-delete guard to the base-only kind', async () => {
+    await seedDocuments();
+    const repo = new DocumentRepository(getTestDb());
+    await asA(async () => {
+      expect((await repo.findKindById(ids.memoLive))?.kind).toBe('memo');
+      expect(await repo.findKindById(ids.memoDeleted)).toBeNull();
+      expect(await repo.countKind('memo')).toBe(1);
+      expect(await repo.countKind('report')).toBe(1);
+    });
+  });
+
+  test('a soft-deleted base hides its report at the root', async () => {
+    await seedDocuments();
+    const repo = new ReportDocumentRepository(getTestDb());
+    await asA(async () => {
+      expect((await repo.list()).map((r: any) => r.id)).toEqual([ids.reportLive]);
+      expect(await repo.findById(ids.reportDeleted)).toBeNull();
+      expect(await repo.findWithBase(ids.reportDeleted)).toBeNull();
+      expect((await repo.findWithBase(ids.reportLive))?.title).toBe('live report');
+    });
+    const raw = await run(sql`SELECT count(*)::int AS n FROM report_documents WHERE id = ${ids.reportDeleted}`);
+    expect(raw.rows[0].n).toBe(1);
+  });
+
+  test('a soft-deleted base hides its report at a hop; a base-only memo has no child to hop to', async () => {
+    await seedDocuments();
+    await asA(async () => {
+      const rows = await getTestDb().query.documents.findMany({ with: { reportDocument: true } });
+      const byId = new Map(rows.map((r: any) => [r.id, r]));
+      expect((byId.get(ids.reportLive) as any).reportDocument.summary).toBe('live summary');
+      expect((byId.get(ids.reportDeleted) as any).reportDocument).toBeNull();
+      expect((byId.get(ids.memoLive) as any).reportDocument).toBeNull();
     });
   });
 });

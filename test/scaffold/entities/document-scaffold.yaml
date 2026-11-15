@@ -1,0 +1,24 @@
+# RFC-0006 (#875) — SCAFFOLD-ONLY soft-delete family (Gate 2.5 D4). Deliberately in no baseline, smoke or
+# inheritance fixture set, so fixture agreement is unaffected.
+# A tenant-scoped `soft_delete` base with ONE child: `memo` is the base-only kind, so the base-only kind is covered
+# on the soft-delete path (communication_part has a child for every kind).
+
+entity:
+  name: document
+  plural: documents
+
+tenant_scoped: true
+discriminator: kind
+behaviors: [soft_delete]
+
+fields:
+  tenant_id:
+    type: uuid
+    required: true
+  kind:
+    type: enum
+    choices: [memo, report]
+    required: true
+  title:
+    type: string
+    required: true
