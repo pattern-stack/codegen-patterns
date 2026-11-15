@@ -44,6 +44,7 @@ module — plus an entry in the `GENERATED_MODULES` and schema barrels.
 |---|---|
 | The full YAML block reference — fields, types, behaviors, relationships, EAV flags, `generate:`, `api:` (HTTP surface, include allowlist) | `yaml-reference.md` |
 | Choosing a family, the methods each family adds, and the `queries:` block shapes | `families-and-queries.md` |
+| One entity that IS a kind of another (`inherits:` / `discriminator:`), `choices_of:`, `match:`, `natural_key:` | `yaml-reference.md` → "`inherits:` + `discriminator:`" |
 
 ## Minimum viable entity
 
@@ -79,6 +80,27 @@ codegen entity new entities/account.yaml
 # barrels auto-update — no manual wiring for the new module
 ```
 
+## Inheritance in one example
+
+```yaml
+# entities/communication.yaml — the base (it owns timestamps, soft_delete, tenant_scoped)
+discriminator: kind
+fields:
+  kind: { type: enum, choices: [meeting, email, message], required: true }
+```
+
+```yaml
+# entities/meeting.yaml — the child (one level)
+inherits: communication
+fields:
+  title: { type: string, required: true }
+```
+
+The child's `id` IS the base's `id`; the database refuses a `meeting` row under an `email` base row. Reads and writes treat the
+pair as one thing, HTTP is flat, and a base whose every kind has a child has no create route. Use it when X **is** a kind of
+one thing and you list across kinds; use a `belongs_to` when X merely **has** a part. Rules and the other keys
+(`choices_of:`, `match:`, `natural_key:`) are in `yaml-reference.md`.
+
 ## Layer rules the generated code obeys
 
 Generated code is layered; your hand-written use cases must respect the same
@@ -112,5 +134,7 @@ boundaries:
   module / subclassing the generated service.
 - **Do not put business logic in a repository** or cross-domain writes in a
   service — the layer rules above are enforced by convention and reviewed.
+- **Do not declare `timestamps`, `soft_delete`, `user_tracking` or `tenant_scoped` on a child** of `inherits:` — the base owns
+  them — and **do not put a `kind` in a request body**: the kind is the route (`POST /meetings`), and a kind cannot change.
 - **Do not invent field types.** Use the documented set (`yaml-reference.md`);
   unknown types fail validation.

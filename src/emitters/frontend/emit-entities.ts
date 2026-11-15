@@ -21,7 +21,7 @@
 import { join } from 'node:path';
 import type { EntityRegistryEntry, FrontendEmitContext } from './types';
 import { sortEntities } from './types';
-import { withBanner, writeFile } from './emit-utils';
+import { flatChild, writeRoutes, withBanner, writeFile } from './emit-utils';
 
 const SOURCE_DESC_SET = 'the entity set';
 
@@ -34,10 +34,29 @@ export function buildEntityHooksFile(
 	ctx: FrontendEmitContext,
 ): string {
 	const { camelName, className, name, fileStem } = entity;
+	// No `useCreate<Class>` for a base whose every kind has a child (RFC-0006 §4.1): its create route does not exist, so
+	// `TCreate` is `never` and `useCreate().mutate(...)` cannot be called. A child's create / update take the flat body.
+	// The same holds for a write the backend does not generate (`generate: { writes: false }`): `TUpdate` is `never`
+	// and its hook is not re-exported. `createEntityHooks` has no type parameter for delete, so the hooks object still
+	// carries `useDelete` (the api rejects); only the named re-export goes (RFC-0006 S6 R2).
+	const routes = writeRoutes(entity, ctx);
+	const flat = flatChild(entity, ctx);
+	const useCreate = routes.create ? `\tuseCreate: useCreate${className},\n` : '';
+	const useUpdate = routes.update ? `\tuseUpdate: useUpdate${className},\n` : '';
+	const useDelete = routes.delete ? `\tuseDelete: useDelete${className},\n` : '';
+	// Type arguments, trailing defaults dropped (`TCreate` / `TUpdate` default to `Partial<TEntity>`): `never` for a
+	// mutation with no route, the flat input for a child's, else the default (omitted when nothing follows it).
+	const mutationArg = (exists: boolean): string | null => (exists ? (flat ? flat.flatInputType : null) : 'never');
+	const createArg = mutationArg(routes.create);
+	const updateArg = mutationArg(routes.update);
+	const defaulted = `globalThis.Partial<${className}>`;
+	const typeArgs = [className, ...(updateArg !== null ? [createArg ?? defaulted, updateArg] : createArg !== null ? [createArg] : [])].join(', ');
+
+	const apiImport = flat ? `import { ${camelName}Api, type ${flat.flatInputType} } from '../api/${fileStem}';` : `import { ${camelName}Api } from '../api/${fileStem}';`;
 
 	const body = `import { createEntityHooks } from '@pattern-stack/frontend-patterns';
 import { ${camelName}Collection } from '../collections/${fileStem}';
-import { ${camelName}Api } from '../api/${fileStem}';
+${apiImport}
 import { getSyncMode } from '../config';
 import type { ${className} } from '${ctx.config.dbEntitiesImport}/${name}';
 
@@ -48,7 +67,7 @@ import type { ${className} } from '${ctx.config.dbEntitiesImport}/${name}';
  * (\`getSyncMode('${name}')\`) — \`api\` mode is confirmed-write, everything else
  * is local-first (optimistic).
  */
-export const ${camelName}Hooks = createEntityHooks<${className}>({
+export const ${camelName}Hooks = createEntityHooks<${typeArgs}>({
 \tname: '${name}',
 \tcollection: ${camelName}Collection,
 \tapi: ${camelName}Api,
@@ -59,10 +78,7 @@ export const ${camelName}Hooks = createEntityHooks<${className}>({
 export const {
 \tuseList: use${className}List,
 \tuseGet: use${className},
-\tuseCreate: useCreate${className},
-\tuseUpdate: useUpdate${className},
-\tuseDelete: useDelete${className},
-\tkeys: ${camelName}Keys,
+${useCreate}${useUpdate}${useDelete}\tkeys: ${camelName}Keys,
 } = ${camelName}Hooks;
 `;
 	return withBanner(`entities/${name}.yaml`, body);
@@ -77,14 +93,15 @@ export function buildEntitiesIndexFile(ctx: FrontendEmitContext): string {
 	const entities = sortEntities(ctx.entities);
 	const blocks = entities.map((e) => {
 		const { camelName, className, fileStem } = e;
+		const routes = writeRoutes(e, ctx);
+		const useCreate = routes.create ? `\tuseCreate${className},\n` : '';
+		const useUpdate = routes.update ? `\tuseUpdate${className},\n` : '';
+		const useDelete = routes.delete ? `\tuseDelete${className},\n` : '';
 		return `export {
 \t${camelName}Hooks,
 \tuse${className}List,
 \tuse${className},
-\tuseCreate${className},
-\tuseUpdate${className},
-\tuseDelete${className},
-\t${camelName}Keys,
+${useCreate}${useUpdate}${useDelete}\t${camelName}Keys,
 } from './${fileStem}';`;
 	});
 	return withBanner(SOURCE_DESC_SET, `${blocks.join('\n\n')}\n`);

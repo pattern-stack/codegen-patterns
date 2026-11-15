@@ -1,0 +1,38 @@
+# RFC-0006 (#875) fixture family — frontend-smoke copy. Same as test/fixtures/inheritance/entities/communication_part.yaml, except `sync: electric` (the client graph joins collections, so every entity on a hop must sync the same way, FE-REL §4.4) and tenant_scoped spelling its column out (`tenant_id`, which this harness's `project init` gives, so it resolves to the source set's). Compared by src/__tests__/fixtures/inheritance-fixtures-agree.test.ts.
+# RFC-0006 §2.4 case 1, §7 — the second base, WITH soft_delete (the EXISTS scope path).
+# `kind` shares communication.kind's enum (choices_of:) and is matched against it:
+# a part of kind `meeting` sits only under a communication of kind `meeting`.
+# `message` stays a base-only kind.
+
+entity:
+  name: communication_part
+  plural: communication_parts
+  sync: electric
+
+tenant_scoped: { column: tenant_id }
+discriminator: kind
+behaviors: [soft_delete]
+
+fields:
+  tenant_id:
+    type: uuid
+    required: true
+  kind:
+    type: enum
+    choices_of: communication.kind
+    required: true
+  sequence:
+    type: integer
+    required: true
+
+relationships:
+  communication:
+    type: belongs_to
+    target: communication
+    foreign_key: communication_id
+    on_delete: cascade
+    match: { kind: kind }
+
+unique_indexes:
+  - fields: [communication_id, sequence]
+    natural_key: true

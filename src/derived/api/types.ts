@@ -235,7 +235,7 @@ export interface RelationApiSurface {
 	id: string;
 	from: string;
 	to: string;
-	kind: 'belongs_to' | 'has_many' | 'has_one' | 'role' | 'junction';
+	kind: 'belongs_to' | 'has_many' | 'has_one' | 'role' | 'junction' | 'inherits';
 	inverseOf?: string;
 	generates: MethodRef[];
 	includeKeys: { table: string; key: string }[];

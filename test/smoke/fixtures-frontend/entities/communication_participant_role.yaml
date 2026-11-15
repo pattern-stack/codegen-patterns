@@ -1,0 +1,20 @@
+# RFC-0006 (#875) fixture family — frontend-smoke copy. Same as test/fixtures/inheritance/entities/communication_participant_role.yaml, except `sync: electric` (the client graph joins collections, so every entity on a hop must sync the same way, FE-REL §4.4) and tenant_scoped spelling its column out (`tenant_id`, which this harness's `project init` gives, so it resolves to the source set's). Compared by src/__tests__/fixtures/inheritance-fixtures-agree.test.ts.
+# RFC-0006 §2.4 case 2 — the lookup. `kind` shares communication.kind's enum.
+
+entity:
+  name: communication_participant_role
+  plural: communication_participant_roles
+  sync: electric
+
+fields:
+  kind:
+    type: enum
+    choices_of: communication.kind
+    required: true
+  role:
+    type: string
+    required: true
+    max_length: 32
+
+unique_indexes:
+  - fields: [kind, role]

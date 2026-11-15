@@ -6,11 +6,15 @@
  * user can act on; an ignored one is a preview of something they did not ask
  * for.
  */
-import { describe, it, expect } from 'bun:test';
+import { afterAll, describe, it, expect } from 'bun:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import {
 	RelationshipRequestError,
 	parseRelationshipRequest,
+	previewRelationship,
 } from '../../studio/server/relationships';
 
 describe('parseRelationshipRequest', () => {
@@ -85,5 +89,97 @@ describe('parseRelationshipRequest', () => {
 		expect(() =>
 			parseRelationshipRequest({ from: 'a', to: 'b', kind: 'belongs_to', options: [] }),
 		).toThrow('`options`');
+	});
+});
+
+describe('`inherits` (RFC-0006, #875 S6)', () => {
+	const project = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-inherits-'));
+	afterAll(() => fs.rmSync(project, { recursive: true, force: true }));
+	fs.mkdirSync(path.join(project, 'entities'), { recursive: true });
+	const write = (name: string, body: string) => fs.writeFileSync(path.join(project, 'entities', `${name}.yaml`), body);
+	write(
+		'communication',
+		'entity:\n  name: communication\n  plural: communications\ndiscriminator: kind\nfields:\n  kind:\n    type: enum\n    choices: [meeting, email]\n    required: true\n',
+	);
+	write('meeting', '# the child\nentity:\n  name: meeting\n  plural: meetings\nfields:\n  title:\n    type: string\n    required: true\n');
+	write('email', 'entity:\n  name: email\n  plural: emails\ninherits: communication\nfields:\n  subject:\n    type: string\n');
+
+	it('is an accepted kind, with `as` carried through options', () => {
+		expect(parseRelationshipRequest({ from: 'meeting', to: 'communication', kind: 'inherits', options: { as: 'meeting' } }).kind).toBe(
+			'inherits',
+		);
+	});
+
+	it('writes a top-level `inherits:` on the CHILD, short form, keeping the file’s comments', () => {
+		const [file, ...rest] = previewRelationship(project, { from: 'meeting', to: 'communication', kind: 'inherits' });
+		expect(rest).toEqual([]);
+		expect(file?.path).toBe('entities/meeting.yaml');
+		expect(file?.content).toContain('# the child');
+		expect(file?.content).toMatch(/^inherits: communication$/m);
+		expect(file?.content).not.toContain('relationships:');
+	});
+
+	it('writes the long form when `as` names another kind value', () => {
+		const [file] = previewRelationship(project, { from: 'meeting', to: 'communication', kind: 'inherits', options: { as: 'email' } });
+		expect(file?.content).toMatch(/inherits:\n {2}base: communication\n {2}as: email/);
+	});
+
+	it('refuses an `as:` the base does not list, and a short form whose own name is not a kind — naming the base', () => {
+		expect(() =>
+			previewRelationship(project, { from: 'meeting', to: 'communication', kind: 'inherits', options: { as: 'fax' } }),
+		).toThrow(/'communication' does not list 'fax' among its kinds \(kind: meeting, email\)/);
+		write('call', 'entity:\n  name: call\n  plural: calls\n');
+		expect(() => previewRelationship(project, { from: 'call', to: 'communication', kind: 'inherits' })).toThrow(
+			/'communication' does not list 'call'.*set `as`/,
+		);
+	});
+
+	it('refuses a base with no `discriminator:`, naming it', () => {
+		write('plain', 'entity:\n  name: plain\n  plural: plains\n');
+		expect(() => previewRelationship(project, { from: 'meeting', to: 'plain', kind: 'inherits' })).toThrow(
+			/'plain' declares no `discriminator:`/,
+		);
+	});
+
+	it('reads the kinds through `choices_of:` (one hop) for a second base', () => {
+		write(
+			'part',
+			'entity:\n  name: part\n  plural: parts\ndiscriminator: kind\nfields:\n  kind:\n    type: enum\n    choices_of: communication.kind\n    required: true\n',
+		);
+		write('email_part', 'entity:\n  name: email_part\n  plural: email_parts\nfields:\n  text:\n    type: string\n');
+		const [file] = previewRelationship(project, { from: 'email_part', to: 'part', kind: 'inherits', options: { as: 'email' } });
+		expect(file?.content).toMatch(/base: part\n {2}as: email/);
+		expect(() =>
+			previewRelationship(project, { from: 'email_part', to: 'part', kind: 'inherits', options: { as: 'fax' } }),
+		).toThrow(/does not list 'fax'/);
+	});
+
+	it('is refused by `validateContent` itself when the resulting child YAML is invalid (R5: a child declares no `timestamps`)', () => {
+		// The kind is listed and the base declares its discriminator, so every Studio-side check passes; only the
+		// single-file schema can object — which is what "validates like every Studio write" means, and what can fail.
+		write('stamped', 'entity:\n  name: stamped\n  plural: stampeds\nbehaviors: [timestamps]\nfields:\n  title:\n    type: string\n');
+		write(
+			'stamp_base',
+			'entity:\n  name: stamp_base\n  plural: stamp_bases\ndiscriminator: kind\nfields:\n  kind:\n    type: enum\n    choices: [stamped]\n    required: true\n',
+		);
+		expect(() => previewRelationship(project, { from: 'stamped', to: 'stamp_base', kind: 'inherits' })).toThrow(
+			/the resulting stamped YAML would be invalid/,
+		);
+	});
+
+	it('an empty `choices:` is “unknown”, not “none” (the generator’s own resolver): Studio does not guess, generation validates', () => {
+		write(
+			'empty_base',
+			'entity:\n  name: empty_base\n  plural: empty_bases\ndiscriminator: kind\nfields:\n  kind:\n    type: enum\n    choices: []\n',
+		);
+		write('lonely', 'entity:\n  name: lonely\n  plural: lonelies\nfields:\n  title:\n    type: string\n');
+		const [file] = previewRelationship(project, { from: 'lonely', to: 'empty_base', kind: 'inherits' });
+		expect(file?.content).toMatch(/^inherits: empty_base$/m);
+	});
+
+	it('refuses a child that already inherits, itself, and a base that does not exist', () => {
+		expect(() => previewRelationship(project, { from: 'email', to: 'communication', kind: 'inherits' })).toThrow(/already declares/);
+		expect(() => previewRelationship(project, { from: 'meeting', to: 'meeting', kind: 'inherits' })).toThrow(/cannot inherit itself/);
+		expect(() => previewRelationship(project, { from: 'meeting', to: 'nope', kind: 'inherits' })).toThrow(/No entity named 'nope'/);
 	});
 });

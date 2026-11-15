@@ -28,7 +28,7 @@ import { join } from 'node:path';
 import type { ParsedRelationship } from '../../analyzer/types';
 import type { EntityRegistryEntry, FrontendEmitContext } from './types';
 import { sortEntities } from './types';
-import { withBanner, writeFile } from './emit-utils';
+import { writeRoutes, withBanner, writeFile } from './emit-utils';
 
 const SOURCE_DESC_SET = 'the entity set';
 
@@ -60,7 +60,7 @@ export function resolvableRels(
 	const parsed = ctx.parsed.get(entity.name);
 	if (!parsed) return [];
 
-	const registryByName = new Map(ctx.entities.map((e) => [e.name, e]));
+	const registryByName = new globalThis.Map(ctx.entities.map((e) => [e.name, e]));
 
 	const out: ResolvableRel[] = [];
 	for (const rel of parsed.relationships.values()) {
@@ -144,9 +144,18 @@ export function buildStoreIndexFile(ctx: FrontendEmitContext): string {
 		.map((e) => `import { ${e.camelName}Fields } from '../fields/${e.fileStem}';`)
 		.join('\n');
 
+	// An entity with no create (or update) route has `TCreate` (`TUpdate`) `= never` (RFC-0006 §4.1), which `createStore`'s
+	// `EntityHooks<any, any, any>` does not accept (mutation variance). The store never calls create, so the
+	// one boundary cast is here, named, and only for those entities.
+	const fullWrites = new globalThis.Map(entities.map((e) => [e.name, writeRoutes(e, ctx).create && writeRoutes(e, ctx).update]));
 	const entityEntries = entities
-		.map((e) => `\t\t${e.plural}: ${e.camelName}Hooks,`)
+		.map((e) =>
+			fullWrites.get(e.name)
+				? `\t\t${e.plural}: ${e.camelName}Hooks,`
+				: `\t\t${e.plural}: ${e.camelName}Hooks as unknown as EntityHooks<any, any, any>,`,
+		)
 		.join('\n');
+	const needsHooksType = entities.some((e) => !fullWrites.get(e.name));
 	const collectionEntries = entities
 		.map((e) => `\t\t${e.plural}: ${e.camelName}Collection,`)
 		.join('\n');
@@ -154,7 +163,7 @@ export function buildStoreIndexFile(ctx: FrontendEmitContext): string {
 		.map((e) => `\t\t${e.plural}: ${e.camelName}Fields,`)
 		.join('\n');
 
-	const body = `import { createStore } from '@pattern-stack/frontend-patterns';
+	const body = `import { createStore${needsHooksType ? ', type EntityHooks' : ''} } from '@pattern-stack/frontend-patterns';
 
 ${hookImports}
 
@@ -252,7 +261,7 @@ export function buildResolversFile(ctx: FrontendEmitContext): string {
 	// `api.listAll()`. Resolvers read it on a collection-state miss so off-page
 	// FK resolution returns the right entity.
 	const hydrationCacheFields = entities
-		.map((e) => `\t${e.camelName}: new Map<string, ${e.className}>(),`)
+		.map((e) => `\t${e.camelName}: new globalThis.Map<string, ${e.className}>(),`)
 		.join('\n');
 	// Full-fetch only lookup-target / light entities. Heavy non-targets (e.g. a
 	// 21k-row emails table with bodyHtml) keep their empty cache map and resolve
@@ -261,7 +270,7 @@ export function buildResolversFile(ctx: FrontendEmitContext): string {
 	const hydrationCalls = fetched
 		.map(
 			(e) => `\t\t${e.camelName}Api.listAll().then((rows) => {
-\t\t\thydrationCache.${e.camelName} = new Map(rows.map((r) => [r.id as string, r]));
+\t\t\thydrationCache.${e.camelName} = new globalThis.Map(rows.map((r) => [r.id as string, r]));
 \t\t}),`,
 		)
 		.join('\n');
@@ -384,7 +393,7 @@ export function buildLookupsFile(ctx: FrontendEmitContext): string {
 		.join('\n');
 
 	// One id→entity map for an entity, built from current collection state.
-	const collectionStateMap = (e: EntityRegistryEntry): string => `\t\t${e.plural}: new Map(
+	const collectionStateMap = (e: EntityRegistryEntry): string => `\t\t${e.plural}: new globalThis.Map(
 \t\t\tArray.from(${e.camelName}Collection.state.values()).map((item) => [
 \t\t\t\t(item as ${e.className}).id as string,
 \t\t\t\titem as ${e.className},
@@ -401,13 +410,13 @@ export function buildLookupsFile(ctx: FrontendEmitContext): string {
 	const lookupBuildAsyncDecls = fetched
 		.map((e) => `\t\t${e.camelName}Api.listAll(),`)
 		.join('\n');
-	const fetchedIndex = new Map(fetched.map((e, i) => [e.name, i]));
+	const fetchedIndex = new globalThis.Map(fetched.map((e, i) => [e.name, i]));
 	const lookupBuildAsyncFields = entities
 		.map((e) => {
 			const i = fetchedIndex.get(e.name);
 			return i === undefined
 				? collectionStateMap(e)
-				: `\t\t${e.plural}: new Map(rows[${i}].map((r) => [r.id as string, r as ${e.className}])),`;
+				: `\t\t${e.plural}: new globalThis.Map(rows[${i}].map((r) => [r.id as string, r as ${e.className}])),`;
 		})
 		.join('\n');
 	// Degenerate set (no full-fetch target): keep the fn valid + await-clean.

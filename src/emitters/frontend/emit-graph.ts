@@ -50,8 +50,9 @@
 
 import { join } from 'node:path';
 import type { FrontendEmitContext } from './types';
-import { withBanner, writeFile } from './emit-utils';
+import { type FlatChild, flatChild, withBanner, writeFile } from './emit-utils';
 import { emittedStem } from '../../config/file-naming.js';
+import { resolvedBehaviorNames } from '../../patterns/implied-behaviors.js';
 import {
 	accessorNodes,
 	type ClientGraph,
@@ -160,20 +161,21 @@ function targetNaming(
 	graph: ClientGraph,
 ): TargetNaming | null {
 	const node = graph.nodes.find((n) => n.collection === rel.target);
-	if (!node) return null;
-	if (node.entity) {
+	// An entity with no edge of its own has no node, but it is a legitimate hop target.
+	const entity = node?.entity ?? graph.leaves.find((e) => e.plural === rel.target);
+	if (entity) {
 		return {
-			className: node.entity.className,
-			camelName: node.entity.camelName,
-			entityFile: node.entity.name,
-			collectionVar: `${node.entity.camelName}Collection`,
+			className: entity.className,
+			camelName: entity.camelName,
+			entityFile: entity.name,
+			collectionVar: `${entity.camelName}Collection`,
 			// A codegen-EMITTED path (`../collections/<stem>`), so it takes the
 			// #695/#684 naming rule. `entityFile` above is a CONSUMER-owned
 			// `dbEntities` module and deliberately keeps the raw name.
-			collectionFile: emittedStem(node.entity.name),
+			collectionFile: emittedStem(entity.name),
 		};
 	}
-	if (node.junction) {
+	if (node?.junction) {
 		return {
 			className: node.junction.className,
 			camelName: node.junction.camelName,
@@ -205,6 +207,31 @@ export class ReservedRelationAliasError extends Error {
 		);
 		this.name = 'ReservedRelationAliasError';
 	}
+}
+
+/**
+ * A hop the generated query INNER-joins (RFC-0006 §3.4): a child's edge to its base.
+ * A child's shape can hold rows whose base is not (or no longer) in the client's base collection — the base left
+ * the base's shape — so the child row must not exist on the client until its base does, which makes the joined
+ * row never absent, and the result type says so (no `| undefined`). The join sees only what the base collection
+ * holds: a SOFT-DELETED base row is still synced (the collection reads the whole table), so the query adds
+ * `isNull(base.deletedAt)` whenever the base has `soft_delete` (D14, RFC-0006 §3.4).
+ */
+const isInnerHop = (rel: ClientRelation): boolean => rel.inherits === 'base';
+
+/**
+ * Whether the base behind a child's inner hop has `soft_delete` (declared or pattern-implied) — then the generated
+ * query also drops a child whose base row is soft-deleted, as the backend's base-lifecycle `EXISTS` does (D14,
+ * RFC-0006 §3.4). The base collection syncs the whole table, so the join alone would still find that row. A context
+ * with no `parsed` map cannot tell, and then the filter is not emitted (a registry-only fixture has no `deletedAt`
+ * to read).
+ */
+function baseIsSoftDeleted(baseEntityName: string, ctx: FrontendEmitContext): boolean {
+	const parsed = ctx.parsed.get(baseEntityName);
+	if (!parsed) return false;
+	return resolvedBehaviorNames(parsed.behaviors, { pattern: parsed.pattern, patterns: parsed.patterns }).includes(
+		'soft_delete',
+	);
 }
 
 /** The to-one relations of a node — the ones joinable into an existing query. */
@@ -283,6 +310,20 @@ export function buildEntityGraphFile(
 		.sort((a, b) => a[0].localeCompare(b[0]))
 		.map(([file, className]) => `import type { ${className} } from '${dbEntities}/${file}';`)
 		.join('\n');
+	// The flat type is the api client's (one owner); this file imports it to use and re-exports it below.
+	// REL-1's edge marker (`isInnerHop`) and `flatChild` both say "this is a child"; they must agree, or this file would
+	// import a type the api client does not export.
+	const flat = flatChild(entity, ctx);
+	const hasBaseHop = node.relations.some(isInnerHop);
+	if (hasBaseHop && !flat) {
+		throw new Error(
+			`graph/${entity.name}: the relation graph marks '${entity.name}' as a child of its base, but the frontend ` +
+				'cannot resolve that base or its discriminator, so `<Child>WithBase` would not exist.',
+		);
+	}
+	const withBaseTypeImport = flat && hasBaseHop
+		? `import type { ${flat.withBaseType} } from '../api/${entity.fileStem}';\n`
+		: '';
 
 	// ── the nested `with` types, one per to-many branch ───────────────────────
 	const withTypeName = (rel: ClientRelation): string =>
@@ -349,9 +390,11 @@ export function buildEntityGraphFile(
 	for (const rel of ones) {
 		const t = naming.get(rel.key);
 		// Left-joined, so the row may be absent — preserved as `| undefined`
-		// exactly as measured (FE-REL §4.2), never narrowed to the bare type.
+		// exactly as measured (FE-REL §4.2), never narrowed to the bare type. The
+		// one exception is the inner-joined child-to-base hop (RFC-0006 §3.4).
+		const absent = isInnerHop(rel) ? '' : ' | undefined';
 		resultClauses.push(
-			`\t(Sel<I, '${rel.key}'> extends true ? { ${rel.key}: ${t?.className ?? 'unknown'} | undefined } : unknown)`,
+			`\t(Sel<I, '${rel.key}'> extends true ? { ${rel.key}: ${t?.className ?? 'unknown'}${absent} } : unknown)`,
 		);
 	}
 	for (const rel of manys) {
@@ -370,7 +413,12 @@ export function buildEntityGraphFile(
 	const rootJoins = ones
 		.map((rel) => {
 			const t = naming.get(rel.key);
-			return `\t\t\t\t\t\t.join({ ${rel.key}: ${t?.collectionVar} }, ({ row, ${rel.key} }) =>\n\t\t\t\t\t\t\teq(row.${rel.from}, ${rel.key}.${rel.to}),\n\t\t\t\t\t\t)`;
+			const join = isInnerHop(rel) ? 'innerJoin' : 'join';
+			const live =
+				isInnerHop(rel) && t && baseIsSoftDeleted(t.entityFile, ctx)
+					? `\n\t\t\t\t\t\t.where(({ ${rel.key} }) => isNull(${rel.key}.deletedAt))`
+					: '';
+			return `\t\t\t\t\t\t.${join}({ ${rel.key}: ${t?.collectionVar} }, ({ row, ${rel.key} }) =>\n\t\t\t\t\t\t\teq(row.${rel.from}, ${rel.key}.${rel.to}),\n\t\t\t\t\t\t)${live}`;
 		})
 		.join('\n');
 	const rootSelectRefs = ['row', ...ones.map((r) => r.key)];
@@ -449,12 +497,22 @@ function withOf(value: unknown): globalThis.Record<string, unknown> {
 `
 			: '';
 
-	const body = `import { eq, useLiveQuery } from '@tanstack/react-db';
+	const withBase = flat && hasBaseHop ? buildWithBaseHelper(node, naming, flat, ctx) : '';
+	// The one hop that is not left-joined (RFC-0006 §3.4) — said only where it applies.
+	const innerNote = ones.some(isInnerHop)
+		? ' — except a child\'s hop to its base, which is inner-joined and so is \`T\`'
+		: '';
+
+	const usesIsNull = ones.some((r) => {
+		const t = naming.get(r.key);
+		return isInnerHop(r) && t !== undefined && baseIsSoftDeleted(t.entityFile, ctx);
+	});
+	const body = `import { eq, ${usesIsNull ? 'isNull, ' : ''}useLiveQuery${withBase ? ', type InitialQueryBuilder' : ''} } from '@tanstack/react-db';
 
 ${collectionImports}
 
 ${typeImports}
-
+${withBaseTypeImport}
 /**
  * Read a key off an include literal that may omit it.
  *
@@ -483,7 +541,7 @@ ${branchTypes.join('\n')}
 /**
  * The result of {@link use${entity.className}Graph} for a given include.
  *
- * A to-one hop is \`T | undefined\` (it is left-joined); a to-many is \`T[]\`. A
+ * A to-one hop is \`T | undefined\` (it is left-joined)${innerNote}; a to-many is \`T[]\`. A
  * relation that was not included is not on the type at all, so reading it is a
  * compile error rather than \`undefined\` at runtime.
  */
@@ -496,7 +554,7 @@ export interface ${entity.className}GraphResult<I extends ${entity.className}Inc
 	isLoading: boolean;
 	isError: boolean;
 }
-${withOfHelper}
+${withOfHelper}${withBase}
 /**
  * Traverse the graph from one ${entity.className}.
  *
@@ -552,6 +610,94 @@ ${assembleManys}
 }
 `;
 	return withBanner(`entities/${entity.name}.yaml`, body);
+}
+
+/**
+ * The `<Child>WithBase` helper of an `electric` child (RFC-0006 §3.4), or `''` for any
+ * other entity: the flat type (the backend's `<Child>Flat`, on the client), the query
+ * fragment (child ⋈ base on id — the caller adds where / orderBy / limit) and the two
+ * hooks. The join is an INNER join, which is the point: a child whose base is absent
+ * from the client disappears from every list with no client code. A `sync: api` child
+ * never reaches here (it has no accessor module) — its REST routes already return the
+ * flat shape.
+ */
+function buildWithBaseHelper(
+	node: ClientGraphNode,
+	naming: Map<string, TargetNaming>,
+	flat: FlatChild,
+	ctx: FrontendEmitContext,
+): string {
+	const entity = node.entity;
+	const baseRel = node.relations.find(isInnerHop);
+	const base = baseRel ? naming.get(baseRel.key) : undefined;
+	if (!entity || !baseRel || !base) return '';
+
+	const { className, camelName, classNamePlural, pluralCamelName } = entity;
+	const type = flat.withBaseType;
+	const fragment = `${pluralCamelName}WithBase`;
+	const merged = '{ ...r.base, ...r.row }';
+	// D14: a soft-deleted base hides its child, as the backend's base-lifecycle EXISTS does.
+	const liveBase = baseIsSoftDeleted(base.entityFile, ctx)
+		? `\n\t\t.where(({ base }) => isNull(base.deletedAt))`
+		: '';
+	return `
+/**
+ * The backend's \`${className}Flat\`, on the client. Owned by the api client (\`api/${entity.fileStem}.ts\`, which every
+ * sync mode emits, so a \`sync: api\` child has it too) and re-exported here: one definition, one owner.
+ */
+export type { ${type} };
+
+/**
+ * ${pluralCamelName} ⋈ ${baseRel.target} on id — a query fragment: add where / orderBy / limit to it.
+ *
+ * An INNER join: a ${entity.name} row does not exist on the client until its base does
+ * (RFC-0006 §3.4)${liveBase ? ', and not while its base is soft-deleted' : ''}. Refs are \`row\` (the ${entity.name}) and \`base\` (the ${baseRel.key}).
+ */
+export function ${fragment}(q: InitialQueryBuilder) {
+	return q
+		.from({ row: ${camelName}Collection })
+		.innerJoin({ base: ${base.collectionVar} }, ({ row, base }) => eq(row.id, base.id))${liveBase};
+}
+
+/** Every ${entity.name} with its base's columns — one live query. */
+export function use${classNamePlural}WithBase(): {
+	data: ${type}[];
+	isLoading: boolean;
+	isError: boolean;
+} {
+	const result = useLiveQuery((q) =>
+		${fragment}(q).select(({ row, base }) => ({ row, base })),
+	);
+	return {
+		data: (result.data ?? []).map((r): ${type} => (${merged})),
+		isLoading: result.isLoading,
+		isError: result.isError,
+	};
+}
+
+/** One ${entity.name} with its base's columns, or \`undefined\` until both rows are on the client. */
+export function use${className}WithBase(id: string | null | undefined): {
+	data: ${type} | undefined;
+	isLoading: boolean;
+	isError: boolean;
+} {
+	const result = useLiveQuery(
+		(q) =>
+			id !== null && id !== undefined
+				? ${fragment}(q)
+						.where(({ row }) => eq(row.id, id))
+						.select(({ row, base }) => ({ row, base }))
+				: undefined,
+		[id],
+	);
+	const first = result.data?.[0];
+	return {
+		data: first ? ((r): ${type} => (${merged}))(first) : undefined,
+		isLoading: result.isLoading,
+		isError: result.isError,
+	};
+}
+`;
 }
 
 /**

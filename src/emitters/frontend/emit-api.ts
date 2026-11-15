@@ -12,7 +12,7 @@
 import { join } from 'node:path';
 import type { EntityRegistryEntry, FrontendEmitContext } from './types';
 import { sortEntities } from './types';
-import { withBanner, writeFile } from './emit-utils';
+import { flatChild, writeRoutes, withBanner, writeFile } from './emit-utils';
 
 const SOURCE_DESC_SET = 'the entity set';
 
@@ -142,18 +142,54 @@ export function buildEntityApiFile(
 ): string {
 	const { config } = ctx;
 	const { camelName, plural, className, name } = entity;
+	const flat = flatChild(entity, ctx);
+	// A child speaks the FLAT contract (RFC-0006 §5): reads return the base's columns and its own, and a write
+	// takes them too (no `kind`: the route is the kind). The row type `<Class>` is the table, which is neither.
+	const readType = flat ? flat.withBaseType : className;
+	const inputType = flat ? flat.flatInputType : `globalThis.Partial<${className}>`;
+	const flatTypes = flat
+		? `
+/** The backend's \`${className}Flat\`, on the client: the base's columns and the child's own (RFC-0006 §3.4). */
+export type ${flat.withBaseType} = globalThis.Omit<${flat.base.className}, '${flat.discriminatorProp}'> & ${className};
+
+/** A flat create / update body: the base's fields and the child's, without the discriminator (the route is the kind). */
+export type ${flat.flatInputType} = globalThis.Partial<globalThis.Omit<${flat.withBaseType}, 'id' | '${flat.discriminatorProp}'>>;
+`
+		: '';
+	const baseImport = flat
+		? `import type { ${flat.base.className} } from '${config.dbEntitiesImport}/${flat.base.name}';\n`
+		: '';
+	// A mutation with no route (RFC-0006 §4.1 for a base whose every kind has a child; `generate: { writes: false }`;
+	// `api: false`) takes `never`, so nothing can call it, and it issues no request. It is still on the object because
+	// `EntityApi` requires the key. The reason is the derivation's (`writeRoutes().why`), never this file's guess.
+	const routes = writeRoutes(entity, ctx);
+	const missing = (verb: string, route: string, why: string | undefined): string => {
+		const reason = why ?? 'not generated';
+		return `\t/** No \`${verb} ${route}\`: ${reason.replace(/\*\//g, '* /')}. */\n`;
+	};
+	const reject = (key: string, why: string | undefined): string =>
+		`Promise.reject(new globalThis.Error(${JSON.stringify(`${name} has no ${key} route: ${why ?? 'not generated'}`)}))`;
+	const createMethod = routes.create
+		? `\tcreate: (data: ${inputType}): Promise<${readType}> =>\n\t\trequest<${readType}>('POST', '/${plural}', data),\n\n`
+		: `${missing('POST', `/${plural}`, routes.why.create)}\tcreate: (_data: never): Promise<${className}> =>\n\t\t${reject('create', routes.why.create)},\n\n`;
+	const updateMethod = routes.update
+		? `\tupdate: (id: string, data: ${inputType}): Promise<${readType}> =>\n\t\trequest<${readType}>('PATCH', \`/${plural}/\${id}\`, data),\n\n`
+		: `${missing('PATCH', `/${plural}/:id`, routes.why.update)}\tupdate: (_id: string, _data: never): Promise<${className}> =>\n\t\t${reject('update', routes.why.update)},\n\n`;
+	const deleteMethod = routes.delete
+		? `\tdelete: (id: string): Promise<void> =>\n\t\trequest<void>('DELETE', \`/${plural}/\${id}\`),\n`
+		: `${missing('DELETE', `/${plural}/:id`, routes.why.delete)}\tdelete: (_id: never): Promise<void> =>\n\t\t${reject('delete', routes.why.delete)},\n`;
 
 	const body = `import { MAX_PAGE_SIZE, type ListQuery, type Page, request, toListQueryString } from './client';
 import type { ${className} } from '${config.dbEntitiesImport}/${name}';
-
+${baseImport}${flatTypes}
 export const ${camelName}Api = {
 \t/**
 \t * Fetch one page of ${plural} (pagination-by-default). Threads page/cursor/
 \t * pageSize/sort + arbitrary where-filters into the querystring; returns the
 \t * \`Page<${className}>\` envelope. Call with no args for the unfiltered first page.
 \t */
-\tlist: (query?: ListQuery): Promise<Page<${className}>> =>
-\t\trequest<Page<${className}>>('GET', \`/${plural}\${toListQueryString(query)}\`),
+\tlist: (query?: ListQuery): Promise<Page<${readType}>> =>
+\t\trequest<Page<${readType}>>('GET', \`/${plural}\${toListQueryString(query)}\`),
 
 \t/**
 \t * Full-fetch escape hatch (LANDMINE 1): every ${className} across all pages as a
@@ -163,12 +199,12 @@ export const ${camelName}Api = {
 \t * on another page would otherwise resolve to undefined. Used to hydrate the
 \t * store's resolvers/lookups; NOT for rendering a paged table.
 \t */
-\tlistAll: async (query?: globalThis.Omit<ListQuery, 'page' | 'pageSize' | 'cursor'>): Promise<${className}[]> => {
-\t\tconst all: ${className}[] = [];
+\tlistAll: async (query?: globalThis.Omit<ListQuery, 'page' | 'pageSize' | 'cursor'>): Promise<${readType}[]> => {
+\t\tconst all: ${readType}[] = [];
 \t\tlet page = 1;
 \t\tlet pageCount = 1;
 \t\tdo {
-\t\t\tconst result = await request<Page<${className}>>(
+\t\t\tconst result = await request<Page<${readType}>>(
 \t\t\t\t'GET',
 \t\t\t\t\`/${plural}\${toListQueryString({ ...query, page, pageSize: MAX_PAGE_SIZE })}\`,
 \t\t\t);
@@ -179,18 +215,10 @@ export const ${camelName}Api = {
 \t\treturn all;
 \t},
 
-\tget: (id: string): Promise<${className}> =>
-\t\trequest<${className}>('GET', \`/${plural}/\${id}\`),
+\tget: (id: string): Promise<${readType}> =>
+\t\trequest<${readType}>('GET', \`/${plural}/\${id}\`),
 
-\tcreate: (data: globalThis.Partial<${className}>): Promise<${className}> =>
-\t\trequest<${className}>('POST', '/${plural}', data),
-
-\tupdate: (id: string, data: globalThis.Partial<${className}>): Promise<${className}> =>
-\t\trequest<${className}>('PATCH', \`/${plural}/\${id}\`, data),
-
-\tdelete: (id: string): Promise<void> =>
-\t\trequest<void>('DELETE', \`/${plural}/\${id}\`),
-};
+${createMethod}${updateMethod}${deleteMethod}};
 `;
 	return withBanner(`entities/${name}.yaml`, body);
 }

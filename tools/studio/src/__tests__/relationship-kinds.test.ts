@@ -32,6 +32,16 @@ describe('the registry', () => {
     expect(() => kindDescriptor('sideways')).toThrow();
   });
 
+  test('`inherits` is one row: a 1:1 child → base that writes the child YAML and takes only `as`', () => {
+    const inherits = kindDescriptor('inherits');
+    expect(inherits).toMatchObject({ cardinality: '1:1', edgeKind: 'inherits', options: ['as'] });
+    expect(inherits.writes).toContain('child');
+    // `as` is an inherits-only option: a junction must not send it to the server.
+    expect(pruneOptions('many_to_many', { as: 'meeting' })).toBeUndefined();
+    expect(pruneOptions('inherits', { as: ' meeting ' })).toEqual({ as: 'meeting' });
+    expect(pruneOptions('inherits', { as: '' })).toBeUndefined();
+  });
+
   test('optionsFor preserves the declared order', () => {
     expect(optionsFor('many_to_many').map((o) => o.id)).toEqual([
       'through',

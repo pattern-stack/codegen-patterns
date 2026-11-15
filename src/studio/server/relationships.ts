@@ -14,6 +14,7 @@
  *   has_many              → the FROM entity YAML
  *   many_to_many          → a new first-class relationship definition at
  *                           `relationships/<from>_<to>.yaml`
+ *   inherits              → the FROM (child) entity YAML's top-level `inherits:`
  *
  * Existing files are edited through `yaml`'s Document API, not re-serialized
  * from a parsed object, so comments and key order in the rest of the file
@@ -23,6 +24,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import pluralize from 'pluralize';
+import { discriminatorKindsOf } from '../../schema/inheritance.js';
 import { Document, parseDocument, stringify as stringifyYaml } from 'yaml';
 
 import type {
@@ -41,7 +43,7 @@ export class RelationshipRequestError extends Error {
 	}
 }
 
-const KINDS: RelationshipKind[] = ['belongs_to', 'has_many', 'has_one', 'many_to_many'];
+const KINDS: RelationshipKind[] = ['belongs_to', 'has_many', 'has_one', 'many_to_many', 'inherits'];
 
 /** Validate and normalize the request body. Throws on anything unusable. */
 export function parseRelationshipRequest(body: unknown): RelationshipRequest {
@@ -150,6 +152,90 @@ function editedEntity(
 	return { path: toProjectRelative(projectDir, file), content };
 }
 
+/**
+ * The base's discriminator field name and its kinds — `discriminatorKindsOf`, the generator's own resolver
+ * (`src/schema/inheritance.ts`: literal `choices:`, or one hop of `choices_of: <entity>.<field>`), fed the base's
+ * file and, for a `choices_of`, its owner's. `discriminator` is null for a base that declares none; `kinds` is null
+ * when they do not resolve (the generator's own validation then speaks). There is no second reading of `choices_of`
+ * here (RFC-0006 S6 R2).
+ */
+function baseKinds(
+	projectDir: string,
+	baseFile: string,
+): { discriminator: string | null; kinds: string[] | null } {
+	const base = parseDocument(fs.readFileSync(baseFile, 'utf-8')).toJSON() as Record<string, unknown> | null;
+	const discriminator = base?.discriminator;
+	if (!base || typeof discriminator !== 'string') return { discriminator: null, kinds: null };
+	const definitions: Record<string, unknown>[] = [base];
+	const field = (base.fields as Record<string, { choices_of?: unknown } | undefined> | undefined)?.[discriminator];
+	if (typeof field?.choices_of === 'string') {
+		const ownerFile = entityFile(projectDir, field.choices_of.split('.')[0] ?? '');
+		if (ownerFile) {
+			const owner = parseDocument(fs.readFileSync(ownerFile, 'utf-8')).toJSON() as Record<string, unknown> | null;
+			if (owner) definitions.push(owner);
+		}
+	}
+	const kinds = discriminatorKindsOf(
+		base as Parameters<typeof discriminatorKindsOf>[0],
+		definitions as unknown as Parameters<typeof discriminatorKindsOf>[1],
+	);
+	return { discriminator, kinds };
+}
+
+/**
+ * `inherits:` on the CHILD (`from`), naming the base (`to`) — RFC-0006. It is a key of
+ * the entity, not an entry of `relationships:`, so it does not go through
+ * `addRelationship`. The short form when the kind value is the entity's own name; the
+ * long form `{ base, as }` when `options.as` says otherwise. The single-file schema is the
+ * judge (a child that declares its own `timestamps` is refused here, as it would be on a PUT).
+ */
+function inheritsEdit(
+	projectDir: string,
+	req: RelationshipRequest,
+): RelationshipPreviewFile {
+	if (req.from === req.to) {
+		throw new RelationshipRequestError(`'${req.from}' cannot inherit itself`);
+	}
+	const baseFile = requireEntityFile(projectDir, req.to);
+	const file = requireEntityFile(projectDir, req.from);
+	const doc = parseDocument(fs.readFileSync(file, 'utf-8'));
+	if (doc.errors.length > 0) {
+		throw new RelationshipRequestError(
+			`${toProjectRelative(projectDir, file)} is not valid YAML: ${doc.errors[0].message}`,
+		);
+	}
+	if (doc.has('inherits')) {
+		throw new RelationshipRequestError(`'${req.from}' already declares \`inherits:\``);
+	}
+	const as = req.options?.as?.trim();
+	// The kind this child will be: `as`, else its own name. The base must list it (R1), so refuse here, naming the base,
+	// rather than propose a file that fails at generation.
+	const kind = as || req.from;
+	const { discriminator, kinds } = baseKinds(projectDir, baseFile);
+	if (discriminator === null) {
+		throw new RelationshipRequestError(
+			`'${req.to}' declares no \`discriminator:\`, so it cannot be inherited — add \`discriminator: <enum field>\` to ${toProjectRelative(projectDir, baseFile)} first`,
+		);
+	}
+	if (kinds !== null && !kinds.includes(kind)) {
+		throw new RelationshipRequestError(
+			`'${req.to}' does not list '${kind}' among its kinds (${discriminator}: ${kinds.join(', ')})${as ? '' : " — set `as` to one of them, or add it to the base's choices"}`,
+		);
+	}
+	const value = as && as !== req.from ? { base: req.to, as } : req.to;
+	// `doc.setIn` APPENDS the key at the end of the mapping (after `fields:`, `relationships:`, …), which is where it lands;
+	// the schema is key-order-free. The edit keeps every comment and the file's other keys where they were.
+	doc.setIn(['inherits'], doc.createNode(value));
+	const content = doc.toString();
+	const outcome = validateContent('entity', content);
+	if (!outcome.ok) {
+		throw new RelationshipRequestError(
+			`the resulting ${req.from} YAML would be invalid: ${outcome.issues[0].message}`,
+		);
+	}
+	return { path: toProjectRelative(projectDir, file), content };
+}
+
 /** The first-class relationship definition file for a `many_to_many`. */
 function relationshipDefinitionFile(
 	projectDir: string,
@@ -211,6 +297,10 @@ export function previewRelationship(
 
 	if (req.kind === 'many_to_many') {
 		return [relationshipDefinitionFile(projectDir, req)];
+	}
+
+	if (req.kind === 'inherits') {
+		return [inheritsEdit(projectDir, req)];
 	}
 
 	const files: RelationshipPreviewFile[] = [];

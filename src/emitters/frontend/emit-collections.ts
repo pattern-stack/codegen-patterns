@@ -17,6 +17,8 @@ import { join } from 'node:path';
 import { emittedStem } from '../../config/file-naming.js';
 import type { EntityRegistryEntry, FrontendEmitContext } from './types';
 import { resolveSyncMode, sortEntities } from './types';
+import { timestampBehaviorNames } from '../../behaviors/index.js';
+import { resolvedBehaviorNames } from '../../patterns/implied-behaviors.js';
 import { withBanner, writeFile } from './emit-utils';
 import type { ClientGraph, JunctionCollectionEntry } from './graph-model';
 
@@ -34,6 +36,29 @@ function baseUrlExpr(base: string, plural: string, apiBaseUrlImport: string | nu
 /** SSR-safe origin: `''` on the server, `window.location.origin` in the browser. */
 const SSR_ORIGIN_EXPR = "typeof window !== 'undefined' ? window.location.origin : ''";
 
+/** The Electric column types whose parser builds a `Date`. */
+const DATE_PARSER_TYPES: ReadonlySet<string> = new Set(['timestamptz', 'timestamp', 'date']);
+
+/**
+ * Whether this entity's own table has a date-family column: a `date` / `datetime` field, or a behavior that adds
+ * one (`timestampBehaviorNames()`: `timestamps`, `soft_delete`) — DECLARED or IMPLIED by a pattern, the backend's
+ * own rule (`resolvedBehaviorNames` in `src/patterns/implied-behaviors.ts`: declared + pattern-implied).
+ *
+ * `electricCollectionOptions` types `parser` against the row type: a parser that
+ * returns a `Date` is a type error on a row with no `Date` in it (`ParseFunction<never>`),
+ * and it is dead config there anyway. A child of `inherits:` is the common case —
+ * its table carries no `timestamps` (RFC-0006 R5), so one with no date field of its
+ * own (`email`: a subject) would not compile. A context built without `parsed` keeps
+ * every parser, as it always did.
+ */
+function rowCarriesDates(entity: EntityRegistryEntry, ctx: FrontendEmitContext): boolean {
+	const parsed = ctx.parsed.get(entity.name);
+	if (!parsed) return true;
+	const behaviors = resolvedBehaviorNames(parsed.behaviors, { pattern: parsed.pattern, patterns: parsed.patterns });
+	if (timestampBehaviorNames().some((b) => behaviors.includes(b))) return true;
+	return [...parsed.fields.values()].some((f) => f.type === 'date' || f.type === 'datetime');
+}
+
 function buildElectricCollection(
 	entity: EntityRegistryEntry,
 	ctx: FrontendEmitContext,
@@ -42,6 +67,7 @@ function buildElectricCollection(
 	// `table` is the SQL name (TABLE-0) — the shape's `table` param; `plural` is
 	// the API route segment, which follows the code vocabulary.
 	const { camelName, plural, name, fileStem, table } = entity;
+	const carriesDates = rowCarriesDates(entity, ctx);
 
 	const imports: string[] = [
 		"import { electricCollectionOptions } from '@tanstack/electric-db-collection';",
@@ -61,7 +87,7 @@ function buildElectricCollection(
 	// shapeOptions.url — SSR-guarded URL construction, two forms.
 	let urlBlock: string;
 	if (config.useTableParam) {
-		urlBlock = `\t\t\turl: new URL(
+		urlBlock = `\t\t\turl: new globalThis.URL(
 \t\t\t\t'${config.shapeUrl}',
 \t\t\t\t${SSR_ORIGIN_EXPR},
 \t\t\t).toString(),
@@ -70,7 +96,7 @@ function buildElectricCollection(
 \t\t\t},`;
 	} else {
 		const shapeUrl = baseUrlExpr(config.shapeUrl, plural, config.apiBaseUrlImport);
-		urlBlock = `\t\t\turl: new URL(
+		urlBlock = `\t\t\turl: new globalThis.URL(
 \t\t\t\t${shapeUrl},
 \t\t\t\t${SSR_ORIGIN_EXPR},
 \t\t\t).toString(),`;
@@ -83,6 +109,7 @@ function buildElectricCollection(
 		: '';
 
 	const parserEntries = Object.entries(config.parsers)
+		.filter(([type]) => carriesDates || !DATE_PARSER_TYPES.has(type))
 		.map(([type, fn]) => `\t\t\t\t${type}: ${fn},`)
 		.join('\n');
 	const parserBlock = parserEntries
@@ -199,7 +226,7 @@ export function buildJunctionCollectionFile(
 
 	let urlBlock: string;
 	if (config.useTableParam) {
-		urlBlock = `\t\t\turl: new URL(
+		urlBlock = `\t\t\turl: new globalThis.URL(
 \t\t\t\t'${config.shapeUrl}',
 \t\t\t\t${SSR_ORIGIN_EXPR},
 \t\t\t).toString(),
@@ -208,7 +235,7 @@ export function buildJunctionCollectionFile(
 \t\t\t},`;
 	} else {
 		const shapeUrl = baseUrlExpr(config.shapeUrl, plural, config.apiBaseUrlImport);
-		urlBlock = `\t\t\turl: new URL(
+		urlBlock = `\t\t\turl: new globalThis.URL(
 \t\t\t\t${shapeUrl},
 \t\t\t\t${SSR_ORIGIN_EXPR},
 \t\t\t).toString(),`;

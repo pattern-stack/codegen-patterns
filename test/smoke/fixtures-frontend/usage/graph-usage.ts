@@ -13,13 +13,21 @@
 //
 // It lives beside the `@repo/db/entities` fixtures because it is the same kind
 // of thing — consumer code the smoke compiles against the generated tree.
+import { auditEntryApi, communicationPartApi, meetingApi } from '../apps/frontend/src/generated/api/index';
+import * as entityHooks from '../apps/frontend/src/generated/entities/index';
 import {
 	graph,
+	type MeetingWithBase,
 	useAccountGraph,
+	useMeetingGraph,
+	useMeetingsWithBase,
+	useMeetingWithBase,
 	useOpportunityGraph,
 	useTagGraph,
+	useTranscriptCommunicationPartsWithBase,
 } from '../apps/frontend/src/generated/graph/index';
 import type { Account } from '../consumer/account';
+import type { Communication } from '../consumer/communication';
 import type { Opportunity } from '../consumer/opportunity';
 import type { OpportunityTag } from '../consumer/opportunity_tag';
 import type { Tag } from '../consumer/tag';
@@ -71,7 +79,101 @@ export function typeGate(id: string): unknown {
 	const via: 'opportunityTags' = graph.opportunities.tags.through.collection;
 	const optional: true = graph.accounts.parentAccount.optional;
 
+	// ── RFC-0006 §3.4 (A13): a child's hop to its base is INNER-joined ──────
+	// The child row does not exist on the client until its base does, so the
+	// hop is never absent and its type carries no `| undefined`.
+	const m = useMeetingGraph(id, { communication: true, transcripts: true });
+	// Inferred, never annotated: these read the type the accessor really emits.
+	const hop = m.data!.communication;
+	// A real assignment: it fails to compile if the hop is `Communication | undefined`.
+	const meetingBase: Communication = hop;
+	// Both halves of the flat row read as one: the base's `occurredAt`, the child's `title`.
+	const occurredAt: Date = m.data!.communication.occurredAt;
+	const title: string = m.data!.title;
+	// @ts-expect-error the hop is required, so this is NOT `'optional'` — and tsc reports an unused expect-error (TS2578) the moment the hop is left-joined
+	const hopIsOptional: undefined extends typeof hop ? 'optional' : 'required' = 'optional';
+	// A child's OTHER hops stay left-joined: a transcript's `meeting` is still `| undefined`.
+	const transcriptMeeting = useMeetingGraph(id, { transcripts: { with: { meeting: true } } }).data!.transcripts[0]!
+		.meeting;
+	const otherHopIsOptional: undefined extends typeof transcriptMeeting ? 'optional' : 'required' = 'optional';
+
+	// …and `useMeetingsWithBase()` is the flat list: `MeetingWithBase[]`.
+	const meetings: MeetingWithBase[] = useMeetingsWithBase().data;
+	const first: MeetingWithBase | undefined = meetings[0];
+	const flatOccurredAt: Date | undefined = first?.occurredAt; // base column
+	const flatTitle: string | undefined = first?.title; // child column
+	const one: MeetingWithBase | undefined = useMeetingWithBase(id).data;
+	// @ts-expect-error a field that is on neither the base nor the child
+	meetings[0]?.nonsense;
+
+	// D14: a child of a soft-delete base (`communication_part`) reads through the same flat shape; the emitted query
+	// also filters the base's `deletedAt` (compiling it proves `isNull` and the column ref are real), and the base's
+	// soft-delete column is on the flat row.
+	const partDeleted: Date | null | undefined = useTranscriptCommunicationPartsWithBase().data[0]?.deletedAt;
+
+	// ── S5: the base of every-kind-has-a-child has no create route ──────────
+	// `communication_part` has a child for each of its kinds, so the backend
+	// generates no `POST /communication_parts` and the frontend must not emit a
+	// mutation aimed at it. `communication` keeps `message` as a base-only kind,
+	// so it still has one.
+	const hasCreateForCommunication = entityHooks.useCreateCommunication;
+	const hasUpdateForPart = entityHooks.useUpdateCommunicationPart;
+	// @ts-expect-error no `useCreateCommunicationPart`: its create route does not exist
+	entityHooks.useCreateCommunicationPart;
+	// …and the factory's own `useCreate` and the api's `create` are typed away (TCreate = never), not merely unexported:
+	// @ts-expect-error nothing is assignable to a create body that does not exist
+	entityHooks.communicationPartHooks.useCreate().mutate({});
+	// @ts-expect-error the api's `create` takes `never`
+	communicationPartApi.create({});
+
+	// ── S6 R2: an entity generated without writes has no mutation at all ──────
+	// `audit_entry` says `generate: { writes: false }`: the backend has no create / update / delete route, so the
+	// frontend reads that from the derived API surface and emits none — not a hook re-export, not a typed body.
+	const auditReads = [entityHooks.useAuditEntryList, entityHooks.useAuditEntry];
+	// @ts-expect-error no `useCreateAuditEntry`: writes are off
+	entityHooks.useCreateAuditEntry;
+	// @ts-expect-error no `useUpdateAuditEntry`: writes are off
+	entityHooks.useUpdateAuditEntry;
+	// @ts-expect-error no `useDeleteAuditEntry`: writes are off
+	entityHooks.useDeleteAuditEntry;
+	// @ts-expect-error the factory's `useCreate` takes `never`: nothing can be created
+	entityHooks.auditEntryHooks.useCreate().mutate({ note: 'x' });
+	// @ts-expect-error the factory's `useUpdate` takes `never`: nothing can be updated
+	entityHooks.auditEntryHooks.useUpdate().mutate({ id: 'a', data: { note: 'x' } });
+	// @ts-expect-error the api's `create` takes `never`
+	auditEntryApi.create({ note: 'x' });
+	// @ts-expect-error the api's `update` takes `never`
+	auditEntryApi.update('a', { note: 'x' });
+	// @ts-expect-error the api's `delete` takes `never`
+	auditEntryApi.delete('a');
+
+	// ── S6 review: a child's REST client speaks the FLAT contract ─────────────
+	// A create body carries the base's fields (`occurredAt`, `source`, `externalId`) with the child's, and no `kind`.
+	const created: Promise<MeetingWithBase> = meetingApi.create({
+		title: 'Weekly sync',
+		occurredAt: new Date(),
+		source: 'calendar',
+		externalId: 'evt-1',
+	});
+	// Reading a base field off `get` compiles (it would not on the table row type).
+	const fetchedAt: Promise<Date> = meetingApi.get(id).then((m) => m.occurredAt);
+	// @ts-expect-error `kind` is not a body field: the route is the kind
+	meetingApi.create({ title: 'x', kind: 'meeting' });
+
 	return {
+		auditReads,
+		meetingBase,
+		occurredAt,
+		title,
+		hopIsOptional,
+		otherHopIsOptional,
+		flatOccurredAt,
+		flatTitle,
+		one,
+		created,
+		fetchedAt,
+		hasCreateForCommunication,
+		hasUpdateForPart,
 		parent,
 		opps,
 		name,

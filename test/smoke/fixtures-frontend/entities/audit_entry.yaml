@@ -1,0 +1,15 @@
+# Not part of the RFC-0006 family. An entity generated WITHOUT writes (`generate: { writes: false }`): the backend emits no
+# create / update / delete use case or route, so the frontend must emit no mutation aimed at one (RFC-0006 S6 R2, the
+# frontend reads the derived API surface). `sync: electric` so its collection and hooks are the real thing.
+entity:
+  name: audit_entry
+  plural: audit_entries
+  sync: electric
+
+generate:
+  writes: false
+
+fields:
+  note:
+    type: string
+    required: true

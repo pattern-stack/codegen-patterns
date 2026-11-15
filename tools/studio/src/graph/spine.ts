@@ -4,12 +4,12 @@
  * is a SECONDARY line, drawn lighter and never fed to the layout.
  *
  * First match wins:
- *   1. an explicit `inherits` — #875; until it lands no signal carries it, so
- *      this tier never matches. When it does, delete the inference below it;
- *      no shim.
- *   2. a `belongs_to` whose FK column is unique (the 1:1 is-a workaround);
- *   3. a `belongs_to` with `on_delete: cascade`;
- *   4. the first declared `belongs_to`.
+ *   1. an explicit `inherits:` (#875, RFC-0006) — a child hangs under its base.
+ *      Fed by `buildEdges` from `SerializedEntity.inherits`, not from a `belongs_to`.
+ *      It replaced the unique-FK tier (a 1:1 `belongs_to` standing in for "is a"): STUDIO-3 recorded that when
+ *      #875 landed that inference would be deleted, no shim, and it was — `inherits:` is how an is-a is stated.
+ *   2. a `belongs_to` with `on_delete: cascade`;
+ *   3. the first declared `belongs_to`.
  * Within a tier, the first declared wins.
  *
  * A self-reference is never a spine (a node cannot hang under itself), and a
@@ -20,15 +20,13 @@
 
 /** What a candidate edge says about itself, read off the graph payload. */
 export interface SpineSignals {
-  /** An explicit `inherits:` (#875). Always false until that lands. */
+  /** An explicit `inherits:` (#875): set only on the child → base edge `buildEdges` draws for it. */
   inherits: boolean;
-  /** The FK column is unique (`SerializedRelationship.fkUnique`). */
-  fkUnique: boolean;
   /** `on_delete: cascade` (`SerializedRelationship.onDelete`). */
   cascade: boolean;
 }
 
-export const NO_SIGNALS: SpineSignals = { inherits: false, fkUnique: false, cascade: false };
+export const NO_SIGNALS: SpineSignals = { inherits: false, cascade: false };
 
 /** A line that could be a node's spine: the child holds an FK onto the parent. */
 export interface SpineCandidate {
@@ -40,12 +38,11 @@ export interface SpineCandidate {
   signals: SpineSignals;
 }
 
-export type SpineTier = 'inherits' | 'unique-fk' | 'cascade' | 'first-declared';
+export type SpineTier = 'inherits' | 'cascade' | 'first-declared';
 
 /** The tiers in rule order, each with the words the line shows for it. */
 export const SPINE_TIERS: readonly { tier: SpineTier; reason: string; matches: (s: SpineSignals) => boolean }[] = [
   { tier: 'inherits', reason: 'inherits', matches: (s) => s.inherits },
-  { tier: 'unique-fk', reason: 'unique FK (1:1)', matches: (s) => s.fkUnique },
   { tier: 'cascade', reason: 'on_delete: cascade', matches: (s) => s.cascade },
   { tier: 'first-declared', reason: 'first declared', matches: () => true },
 ];
@@ -54,7 +51,7 @@ export interface SpineChoice {
   edgeId: string;
   parent: string;
   tier: SpineTier;
-  /** `spine: unique FK (1:1)` — the words on the line. */
+  /** `spine: on_delete: cascade` — the words on the line. */
   reason: string;
 }
 

@@ -10,6 +10,7 @@
  *   test/fixtures/entities/               the baseline set (communication, meeting, email, …)
  *   test/scaffold/entities/*-scaffold.yaml  the integration set (the whole family)
  *   test/smoke/fixtures/                  the smoke set (the whole family)
+ *   test/smoke/fixtures-frontend/entities/ the frontend-smoke set (the whole family, every entity `sync: electric`)
  *
  * The one allowed difference is in HOW tenancy is spelled, never in WHETHER the
  * entity is tenant-scoped: the smoke sets `tenancy.column: organization_id` for
@@ -18,6 +19,10 @@
  * as what it resolves to under each location's OWN project tenancy column
  * (`resolveTenancy`) — a copy that drops it, or resolves to another column,
  * differs.
+ *
+ * The frontend-smoke copy has one more allowed difference: `entity.sync: electric` on every entity (the client graph
+ * joins local collections, so every entity on a hop has to sync the same way — FE-REL §4.4). It is stripped there
+ * after asserting it is present, so a copy that loses it still fails.
  */
 
 import { describe, expect, it } from 'bun:test';
@@ -34,6 +39,7 @@ const LOCATIONS: Record<string, string> = {
 	baseline: 'test/fixtures/entities',
 	scaffold: 'test/scaffold/entities',
 	smoke: 'test/smoke/fixtures',
+	frontend: 'test/smoke/fixtures-frontend/entities',
 };
 
 /** The `tenancy.column` each location's project resolves an unnamed `tenant_scoped: true` to. */
@@ -42,7 +48,11 @@ const PROJECT_TENANCY_COLUMN: Record<string, string> = {
 	baseline: 'tenant_id',
 	scaffold: 'tenant_id',
 	smoke: 'organization_id', // run-smoke.ts sets it for the default scenario
+	frontend: 'tenant_id', // run-smoke-frontend.ts changes only `generate.frontend` after `project init`
 };
+
+/** The frontend-smoke entities that declared `sync: electric` (stripped before comparing). */
+const FRONTEND_ELECTRIC = new Set<string>();
 
 /** entity name → location → normalised parsed definition */
 function loadAll(): Map<string, Map<string, unknown>> {
@@ -54,6 +64,11 @@ function loadAll(): Map<string, Map<string, unknown>> {
 			if (!res.success) continue; // a file another test owns may be deliberately invalid
 			const def = JSON.parse(JSON.stringify(res.definition)) as Record<string, unknown>;
 			const name = (def.entity as { name: string }).name;
+			if (location === 'frontend') {
+				const entityBlock = def.entity as { sync?: string };
+				if (entityBlock.sync === 'electric') FRONTEND_ELECTRIC.add(name);
+				delete entityBlock.sync;
+			}
 			def.tenant_scoped = resolveTenancy(name, def as never, PROJECT_TENANCY_COLUMN[location]!)?.column ?? null;
 			if (!byEntity.has(name)) byEntity.set(name, new Map());
 			byEntity.get(name)!.set(location, def);
@@ -68,12 +83,14 @@ describe('the RFC-0006 fixture family agrees across harness directories', () => 
 		.filter((f) => f.endsWith('.yaml'))
 		.map((f) => f.replace(/\.yaml$/, ''));
 
-	it('every family entity is in the scaffold and smoke sets, and the baseline holds its subset', () => {
+	it('every family entity is in the scaffold, smoke and frontend-smoke sets, and the baseline holds its subset', () => {
 		for (const name of family) {
 			const where = [...(byEntity.get(name)?.keys() ?? [])];
 			expect(where).toContain('inheritance');
 			expect(where).toContain('scaffold');
 			expect(where).toContain('smoke');
+			expect(where).toContain('frontend');
+			expect(FRONTEND_ELECTRIC.has(name)).toBe(true);
 		}
 		for (const name of ['communication', 'meeting', 'email', 'email_thread', 'meeting_transcript']) {
 			expect([...(byEntity.get(name)?.keys() ?? [])]).toContain('baseline');

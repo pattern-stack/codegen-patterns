@@ -1,0 +1,33 @@
+# RFC-0006 (#875) fixture family — frontend-smoke copy. Same as test/fixtures/inheritance/entities/communication_participant.yaml, except `sync: electric` (the client graph joins collections, so every entity on a hop must sync the same way, FE-REL §4.4) and tenant_scoped spelling its column out (`tenant_id`, which this harness's `project init` gives, so it resolves to the source set's). Compared by src/__tests__/fixtures/inheritance-fixtures-agree.test.ts.
+# RFC-0006 §2.4 case 2 — one derived column (`communication_kind`) matched by two
+# relationships: the communication's kind and the role's kind.
+
+entity:
+  name: communication_participant
+  plural: communication_participants
+  sync: electric
+
+tenant_scoped: { column: tenant_id }
+
+fields:
+  tenant_id:
+    type: uuid
+    required: true
+
+relationships:
+  communication:
+    type: belongs_to
+    target: communication
+    foreign_key: communication_id
+    on_delete: cascade
+    match: { communication_kind: kind }
+  role:
+    type: belongs_to
+    target: communication_participant_role
+    foreign_key: role_id
+    match: { communication_kind: kind }
+  party:
+    type: belongs_to
+    target: party
+    foreign_key: party_id
+    nullable: true

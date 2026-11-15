@@ -1,11 +1,12 @@
 # RFC-0006 — Joined-table inheritance: `inherits:` in entity YAML
 
-**Status:** Draft, revision 3 — Doug's answers of 2026-11-13 are recorded in §11, including OQ-11 (the part-kind
-rule is a composite FK on the part's own discriminator; the user-facing `checks:` key leaves this build). S1
-(schema and validation), S2 (the DDL), S3 (relations, scope and reads) and S4 (pair writes and the upsert) are built;
-nothing else is. §13.2 S1 to S4 say what each build settled.
+**Status:** **Implemented** (2026-11-14), revision 3 — S1 to S6 are built as one stack (branches
+`dugshub/875-s1-…` to `dugshub/875-s6-inherits-frontend`, landing together; the PR numbers are on #875). Doug's answers
+of 2026-11-13 are recorded in §11, including OQ-11 (the part-kind rule is a composite FK on the part's own
+discriminator; the user-facing `checks:` key stays in #786). S7 (`Integrated` on a child) is not built. §13.2's "as
+built" notes say what each slice settled; where one contradicts the body above it, the note is the truth.
 **Issue:** #875
-**Date:** 2026-11-12, revised 2026-11-13
+**Date:** 2026-11-12, revised 2026-11-13, implemented 2026-11-14
 **Owner:** Doug
 **Related:** #783 (schema expressiveness epic), #780 (natural keys), #786 (`checks:`), #787 (composite FKs), #788
 (`one_of:`), #812 (`entity_ref`); ADR-021 (on-delete), ADR-041 / ADR-041.1 (capabilities, `roles:`), ADR-042 (tenant scoping), ADR-044
@@ -49,7 +50,7 @@ The mapping is not: there is no polymorphic object mapper, and §9 argues why.
 | Levels | One. A child cannot be a base. |
 | Reads | The READ-1 surface is unchanged. The base row is a relation (`with: { communication: true }`). Flat rows are a projection of that read, not a second query path. |
 | Writes | The child repository's `create` / `update` / `delete` write the pair in one transaction. |
-| Upsert | `upsertByNaturalKey` on the child: the base on its declared natural key, then the child on `id`, one transaction. In v1. |
+| Upsert | `upsertByNaturalKey` exists on every entity that declares a `natural_key` (family or not) → `{ row, created }`. A child gets it through its **base's** key → `{ row, created, baseCreated }`: the base on its key, then the child on `id`, one transaction. A child of a keyless base has none. In v1. |
 | Cross-family rules | `match:` on a `belongs_to` emits a composite FK to the parent's `(id, <column>)`. In v1. |
 | Frontend | The graph gets both edges. v1 also emits a typed "child with its base" query and hook per `electric` child. |
 | DTOs | Child DTOs are flat (base fields + child fields, no `kind` on input). |
@@ -556,32 +557,42 @@ because the edges are ordinary relations.
 
 The frontend joins collections the way an ORM loads relations, so "a child with its base" is the normal read there,
 not an edge case. It is also the only correct one. A child's shape holds every child row the shape proxy lets
-through, including a row whose base is soft-deleted or outside the base's shape. A child row on its own says nothing
-about whether the thing still exists. Clients always read a child through its base.
+through, including a row whose base is outside the base's shape (or, if the proxy filters `deleted_at`, soft-deleted). A
+child row on its own says nothing about whether the thing still exists. Clients always read a child through its base.
+
+*As built (Gate 2.5, S6; decided D14, 2026-11-15):* the inner join hides a child whose base is **absent from the client's
+base collection**. A **soft-deleted** base row is still synced (the generated collection reads the whole table, with no
+`where` on `deleted_at`), so the join alone would still find it. When the base has `soft_delete` (declared or pattern-implied),
+the generator therefore adds `.where(({ base }) => isNull(base.deletedAt))` to `<plural>WithBase(q)` and to the child-to-base
+hop of the root query in `use<Child>Graph`, so the client drops such a child exactly as the backend's reads do (A8's `EXISTS`).
+A base without `soft_delete` gets no filter and no `isNull` import. A branch that reaches a child from another entity (the
+hop into a to-many) is unchanged.
 
 **What FE-REL's generated graph gives, with no new work.** The frontend graph calls the same `buildRelationGraph`,
 so both edges are in `graph/descriptor.ts`, and each `electric` entity's accessor carries them:
 
 - `useMeetingGraph(id, { communication: true })` is one live query: the root row with every to-one hop joined in
-  (`src/emitters/frontend/emit-graph.ts:34-35`, `:522-531`). The hop is typed without `| undefined` when the edge is
-  `optional: false` (`:336`).
+  (`src/emitters/frontend/emit-graph.ts`, the root query of `buildEntityGraphFile`). The child-to-base hop is the
+  one inner-joined and typed without `| undefined` (gap 1 below); every other to-one stays left-joined and
+  `| undefined`, `optional: false` or not — a left join can lack its row on the client whatever the schema says.
 - `useCommunicationGraph(id, { meeting: true, email: true })` joins each child, typed `| undefined`.
 - Base and child must both be `electric` (R8), or generation fails naming both.
 
 **Two gaps, both closed in v1.**
 
-1. *A to-one hop is left-joined* (`emit-graph.ts:486`). A meeting whose base row is not in the client would come
-   back with no `communication` while its type says there is one. Fix: `RelationEdge` gains a marker,
-   `inherits: 'base' | 'child'` (`src/emitters/relations/types.ts:65`). The backend reads it for the
-   `optional: false` exception (§3.1). The frontend emitter reads it to **inner-join** the child-to-base hop, so the
-   root row does not exist on the client until its base does. The descriptor stays edge-for-edge equal to REL-1's.
+1. *A to-one hop is left-joined.* A meeting whose base row is not in the client would come back with no
+   `communication`. Fix: `RelationEdge` carries a marker, `inherits: 'base' | 'child'`
+   (`src/emitters/relations/types.ts`). The backend reads it for the `optional: false` exception (§3.1). The frontend
+   emitter reads it (`ClientRelation.inherits`, `graph-model.ts`) to **inner-join** the child-to-base hop, so the root row
+   does not exist on the client until its base does, and types that hop without `| undefined`. The descriptor stays
+   edge-for-edge equal to REL-1's: the marker is the emitter's, and the descriptor does not print it.
 2. *Graph accessors are by id.* The common screen is a list: meetings ordered by `occurred_at`.
 
 So v1 emits a small typed helper per `electric` child, in its `graph/<child>.ts`:
 
 ```ts
 /** The backend's MeetingFlat, on the client. */
-export type MeetingWithBase = Omit<Communication, 'kind'> & Meeting;
+export type MeetingWithBase = Omit<Communication, 'kind'> & Meeting;   // 'kind' = the base's discriminator column, whatever it is called
 
 /** meetings ⋈ communications on id. A query fragment: add where / orderBy / limit to it. */
 export function meetingsWithBase(q: InitialQueryBuilder) {
@@ -595,7 +606,12 @@ export function useMeetingWithBase(id: string | null | undefined): { data: Meeti
 ```
 
 The inner join is the point. A child whose base has left the base shape disappears from every list with no client
-code. A `sync: api` child needs no helper: its REST routes already return the flat shape (§5).
+code. A `sync: api` child needs no helper: its REST routes already return the flat shape (§5). *As built:* the hooks
+map each `{ row, base }` result to `{ ...base, ...row }`, and the type is `Omit<Base, <discriminator>> & Child`, where
+`<discriminator>` is the **base's own discriminator column** (`kind` in the sketch; `category` for a base that calls it that,
+whose ordinary field `kind` then survives into the type). A child's table carries its own copy of the discriminator and the
+tenant column (§2.1) — the child's wins, and the two are equal by the composite FK. The type is **owned by the api client**
+(`api/<child>.ts`, emitted for every sync mode) and re-exported from `graph/<child>.ts`.
 
 Not in v1: a cross-kind list helper on the base (`communications` left-joined to each child). The by-id accessor
 covers a detail view, and a list across kinds usually renders base columns only.
@@ -795,7 +811,7 @@ override update(id: string, patch: MeetingUpdate, tx?: DrizzleTx): Promise<Meeti
 override delete(id: string, tx?: DrizzleTx): Promise<void>;
 
 /** Base on its natural key, then child on id. One transaction (§4.2). */
-upsertByNaturalKey(input: MeetingCreate, tx?: DrizzleTx): Promise<{ row: MeetingFlat; created: boolean; baseCreated: boolean }>;
+upsertByNaturalKey(input: MeetingCreate, tx?: DrizzleTx): Promise<{ row: MeetingFlat; created: boolean; baseCreated: boolean }>;  // as built (S4): created = the child insert's, baseCreated = the base's
 
 /** findById with the base included, flattened. `with` and `columns` still apply to the child. */
 findWithBase<W extends MeetingInclude = MeetingNoInclude, C extends MeetingColumns | undefined = undefined>(id: string, opts?: ReadOptions<W, C>): Promise<MeetingFlat<W, C> | null>;
@@ -900,7 +916,7 @@ polymorphic identity map, no subclass instances, no lazy attribute load. A "meet
 whose type was computed by the generator.
 
 **What Electric clients do themselves.** Base and child are two shapes, and a child's shape still holds rows whose
-base is soft-deleted. Clients read a child through its base. §3.4 says what the generated graph gives for that join
+base is outside its shape; a soft-deleted base is hidden by the generated query (§3.4, D14). Clients read a child through its base. §3.4 says what the generated graph gives for that join
 and what v1 adds. A cross-kind list on the client is hand-written in v1.
 
 **Cost.**
@@ -1010,8 +1026,8 @@ The summary. §13 is the build plan, slice by slice.
 | 6 | Repository overrides, typed reads, `upsertByNaturalKey`; service forwarders; base repository injection | `repository.ejs.t`, `service.ejs.t`, `module.ejs.t` |
 | 7 | Flat DTOs; base union output; base create restricted to base-only kinds | `dto/*.ejs.t` |
 | 8 | Child find and list use cases return flat rows; controller output | `use-cases/find-by-id.ejs.t`, `list.ejs.t`, `controller.ejs.t` |
-| 9 | Frontend: inner-joined child-to-base hop; `<child>WithBase` query and hooks | `src/emitters/frontend/graph-model.ts`, `emit-graph.ts` |
-| 10 | Studio: one row in each vocabulary table | `tools/studio/src/inspector/relationship-kinds.ts`, `tools/studio/src/graph/edge-kinds.ts` |
+| 9 | Frontend: inner-joined child-to-base hop; `<child>WithBase` query and hooks; the child's flat api types; no mutation emitted for a route the derivation does not list (an all-kinds base's create; every mutation of a `writes: false` or `api: false` entity) | `src/emitters/frontend/graph-model.ts`, `emit-graph.ts`, `emit-api.ts`, `emit-entities.ts`, `emit-fields.ts`, `emit-store.ts`, `emit-utils.ts`, `emit-collections.ts`; the derivation (`src/derived/api/entity.ts`, `deriveProjectApiSurface`) is read for route existence, and `project.ts` lists the `inherits` relation |
+| 10 | Studio: one row in each vocabulary table, the serialized `inherits`, the adapter's edge, the `inherits` relationship write | `tools/studio/src/inspector/relationship-kinds.ts`, `tools/studio/src/graph/edge-kinds.ts`, `tools/studio/src/adapters/schema-adapter.ts`, `src/analyzer/serialize-graph.ts`, `src/studio/server/relationships.ts`, `src/studio/shared/api.ts`, `tools/studio/src/graph/spine.ts` (the `inherits` spine tier; the unique-FK tier, `fkUnique` / `fkColumnUnique` and their parity test deleted) |
 | 11 | The derived API surface (family reads, `hasTypedInclude`, the include gate); Studio's `Record<RepositoryKind, …>` | `src/derived/api/*`, `src/emitters/relations/build-includes.ts`, `tools/studio/src/inspector/surface-kinds.ts` |
 
 ## 11. Decisions and open questions
@@ -1033,15 +1049,15 @@ The summary. §13 is the build plan, slice by slice.
 | — | #787 | `match:` lands in this build (§2.4). |
 | OQ-11 | The "part kind fits communication kind" rule | `communication_part.kind` is `choices_of: communication.kind` and its `belongs_to` carries `match: { kind: kind }`: one composite FK, under M2's discriminator exception. No derived `communication_kind` column and no CHECK. The user-facing `checks:` key leaves this build and stays whole in #786; the child's `kind` CHECK uses an internal builder. |
 
-### 11.2 Open — raised by revision 2
+### 11.2 Raised by revision 2 — decided as built
 
-Each of these is scope this revision pulled in to satisfy the answers above. Each has a default the plan assumes.
+Each was scope revision 2 pulled in to satisfy the answers above, with a default the plan assumed. All four held, and are built as the default.
 
-| # | Question | Default | Alternative | Cost to switch later | Recommendation |
-|---|---|---|---|---|---|
-| OQ-10 | How the natural key is declared | `natural_key: true` on a `unique_indexes` entry | A top-level `natural_key: [fields]` that emits its own index (#780's proposal) | A schema rename before anything ships. | Default. The index is already declared in `unique_indexes`, and one entry cannot be declared twice. This settles #780's first open question, so say so there. |
-| OQ-12 | #787's implicit same-tenant FK on every tenant-scoped `belongs_to` | Stays in #787 | Build it here | It changes the DDL of every tenant-scoped relationship and needs a NOT NULL tenant on every entity, not only on bases. | Default. This build gives #787 its emitter and its `match:` form. The default-on rule is its own decision. |
-| OQ-13 | Sharing an enum type across entities | `choices_of: <entity>.<field>` | Make the lookup's `kind` a `match:` column against a kinds table | A field-option rename before anything ships. | Default. Without one of them, case 2's FK cannot be built. |
+| # | Question | As built | Where |
+|---|---|---|---|
+| OQ-10 | How the natural key is declared | `natural_key: true` on a `unique_indexes` entry, not a top-level key. The index is declared once. This settles #780's first open question. | S1 (schema), S4 (`upsertByNaturalKey` on every `natural_key` entity) |
+| OQ-12 | #787's implicit same-tenant FK on every tenant-scoped `belongs_to` | Stays in #787. This build gave #787 its emitter and the explicit `match:` form (the child's tenant FK and the part-kind FK use it). | S2 |
+| OQ-13 | Sharing an enum type across entities | `choices_of: <entity>.<field>`, one hop, the owner's `pgEnum` imported from its `<entity>.enums.ts` leaf. | S1, S2 |
 
 ### 11.3 Decided at Gate 2.5 (Doug, 2026-11-15)
 
@@ -1087,37 +1103,54 @@ three. §13 of the RFC is the build plan.
 
 **Acceptance:**
 
-- [ ] **A1** `inherits:`, `discriminator:`, `match:`, `natural_key:` and `choices_of:` validate. Rules R1
+- [x] **A1** `inherits:`, `discriminator:`, `match:`, `natural_key:` and `choices_of:` validate. Rules R1
       to R11 and M1 to M5 each fail with a message naming the entities involved.
-- [ ] **A2** The fixture family (§13.1) generates and passes `tsc` in `just test-baseline` and `just test-smoke`.
-- [ ] **A3** Emitted DDL: the child `id` has no default; the kind FK, tenant FK and kind CHECK are present; the base
+      *Evidence:* `src/__tests__/parser/validate-inheritance.test.ts`, `src/__tests__/schema/inheritance-schema.test.ts`, `inheritance-tenancy.test.ts` (S1).
+- [x] **A2** The fixture family (§13.1) generates and passes `tsc` in `just test-baseline` and `just test-smoke`.
+      *Evidence:* `just test-baseline` and `just test-smoke` generate the family and run `tsc` (S2–S5 as built); `test/scaffold/tests/inheritance-http.test.ts` for the HTTP half.
+- [x] **A3** Emitted DDL: the child `id` has no default; the kind FK, tenant FK and kind CHECK are present; the base
       has both unique indexes; the child's tenant column is NOT NULL.
-- [ ] **A4** Integration: inserting a child under a base of another kind fails with `23503`; updating `kind` on a
+      *Evidence:* `src/__tests__/cli/inheritance-ddl.test.ts` (emitted DDL, S2).
+- [x] **A4** Integration: inserting a child under a base of another kind fails with `23503`; updating `kind` on a
       base row that has a child fails; a hard delete of the base removes the child.
-- [ ] **A5** `match:` emits one composite FK and the target's unique index. Integration: a `transcript` part under
+      *Evidence:* `test/scaffold/tests/inheritance-ddl.test.ts`, by SQLSTATE and constraint name with a succeeding control each (S2).
+- [x] **A5** `match:` emits one composite FK and the target's unique index. Integration: a `transcript` part under
       an `email` communication is rejected; a participant with a role of another kind is rejected; the matched
       column is filled by the insert, not by the caller.
-- [ ] **A6** Child `create` writes both rows in one transaction and rolls both back on failure; `update` across
+      *Evidence:* `test/scaffold/tests/inheritance-ddl.test.ts` (the two rejections) and `inheritance-writes.test.ts` (the fill by the insert) (S2, S4).
+- [x] **A6** Child `create` writes both rows in one transaction and rolls both back on failure; `update` across
       both tables bumps the base's `updated_at`; a `kind` in an update payload throws `KindImmutableError`.
-- [ ] **A7** `upsertByNaturalKey` twice with one key leaves one base row and one child row, and the second call
+      *Evidence:* `test/scaffold/tests/inheritance-writes.test.ts`, `src/__tests__/runtime/base-classes/inheritance-writes.spec.ts` (S4).
+- [x] **A7** `upsertByNaturalKey` twice with one key leaves one base row and one child row, and the second call
       reports `created: false`. A key that exists under another kind throws `KindMismatchError` and writes nothing.
       One tenant's upsert never touches another tenant's row with the same key.
-- [ ] **A8** With `soft_delete` on the base, a soft-deleted row's child is absent from child reads and from a hop
+      *Evidence:* `test/scaffold/tests/inheritance-writes.test.ts` (created flags, `KindMismatchError`, tenant isolation) (S4).
+- [x] **A8** With `soft_delete` on the base, a soft-deleted row's child is absent from child reads and from a hop
       into the child. With `tenant_scoped`, another tenant's child is absent at the root and at a hop.
-- [ ] **A9** `findAllKinds` is one statement (recorded through a fake `pg` client in `just test-unit`, and counted on the generated repositories in `just test-integration`), returns the union, and throws
+      *Evidence:* `test/scaffold/tests/inheritance-reads.test.ts`, `inheritance-scope-http.test.ts` (S3).
+- [x] **A9** `findAllKinds` is one statement (recorded through a fake `pg` client in `just test-unit`, and counted on the generated repositories in `just test-integration`), returns the union, and throws
       `OrphanBaseError` on a base row with a missing child. `findOrphans` returns that row.
-- [ ] **A10** Child DTOs are flat; the child's HTTP routes return the flat shape; the base's create accepts only
+      *Evidence:* `src/__tests__/runtime/base-classes/inheritance-read-sql.spec.ts` (one statement), `test/scaffold/tests/inheritance-reads.test.ts` (union, orphan) (S3).
+- [x] **A10** Child DTOs are flat; the child's HTTP routes return the flat shape; the base's create accepts only
       base-only kinds.
-- [ ] **A11** A child write emits its lifecycle event under both the child's name and the base's.
-- [ ] **A12** The relations manifest and the frontend graph descriptor carry both edges
-      (`src/__tests__/emitters/frontend/graph-golden.test.ts`).
-- [ ] **A13** The frontend emits `<child>WithBase` (query and hooks) with an inner join, and
+      *Evidence:* `test/scaffold/tests/inheritance-http.test.ts` (S5).
+- [x] **A11** A child write emits its lifecycle event under both the child's name and the base's.
+      *Evidence:* `test/scaffold/tests/inheritance-writes.test.ts` and `inheritance-writes.spec.ts` (events under both names) (S4).
+- [x] **A12** The relations manifest and the frontend graph descriptor carry both edges.
+      *Evidence:* `src/__tests__/emitters/relations/inherits-graph.test.ts` (the manifest edges, S3) and `src/__tests__/emitters/frontend/inherits-graph.test.ts` (the descriptor's three edges, edge-for-edge with REL-1, S6).
+- [x] **A13** The frontend emits `<child>WithBase` (query and hooks) with an inner join, and
       `test/smoke/fixtures-frontend/usage/` assigns from it under `just test-smoke-frontend`.
-- [ ] **A14** Studio shows the inherits edge from its two vocabulary tables (`just test-studio`).
-- [ ] **A15** Each new gate can fail on its own subject: remove the kind FK from the template and A4 goes red;
+      *Evidence:* `usage/graph-usage.ts` (the `MeetingWithBase[]` assignment from `useMeetingsWithBase()`, the base hop assigned to
+      `Communication`, the `hopIsOptional` `@ts-expect-error`) and `test/smoke/run-smoke-frontend.ts` (the inner-join text assertions).
+- [x] **A14** Studio shows the inherits edge from its two vocabulary tables (`just test-studio`).
+      *Evidence:* `tools/studio/src/__tests__/legend.test.tsx` (the legend renders the `inherits` row), `relationship-kinds.test.ts`, `edge-view.test.ts`.
+- [x] **A15** Each new gate can fail on its own subject: remove the kind FK from the template and A4 goes red;
       remove the inner join and A13 goes red.
-- [ ] **A16** CLAUDE.md, `consumer-skills/entities/yaml-reference.md` and this RFC say what was built. #780, #786
+      *Evidence:* S2's mutation run for the kind FK, and the S6 "Gates" bullet's run (the hop typed `| undefined`, the fragment left-joined).
+- [x] **A16** CLAUDE.md, `consumer-skills/entities/yaml-reference.md` and this RFC say what was built. #780, #786
       and #787 each get a comment saying which part landed here and what remains.
+      *Evidence:* CLAUDE.md, `yaml-reference.md`, `SKILL.md` and this RFC are written (S6); the comments were posted
+      2026-11-15 on #780, #786 and #787, each naming the stack PRs (#907–#912) that landed its part.
 
 **Relations:**
 
@@ -1161,11 +1194,12 @@ Where they live, and when:
 | `test/fixtures/entities/` (baseline) | `communication`, `meeting`, `email`, and the two plain entities they need: `email_thread`, `meeting_transcript` (a `has_many` onto a missing entity types a `with` the manifest does not have) | S2 |
 | `test/scaffold/entities/*-scaffold.yaml` (integration) | The whole family | S2 |
 | `test/smoke/fixtures/` (`just test-smoke`, default scenario) | The whole family. The smoke sets `tenancy.column: organization_id` project-wide, so its three tenant-scoped entities spell `tenant_scoped: { column: tenant_id }` | S2 |
-| `test/smoke/fixtures-frontend/entities/` | `communication`, `meeting`, both `sync: electric` | S6 |
+| `test/smoke/fixtures-frontend/entities/` | The whole family, every entity `sync: electric` (an electric root reaching a non-electric target is a generation error, and `communication` has an edge to every child). Their `@repo/db/entities/*` row types are consumer-owned fixtures in `test/smoke/fixtures-frontend/consumer/` | S6 |
 
 The harness sets are separate directories by design. Keep the copies field-identical.
-`src/__tests__/fixtures/inheritance-fixtures-agree.test.ts` parses all four locations and fails when a shared
-entity differs (it compares `tenant_scoped` as the column it resolves to under each location's own `tenancy.column`, so only the spelling may differ, never whether the entity is scoped). The fixture family's
+`src/__tests__/fixtures/inheritance-fixtures-agree.test.ts` parses all five locations and fails when a shared
+entity differs (it compares `tenant_scoped` as the column it resolves to under each location's own `tenancy.column`, so only the spelling may differ, never whether the entity is scoped, and strips the frontend set's
+`entity.sync: electric` after asserting every family entity has it — the two differences the harnesses need). The fixture family's
 plain target entity is `party` (relationship `party`, column `party_id`), not `person`: the baseline set already has
 a different `person`.
 
@@ -1752,8 +1786,8 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   (`findById`, `findByIds`, `list`, `count` for every entity; `create`, `update`, `delete` for a child; `update` for a base);
   the service's named the three forwarded reads and a child's / base's `create` / `update`. Both are filtered in their
   templates, for every entity, which is why 12 plain repositories' and every service's snapshots changed by one comment line.
-- **Frontend.** The frontend emitter does not read `generate.writes`, but the frontend smoke fixture set has **no
-  family**, so its pass says nothing about child routes: S6 owns the check.
+- **Frontend.** The frontend emitter does not read `generate.writes`, but the frontend smoke fixture set had **no
+  family**, so its pass said nothing about child routes. S6 checked it: see S6 as built.
 - **Tests.** `test/scaffold/tests/inheritance-http.test.ts` (A10 and the rest of A2: the flat POST / GET / list / PATCH /
   DELETE, a base-column sort, a child-column sort, `?include=transcripts` on the list, a child search, a body's `kind` / tenant
   column setting nothing, the base's restricted create, no create route when every kind has a child, a derived `match:`
@@ -1814,6 +1848,117 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
 - Must not touch: the backend templates.
 - Gates: `just test-smoke-frontend`, `just test-studio`, `just test-all`.
 - Closes: A12, A13, A14, A15, A16.
+
+**S6 as built (2026-11-14).** What the build settled, beyond the plan above:
+
+- **The inner join, and what it types.** `ClientRelation.inherits` carries REL-1's marker through `buildClientGraph`; the root
+  query of `graph/<child>.ts` uses `.innerJoin` for the child-to-base hop and `.join` for every other, and the result type drops
+  `| undefined` for that hop only. The descriptor is unchanged (`test/frontend-graph-golden/snapshot/` is byte-identical: the
+  golden's entity set has no family). The first draft of §3.4 said the type already dropped `| undefined` for any
+  `optional: false` edge; it did not, and still does not for an ordinary `belongs_to` (a left join can lack its row on the
+  client). Only the inner-joined hop is narrowed.
+- **`<Child>WithBase`** is emitted into `graph/<child>.ts` of every `electric` child, from `buildWithBaseHelper`
+  (`emit-graph.ts`): `<Child>WithBase`, `<plural>WithBase(q)` (the fragment: `from` the child, `innerJoin` the base on `id`),
+  `use<Plural>WithBase()` and `use<Child>WithBase(id)`. Names come from the registry (`classNamePlural`, `pluralCamelName`):
+  `transcript_communication_part` is `useTranscriptCommunicationPartsWithBase`. The base gets none, and a `sync: api` family
+  gets no accessors at all (its `graph/` file is a deferral; an `electric` base with an `api` child is the cross-mode error).
+- **A hop target with no edge of its own had no accessor.** `buildClientGraph` made a node only for a table that has edges, so
+  `communication_participant.party` (`party` declares no relationships) emitted `.join({ party: undefined })`, which does not
+  compile. `ClientGraph.leaves` now holds the entities with no node and `targetNaming` falls back to it. A latent FE-REL bug
+  that no earlier fixture reached; any `belongs_to` onto a leaf entity hit it.
+- **A row with no date column cannot take a `Date` parser.** `electricCollectionOptions` types `parser` against the row type, and
+  `frontend.parsers`' default `timestamptz: (d) => new Date(d)` is a type error (`ParseFunction<never>`) on a row with no
+  `Date` in it. A child has no `timestamps` (R5), so a child with no date field of its own (`email`: a subject) did not
+  compile. `emit-collections.ts` now drops the date-family parsers (`timestamptz`, `timestamp`, `date`) from an entity whose
+  table has no date field and neither `timestamps` nor `soft_delete`. Entity-general, found by the family.
+- **No create route for an all-kinds base, typed away; every write follows the derived HTTP routes.** `communication_part` has no
+  `POST` route after S5, and the frontend emitted `useCreateCommunicationPart` aimed at it. The derivation's `createDisabledBy`
+  (`src/derived/api/entity.ts`, ADR-046) is the **one owner** of "every kind has a child" (over `baseOnlyKinds`, `discriminatorKindsOf`
+  and the one `choices_of` resolver `enumChoices`, all in `src/schema/inheritance.ts`); it removes the base's `create` use case and
+  route, and the backend's templates print those lists. Phase R2: the frontend no longer calls `createDisabledBy` itself.
+  `projectSurface` / `writeRoutes` (`emit-utils.ts`) run `deriveProjectApiSurface` once per emit, fed the same relation inputs
+  `buildClientGraph` hands REL-1, and `writeRoutes` answers create / update / delete from **`apiSurface.http.routes`** (handlers
+  `create`, `update`, `remove`) — decided in the R2 fixes, not from `useCases`: the frontend calls REST routes, and an `api: false`
+  entity has use cases but **no routes**, so reading use cases still gave it REST mutations aimed at routes that do not exist.
+  `inherits-graph.test.ts` pins `writeRoutes` against the `apiSurface.http.routes` the backend's **real** `buildBackendLocals`
+  prints its controller from, for every entity of the set (the earlier second test, which compared `writeRoutes` with the very
+  `useCases` it read, was deleted), and has a unit test for an `api: false` entity (no mutation). Three places follow
+  `writeRoutes`: `entities/<e>.ts` emits `createEntityHooks<Base, never>` and no `useCreate<Class>` (also not in
+  `entities/index.ts`); `api/<e>.ts`'s `create` takes `never` and issues no request; `fields/<e>.ts` has `capabilities.create:
+  false`. `store/index.ts` casts only those entries to `EntityHooks<any, any, any>` (`createStore` does not accept `TCreate =
+  never`; the store never creates). The usage gate has a `@ts-expect-error` on `communicationPartHooks.useCreate().mutate({})` and
+  on `communicationPartApi.create({})`. Phase R deleted S6's own `enumChoices` / `baseOnlyKinds` / `baseHasNoCreateRoute`.
+- **A child's REST client speaks the flat contract.** `api/<child>.ts` (both sync modes) defines `<Child>WithBase` (base columns
+  minus the base's discriminator, and the child's) and `<Child>FlatInput` (`Partial` of it without `id` and the discriminator);
+  `get` / `list` / `listAll` return the former, `create` / `update` take the latter, and `createEntityHooks<Child, FlatInput,
+  FlatInput>` is typed the same. `graph/<child>.ts` re-exports `<Child>WithBase`: one owner (`flatChild` in `emit-utils.ts` returns the type names and decides "is a child"; `emit-graph` gates on it and throws if REL-1's marker and it disagree). A missing mutation's stub prints the derivation's own reason (`writeRoutes().why`, from `createDisabledBy` / `writesDisabledBy` / `http.disabledBy`); `writeRoutes` throws for an entity the surface lacks when `definitions` exist. The usage gate compiles a flat
+  create literal with `occurredAt` / `source` / `externalId`, reads a base field off `get`, and has a `@ts-expect-error` on a
+  `kind` in a body. `inherits-graph.test.ts` runs a base whose discriminator is `category` and which also has an ordinary field
+  `kind`: only `category` is omitted.
+- **The date-parser rule uses the resolved behaviours** (declared plus pattern-implied: `resolvedBehaviorNames` in
+  `src/patterns/implied-behaviors.ts`, the one rule the backend locals and the frontend both call) and `timestampBehaviorNames()` (`src/behaviors/index.ts`), not a hard-coded pair; `emit-collections.test.ts` has a case
+  with a pattern that implies `timestamps`.
+- **Studio's `inherits` write checks the base.** `POST|PUT /api/relationships` with `kind: 'inherits'` refuses a base that declares
+  no `discriminator:` and a kind (`as`, else the child's own name) the base does not list (one hop of `choices_of:`), naming the
+  base; `doc.setIn` appends the key at the end of the mapping, which the schema does not mind.
+- **Known, not fixed (FE-REL, older than this stack):** the nested-import loop in `buildEntityGraphFile` imports the collections and
+  row types of every relation target's to-one hops (a root with no to-many branch included) whether or not a given include uses them, so a consumer compiling with
+  `noUnusedLocals` sees TS6133 on them. Recorded only.
+- **`generate.writes` on the frontend: closed in R2** (it was entity-general and older than `inherits:`; S2's note had flagged it).
+  The frontend emitter now reads the derived routes, so `generate: { writes: false }` removes all three mutations: no
+  `useCreate` / `useUpdate` / `useDelete<Class>` re-export, `create` / `update` typed `never` in `api/<e>.ts`, `delete: (_id: never)`
+  (so `<e>Api.delete('a')` does not compile; `EntityApi.delete` is method syntax, hence bivariant, hence assignable), and
+  `capabilities.create/update/delete: false`. **The one limit:** `createEntityHooks` has no type parameter for delete, so
+  `<e>Hooks.useDelete().mutate(…)` still compiles (frontend-patterns' own type); only the re-export, the api method and the
+  capability go. The fixture is `audit_entry` (`test/smoke/fixtures-frontend/entities/`, not part of the family), and the gates are
+  its `@ts-expect-error`s in `usage/graph-usage.ts`, the runner's text assertions, and `inherits-graph.test.ts`. Its stubs throw
+  `new globalThis.Error(…)`: an entity named `error` imports a *type* `Error`, and `new Error` then fails with TS1361;
+  `emittedNameViolations(files, { values: true })` checks the **whole** emitted frontend tree (D15, Gate 2.5): the store and collections emitters now print `new globalThis.Map` / `new globalThis.URL`, and no directory is excluded. The option stays off for the backend's templates, which still `new Set` / `new Map` bare in places (their own issue).
+- **Soft-deleted base (D14).** `transcript_communication_part` (base `communication_part`, `soft_delete`) emits the `isNull(…deletedAt)` filter in its fragment and its root hop; `meeting` (base `communication`, none) emits none. Gates: `inherits-graph.test.ts` (text, both directions), `run-smoke-frontend.ts` (text), and `usage/graph-usage.ts` (the flat row's `deletedAt` is typed and the emitted tree compiles with `isNull`).
+- **Fixtures.** `test/smoke/fixtures-frontend/entities/` holds the whole family (13 entities, `sync: electric`; see §13.1), their
+  row types are `test/smoke/fixtures-frontend/consumer/<entity>.ts`, and the agreement test covers the location.
+- **Gates.** `test/smoke/run-smoke-frontend.ts` asserts the inner joins by their text in `graph/meeting.ts` and the absence of the
+  create route for `communication_part` (and its presence for `communication`, which keeps a base-only kind);
+  `test/smoke/fixtures-frontend/usage/graph-usage.ts` is the A13 type gate: a real `Communication` assignment from the base hop, a
+  real `MeetingWithBase[]` from `useMeetingsWithBase()`, a field read across the base and the child, and two
+  `@ts-expect-error`s that hold only while the hop is non-optional / the create hook is absent. A15, second half: with the base hop
+  typed `| undefined` (what a left join gives) the usage file went red on three lines (TS2322, TS2532, and TS2578 on the
+  unused `@ts-expect-error`); with the root hop or the `WithBase` fragment left-joined the runner's text assertion went red;
+  all restored. `inherits-graph.test.ts` pins the descriptor's three edges, the join keywords, the types, the helper names, the
+  `api` family and the byte snapshot of `graph/meeting.ts`, `graph/communication.ts` and the long-form child
+  (`test/frontend-graph-golden/inherits/`).
+- **Studio.** `src/analyzer/serialize-graph.ts` carries `inherits` on a serialized entity (it carried nothing: a child was an
+  unconnected node). `schema-adapter.ts` draws one `inherits` edge, child → base, labelled with the kind value;
+  `edge-kinds.ts` has the row (`{ light, dark }`, solid, its own marker) and the legend renders from it; `relationship-kinds.ts`
+  has the `inherits` descriptor (1:1, option `as`, writes the child's YAML), and `POST|PUT /api/relationships` accepts
+  `kind: 'inherits'`, writing a top-level `inherits:` (short form, or `{ base, as }` when `as` differs) with the entity schema
+  as the judge. `tools/studio/src/__tests__/legend.test.tsx` renders the legend and asserts the row.
+- **Studio on the new `main` (phase R).** `main` gained #778 (one line per foreign key: `buildEdges` pairs a `belongs_to` with its
+  inverse) and STUDIO-3 (the canvas is a tree: one **spine** parent per node). Decided: the `inherits` line is **not** part of a
+  #778 pair — a pair is found on a foreign-key column (`foreignKeyOf`), and a child has none in the payload (its `id` is the
+  base's), nor any inverse `has_many` — so it stays exactly one line, child → base. It **is** the child's spine: STUDIO-3's
+  first tier (`inherits`) was reserved for this issue, `buildEdges` now feeds it from `SerializedEntity.inherits`, and a child hangs
+  directly under its base whatever `belongs_to`s it also declares (those stay secondary lines). Phase R2 **deleted the unique-FK tier**
+  (and the payload's `fkUnique`, `fkColumnUnique` and their parity test): a unique FK is a modelling accident, `inherits:` is how an
+  author says "is a", and STUDIO-3 had recorded that this issue would delete it. What remains is `inherits`, then `on_delete:
+  cascade`, then first declared. The `inherits` line's `relationId` is `<child>.inherits`, the derivation's own id
+  (`inheritsRelationId` in `src/schema/inheritance.ts`: also REL-1's edge origin and the derivation's relation id; handed to Studio on the serialized entity's `inherits.relationId`, one owner), and a Studio test checks
+  every such line against a real derived surface of the family. `spine.test.ts` pins the tier, `schema-adapter.test.ts` pins that a child with a `belongs_to` of its own keeps its base
+  as spine and that the inheritance line is never absorbed into a pair.
+- **ADR-046 (phase R).** S6 adds frontend files and a Studio edge, not backend API surface. What changed is ownership: S6's own
+  copies of `enumChoices`, `baseOnlyKinds` and `baseHasNoCreateRoute` are gone, and (phase R2) so is Studio's own `choices_of`
+  reader (`baseKinds` in `src/studio/server/relationships.ts` now calls `discriminatorKindsOf`, so an empty `choices: []` reads as
+  "unknown" there exactly as in the generator). The frontend reads route existence from `deriveProjectApiSurface` (above). The one
+  derivation addition is the `inherits` relation (`RelationApiSurface.kind`; `relationSurfaces` lists `<child>.inherits`, whose
+  `includeKeys` are REL-1's child → base edge), which **re-blesses three project goldens** (`baseline`,
+  `matrix-family-every-kind-has-child`, `matrix-family-no-natural-key` under `test/api-surface-golden/project/`) by those entries
+  only.
+- **ADR-046 Phase B (phase R2).** Rebased onto S5's Phase-B tip with no conflicts: S6 touches no template, no `entity-locals.js` and
+  has no flag local, so there was nothing to move onto `apiSurface`; the kind renames (`all_kinds`, `pair_create`, `list_flat`, …) were
+  already in `surface-kinds.ts`, whose tables are `Record`s over every kind (the Studio typecheck is the coverage check). Generated
+  backend output is byte-identical; the frontend output changes only for an entity whose derived routes lack a mutation
+  (`generate: { writes: false }`, `api: false`; none in the baseline). The `/api/relationships` inherits write has a test where
+  `validateContent` itself refuses (a child declaring its own `timestamps`, R5), so "validates like every Studio write" can fail.
 
 **S7 — `Integrated` on a child. Not in v1.** Described in §4.2. S7 also widens R11 to accept behavior columns in a natural key (§4.2). File it as its own issue when a consumer writes a
 family through the generated sink.

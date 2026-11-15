@@ -1,0 +1,33 @@
+# RFC-0006 (#875) fixture family — frontend-smoke copy. Same as test/fixtures/inheritance/entities/transcript_communication_part.yaml, except `sync: electric` (the client graph joins collections, so every entity on a hop must sync the same way, FE-REL §4.4) and tenant_scoped spelling its column out (`tenant_id`, which this harness's `project init` gives, so it resolves to the source set's). Compared by src/__tests__/fixtures/inheritance-fixtures-agree.test.ts.
+# Long form: the kind value is not the entity name.
+
+entity:
+  name: transcript_communication_part
+  plural: transcript_communication_parts
+  sync: electric
+
+inherits:
+  base: communication_part
+  as: meeting
+
+fields:
+  text:
+    type: string
+    required: true
+  start_ms:
+    type: integer
+    nullable: true
+  end_ms:
+    type: integer
+    nullable: true
+
+relationships:
+  transcript:
+    type: belongs_to
+    target: meeting_transcript
+    foreign_key: transcript_id
+    on_delete: cascade
+  participant:
+    type: belongs_to
+    target: communication_participant
+    foreign_key: participant_id

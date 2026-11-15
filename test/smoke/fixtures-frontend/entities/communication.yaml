@@ -1,0 +1,37 @@
+# RFC-0006 (#875) fixture family — frontend-smoke copy. Same as test/fixtures/inheritance/entities/communication.yaml, except `sync: electric` (the client graph joins collections, so every entity on a hop must sync the same way, FE-REL §4.4) and tenant_scoped spelling its column out (`tenant_id`, which this harness's `project init` gives, so it resolves to the source set's). Compared by src/__tests__/fixtures/inheritance-fixtures-agree.test.ts.
+# RFC-0006 §13.1 — the base. Tenant-scoped (declared NOT NULL tenant column, R10),
+# `timestamps` on the base only (R5), no soft_delete: the tenant-only scope path.
+# `message` is a base-only kind (no child). Loaded by unit tests, never generated from.
+
+entity:
+  name: communication
+  plural: communications
+  sync: electric
+  patterns: [Activity]
+
+tenant_scoped: { column: tenant_id }
+discriminator: kind
+behaviors: [timestamps]
+
+fields:
+  tenant_id:
+    type: uuid
+    required: true
+  kind:
+    type: enum
+    choices: [meeting, email, message]
+    required: true
+  occurred_at:
+    type: datetime
+    required: true
+  source:
+    type: string
+    required: true
+    max_length: 32
+  external_id:
+    type: string
+    required: true
+
+unique_indexes:
+  - fields: [source, external_id]
+    natural_key: true

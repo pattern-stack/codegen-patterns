@@ -15,6 +15,8 @@ import {
 } from '../adapters/schema-adapter';
 
 import demoSurface from './fixtures/demo-surface-with-relationship.json';
+import familyGraph from './fixtures/family-graph.json';
+import familySurface from './fixtures/family-surface.json';
 
 type Entity = SerializedDomainGraph['entities'][string];
 type RelDef = SerializedDomainGraph['relationshipDefinitions'][string];
@@ -234,6 +236,59 @@ describe('buildEdges', () => {
       // The derivation keys a role-derived relation `<entity>.roles.<role>`.
       relationId: 'message.roles.sender',
     });
+  });
+
+  test('an `inherits:` child draws one 1:1 edge to its base, labelled with its kind value', () => {
+    const edges = buildEdges(
+      graph({
+        entities: {
+          communication: entity('communication'),
+          meeting: entity('meeting', { inherits: { base: 'communication', as: 'meeting', relationId: 'meeting.inherits' } }),
+        },
+      }),
+    );
+
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toMatchObject({
+      id: 'inherits-meeting-communication',
+      source: 'meeting',
+      target: 'communication',
+      studioKind: 'inherits',
+      cardinality: '1:1',
+      label: 'meeting',
+      type: 'fk',
+      // a real relation (the derivation lists `<child>.inherits`), not "one half of a pairing"
+      relationId: 'meeting.inherits',
+    });
+  });
+
+  test('an `inherits:` child is spined under its base, ahead of a belongs_to it also declares, and is never paired', () => {
+    const edges = buildEdges(
+      graph({
+        entities: {
+          communication: entity('communication'),
+          account: entity('account'),
+          meeting: entity('meeting', { inherits: { base: 'communication', as: 'meeting', relationId: 'meeting.inherits' } }),
+        },
+        edges: [
+          {
+            from: 'meeting',
+            to: 'account',
+            relationship: relationship({ name: 'account', target: 'account', foreignKey: 'account_id', onDelete: 'cascade' }),
+            cardinality: 'N:1',
+            bidirectional: false,
+          },
+        ],
+      }),
+    );
+
+    const inherits = edges.filter((e) => e.studioKind === 'inherits');
+    expect(inherits).toHaveLength(1);
+    expect(inherits[0]).toMatchObject({ treeRole: 'spine', treeReason: 'spine: inherits' });
+    expect(inherits[0]).not.toHaveProperty('inverseRelationId');
+    const other = edges.find((e) => e.studioKind === 'belongs_to');
+    expect(other?.treeRole).toBe('secondary');
+    expect(edges).toHaveLength(2);
   });
 
   test('a junction becomes a node with an edge in and an edge out', () => {
@@ -597,10 +652,29 @@ describe('the canvas counts differently from the API, on purpose', () => {
   });
 });
 
+describe('the inherits line against a real derived surface (one owner of `<child>.inherits`)', () => {
+  test("every `inherits:` line's relation id is a relation of kind `inherits` the family's derived surface lists", () => {
+    // Real `project graph --json` / `project surface --json` of the RFC-0006 family — not hand-built.
+    const surface = familySurface.surface as unknown as ProjectApiSurface;
+    const { edges } = adaptDomainGraph(familyGraph.graph as unknown as SerializedDomainGraph);
+    const inherits = edges.filter((e) => e.studioKind === 'inherits');
+    expect(inherits.length).toBeGreaterThan(0);
+    const listed = new Map(surface.relations.map((r) => [r.id, r]));
+    for (const e of inherits) {
+      const relation = listed.get(e.relationId ?? '');
+      expect(relation, `${e.source} → ${e.target}`).toBeDefined();
+      expect(relation).toMatchObject({ kind: 'inherits', from: e.source, to: e.target });
+    }
+    // and the other way: the surface lists no inherits relation the canvas does not draw
+    expect(surface.relations.filter((r) => r.kind === 'inherits').map((r) => r.id).sort()).toEqual(
+      inherits.map((e) => e.relationId ?? "").sort(),
+    );
+  });
+});
+
 describe('buildEdges — spine and secondary lines (STUDIO-3)', () => {
   /**
-   * The owner's shape: a child that `belongs_to` parent A through a unique FK
-   * with cascade, and `belongs_to` parent B plainly — B declared first, so
+   * The owner's shape: a child that `belongs_to` parent A with cascade, and `belongs_to` parent B plainly — B declared first, so
    * only the signals can pick A.
    */
   const OWNER_SHAPE = graph({
@@ -609,25 +683,25 @@ describe('buildEdges — spine and secondary lines (STUDIO-3)', () => {
       {
         from: 'child',
         to: 'parent_b',
-        relationship: relationship({ name: 'parent_b', target: 'parent_b', foreignKey: 'parent_b_id', onDelete: 'restrict', fkUnique: false }),
+        relationship: relationship({ name: 'parent_b', target: 'parent_b', foreignKey: 'parent_b_id', onDelete: 'restrict' }),
         cardinality: 'N:1',
         bidirectional: false,
       },
       {
         from: 'child',
         to: 'parent_a',
-        relationship: relationship({ name: 'parent_a', target: 'parent_a', foreignKey: 'parent_a_id', onDelete: 'cascade', fkUnique: true }),
+        relationship: relationship({ name: 'parent_a', target: 'parent_a', foreignKey: 'parent_a_id', onDelete: 'cascade' }),
         cardinality: 'N:1',
         bidirectional: false,
       },
     ],
   });
 
-  test('picks the unique-FK parent as the spine, and says why on the line', () => {
+  test('picks the cascading parent as the spine, and says why on the line', () => {
     const edges = buildEdges(OWNER_SHAPE);
     expect(edges.map((e) => [e.target, e.treeRole, e.treeReason])).toEqual([
-      ['parent_b', 'secondary', "secondary: child's spine is parent_a (unique FK (1:1))"],
-      ['parent_a', 'spine', 'spine: unique FK (1:1)'],
+      ['parent_b', 'secondary', "secondary: child's spine is parent_a (on_delete: cascade)"],
+      ['parent_a', 'spine', 'spine: on_delete: cascade'],
     ]);
   });
 

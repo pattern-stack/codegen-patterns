@@ -93,6 +93,53 @@ The backend uses **hygen templates**; the frontend and integration layers use
 - **`templates/entity/new/backend/`** — the one backend pipeline: per entity, a module folder under `paths.modules_dir` (`<modules_dir>[/<kebab context>]/<kebab plural>/`) holding the entity (Drizzle table), repository, service, controller, module, DTOs and use-cases. `backend/entity-locals.js` builds almost every local; `prompt.js` builds only the four it does not (the `@generated` banner, the runtime-import specifiers, the `detection:` literal and the EVT-7 `emits:` descriptors) and spreads the extension's over them. Every template references its locals unguarded, so a missing local throws (#638).
 - There is no architecture choice. The `clean` pipeline (`templates/entity/new/backend/`) and `generate.architecture` were deleted by ARCH-0 (#677, `docs/specs/ARCH-0.md`); writing the key is an unknown-key error. ARCH-1 (#682, `docs/specs/ARCH-1.md`) deleted the rest of the surface only `clean` read — `naming:`, `database:`, `behaviors.strategy` (`behaviors:` itself is live again as `{ timezone }`, #845), the 14 `locations.backend*` names (plus four dead `db*` ones), the entity layout keys (`folder_structure:`, `file_grouping:`, `behavior_strategy:`) and the 69 dead `prompt.js` locals behind them, with `src/config/naming-config.mjs`, `src/config/locations.mjs` and `src/schema/naming-config.schema.ts`. Each deleted key is now an unknown-key error naming the key and the file. `expose:` stays — the frontend emitter reads it.
 
+### Joined-table inheritance (`inherits:`, RFC-0006, #875)
+
+A child entity IS a kind of its base: one row in each table under one `id`. `docs/rfcs/RFC-0006-joined-table-inheritance.md`
+is the design and, in its "as built" notes, the truth; `consumer-skills/entities/yaml-reference.md` is the author's view.
+
+- **`discriminator: kind`** on the base (an enum field, literal `choices:` or `choices_of:`); **`inherits: base`** or
+  `inherits: { base, as }` on the child (`as` is its kind value, default the entity name). One level. `timestamps`,
+  `soft_delete`, `user_tracking`, `external_id_tracking` and `tenant_scoped` live on the base (R5); the base's tenant column is
+  declared by the base and NOT NULL (R10). Rules R1–R11 / M1–M5: `src/schema/inheritance.ts` (one file) and
+  `src/parser/validate-inheritance.ts` (two files).
+- **DDL.** The child's `id` is the primary key and an FK to the base (no default); a composite FK `(id, kind)` plus a `kind`
+  `DEFAULT` + `CHECK` make the database refuse a child under another kind, and a second composite FK `(id, tenant)` pins the
+  tenant. A base or `match:` target carries the `unique(id, …)` sets its referrers point at, rendered by **its own template from
+  its referrers' YAML** (`templates/_shared/inheritance.mjs`), so `entity new` in any order gives the same bytes.
+- **`match: { local: target_col }`** on a `belongs_to` emits a composite FK to the target's `(id, <col>)`; the local column is
+  derived from the target and filled by a scalar subquery in the insert, immutable while the FK is. The part-kind rule
+  ("a transcript part sits only under a meeting communication") is `choices_of: communication.kind` plus
+  `match: { kind: kind }` — **there is no user-facing `checks:` key** (that stays in #786; the `kind` CHECK uses an internal builder).
+- **`natural_key: true`** on one `unique_indexes` entry (every column NOT NULL, R11) makes **`upsertByNaturalKey` exist on
+  every entity that has one**, family or not (`{ row, created }`). A child gets it through its **base's** key: the base on its key,
+  then the child on `id`, in one transaction (`{ row, created, baseCreated }`); a child of a keyless base has none. A soft-deleted match is updated and stays deleted; another kind under the key is
+  `KindMismatchError`; a `user_tracking` entity's upsert is guarded by the user axis.
+- **Reads** are the READ-1 surface (the base is a relation, `with: { communication: true }`); a child's reads are scoped by
+  its own tenant column and the base's lifecycle (`EXISTS`). `findWithBase` / `listFlat` return `<Child>Flat`;
+  `<Base>.findAllKinds` / `listKind` read across kinds in one statement; `findOrphans` finds a base with no child.
+- **Writes** go through the child's repository / service (the pair, one transaction; `KindImmutableError` on a `kind` in an
+  update). **HTTP is flat** (`<Child>` DTOs extend the base's; unknown keys such as `kind` are stripped); the base's `POST`
+  accepts base-only kinds, and a base whose *every* kind has a child has **no create route**: `createDisabledBy`
+  (`src/derived/api/entity.ts`) is the one owner, and the derived use-case / route lists carry it. The backend's templates print
+  those lists and the frontend reads them too (`projectSurface` / `writeRoutes` in `emit-utils.ts` run `deriveProjectApiSurface` once per
+  emit — this also covers `generate: { writes: false }`, which removes all three mutations). The frontend types a missing mutation away
+  (`createEntityHooks<Base, never>`, `create: (_data: never)`, `capabilities.create: false`; no `useCreate` / `useUpdate` / `useDelete`
+  re-export): typed `never`, so it cannot be called. The api client still carries a body for each such key (`EntityApi` requires it), which only rejects, with the derivation's own reason. `writeRoutes` reads the derived **HTTP routes** (`apiSurface.http.routes`), so an `api: false` entity gets no mutation either.
+  `createEntityHooks` has no type parameter for delete, so `<e>Hooks.useDelete().mutate(…)` **still compiles** (frontend-patterns' own type); what goes is the
+  `useDelete<Class>` re-export and `capabilities.delete`, and `<e>Api.delete` is typed `(_id: never)`, so `<e>Api.delete('a')` is a compile error. A child's REST client is typed flat (`<Child>WithBase`, `<Child>FlatInput`, in `api/<child>.ts`).
+- **Frontend.** A child's hop to its base is **inner-joined and typed without `| undefined`**; every `electric` child gets
+  `<Child>WithBase`, `<plural>WithBase(q)`, `use<Plural>WithBase()`, `use<Child>WithBase(id)` in `graph/<child>.ts`. Base and
+  children share one sync mode (R8). Studio draws one `inherits` edge, child → base, and it is the child's spine.
+- **Generator-wide changes this build made** (any entity, not only a family): enums live in a leaf `<entity>.enums.ts` that
+  imports only `drizzle-orm/pg-core` (importing an owner's enum from its entity file is a boot-time `ReferenceError` in a
+  cycle); every table callback's one parameter is `tCols`; a module that composes another entity's repository imports that
+  entity's **home module** instead of providing the repository locally; every constraint and index name over 63 bytes is a
+  generation error; the frontend drops the `Date` parsers from a collection whose table has no date column, and names a
+  `belongs_to` target that has no edge of its own.
+- Fixtures: the family is copied into five harness directories (`test/fixtures/inheritance/entities/`, the baseline,
+  scaffold, smoke and frontend-smoke sets) and `src/__tests__/fixtures/inheritance-fixtures-agree.test.ts` fails when a copy drifts.
+
 ### Frontend Relation Graph (`src/emitters/frontend/graph-model.ts` + `emit-graph.ts`, FE-REL)
 
 The client half of ADR-044 §5's "both sides project from the same declared graph". It calls **REL-1's own**
@@ -196,7 +243,7 @@ shape from `@studio-shared` (the `src/studio/shared/api.ts` alias) rather than
 mirroring it — the viewer's hand-copied `SerializedDomainGraph` is exactly the
 drift the contract exists to stop.
 
-The canvas counts differently from `/api/graph`, deliberately, in two ways. A
+The canvas counts differently from `/api/graph`, deliberately, in three ways. A
 first-class relationship is one `N:M` entry in `graph.edges` but a **node plus
 two edges** on screen, because it carries its own fields, types and
 temporal/sourced flags and a line has nowhere to put them. And a `belongs_to`
@@ -206,13 +253,16 @@ with its inverse `has_many` / `has_one` is two entries in `graph.edges` but
 `shipping_address` stay two lines) and the line carries both ids, `relationId` and
 `inverseRelationId`. Three entities and five API edges draw as four nodes and
 four edges. `buildEdges` says so — the difference is not drift, and neither half
-is wrong.
+is wrong. And an `inherits:` has **no** `graph.edges` entry (a child names its base on the entity itself) but
+draws **one** line, child → base, carrying `relationId` `<child>.inherits` — a real relation in the derived surface, so the edge panel
+lists its methods (`findWithBase`, `listFlat`, …) with provenance.
 
 The canvas is a tree (STUDIO-3). Every node has at most one **spine** parent,
 chosen by `chooseSpines` (`tools/studio/src/graph/spine.ts`) from the
-`belongs_to`s it declares, first match wins: an explicit `inherits` (#875 — until
-it lands this tier never matches; then delete the inference, no shim), a
-`belongs_to` whose FK column is unique (`fkUnique` on the payload), one with
+`belongs_to`s it declares (and its `inherits:`), first match wins: an explicit
+`inherits:` (#875 — a child hangs under its base; `buildEdges` draws it as its own
+child → base line, never one half of a #778 pair; it replaced the old unique-FK tier, which STUDIO-3 said #875 would
+delete, so `fkUnique` and its rule are gone), a `belongs_to` with
 `on_delete: cascade` (`onDelete`), the first declared; ties go to the first
 declared. A junction row hangs under its `from` end. Every other line is
 **secondary** — drawn lighter (`TREE_ROLE_STYLES` in `graph/edge-kinds.ts`) and
@@ -252,13 +302,6 @@ upper card's row, in that card's block (`channelY`, #890), so two lines never sh
 line meets each card on the sides that face each other
 (`tools/studio/src/graph/edge-geometry.ts`); the card's handles are only a
 fallback until ReactFlow has measured it.
-
-`fkUnique` is a **temporary duplicate** of the generator's uniqueness rule:
-`fkColumnUnique` (`src/analyzer/serialize-graph.ts`) restates what
-`fieldUniqueEntries` + `processUniqueIndexes` (`templates/entity/new/backend/entity-locals.js`)
-decide over the raw YAML. `src/__tests__/analyzer/serialize-graph-fk-unique-parity.test.ts`
-holds the two equal, read from generated output; fold both into one owner rather
-than editing either alone.
 
 The header names every count's unit: entities, junction **files**, relationship
 **files** (first-class relationship YAMLs — a model of plain foreign keys has

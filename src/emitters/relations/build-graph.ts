@@ -13,7 +13,7 @@ import pluralize from 'pluralize';
 import type { EntityDefinition } from '../../schema/entity-definition.schema';
 import type { JunctionDefinition } from '../../schema/junction-definition.schema';
 import { foreignKeyColumnNullable } from '../../schema/field-nullability';
-import { familyRelationKey, inheritsOf } from '../../schema/inheritance';
+import { familyRelationKey, inheritsOf, inheritsRelationId } from '../../schema/inheritance';
 import { resolveChildTenancy, resolveTenancy } from '../../schema/tenancy';
 import {
 	camelCase,
@@ -353,7 +353,7 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 		const def = ctx.definitions.get(entity.name);
 		const decl = def ? inheritsOf(def) : null;
 		if (decl === null) continue;
-		const origin = `${entity.name}.inherits`;
+		const origin = inheritsRelationId(entity.name);
 		// Derived first: `scopeOf` throws for a child whose base is not in the entity set (its scope cannot be
 		// derived without it), so a missing base is one error, and past this line the base resolves.
 		const childScope = scopeOf(entity.name);

@@ -55,6 +55,12 @@ describe('emitted-name hygiene helper', () => {
 			'export async function f(): Promise<Array<Date>> { return []; }';
 		expect(emittedNameViolations(entityFile(src))).toEqual([]);
 	});
+	it('flags `new Error(…)` read as a value (an entity `error` imports a type named Error: TS1361)', () => {
+		const v = emittedNameViolations(entityFile("export const f = () => new Error('x');"), { values: true });
+		expect(v.map((x) => x.name)).toEqual(['Error']);
+		expect(emittedNameViolations(entityFile("export const f = () => new globalThis.Error('x');"), { values: true })).toEqual([]);
+		expect(emittedNameViolations(entityFile('export const f = () => new Date();'), { values: true })).toEqual([]);
+	});
 	it('ignores a file with no entity import', () => {
 		expect(emittedNameViolations([{ path: 'b.ts', text: 'export type X = Record<string, never>;' }])).toEqual([]);
 	});
@@ -83,13 +89,14 @@ describe('emitted-name hygiene helper', () => {
 
 describe('committed trees obey the rule', () => {
 	it.each([
-		['test/baseline/packages/api/src', /\.ts$/],
-		['test/frontend-golden/snapshot', /\.ts$/],
-		['test/frontend-graph-golden/snapshot', /\.ts$/],
-	])('%s', (dir, ext) => {
+		['test/baseline/packages/api/src', /\.ts$/, false],
+		// D15: the whole emitted frontend tree is held to the value-position rule, no directory scope within it.
+		['test/frontend-golden/snapshot', /\.ts$/, true],
+		['test/frontend-graph-golden/snapshot', /\.ts$/, true],
+	])('%s', (dir, ext, values) => {
 		const files = walk(path.join(ROOT, dir), ext);
 		expect(files.length).toBeGreaterThan(5);
-		expect(fmt(emittedNameViolations(files))).toEqual([]);
+		expect(fmt(emittedNameViolations(files, { values }))).toEqual([]);
 	});
 });
 

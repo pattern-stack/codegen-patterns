@@ -21,19 +21,19 @@ export interface EntityLookups {
 /** Build fresh lookup maps from current collection state (current page only). */
 export function buildLookups(): EntityLookups {
 	return {
-		deal_states: new Map(
+		deal_states: new globalThis.Map(
 			Array.from(dealStateCollection.state.values()).map((item) => [
 				(item as DealState).id as string,
 				item as DealState,
 			]),
 		),
-		persons: new Map(
+		persons: new globalThis.Map(
 			Array.from(personCollection.state.values()).map((item) => [
 				(item as Person).id as string,
 				item as Person,
 			]),
 		),
-		users: new Map(
+		users: new globalThis.Map(
 			Array.from(userCollection.state.values()).map((item) => [
 				(item as User).id as string,
 				item as User,
@@ -55,9 +55,9 @@ export async function buildLookupsAsync(): Promise<EntityLookups> {
 		userApi.listAll(),
 	]);
 	return {
-		deal_states: new Map(rows[0].map((r) => [r.id as string, r as DealState])),
-		persons: new Map(rows[1].map((r) => [r.id as string, r as Person])),
-		users: new Map(rows[2].map((r) => [r.id as string, r as User])),
+		deal_states: new globalThis.Map(rows[0].map((r) => [r.id as string, r as DealState])),
+		persons: new globalThis.Map(rows[1].map((r) => [r.id as string, r as Person])),
+		users: new globalThis.Map(rows[2].map((r) => [r.id as string, r as User])),
 	};
 }
 

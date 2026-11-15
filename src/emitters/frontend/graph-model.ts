@@ -156,6 +156,14 @@ export interface ClientRelation {
 	through?: { collection: string; from: string; to: string };
 	/** `one` only — whether the joined row may be absent. */
 	optional?: boolean;
+	/**
+	 * `inherits:` (RFC-0006 §3.4) — REL-1's marker, carried through. `'base'` on a
+	 * child's edge to its base: the emitter INNER-joins that hop, so a child row does
+	 * not exist on the client until its base does, and types it without
+	 * `| undefined`. Internal to the emitter: the descriptor stays edge-for-edge
+	 * REL-1's and does not print it.
+	 */
+	inherits?: 'base' | 'child';
 }
 
 /** Everything the graph emitters need about one navigable collection. */
@@ -173,6 +181,13 @@ export interface ClientGraph {
 	nodes: ClientGraphNode[];
 	/** Junctions in the set that need a collection emitting, name-sorted. */
 	junctions: JunctionCollectionEntry[];
+	/**
+	 * Entities in the set with NO edge of their own, so no node (`party`, a lookup).
+	 * They are still hop TARGETS — `communication_participant.party` joins one — and an
+	 * accessor must name them (class, collection, file) without a node to read it off.
+	 * Not in the descriptor: it stays edge-for-edge REL-1's.
+	 */
+	leaves: EntityRegistryEntry[];
 	/**
 	 * Entities whose accessors are deliberately NOT emitted, with the reason.
 	 * Rendered into `graph.ts` and surfaced by the CLI — a deferral that is
@@ -300,6 +315,7 @@ export function buildClientGraph(ctx: FrontendEmitContext): ClientGraph {
 						}
 					: {}),
 				...(edge.optional !== undefined ? { optional: edge.optional } : {}),
+				...(edge.inherits !== undefined ? { inherits: edge.inherits } : {}),
 			});
 		}
 
@@ -326,9 +342,11 @@ export function buildClientGraph(ctx: FrontendEmitContext): ClientGraph {
 	}
 	nodes.sort((a, b) => a.collection.localeCompare(b.collection));
 
+	const nodeCollections = new Set(nodes.map((n) => n.collection));
 	return {
 		nodes,
 		junctions,
+		leaves: entities.filter((e) => !nodeCollections.has(e.plural)),
 		deferred,
 		warnings: [...warnings, ...localWarnings],
 	};

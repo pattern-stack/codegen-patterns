@@ -1,0 +1,21 @@
+# RFC-0006 (#875) fixture family — frontend-smoke copy. Same as test/fixtures/inheritance/entities/email_communication_part.yaml, except `sync: electric` (the client graph joins collections, so every entity on a hop must sync the same way, FE-REL §4.4) and tenant_scoped spelling its column out (`tenant_id`, which this harness's `project init` gives, so it resolves to the source set's). Compared by src/__tests__/fixtures/inheritance-fixtures-agree.test.ts.
+entity:
+  name: email_communication_part
+  plural: email_communication_parts
+  sync: electric
+
+inherits:
+  base: communication_part
+  as: email
+
+fields:
+  text:
+    type: string
+    nullable: true
+
+relationships:
+  resolves_to:
+    type: belongs_to
+    target: email
+    foreign_key: resolves_to_email_id
+    nullable: true

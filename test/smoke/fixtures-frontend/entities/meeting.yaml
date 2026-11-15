@@ -1,0 +1,42 @@
+# RFC-0006 (#875) fixture family — frontend-smoke copy. Same as test/fixtures/inheritance/entities/meeting.yaml, except `sync: electric` (the client graph joins collections, so every entity on a hop must sync the same way, FE-REL §4.4) and tenant_scoped spelling its column out (`tenant_id`, which this harness's `project init` gives, so it resolves to the source set's). Compared by src/__tests__/fixtures/inheritance-fixtures-agree.test.ts.
+# A child: short form, the kind value is the entity name.
+
+entity:
+  name: meeting
+  plural: meetings
+  sync: electric
+
+inherits: communication
+
+fields:
+  title:
+    type: string
+    required: true
+  starts_at:
+    type: datetime
+    required: true
+  ends_at:
+    type: datetime
+    nullable: true
+  link:
+    type: string
+    nullable: true
+
+relationships:
+  transcripts:
+    type: has_many
+    target: meeting_transcript
+    foreign_key: meeting_id
+
+queries:
+  # Filtered search (#744) on a child: a child-rooted read of this table's own column (S5, RFC-0006 §3.2).
+  - name: search
+    filters: [link]
+    search: title
+
+api:
+  includes:
+    list:
+      max_depth: 1
+      paths:
+        - transcripts

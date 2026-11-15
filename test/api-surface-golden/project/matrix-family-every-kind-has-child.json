@@ -1,7 +1,184 @@
 {
 	"case": "matrix-family-every-kind-has-child",
 	"covers": "a joined-table family whose every kind has a child table — the base has no create use case, route or provider; each child has all three writes",
-	"relations": [],
+	"relations": [
+		{
+			"id": "air_freight.inherits",
+			"from": "air_freight",
+			"to": "shipment",
+			"kind": "inherits",
+			"generates": [
+				{
+					"entity": "air_freight",
+					"layer": "repository",
+					"method": "findWithBase"
+				},
+				{
+					"entity": "air_freight",
+					"layer": "repository",
+					"method": "findManyWithBase"
+				},
+				{
+					"entity": "air_freight",
+					"layer": "repository",
+					"method": "listFlat"
+				},
+				{
+					"entity": "air_freight",
+					"layer": "repository",
+					"method": "countFlat"
+				},
+				{
+					"entity": "air_freight",
+					"layer": "repository",
+					"method": "create"
+				},
+				{
+					"entity": "air_freight",
+					"layer": "repository",
+					"method": "update"
+				},
+				{
+					"entity": "air_freight",
+					"layer": "repository",
+					"method": "delete"
+				},
+				{
+					"entity": "air_freight",
+					"layer": "service",
+					"method": "findWithBase"
+				},
+				{
+					"entity": "air_freight",
+					"layer": "service",
+					"method": "findManyWithBase"
+				},
+				{
+					"entity": "air_freight",
+					"layer": "service",
+					"method": "listFlat"
+				},
+				{
+					"entity": "air_freight",
+					"layer": "service",
+					"method": "countFlat"
+				},
+				{
+					"entity": "air_freight",
+					"layer": "service",
+					"method": "create"
+				},
+				{
+					"entity": "air_freight",
+					"layer": "service",
+					"method": "update"
+				},
+				{
+					"entity": "air_freight",
+					"layer": "service",
+					"method": "delete"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "air_freights",
+					"key": "shipment"
+				},
+				{
+					"table": "shipments",
+					"key": "airFreight"
+				}
+			]
+		},
+		{
+			"id": "sea_freight.inherits",
+			"from": "sea_freight",
+			"to": "shipment",
+			"kind": "inherits",
+			"generates": [
+				{
+					"entity": "sea_freight",
+					"layer": "repository",
+					"method": "findWithBase"
+				},
+				{
+					"entity": "sea_freight",
+					"layer": "repository",
+					"method": "findManyWithBase"
+				},
+				{
+					"entity": "sea_freight",
+					"layer": "repository",
+					"method": "listFlat"
+				},
+				{
+					"entity": "sea_freight",
+					"layer": "repository",
+					"method": "countFlat"
+				},
+				{
+					"entity": "sea_freight",
+					"layer": "repository",
+					"method": "create"
+				},
+				{
+					"entity": "sea_freight",
+					"layer": "repository",
+					"method": "update"
+				},
+				{
+					"entity": "sea_freight",
+					"layer": "repository",
+					"method": "delete"
+				},
+				{
+					"entity": "sea_freight",
+					"layer": "service",
+					"method": "findWithBase"
+				},
+				{
+					"entity": "sea_freight",
+					"layer": "service",
+					"method": "findManyWithBase"
+				},
+				{
+					"entity": "sea_freight",
+					"layer": "service",
+					"method": "listFlat"
+				},
+				{
+					"entity": "sea_freight",
+					"layer": "service",
+					"method": "countFlat"
+				},
+				{
+					"entity": "sea_freight",
+					"layer": "service",
+					"method": "create"
+				},
+				{
+					"entity": "sea_freight",
+					"layer": "service",
+					"method": "update"
+				},
+				{
+					"entity": "sea_freight",
+					"layer": "service",
+					"method": "delete"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "sea_freights",
+					"key": "shipment"
+				},
+				{
+					"table": "shipments",
+					"key": "seaFreight"
+				}
+			]
+		}
+	],
 	"unmodelled": [],
 	"warnings": [],
 	"includes": {}

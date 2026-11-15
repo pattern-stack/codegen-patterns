@@ -10,7 +10,7 @@ export const personCollection = createCollection(
 	electricCollectionOptions({
 		id: 'persons',
 		shapeOptions: {
-			url: new URL(
+			url: new globalThis.URL(
 				'/v1/shape',
 				typeof window !== 'undefined' ? window.location.origin : '',
 			).toString(),

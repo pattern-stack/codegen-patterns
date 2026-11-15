@@ -1,7 +1,7 @@
 /**
- * The two fields the Studio canvas's spine rule reads off `/api/graph`
+ * The field the Studio canvas's spine rule reads off `/api/graph`
  * (STUDIO-3): `SerializedRelationship.onDelete` — the parsed `on_delete:`,
- * nothing more — and `fkUnique` on a `belongs_to`. Parsed from YAML on disk
+ * nothing more. Parsed from YAML on disk
  * the way the CLI parses it, so the schema's `on_delete` default is the one
  * under test.
  */
@@ -57,25 +57,6 @@ const graph = serialize([
 
 const rel = (name: string) => graph.entities.spoke!.relationships[name]!;
 const edge = (name: string) => graph.edges.find((e) => e.from === 'spoke' && e.relationship.name === name)!;
-
-describe('serializeDomainGraph — fkUnique', () => {
-  it('a field-level `unique: true` on the FK column makes it unique', () => {
-    expect(rel('hub').fkUnique).toBe(true);
-  });
-
-  it('a single-column `unique_indexes:` entry makes it unique', () => {
-    expect(rel('zone').fkUnique).toBe(true);
-  });
-
-  it('a composite `unique_indexes:` entry does not make either column unique', () => {
-    expect(rel('lane').fkUnique).toBe(false);
-    expect(rel('dock').fkUnique).toBe(false);
-  });
-
-  it('the edge list carries the same answer as the entity map', () => {
-    expect(['hub', 'zone', 'lane', 'dock'].map((n) => edge(n).relationship.fkUnique)).toEqual([true, true, false, false]);
-  });
-});
 
 describe('serializeDomainGraph — onDelete', () => {
   it('exposes the parsed `on_delete:`', () => {

@@ -77,6 +77,12 @@ export const RELATIONSHIP_OPTIONS: Record<OptionId, OptionDescriptor> = {
     hint: 'Relationship subtypes — one enum value per association row.',
     spec: { control: 'list', placeholder: 'employed_by, advises, board_member' },
   },
+  as: {
+    id: 'as',
+    label: 'As',
+    hint: "The base's discriminator value this child is. Leave empty to use this entity's own name.",
+    spec: { control: 'text', placeholder: 'the entity name' },
+  },
   temporal: {
     id: 'temporal',
     label: 'Temporal',
@@ -102,7 +108,7 @@ export interface RelationshipKindDescriptor {
    * The edge kind the graph draws for it. Ties the form to
    * `../graph/edge-kinds` without either importing the other's literals.
    */
-  edgeKind: 'belongs_to' | 'has_many' | 'has_one' | 'junction';
+  edgeKind: 'belongs_to' | 'has_many' | 'has_one' | 'junction' | 'inherits';
   /** Which options apply, in the order the form shows them. */
   options: OptionId[];
   /** Where the YAML lands — shown before the preview arrives. */
@@ -145,6 +151,15 @@ export const RELATIONSHIP_KINDS: readonly RelationshipKindDescriptor[] = [
     edgeKind: 'junction',
     options: ['through', 'name', 'types', 'temporal', 'sourced'],
     writes: 'a junction definition',
+  },
+  {
+    id: 'inherits',
+    label: 'inherits',
+    description: 'This entity is a child of the target: its table joins the target’s on id (joined-table inheritance).',
+    cardinality: '1:1',
+    edgeKind: 'inherits',
+    options: ['as'],
+    writes: "the source (child) entity's YAML — a top-level `inherits:`",
   },
 ];
 

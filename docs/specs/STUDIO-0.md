@@ -159,12 +159,16 @@ edges become 4 nodes and 4 edges, the extra node is the relationship rather than
 anyone "fixing" it meets a test that explains why it is deliberate, rather than one that looks like a stale
 expectation to bump.
 
-**The graph payload's spine signals (STUDIO-3, 2026-11-14).** `SerializedRelationship` carries `onDelete` (the parsed
-`on_delete:`, `restrict` by default; absent only on a junction's synthesized `N:M` edge) and, on a `belongs_to`,
-`fkUnique` — its FK column is unique through a field `unique: true` or a single-column `unique_indexes:` entry (a
-composite entry does not count; the tenant column a `tenant_scoped` entity prefixes does not change the answer). The
-canvas reads both to choose each node's spine parent. The header labels each count by its unit: `entities`,
+**The graph payload's spine signals (STUDIO-3, 2026-11-14; revised 2026-11-15).** `SerializedRelationship` carries `onDelete`
+(the parsed `on_delete:`, `restrict` by default; absent only on a junction's synthesized `N:M` edge). The canvas reads it,
+and the child's `inherits:` (below), to choose each node's spine parent. The header labels each count by its unit: `entities`,
 `junction files`, `relationship files` and the canvas's `lines (N spine, M secondary)`.
+
+*Revision 2026-11-15 (#875, RFC-0006 S6 R2).* The payload's `belongs_to` field `fkUnique` (the FK column made unique by a field
+`unique: true` or a single-column `unique_indexes:` entry) is **deleted**, with the spine tier that read it: a unique FK is
+a modelling accident, and `inherits:` is how an author says "is a" (STUDIO-3 recorded this plan). A serialized entity now
+carries `inherits: { base, as, relationId }` instead; `relationId` is the derivation's own id for the relation
+(`inheritsRelationId`, `<child>.inherits`), so the canvas line and the edge panel look up the same relation.
 
 Files are addressed **generically by path**, not per noun (`/api/files/entities%2Fcontact.yaml`, not
 `/api/entities/contact`). That is deliberate: the editor pane is one editor over four kinds of YAML, and a per-noun

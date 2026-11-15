@@ -1,7 +1,96 @@
 {
 	"case": "matrix-family-no-natural-key",
 	"covers": "a joined-table family whose base has no `natural_key:` — the pair write and the kind guards, and no upsert",
-	"relations": [],
+	"relations": [
+		{
+			"id": "crate.inherits",
+			"from": "crate",
+			"to": "parcel",
+			"kind": "inherits",
+			"generates": [
+				{
+					"entity": "crate",
+					"layer": "repository",
+					"method": "findWithBase"
+				},
+				{
+					"entity": "crate",
+					"layer": "repository",
+					"method": "findManyWithBase"
+				},
+				{
+					"entity": "crate",
+					"layer": "repository",
+					"method": "listFlat"
+				},
+				{
+					"entity": "crate",
+					"layer": "repository",
+					"method": "countFlat"
+				},
+				{
+					"entity": "crate",
+					"layer": "repository",
+					"method": "create"
+				},
+				{
+					"entity": "crate",
+					"layer": "repository",
+					"method": "update"
+				},
+				{
+					"entity": "crate",
+					"layer": "repository",
+					"method": "delete"
+				},
+				{
+					"entity": "crate",
+					"layer": "service",
+					"method": "findWithBase"
+				},
+				{
+					"entity": "crate",
+					"layer": "service",
+					"method": "findManyWithBase"
+				},
+				{
+					"entity": "crate",
+					"layer": "service",
+					"method": "listFlat"
+				},
+				{
+					"entity": "crate",
+					"layer": "service",
+					"method": "countFlat"
+				},
+				{
+					"entity": "crate",
+					"layer": "service",
+					"method": "create"
+				},
+				{
+					"entity": "crate",
+					"layer": "service",
+					"method": "update"
+				},
+				{
+					"entity": "crate",
+					"layer": "service",
+					"method": "delete"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "crates",
+					"key": "parcel"
+				},
+				{
+					"table": "parcels",
+					"key": "crate"
+				}
+			]
+		}
+	],
 	"unmodelled": [],
 	"warnings": [],
 	"includes": {}

@@ -238,6 +238,92 @@ relationships:
   `foreign_key:`) whose target has no YAML in the entities directory is a
   generation error; a `has_many` onto one is simply not wired.
 
+## `inherits:` + `discriminator:` — joined-table inheritance
+
+An entity that IS a kind of another (a `meeting` is a kind of `communication`) says so on the child. The rows are
+one thing across two tables under one `id`.
+
+```yaml
+# entities/communication.yaml — the BASE
+entity: { name: communication, plural: communications }
+tenant_scoped: true
+discriminator: kind              # an enum field of this entity; its choices are the kinds
+behaviors: [timestamps]          # lifecycle lives on the base only
+fields:
+  tenant_id: { type: uuid, required: true }     # the base declares its own tenant column, NOT NULL
+  kind: { type: enum, choices: [meeting, email, message], required: true }
+  external_id: { type: string, required: true }
+  source: { type: string, required: true }
+unique_indexes:
+  - fields: [source, external_id]
+    natural_key: true            # makes upsertByNaturalKey exist (below)
+
+# entities/meeting.yaml — a CHILD
+entity: { name: meeting, plural: meetings }
+inherits: communication          # or: inherits: { base: communication, as: meeting }   (as = the kind value; default the entity name)
+fields:
+  title: { type: string, required: true }
+```
+
+- `message` has no child: a **base-only kind**. A choice has at most one child.
+- **One level.** A child cannot be a base. A child declares no `timestamps` / `soft_delete` / `user_tracking` /
+  `external_id_tracking` / `tenant_scoped` (the base owns them), no `eav: true`, no `pattern: Junction`, and no field or
+  relationship named like one of the base's. Its `queries:` name only its own columns. Base and children share one `sync:`.
+- The database enforces the kind: the child's `id` is the base's `id` (no default), a composite FK `(id, kind)` and a
+  `CHECK` make a `meeting` row under an `email` base row impossible. Deleting the base removes the child.
+- **Reads / writes.** A child's repository and service read and write the pair as one thing (`create`, `update`, `delete`
+  across both tables in one transaction; `findWithBase`, `listFlat` return the flat `<Child>Flat`). A `kind` in an update
+  is refused. The base reads across kinds in one statement (`findAllKinds`, `listKind('meeting', query)`), and
+  `findOrphans()` lists base rows with no child.
+- **HTTP is flat.** `POST /meetings` takes the base's fields and the child's; `GET /meetings` returns both together. A
+  `kind` or tenant column in a body is ignored. The base's `POST /communications` accepts only base-only kinds, and when
+  **every** kind has a child the base has **no create route** (create through the child).
+- **Frontend** (`generate.frontend`): both edges are in the graph; the child's hop to its base is an inner join; an
+  `electric` child gets `useMeetingsWithBase()` / `useMeetingWithBase(id)` returning the flat `MeetingWithBase`.
+
+### `choices_of:` — share an enum type
+
+```yaml
+fields:
+  kind: { type: enum, choices_of: communication.kind, required: true }   # one hop; the owner's pgEnum
+```
+
+The field's values are another entity's enum, and its column uses that entity's Postgres type, so a composite FK on it
+type-checks. Use it on a lookup or a second base whose kinds follow the first's.
+
+### `match:` — a composite FK on a `belongs_to`
+
+```yaml
+relationships:
+  communication:
+    type: belongs_to
+    target: communication
+    foreign_key: communication_id
+    match: { communication_kind: kind }   # local column: target column   ([kind] is shorthand for { kind: kind })
+```
+
+The FK is `(communication_id, communication_kind) → communications(id, kind)`. The local column is **derived** (you do not
+declare it): it takes the target column's type and is filled by the insert from the referenced row, immutable while the FK is
+unchanged. The one exception is the entity's own `discriminator:` field when its enum is the target column's (`choices_of:`):
+then `match: { kind: kind }` is the whole rule "a part's kind equals its communication's kind". The target column is NOT NULL, and
+the target entity is given a `unique(id, <cols>)` for it. A `match:` whose every FK is nullable makes the derived column
+nullable, with a one-directional CHECK per relationship, `<fk> IS NULL OR <derived> IS NOT NULL`: a **set** FK always has its
+derived column (so its composite FK is always checked); the reverse is allowed, a derived column with no FK is harmless.
+
+### `natural_key: true` — the upsert key
+
+```yaml
+unique_indexes:
+  - fields: [source, external_id]
+    natural_key: true
+```
+
+At most one entry per entity, every column NOT NULL, none on a child (a child upserts on its base's key). It adds
+**`upsertByNaturalKey(input, tx?)`** to the repository and service of that entity — family or not — returning
+`{ row, created }` (a child: `{ row, created, baseCreated }` through its base's key; a child of a keyless base has no upsert). One statement per table, one transaction. An existing
+soft-deleted row is updated and **stays deleted**; under `tenant_scoped` the tenant is part of the key; a key that
+already exists under another kind throws `KindMismatchError` and writes nothing.
+
 ## `api:` — HTTP surface + include allowlist
 
 ```yaml
