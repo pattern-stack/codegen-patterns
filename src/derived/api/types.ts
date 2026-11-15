@@ -91,6 +91,8 @@ export interface RepositoryMethod {
 		| 'upsert_through_base'
 		/** A base's `update`, which refuses a `kind` change (`discriminator:`, §4.1). */
 		| 'kind_guard'
+		/** A base's `create`, which refuses a kind that has a child table (`KindRequiresChildError`, §4.1). */
+		| 'create_guard'
 		| 'inherited';
 	/** `false`: the method lives on the base class or a capability mixin, not in the generated class body. */
 	emitted: boolean;
@@ -137,8 +139,6 @@ export interface ServiceMethod {
 		| 'upsert_own'
 		/** `upsertByNaturalKey` through the base's natural key, forwarded; emits the pair's events. */
 		| 'upsert_through_base'
-		/** A base's `create`, which refuses a kind that has a child table (`KindRequiresChildError`). */
-		| 'kind_guard'
 		| 'inherited';
 	emitted: boolean;
 	params: Param[];

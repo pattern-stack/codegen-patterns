@@ -13,16 +13,9 @@ import type {
   CommunicationNoInclude,
   CommunicationResult,
 } from './communication.repository';
-import { assertBaseOnlyKind } from '@shared/base-classes/inheritance';
 import type { DrizzleTx } from '@shared/types/drizzle';
 import type { ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
 import type { communications, Communication } from './communication.entity';
-
-/** The kinds that have a child table, and the create path that writes both rows for each (`KindRequiresChildError`). */
-const COMMUNICATION_CHILD_CREATE_PATH = {
-  email: 'EmailService.create',
-  meeting: 'MeetingService.create',
-} as const;
 
 @Injectable()
 export class CommunicationService extends WithAnalytics(
@@ -98,22 +91,11 @@ export class CommunicationService extends WithAnalytics(
     return this.repository.findOrphans(opts);
   }
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // Writes through the base (RFC-0006 §4.1)
-  // ═══════════════════════════════════════════════════════════════════════
-
-  /** A kind with a child table is created through the child (`KindRequiresChildError`); a base-only kind is created here. */
-  override async create(input: globalThis.Partial<Communication>, tx?: unknown): Promise<Communication> {
-    assertBaseOnlyKind('communication', input.kind, COMMUNICATION_CHILD_CREATE_PATH);
-    return super.create(input, tx);
-  }
-
   // RFC-0006 §4.2 — `natural_key: true`: one statement, `INSERT … ON CONFLICT … DO UPDATE`.
   async upsertByNaturalKey(
     input: globalThis.Partial<Communication>,
     tx?: DrizzleTx,
   ): Promise<{ row: Communication; created: boolean }> {
-    assertBaseOnlyKind('communication', input.kind, COMMUNICATION_CHILD_CREATE_PATH);
     const result = await this.repository.upsertByNaturalKey(input, tx);
     this.emitUpserted(result.row, result.created, result.created);
     return result;

@@ -235,6 +235,36 @@
 				}
 			},
 			{
+				"name": "create",
+				"kind": "create_guard",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					},
+					{
+						"name": "via"
+					}
+				],
+				"returns": "one",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"discriminator"
+						]
+					}
+				}
+			},
+			{
 				"name": "upsertByNaturalKey",
 				"kind": "upsert_own",
 				"emitted": true,
@@ -244,6 +274,9 @@
 					},
 					{
 						"name": "tx"
+					},
+					{
+						"name": "via"
 					}
 				],
 				"returns": "one",
@@ -265,18 +298,6 @@
 			},
 			{
 				"name": "exists",
-				"kind": "inherited",
-				"emitted": false,
-				"params": [],
-				"returns": "forwarded",
-				"readOptions": "none",
-				"origin": {
-					"from": "pattern",
-					"pattern": "Activity"
-				}
-			},
-			{
-				"name": "create",
 				"kind": "inherited",
 				"emitted": false,
 				"params": [],
@@ -580,32 +601,6 @@
 				}
 			},
 			{
-				"name": "create",
-				"kind": "kind_guard",
-				"emitted": true,
-				"params": [
-					{
-						"name": "input"
-					},
-					{
-						"name": "tx"
-					}
-				],
-				"returns": "one",
-				"origin": {
-					"from": "yaml",
-					"at": {
-						"doc": {
-							"kind": "entity",
-							"name": "communication"
-						},
-						"path": [
-							"discriminator"
-						]
-					}
-				}
-			},
-			{
 				"name": "upsertByNaturalKey",
 				"kind": "upsert_own",
 				"emitted": true,
@@ -651,6 +646,17 @@
 			},
 			{
 				"name": "exists",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Activity"
+				}
+			},
+			{
+				"name": "create",
 				"kind": "inherited",
 				"emitted": false,
 				"params": [],

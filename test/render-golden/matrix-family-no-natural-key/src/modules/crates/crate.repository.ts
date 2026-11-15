@@ -11,7 +11,7 @@ import type { DrizzleClient, DrizzleTx } from '@shared/types/drizzle';
 import type { ColumnsOf, IncludeOf, Relations, ResultOf } from '../../generated/relations';
 import { BaseRepository } from '@shared/base-classes/base-repository';
 import type { ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
-import { flattenBase, inTransaction, KindImmutableError, KindMismatchError, splitByOwner, type Flattened } from '@shared/base-classes/inheritance';
+import { flattenBase, inTransaction, KindImmutableError, KindMismatchError, PAIR_WRITE, splitByOwner, type Flattened } from '@shared/base-classes/inheritance';
 import { crates, type Crate } from './crate.entity';
 import { parcels, type Parcel } from '../parcels/parcel.entity';
 import { ParcelRepository } from '../parcels/parcel.repository';
@@ -248,7 +248,7 @@ export class CrateRepository extends BaseRepository<Crate, typeof crates, Relati
     const { base, own } = splitByOwner(input, CRATE_BASE_KEYS);
     this.assertOwnKind(base);
     return inTransaction(this.db, tx, async (txClient) => {
-      const baseRow = await this.baseRepo.create({ ...base, kind: 'crate' }, txClient);
+      const baseRow = await this.baseRepo.create({ ...base, kind: 'crate' }, txClient, PAIR_WRITE);
       const [childRow] = await this.runner(txClient)
         .insert(this.table)
         .values(this.childValues({ ...own, id: baseRow.id }))

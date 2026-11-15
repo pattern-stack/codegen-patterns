@@ -36,7 +36,7 @@ const _isRead = (m) => m.kind === 'count' || m.kind === 'with_base' || _isAcross
 // The write kinds (S4) close the same run: the `queries:` banner comes after the last of them.
 const _PAIR = ['pair_create', 'pair_update', 'pair_delete'];
 const _isPair = (m) => _PAIR.includes(m.kind);
-const _isWrite = (m) => _isPair(m) || m.kind === 'kind_guard' || m.kind === 'upsert_own' || m.kind === 'upsert_through_base';
+const _isWrite = (m) => _isPair(m) || m.kind === 'kind_guard' || m.kind === 'create_guard' || m.kind === 'upsert_own' || m.kind === 'upsert_through_base';
 const _child = _methods.some((m) => m.kind === 'with_base') ? familyChild : null;
 const _base = _methods.some(_isAcross) ? familyBase : null;
 const _listName = _methods.find((x) => x.kind === 'list').name;
@@ -56,6 +56,8 @@ const _upsert = _methods.some((m) => m.kind === 'upsert_own');
 const _childUpsert = _methods.some((m) => m.kind === 'upsert_through_base');
 // A base refuses a `kind` change even when every kind is base-only (no child table).
 const _baseWrites = _methods.some((m) => m.kind === 'kind_guard');
+// A base with a child table refuses a write that names a kind owned by a child (the one owner of `KindRequiresChildError`, D16).
+const _createGuard = _methods.some((m) => m.kind === 'create_guard');
 const _discProp = familyBase ? familyBase.discriminatorProp : null;
 const _upsertGuarded = _upsert && (_discProp !== null || hasUserTracking);
 // Every drizzle-orm name this file imports, in ONE set printed as ONE import (a second import of a name is TS2300).
@@ -69,15 +71,16 @@ const _orm = [...new Set([
 ])];
 // The runtime helpers the write half calls, merged with the read half's into ONE import.
 const _inhValues = [...new Set([
-  ...(_pairWrite ? ['flattenBase', 'inTransaction', 'KindImmutableError', 'KindMismatchError', 'splitByOwner'] : []),
-  ...(_childUpsert ? ['upsertSet'] : []),
+  ...(_pairWrite ? ['flattenBase', 'inTransaction', 'KindImmutableError', 'KindMismatchError', 'PAIR_WRITE', 'splitByOwner'] : []),
+  ...(_childUpsert ? ['PAIR_WRITE', 'upsertSet'] : []),
+  ...(_createGuard ? ['assertBaseOnlyKind'] : []),
   ...(_base ? ['asKind', 'flattenBase'] : []),
   ...(_baseWrites ? ['KindImmutableError'] : []),
   ...(_upsert ? ['upsertSet', ...(_discProp ? ['KindMismatchError'] : []), ...(hasUserTracking ? ['OutOfScopeWriteError'] : [])] : []),
   ...(_derived ? ['fillDerivedColumns'] : []),
 ])].sort((a, b) => a.localeCompare(b, 'en'));
-const _inhTypes = [...(_child || _base ? ['Flattened'] : []), ...(_derived ? ['DerivedColumn'] : [])].sort();
-const _needsTx = eavValueTable || hasIntegrationSurface || _child || _baseWrites || _upsert;
+const _inhTypes = [...(_child || _base ? ['Flattened'] : []), ...(_createGuard ? ['PairWrite'] : []), ...(_derived ? ['DerivedColumn'] : [])].sort();
+const _needsTx = eavValueTable || hasIntegrationSurface || _child || _baseWrites || _createGuard || _upsert;
 // Parent tables a derived column is read from, not already imported by the entity / family blocks.
 const _tableAlready = new Set([entityNamePlural, ...(_child ? [_child.baseTable] : []), ...(_base ? _base.children.map((c) => c.plural) : [])]);
 const _parentImports = [...new Map(matchFills.flatMap((f) => f.sources).filter((x) => !_tableAlready.has(x.parentTable)).map((x) => [x.parentTable, x])).values()];
@@ -296,6 +299,15 @@ function <%= _eLower %>OrphanFilter(dbClient: DrizzleClient<Relations>, rootRow:
 <%_ }) _%>
   );
 }
+
+<%_ } _%>
+<%_ if (_createGuard) { _%>
+/** The kinds that have a child table, and the create path that writes both rows for each (`KindRequiresChildError`). */
+const <%= _C('CHILD_CREATE_PATH') %> = {
+<%_ familyBase.children.forEach((c) => { _%>
+  <%= c.as %>: '<%= c.createPath %>',
+<%_ }) _%>
+} as const;
 
 <%_ } _%>
 <%_ if (_derived) { _%>
@@ -705,7 +717,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
     const { base, own } = splitByOwner(<%= _p[0] %>, <%= _C('BASE_KEYS') %>);
     this.assertOwnKind(base);
     return inTransaction(this.db, <%= _p[1] %>, async (txClient) => {
-      const baseRow = await this.baseRepo.create({ ...base, <%= _child.discriminatorProp %>: '<%= _child.as %>' }, txClient);
+      const baseRow = await this.baseRepo.create({ ...base, <%= _child.discriminatorProp %>: '<%= _child.as %>' }, txClient, PAIR_WRITE);
       const [childRow] = await this.runner(txClient)
         .insert(this.table)
         .values(this.childValues({ ...own, id: baseRow.id<% if (childTenantProp) { %>, <%= childTenantProp %>: baseRow.<%= childTenantProp %><% } %> }))
@@ -794,6 +806,14 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
     if (<%= _p[1] %>.<%= familyBase.discriminatorProp %> !== undefined) throw new KindImmutableError('<%= entityName %>');
     return super.update(<%= _p[0] %>, <%= _p[1] %>, <%= _p[2] %>);
   }
+<%_ } else if (m.kind === 'create_guard') { _%>
+<%_ const _p = m.params.map((x) => x.name); _%>
+
+  /** A kind with a child table is created through the child (`KindRequiresChildError`); a base-only kind is created here. */
+  override async <%= m.name %>(<%= _p[0] %>: globalThis.Partial<<%= E %>>, <%= _p[1] %>?: DrizzleTx, <%= _p[2] %>?: PairWrite): Promise<<%= E %>> {
+    assertBaseOnlyKind('<%= entityName %>', <%= _p[0] %>.<%= familyBase.discriminatorProp %>, <%= _C('CHILD_CREATE_PATH') %>, <%= _p[2] %>);
+    return super.create(<%= _p[0] %>, <%= _p[1] %>);
+  }
 <%_ } else if (m.kind === 'upsert_through_base') { _%>
 <%_ const _p = m.params.map((x) => x.name); _%>
   /**
@@ -816,6 +836,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
       const { row: baseRow, created: baseCreated } = await this.baseRepo.upsertByNaturalKey(
         { ...base, <%= _child.discriminatorProp %>: '<%= _child.as %>' },
         txClient,
+        PAIR_WRITE,
       );
       const set = this.deriveColumns(upsertSet(own, new Set<string>()), 'update');
       const [written] = await this.runner(txClient)
@@ -853,7 +874,13 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
   async <%= m.name %>(
     <%= _p[0] %>: globalThis.Partial<<%= E %>>,
     <%= _p[1] %>?: DrizzleTx,
+<%_ if (_createGuard) { _%>
+    <%= _p[2] %>?: PairWrite,
+<%_ } _%>
   ): Promise<{ row: <%= E %>; created: boolean }> {
+<%_ if (_createGuard) { _%>
+    assertBaseOnlyKind('<%= entityName %>', <%= _p[0] %>.<%= _discProp %>, <%= _C('CHILD_CREATE_PATH') %>, <%= _p[2] %>);
+<%_ } _%>
     const carried = <%= _p[0] %> as globalThis.Record<string, unknown>;
     const values = this.deriveColumns(this.stampTenant(this.withTimestamps(carried, 'create')), 'create');
     const set = this.deriveColumns(this.withTimestamps(upsertSet(carried, <%= _C('UPSERT_NEVER') %>), 'update'), 'update');

@@ -13,15 +13,8 @@ import type {
   ParcelNoInclude,
   ParcelResult,
 } from './parcel.repository';
-import { assertBaseOnlyKind } from '@shared/base-classes/inheritance';
-import type { DrizzleTx } from '@shared/types/drizzle';
 import type { ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
 import type { parcels, Parcel } from './parcel.entity';
-
-/** The kinds that have a child table, and the create path that writes both rows for each (`KindRequiresChildError`). */
-const PARCEL_CHILD_CREATE_PATH = {
-  crate: 'CrateService.create',
-} as const;
 
 @Injectable()
 export class ParcelService extends WithAnalytics(
@@ -95,16 +88,6 @@ export class ParcelService extends WithAnalytics(
 
   findOrphans(opts?: { limit?: number }): Promise<Parcel[]> {
     return this.repository.findOrphans(opts);
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // Writes through the base (RFC-0006 §4.1)
-  // ═══════════════════════════════════════════════════════════════════════
-
-  /** A kind with a child table is created through the child (`KindRequiresChildError`); a base-only kind is created here. */
-  override async create(input: globalThis.Partial<Parcel>, tx?: unknown): Promise<Parcel> {
-    assertBaseOnlyKind('parcel', input.kind, PARCEL_CHILD_CREATE_PATH);
-    return super.create(input, tx);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

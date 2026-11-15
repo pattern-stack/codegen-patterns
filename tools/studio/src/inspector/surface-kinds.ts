@@ -91,7 +91,8 @@ export const REPOSITORY_KINDS: Record<RepositoryKind, KindDescriptor> = {
   upsert_own: { label: 'upsert', section: 'repository', order: 17 },
   upsert_through_base: { label: 'upsert through base', section: 'repository', order: 18 },
   kind_guard: { label: 'kind guard', section: 'repository', order: 19 },
-  inherited: { label: 'inherited', section: 'repository', order: 20 },
+  create_guard: { label: 'create guard', section: 'repository', order: 20 },
+  inherited: { label: 'inherited', section: 'repository', order: 21 },
 };
 
 export const SERVICE_KINDS: Record<ServiceKind, KindDescriptor> = {
@@ -117,8 +118,7 @@ export const SERVICE_KINDS: Record<ServiceKind, KindDescriptor> = {
   pair_delete: { label: 'pair delete', section: 'service', order: 19 },
   upsert_own: { label: 'upsert', section: 'service', order: 20 },
   upsert_through_base: { label: 'upsert through base', section: 'service', order: 21 },
-  kind_guard: { label: 'kind guard', section: 'service', order: 22 },
-  inherited: { label: 'inherited', section: 'service', order: 23 },
+  inherited: { label: 'inherited', section: 'service', order: 22 },
 };
 
 export const USE_CASE_KINDS: Record<UseCaseKind, KindDescriptor> = {

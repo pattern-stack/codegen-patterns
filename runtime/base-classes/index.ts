@@ -37,10 +37,11 @@ export {
   MatchColumnImmutableError,
   OrphanBaseError,
   OutOfScopeWriteError,
+  PAIR_WRITE,
   splitByOwner,
   upsertSet,
 } from './inheritance';
-export type { DerivedColumn, Flattened, ParentSource } from './inheritance';
+export type { DerivedColumn, Flattened, PairWrite, ParentSource } from './inheritance';
 
 // Ambient tenant scope (AsyncLocalStorage) — read by BaseRepository.scopePredicate,
 // set at request/worker boundaries via withRequester/withUserScope/etc.

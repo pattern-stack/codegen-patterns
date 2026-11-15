@@ -17,6 +17,7 @@ import {
 	inTransaction,
 	KindRequiresChildError,
 	MatchColumnImmutableError,
+	PAIR_WRITE,
 	splitByOwner,
 	upsertSet,
 	type DerivedColumn,
@@ -99,6 +100,11 @@ describe('assertBaseOnlyKind', () => {
 		expect(() => assertBaseOnlyKind('communication', undefined, paths)).not.toThrow();
 		// `constructor` is not a kind.
 		expect(() => assertBaseOnlyKind('communication', 'constructor', paths)).not.toThrow();
+	});
+
+	it("passes a child's own pair write (via PAIR_WRITE), and only that", () => {
+		expect(() => assertBaseOnlyKind('communication', 'meeting', paths, PAIR_WRITE)).not.toThrow();
+		expect(() => assertBaseOnlyKind('communication', 'meeting', paths, undefined)).toThrow(KindRequiresChildError);
 	});
 });
 

@@ -201,8 +201,9 @@ export function familyReadSurface(
  *   declares none has no upsert — there is no base conflict target to write through.
  * - `kindGuardUpdate` — any base (`discriminator:`): its repository's `update` refuses a `kind` key, whether or not a
  *   kind has a child table (the discriminator is immutable either way).
- * - `kindGuardCreate` — a base with at least one child table: its service's `create` refuses a kind that has one
- *   (`KindRequiresChildError`).
+ * - `kindGuardCreate` — a base with at least one child table: its repository's `create` and `upsertByNaturalKey` refuse a
+ *   kind that has one (`KindRequiresChildError`). The repository is the one owner, beside `KindImmutableError`; the service
+ *   forwards and keeps no copy (D16).
  *
  * The ONE owner: its readers are `deriveEntityApiSurface` (the methods) and `family-reads.test.ts`; the templates
  * read the methods, not this. `inheritanceBase` is required, not defaulted: an absent base would read as "no upsert through it" and
@@ -465,12 +466,24 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 			origin: fromYaml(['discriminator']),
 		});
 	}
+	if (writeFamily.kindGuardCreate) {
+		// `create` itself is BaseRepository's — the guard overrides it, and a child's own pair write passes `via`.
+		repository.push({
+			name: FAMILY_METHOD.create,
+			kind: 'create_guard',
+			emitted: true,
+			params: [{ name: 'input' }, { name: 'tx' }, { name: 'via' }],
+			returns: 'one',
+			readOptions: 'none',
+			origin: fromYaml(['discriminator']),
+		});
+	}
 	if (writeFamily.upsert !== null) {
 		repository.push({
 			name: FAMILY_METHOD.upsertByNaturalKey,
 			kind: writeFamily.upsert === 'own' ? 'upsert_own' : 'upsert_through_base',
 			emitted: true,
-			params: [{ name: 'input' }, { name: 'tx' }],
+			params: writeFamily.upsert === 'own' && writeFamily.kindGuardCreate ? [{ name: 'input' }, { name: 'tx' }, { name: 'via' }] : [{ name: 'input' }, { name: 'tx' }],
 			returns: 'one',
 			readOptions: 'none',
 			origin: naturalKeyOrigin(),
@@ -583,24 +596,13 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 		});
 	}
 
-	// The write half, forwarded: a child's pair write, a base's create guard, the upsert.
+	// The write half, forwarded: a child's pair write, the upsert. A base's create guard is the repository's.
 	if (writeFamily.pairWrite) {
 		service.push(
 			{ name: FAMILY_METHOD.create, kind: 'pair_create', emitted: true, params: [{ name: 'input' }, { name: 'tx' }], returns: 'one', delegatesTo: repoRef(entityName, FAMILY_METHOD.create), origin: inheritsOrigin },
 			{ name: FAMILY_METHOD.update, kind: 'pair_update', emitted: true, params: [{ name: 'id' }, { name: 'patch' }, { name: 'tx' }], returns: 'one', delegatesTo: repoRef(entityName, FAMILY_METHOD.update), origin: inheritsOrigin },
 			{ name: FAMILY_METHOD.delete, kind: 'pair_delete', emitted: true, params: [{ name: 'id' }, { name: 'tx' }], returns: 'none', delegatesTo: repoRef(entityName, FAMILY_METHOD.delete), origin: inheritsOrigin },
 		);
-	}
-	if (writeFamily.kindGuardCreate) {
-		// `create` itself is BaseRepository's — the guard wraps BaseService's, so there is no repository method to delegate to.
-		service.push({
-			name: FAMILY_METHOD.create,
-			kind: 'kind_guard',
-			emitted: true,
-			params: [{ name: 'input' }, { name: 'tx' }],
-			returns: 'one',
-			origin: fromYaml(['discriminator']),
-		});
 	}
 	if (writeFamily.upsert !== null) {
 		service.push({

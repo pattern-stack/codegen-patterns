@@ -19,17 +19,15 @@ const _ACROSS = ['all_kinds', 'kind_by_id', 'list_kind', 'count_kind'];
 const _isAcross = (m) => _ACROSS.includes(m.kind);
 const _child = apiSurface.service.methods.some((m) => m.kind === 'with_base') ? familyChild : null;
 const _base = apiSurface.service.methods.some(_isAcross) ? familyBase : null;
-// RFC-0006 (#875) S4 — the write half, likewise the derivation's call (`pair_create` / `pair_update` / `pair_delete` / `kind_guard` / `upsert_own` / `upsert_through_base`): a
+// RFC-0006 (#875) S4 — the write half, likewise the derivation's call (`pair_create` / `pair_update` / `pair_delete` / `upsert_own` / `upsert_through_base`): a
 // child writes both rows (its flat input types, the pair events); a base refuses a kind that has a child table; an
 // entity with a natural key forwards its upsert and emits its events.
 const _C = familyConstName;
-const _discProp = familyBase ? familyBase.discriminatorProp : null;
-const _isWrite = (m) => m.kind === 'pair_create' || m.kind === 'pair_update' || m.kind === 'pair_delete' || m.kind === 'kind_guard' || m.kind === 'upsert_own' || m.kind === 'upsert_through_base';
+const _isWrite = (m) => m.kind === 'pair_create' || m.kind === 'pair_update' || m.kind === 'pair_delete' || m.kind === 'upsert_own' || m.kind === 'upsert_through_base';
 const _pairWrite = apiSurface.service.methods.some((m) => m.kind === 'pair_create' || m.kind === 'pair_update' || m.kind === 'pair_delete');
 const _upsert = apiSurface.service.methods.some((m) => m.kind === 'upsert_own');
 const _childUpsert = apiSurface.service.methods.some((m) => m.kind === 'upsert_through_base');
-const _guardCreate = apiSurface.service.methods.some((m) => m.kind === 'kind_guard');
-const _writes = _pairWrite || _upsert || _childUpsert || _guardCreate;
+const _writes = _pairWrite || _upsert || _childUpsert;
 const _readGenerics = _typedInclude
   ? `<W extends ${E}Include = ${E}NoInclude, C extends ${E}Columns | undefined = undefined>`
   : `<C extends ${E}Columns | undefined = undefined>`;
@@ -57,9 +55,6 @@ import type {
 } from './<%= entityFileStem %>.repository';
 <% if (_child) { -%>
 import { <%= _C('BASE_KEYS') %> } from './<%= entityFileStem %>.repository';
-<% } -%>
-<% if (_guardCreate) { -%>
-import { assertBaseOnlyKind } from '<%= inheritanceImport %>';
 <% } -%>
 <% if (_writes && !eavValueTable) { -%>
 import type { DrizzleTx } from '<%= drizzleTypeImport %>';
@@ -89,15 +84,6 @@ import type { <%= fan.junction.entityClass %> } from '<%= fan.junctionEntityImpo
 import type { <%= fan.counterpartyPascal %> } from '<%= fan.counterpartyEntityImport %>';
 <%_ } _%>
 <%_ }) _%>
-<%_ if (_base) { _%>
-
-/** The kinds that have a child table, and the create path that writes both rows for each (`KindRequiresChildError`). */
-const <%= _C('CHILD_CREATE_PATH') %> = {
-<%_ _base.children.forEach((c) => { _%>
-  <%= c.as %>: '<%= c.createPath %>',
-<%_ }) _%>
-} as const;
-<%_ } _%>
 
 @Injectable()
 export class <%= classNames.service %> extends WithAnalytics(
@@ -291,18 +277,6 @@ _%>
     return super.delete(<%= _p[0] %>, <%= _p[1] %>);
   }
 
-<%_ } else if (m.kind === 'kind_guard') { _%>
-<%_ const _p = m.params.map((x) => x.name); _%>
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // Writes through the base (RFC-0006 §4.1)
-  // ═══════════════════════════════════════════════════════════════════════
-
-  /** A kind with a child table is created through the child (`KindRequiresChildError`); a base-only kind is created here. */
-  override async <%= m.name %>(<%= _p[0] %>: globalThis.Partial<<%= E %>>, <%= _p[1] %>?: unknown): Promise<<%= E %>> {
-    assertBaseOnlyKind('<%= entityName %>', <%= _p[0] %>.<%= _discProp %>, <%= _C('CHILD_CREATE_PATH') %>);
-    return super.create(<%= _p[0] %>, <%= _p[1] %>);
-  }
 <%_ } else if (m.kind === 'upsert_through_base') { _%>
 <%_ const _p = m.params.map((x) => x.name); _%>
   /** Base on its natural key, then this table on `id`, one transaction; emits `created` / `updated` under both names. */
@@ -322,9 +296,6 @@ _%>
     <%= _p[0] %>: globalThis.Partial<<%= E %>>,
     <%= _p[1] %>?: DrizzleTx,
   ): Promise<{ row: <%= E %>; created: boolean }> {
-<%_ if (_guardCreate) { _%>
-    assertBaseOnlyKind('<%= entityName %>', <%= _p[0] %>.<%= _discProp %>, <%= _C('CHILD_CREATE_PATH') %>);
-<%_ } _%>
     const result = await this.repository.upsertByNaturalKey(<%= _p[0] %>, <%= _p[1] %>);
     this.emitUpserted(result.row, result.created, result.created);
     return result;

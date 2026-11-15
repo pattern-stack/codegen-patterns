@@ -50,6 +50,9 @@ let CommunicationPartRepository: any;
 let TranscriptCommunicationPartRepository: any;
 let CommunicationParticipantRepository: any;
 let CommunicationNoteRepository: any;
+let DocumentRepository: any;
+let DocumentService: any;
+let ReportDocumentRepository: any;
 
 beforeAll(async () => {
   if (!SHOULD_RUN_SCAFFOLD) return;
@@ -71,6 +74,9 @@ beforeAll(async () => {
     '@gen/modules/communication-participants/communication-participant.repository'
   ));
   ({ CommunicationNoteRepository } = await import('@gen/modules/communication-notes/communication-note.repository'));
+  ({ DocumentRepository } = await import('@gen/modules/documents/document.repository'));
+  ({ DocumentService } = await import('@gen/modules/documents/document.service'));
+  ({ ReportDocumentRepository } = await import('@gen/modules/report-documents/report-document.repository'));
 });
 
 beforeEach(async () => {
@@ -505,6 +511,20 @@ d('the base guards (RFC-0006 §4.1)', () => {
     expect(await count('communications')).toBe(0);
   });
 
+  test('the base REPOSITORY refuses it on a direct call — it is the one owner, the service keeps no copy (D16)', async () => {
+    const repo = commRepo();
+    const err: any = await asA(() => repo.create(baseInput({ kind: 'meeting' }))).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(errors.KindRequiresChildError);
+    expect(err.createPath).toBe('MeetingService.create');
+    await expect(asA(() => repo.upsertByNaturalKey(baseInput({ kind: 'email' })))).rejects.toBeInstanceOf(
+      errors.KindRequiresChildError,
+    );
+    expect(await count('communications')).toBe(0);
+    // The child's own pair write is not refused: it passes the base's guard by owning the write.
+    const meeting = await asA(() => new MeetingService(meetingRepo()).create(meetingInput({ externalId: 'ext-d16' })));
+    expect(meeting.kind).toBe('meeting');
+  });
+
   test('a base-only kind creates and upserts normally', async () => {
     const service = new CommunicationService(commRepo());
     const created = await asA(() => service.create(baseInput({ kind: 'message' })));
@@ -688,5 +708,45 @@ d('#780 — upsertByNaturalKey on a plain natural_key entity (tenant-scoped, sof
     const b = await asUser(TENANT_B, USER, () => repo().upsertByNaturalKey(entry(USER, { title: 'b' })));
     expect(b.created).toBe(true);
     expect(await count('catalog_entries')).toBe(2);
+  });
+});
+
+// Gate 2.5 D4 — a base-only kind on a SOFT-DELETE family. `document` (soft_delete, `memo` | `report`) has one child,
+// `report_document`, so `memo` has no child table; `communication_part` has a child for every kind.
+d('D4 — a base-only kind on a soft-delete family', () => {
+  const docRepo = () => new DocumentRepository(db());
+  const reportRepo = () => new ReportDocumentRepository(db(), docRepo());
+  const memo = (over: Record<string, unknown> = {}) => ({ kind: 'memo', title: 'a memo', ...over });
+
+  test('a base-only kind is created through the base, stamped with the ambient tenant', async () => {
+    const created = await asA(() => docRepo().create(memo()));
+    expect(created.kind).toBe('memo');
+    expect(created.tenantId).toBe(TENANT_A);
+    expect(await count('documents')).toBe(1);
+    expect(await count('report_documents')).toBe(0);
+  });
+
+  test('through the service too: a base-only kind creates, a kind with a child table is refused (and nothing is written)', async () => {
+    const service = new DocumentService(docRepo());
+    const created = await asA(() => service.create(memo({ title: 'via service' })));
+    expect(created.kind).toBe('memo');
+    const err: any = await asA(() => service.create({ kind: 'report', title: 'r' })).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(errors.KindRequiresChildError);
+    expect(await count('documents')).toBe(1);
+  });
+
+  test('a base-only kind is soft-deleted: the row stays, marked, and leaves the base reads', async () => {
+    const created = await asA(() => docRepo().create(memo()));
+    await asA(() => docRepo().delete(created.id));
+    expect(await count('documents', `id = '${created.id}' AND deleted_at IS NOT NULL`)).toBe(1);
+    expect(await asA(() => docRepo().findById(created.id))).toBeNull();
+  });
+
+  test('soft-deleting a base-only kind leaves a sibling child-kind row alone', async () => {
+    const kept = await asA(() => reportRepo().create({ title: 'r', summary: 'sum' }));
+    const gone = await asA(() => docRepo().create(memo()));
+    await asA(() => docRepo().delete(gone.id));
+    expect(await asA(() => reportRepo().findWithBase(kept.id))).not.toBeNull();
+    expect(await count('documents', 'deleted_at IS NULL')).toBe(1);
   });
 });

@@ -234,15 +234,28 @@ export function upsertSet(
 }
 
 /**
+ * The mark a child's pair write passes to its base's repository (`create` /
+ * `upsertByNaturalKey`) to say "the child owns this write": the base then does
+ * not refuse the child's own kind. A write that does not carry it is a write
+ * through the base (RFC-0006 §4.1).
+ */
+export const PAIR_WRITE: unique symbol = Symbol('pair-write');
+export type PairWrite = typeof PAIR_WRITE;
+
+/**
  * Refuse a write through a BASE that names a kind with a child table
  * (RFC-0006 §4.1): `createPathByKind` maps each such kind to the create path
- * that writes both rows. A base-only kind (absent from the map) passes.
+ * that writes both rows. A base-only kind (absent from the map) passes, and so
+ * does a child's own pair write (`via === PAIR_WRITE`). The base repository is
+ * the one owner of this rule — the service keeps no copy.
  */
 export function assertBaseOnlyKind(
   entity: string,
   kind: unknown,
   createPathByKind: Readonly<Record<string, string>>,
+  via?: PairWrite,
 ): void {
+  if (via === PAIR_WRITE) return;
   if (typeof kind === 'string' && Object.prototype.hasOwnProperty.call(createPathByKind, kind)) {
     throw new KindRequiresChildError(entity, kind, createPathByKind[kind]!);
   }

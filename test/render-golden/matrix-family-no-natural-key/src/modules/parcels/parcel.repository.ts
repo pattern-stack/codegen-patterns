@@ -11,7 +11,7 @@ import type { DrizzleClient, DrizzleTx } from '@shared/types/drizzle';
 import type { ColumnsOf, IncludeOf, Relations, ResultOf } from '../../generated/relations';
 import { BaseRepository } from '@shared/base-classes/base-repository';
 import type { ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
-import { asKind, flattenBase, KindImmutableError, type Flattened } from '@shared/base-classes/inheritance';
+import { asKind, assertBaseOnlyKind, flattenBase, KindImmutableError, type Flattened, type PairWrite } from '@shared/base-classes/inheritance';
 import { parcels, type Parcel } from './parcel.entity';
 import { crates, type Crate } from '../crates/crate.entity';
 
@@ -107,6 +107,11 @@ function parcelOrphanFilter(dbClient: DrizzleClient<Relations>, rootRow: typeof 
     ),
   );
 }
+
+/** The kinds that have a child table, and the create path that writes both rows for each (`KindRequiresChildError`). */
+const PARCEL_CHILD_CREATE_PATH = {
+  crate: 'CrateService.create',
+} as const;
 
 @Injectable()
 export class ParcelRepository extends BaseRepository<Parcel, typeof parcels, Relations> {
@@ -301,6 +306,12 @@ export class ParcelRepository extends BaseRepository<Parcel, typeof parcels, Rel
   override async update(id: string, input: globalThis.Partial<Parcel>, tx?: DrizzleTx): Promise<Parcel> {
     if (input.kind !== undefined) throw new KindImmutableError('parcel');
     return super.update(id, input, tx);
+  }
+
+  /** A kind with a child table is created through the child (`KindRequiresChildError`); a base-only kind is created here. */
+  override async create(input: globalThis.Partial<Parcel>, tx?: DrizzleTx, via?: PairWrite): Promise<Parcel> {
+    assertBaseOnlyKind('parcel', input.kind, PARCEL_CHILD_CREATE_PATH, via);
+    return super.create(input, tx);
   }
 
   // Inherited from BaseRepository:

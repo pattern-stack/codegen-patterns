@@ -11,7 +11,7 @@ import type { DrizzleClient, DrizzleTx } from '@shared/types/drizzle';
 import type { ColumnsOf, IncludeOf, Relations, ResultOf } from '../../generated/relations';
 import { BaseRepository } from '@shared/base-classes/base-repository';
 import type { BehaviorConfig, ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
-import { flattenBase, inTransaction, KindImmutableError, KindMismatchError, splitByOwner, upsertSet, type Flattened } from '@shared/base-classes/inheritance';
+import { flattenBase, inTransaction, KindImmutableError, KindMismatchError, PAIR_WRITE, splitByOwner, upsertSet, type Flattened } from '@shared/base-classes/inheritance';
 import { emails, type Email } from './email.entity';
 import { communications, type Communication } from '../communications/communication.entity';
 import { CommunicationRepository } from '../communications/communication.repository';
@@ -268,7 +268,7 @@ export class EmailRepository extends BaseRepository<Email, typeof emails, Relati
     const { base, own } = splitByOwner(input, EMAIL_BASE_KEYS);
     this.assertOwnKind(base);
     return inTransaction(this.db, tx, async (txClient) => {
-      const baseRow = await this.baseRepo.create({ ...base, kind: 'email' }, txClient);
+      const baseRow = await this.baseRepo.create({ ...base, kind: 'email' }, txClient, PAIR_WRITE);
       const [childRow] = await this.runner(txClient)
         .insert(this.table)
         .values(this.childValues({ ...own, id: baseRow.id, tenantId: baseRow.tenantId }))
@@ -354,6 +354,7 @@ export class EmailRepository extends BaseRepository<Email, typeof emails, Relati
       const { row: baseRow, created: baseCreated } = await this.baseRepo.upsertByNaturalKey(
         { ...base, kind: 'email' },
         txClient,
+        PAIR_WRITE,
       );
       const set = this.deriveColumns(upsertSet(own, new Set<string>()), 'update');
       const [written] = await this.runner(txClient)

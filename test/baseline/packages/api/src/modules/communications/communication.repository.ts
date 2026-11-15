@@ -11,7 +11,7 @@ import type { DrizzleClient, DrizzleTx } from '@shared/types/drizzle';
 import type { ColumnsOf, IncludeOf, Relations, ResultOf } from '../../generated/relations';
 import { ActivityEntityRepository } from '@shared/base-classes/activity-entity-repository';
 import type { BehaviorConfig, ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
-import { asKind, flattenBase, KindImmutableError, KindMismatchError, upsertSet, type Flattened } from '@shared/base-classes/inheritance';
+import { asKind, assertBaseOnlyKind, flattenBase, KindImmutableError, KindMismatchError, upsertSet, type Flattened, type PairWrite } from '@shared/base-classes/inheritance';
 import { communications, type Communication } from './communication.entity';
 import { emails, type Email } from '../emails/email.entity';
 import { meetings, type Meeting } from '../meetings/meeting.entity';
@@ -117,6 +117,12 @@ function communicationOrphanFilter(dbClient: DrizzleClient<Relations>, rootRow: 
     ),
   );
 }
+
+/** The kinds that have a child table, and the create path that writes both rows for each (`KindRequiresChildError`). */
+const COMMUNICATION_CHILD_CREATE_PATH = {
+  email: 'EmailService.create',
+  meeting: 'MeetingService.create',
+} as const;
 
 /** The conflict target of `upsertByNaturalKey`: the declared `natural_key`, tenant-prefixed as its unique index is. */
 const COMMUNICATION_NATURAL_KEY = ['tenantId', 'source', 'externalId'] as const;
@@ -345,6 +351,12 @@ export class CommunicationRepository extends ActivityEntityRepository<Communicat
     return super.update(id, input, tx);
   }
 
+  /** A kind with a child table is created through the child (`KindRequiresChildError`); a base-only kind is created here. */
+  override async create(input: globalThis.Partial<Communication>, tx?: DrizzleTx, via?: PairWrite): Promise<Communication> {
+    assertBaseOnlyKind('communication', input.kind, COMMUNICATION_CHILD_CREATE_PATH, via);
+    return super.create(input, tx);
+  }
+
   /**
    * One statement, `INSERT … ON CONFLICT (tenantId, source, externalId) DO UPDATE` (RFC-0006 §4.2): the natural key
    * is the declared `natural_key` index, tenant-prefixed, so one tenant's upsert never touches another's row.
@@ -357,7 +369,9 @@ export class CommunicationRepository extends ActivityEntityRepository<Communicat
   async upsertByNaturalKey(
     input: globalThis.Partial<Communication>,
     tx?: DrizzleTx,
+    via?: PairWrite,
   ): Promise<{ row: Communication; created: boolean }> {
+    assertBaseOnlyKind('communication', input.kind, COMMUNICATION_CHILD_CREATE_PATH, via);
     const carried = input as globalThis.Record<string, unknown>;
     const values = this.deriveColumns(this.stampTenant(this.withTimestamps(carried, 'create')), 'create');
     const set = this.deriveColumns(this.withTimestamps(upsertSet(carried, COMMUNICATION_UPSERT_NEVER), 'update'), 'update');
