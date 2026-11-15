@@ -1181,6 +1181,14 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
 - **The editor JSON schema.** `src/schema/generate-json-schema.ts` is a hand-kept mirror of the entity schema (it
   did not run: it imported Zod 3's root export, which has no `toJSONSchema`; it now imports `zod/v4`). It gains the
   five keys and `entity-definition.schema.json` is regenerated from it.
+- **ADR-046 (phase R).** Nothing moved into `src/derived/api/`: S1 emits no generated code (no template, no
+  method, use case, route or class name), and a family's refusal is a run-level rejection before hygen. The
+  derivation's first consumer is S2. The rebase onto the ADR-046 `main` only reconciled `ParsedRelationship.onDelete`
+  (main added it; S1 carries `nullable` and `match` beside it) and `ParsedEntity.uniqueIndexes` beside S1's
+  `inherits` / `discriminator` / `naturalKey`.
+- **ADR-046 Phase B (phase R2).** Rebased onto `main` with Phase B (#888–#898): no conflicts, nothing to print — S1 has no
+  template, no `entity-locals.js` change and no flag local, so there is nothing to move onto `apiSurface`; the
+  allowlist did not grow and generated output (`test-baseline`) is byte-identical.
 
 **S2 — DDL: shared key, composite FKs, the child's kind CHECK.**
 
