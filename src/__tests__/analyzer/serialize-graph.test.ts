@@ -23,7 +23,7 @@ function serialize(definitions: Record<string, unknown>[]): SerializedDomainGrap
       const name = (d.entity as { name: string }).name;
       writeFileSync(join(dir, `${name}.yaml`), yaml.stringify(d));
     }
-    const { entities, issues } = loadEntities(dir, { tablePrefix: '' });
+    const { entities, issues } = loadEntities(dir, { tablePrefix: '', nonEntityDirs: [] });
     expect(issues.filter((i) => i.severity === 'error')).toEqual([]);
     resolveReferences(entities);
     return serializeDomainGraph(buildDomainGraph(entities));

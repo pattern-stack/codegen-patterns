@@ -79,7 +79,7 @@ export function loadJunctionDefinitions(junctionsDir: string): JunctionDefinitio
 /** Load every entity YAML under `entitiesDir` as a raw definition, keyed by name. */
 export function loadEntityDefinitions(
 	entitiesDir: string,
-	nonEntityDirs: readonly string[] = [],
+	nonEntityDirs: readonly string[],
 ): Map<string, EntityDefinition> {
 	const defs = new Map<string, EntityDefinition>();
 	if (!existsSync(entitiesDir) || !statSync(entitiesDir).isDirectory()) return defs;
@@ -107,7 +107,7 @@ export function loadRelationsEmitContext(
 	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, JUNCTIONS_DIRNAME);
 	const outDir = path.resolve(cwd, config?.paths?.generated ?? GENERATED_DIRNAME);
 
-	const { nonEntityDirs } = projectLayout(cwd, config as Parameters<typeof projectLayout>[1]);
+	const { nonEntityDirs } = projectLayout(cwd, config);
 	const { registry, issues } = loadEntityRegistry(entitiesDir, {
 		tablePrefix: TablesConfigSchema.parse(config?.tables ?? {}).prefix,
 		nonEntityDirs,

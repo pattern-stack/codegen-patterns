@@ -150,7 +150,7 @@ export async function preflightEntityTargets(
 	const tablePrefix = TablesConfigSchema.parse(ctx.config?.tables ?? {}).prefix;
 	const allEntitiesForEmits = loadEntities(entitiesDirForEmits, {
 		tablePrefix,
-		excludeDirs: projectLayout(ctx.cwd, ctx.config).nonEntityDirs,
+		nonEntityDirs: projectLayout(ctx.cwd, ctx.config).nonEntityDirs,
 	}).entities;
 
 	// A child imports its base's table and `.enums` module, and a `match:` target's table carries the unique

@@ -701,7 +701,7 @@ describe('contact-v2.yaml integration', () => {
 	});
 
 	it('maps through parser with correct types', () => {
-		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '' });
+		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '', nonEntityDirs: [] });
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		expect(contact.pattern).toBe('Integrated');
@@ -714,7 +714,7 @@ describe('contact-v2.yaml integration', () => {
 	});
 
 	it('passes consistency checks', () => {
-		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '' });
+		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '', nonEntityDirs: [] });
 		const graph = buildDomainGraph(result.entities);
 		const issues = checkConsistency(graph, 'tenant_id');
 
@@ -731,7 +731,7 @@ describe('contact-v2.yaml integration', () => {
 
 describe('cross-block validation', () => {
 	it('catches query referencing unknown field', () => {
-		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '' });
+		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '', nonEntityDirs: [] });
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		// Inject a bad query
@@ -745,7 +745,7 @@ describe('cross-block validation', () => {
 	});
 
 	it('skips by-field validation for via queries', () => {
-		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '' });
+		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '', nonEntityDirs: [] });
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		// Via query with cross-entity field should not error
@@ -760,7 +760,7 @@ describe('cross-block validation', () => {
 	// dogfood #9: belongs_to FK fields (not separately declared under `fields:`)
 	// must still count as available fields for query validation.
 	it('accepts query on belongs_to FK field even when not declared in fields', () => {
-		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '' });
+		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '', nonEntityDirs: [] });
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		// Simulate the buggy scenario: author relies on the belongs_to relationship
@@ -775,7 +775,7 @@ describe('cross-block validation', () => {
 	});
 
 	it('still rejects query on truly nonexistent field when belongs_to is present', () => {
-		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '' });
+		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '', nonEntityDirs: [] });
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		contact.fields.delete('account_id');
@@ -789,7 +789,7 @@ describe('cross-block validation', () => {
 	});
 
 	it('accepts composite query mixing declared field and belongs_to FK', () => {
-		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '' });
+		const result = loadEntities(resolve('test/fixtures/entities'), { tablePrefix: '', nonEntityDirs: [] });
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		// Drop the declared account_id so only the belongs_to relationship provides it.

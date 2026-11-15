@@ -1165,8 +1165,9 @@ export class EntityValidateCommand extends Command {
 		// could not register is an error: the registry is partial (#667).
 		const loaderIssues = patternLoadIssues(await loadAppPatternsForCli(ctx), ctx.cwd);
 
-		const quick = validateEntities(targetDir);
+		const quick = validateEntities(targetDir, projectLayout(ctx.cwd, ctx.config).nonEntityDirs);
 		const full = await analyzeDomain(targetDir, {
+			nonEntityDirs: projectLayout(ctx.cwd, ctx.config).nonEntityDirs,
 			tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
 			tablePrefix: TablesConfigSchema.parse(ctx.config?.tables ?? {}).prefix,
 			syncMode: FrontendConfigSchema.parse(ctx.config?.frontend ?? {}).sync.mode,

@@ -118,7 +118,7 @@ describe('Track D · entity discovery excludes the providers subtree (0.12.2)', 
 		expect(entityOnly).toHaveLength(1);
 	});
 
-	it('loadEntities({ excludeDirs }) does NOT validate provider files as entities', () => {
+	it('loadEntities({ nonEntityDirs }) does NOT validate provider files as entities', () => {
 		write('definitions/transcript.yaml', ENTITY_WITH_SURFACE);
 		write('definitions/providers/google.yaml', PROVIDER_YAML);
 
@@ -126,11 +126,11 @@ describe('Track D · entity discovery excludes the providers subtree (0.12.2)', 
 		const providersDir = join(dir, 'definitions', 'providers');
 
 		// Without exclusion the provider file is loaded as an entity and fails.
-		const naive = loadEntities(entitiesDir, { tablePrefix: '' });
+		const naive = loadEntities(entitiesDir, { tablePrefix: '', nonEntityDirs: [] });
 		expect(naive.issues.some((i) => i.severity === 'error')).toBe(true);
 
 		// With exclusion the load is clean: only the real entity is parsed.
-		const scoped = loadEntities(entitiesDir, { tablePrefix: '', excludeDirs: [providersDir] });
+		const scoped = loadEntities(entitiesDir, { tablePrefix: '', nonEntityDirs: [providersDir] });
 		expect(scoped.issues.some((i) => i.severity === 'error')).toBe(false);
 		expect(scoped.entities).toHaveLength(1);
 		expect(scoped.entities[0]!.name).toBe('transcript');

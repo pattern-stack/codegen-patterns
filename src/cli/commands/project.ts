@@ -597,6 +597,7 @@ export class ProjectInspectCommand extends Command {
 		// partial, so the analysis is not valid (#667).
 		const loaderIssues = patternLoadIssues(await loadAppPatternsForCli(ctx), ctx.cwd);
 		const analyzed = await analyzeDomain(entitiesDir, {
+			nonEntityDirs: projectLayout(ctx.cwd, ctx.config).nonEntityDirs,
 			junctionsDir: junctionsDirFor(ctx.cwd),
 			tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
 			tablePrefix: TablesConfigSchema.parse(ctx.config?.tables ?? {}).prefix,
@@ -676,6 +677,7 @@ export class ProjectInspectCommand extends Command {
 			if (!isJsonMode()) printWarning(err.message);
 		}
 		const analysis = await analyzeDomain(entitiesDir, {
+			nonEntityDirs: projectLayout(ctx.cwd, ctx.config).nonEntityDirs,
 			junctionsDir: junctionsDirFor(ctx.cwd),
 			tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
 			tablePrefix: TablesConfigSchema.parse(ctx.config?.tables ?? {}).prefix,
@@ -855,13 +857,11 @@ export class ProjectGraphCommand extends Command {
 			return 1;
 		}
 
-		// Relationships dir: check alongside entities, then as subdirectory, then at cwd level
-		const relCandidates = [
-			path.resolve(path.dirname(entitiesDir), 'relationships'),
-			path.resolve(entitiesDir, 'relationships'),
-			relationshipsDirFor(ctx.cwd),
-		];
-		const relationshipsDir = relCandidates.find((d) => fs.existsSync(d));
+		// The one relationships directory — the same one `entity new`, the pre-flight,
+		// the barrels and `project surface` read (#915 F5). An explicit <dir> changes
+		// the entities root only, never where relationships are looked up.
+		const relCandidate = relationshipsDirFor(ctx.cwd);
+		const relationshipsDir = fs.existsSync(relCandidate) ? relCandidate : undefined;
 
 		// App patterns resolve by name in the validators analyzeDomain runs —
 		// load them first, or an app-declared `Actor` capability is invisible
@@ -870,6 +870,7 @@ export class ProjectGraphCommand extends Command {
 			if (!isJsonMode()) printWarning(err.message);
 		}
 		const result = await analyzeDomain(entitiesDir, {
+			nonEntityDirs: projectLayout(ctx.cwd, ctx.config).nonEntityDirs,
 			relationshipsDir,
 			junctionsDir: junctionsDirFor(ctx.cwd),
 			tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,

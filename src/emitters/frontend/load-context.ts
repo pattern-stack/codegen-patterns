@@ -216,7 +216,7 @@ export function loadFrontendEmitContext(
 
 	const emitConfig = mapFrontendEmitConfig(config);
 	const { tablePrefix } = emitConfig;
-	const { nonEntityDirs } = projectLayout(cwd, config as Parameters<typeof projectLayout>[1]);
+	const { nonEntityDirs } = projectLayout(cwd, config);
 	const { registry, issues: registryIssues } = loadEntityRegistry(entitiesDir, { tablePrefix, nonEntityDirs });
 	assertNoInvalidDefinitions(registryIssues);
 	const entities: EntityRegistryEntry[] = sortEntities([...registry.values()]);
@@ -227,7 +227,7 @@ export function loadFrontendEmitContext(
 		};
 	}
 
-	const loadedEntities = loadEntities(entitiesDir, { tablePrefix, excludeDirs: nonEntityDirs });
+	const loadedEntities = loadEntities(entitiesDir, { tablePrefix, nonEntityDirs });
 	assertNoInvalidDefinitions(loadedEntities.issues);
 	const parsedList = loadedEntities.entities;
 	const parsed: Map<string, ParsedEntity> = new Map(

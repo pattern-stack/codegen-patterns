@@ -92,7 +92,7 @@ export function loadSemanticEmitContext(
 	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, JUNCTIONS_DIRNAME);
 
 	const tablePrefix = TablesConfigSchema.parse(config?.tables ?? {}).prefix;
-	const { nonEntityDirs } = projectLayout(cwd, config as Parameters<typeof projectLayout>[1]);
+	const { nonEntityDirs } = projectLayout(cwd, config);
 	const { registry, issues: registryIssues } = loadEntityRegistry(entitiesDir, { tablePrefix, nonEntityDirs });
 	assertNoInvalidDefinitions(registryIssues);
 	const entities: EntityRegistryEntry[] = sortEntities([...registry.values()]);
@@ -103,7 +103,7 @@ export function loadSemanticEmitContext(
 		};
 	}
 
-	const loadedEntities = loadEntities(entitiesDir, { tablePrefix, excludeDirs: nonEntityDirs });
+	const loadedEntities = loadEntities(entitiesDir, { tablePrefix, nonEntityDirs });
 	assertNoInvalidDefinitions(loadedEntities.issues);
 	const parsed = new Map<string, ParsedEntity>(
 		loadedEntities.entities.map((entity) => [entity.name, entity]),

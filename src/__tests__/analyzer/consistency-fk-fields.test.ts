@@ -21,7 +21,7 @@ function issueTypes(files: Record<string, string>): string[] {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fk-fields-'));
 	dirs.push(dir);
 	for (const [name, body] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), body);
-	const { entities, issues } = loadEntities(dir, { tablePrefix: '' });
+	const { entities, issues } = loadEntities(dir, { tablePrefix: '', nonEntityDirs: [] });
 	// A fixture that fails to load would make every `not.toContain` vacuous.
 	expect(issues).toEqual([]);
 	expect(entities).toHaveLength(Object.keys(files).length);

@@ -71,7 +71,7 @@ analytics:
 beforeAll(() => {
 	dir = mkdtempSync(join(tmpdir(), 'sem1-'));
 	writeFileSync(join(dir, 'opportunity.yaml'), YAML);
-	const { entities, issues } = loadEntities(dir, { tablePrefix: '' });
+	const { entities, issues } = loadEntities(dir, { tablePrefix: '', nonEntityDirs: [] });
 	expect(issues.filter((i) => i.severity === 'error')).toEqual([]);
 	opportunity = entities[0]!;
 });
@@ -144,7 +144,7 @@ describe('ParsedEntity.analytics', () => {
 			join(bare, 'contact.yaml'),
 			'entity:\n  name: contact\n  plural: contacts\nfields:\n  email:\n    type: string\n',
 		);
-		const { entities } = loadEntities(bare, { tablePrefix: '' });
+		const { entities } = loadEntities(bare, { tablePrefix: '', nonEntityDirs: [] });
 		expect(entities[0]!.analytics).toBeUndefined();
 		rmSync(bare, { recursive: true, force: true });
 	});

@@ -31,9 +31,9 @@ import { generating } from '../../utils/generated-file.js';
 export interface ScopeEntityTypeGeneratorOptions {
 	/** Absolute path to the entities directory. */
 	entitiesDir: string;
-	/** Absolute path of the output file. */
 	/** Other definition kinds under the entities root (`ProjectLayout.nonEntityDirs`); skipped by entity discovery. */
 	nonEntityDirs: string[];
+	/** Absolute path of the output file. */
 	outputPath: string;
 	/** If true, compute content but don't write to disk. */
 	dryRun?: boolean;

@@ -26,6 +26,8 @@ import { sqlTableCollisionMessage, sqlTableCollisions } from './config/table-nam
  * them keeps the analyzer's behavior identical to pre-PATTERN-4 callers.
  */
 export interface AnalyzeDomainOptions {
+	/** Other definition kinds under the entities root (`projectLayout(...).nonEntityDirs`) — required (#915). */
+	nonEntityDirs: readonly string[];
 	/**
 	 * Path to the relationships directory. Equivalent to the legacy second
 	 * positional argument — preserved for call-site compatibility.
@@ -54,17 +56,14 @@ export interface AnalyzeDomainOptions {
  */
 export async function analyzeDomain(
 	entitiesDir: string,
-	relationshipsOrOptions?: string | AnalyzeDomainOptions,
+	opts: AnalyzeDomainOptions,
 ): Promise<AnalysisResult> {
-	const opts: AnalyzeDomainOptions =
-		typeof relationshipsOrOptions === 'string'
-			? { relationshipsDir: relationshipsOrOptions }
-			: relationshipsOrOptions ?? {};
 	const relationshipsDir = opts.relationshipsDir;
 
 	// Load and parse all entity files
 	const { entities, issues: loadIssues } = loadEntities(entitiesDir, {
 		tablePrefix: TablesConfigSchema.parse({ prefix: opts.tablePrefix }).prefix,
+		nonEntityDirs: opts.nonEntityDirs,
 	});
 
 	// Load relationship definitions (optional — directory may not exist)
@@ -171,7 +170,7 @@ export async function analyzeDomain(
  * Validate entity files without full analysis
  * Returns true if all files parse successfully
  */
-export function validateEntities(entitiesDir: string): {
+export function validateEntities(entitiesDir: string, nonEntityDirs: readonly string[]): {
 	valid: boolean;
 	errors: string[];
 } {
@@ -179,6 +178,7 @@ export function validateEntities(entitiesDir: string): {
 	// prefix is the schema default rather than a parameter every caller threads.
 	const { entities, issues } = loadEntities(entitiesDir, {
 		tablePrefix: TablesConfigSchema.parse({}).prefix,
+		nonEntityDirs,
 	});
 	const errors = issues
 		.filter((i) => i.severity === 'error')

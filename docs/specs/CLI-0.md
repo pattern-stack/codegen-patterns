@@ -54,10 +54,22 @@ Three defects in the generator's own plumbing, found by CAP-1, NAME-0 and NAME-1
   lookups (`entity-naming.mjs`, `junction-fan-out.mjs`); the provider-adapter post-step throws like the others.
   *One rule for which files are entities:* `listEntityYamls(dir, layout.nonEntityDirs)`
   (`src/utils/find-yaml-files.ts`) — the entities root minus the providers, jobs, events, junctions and relationships
-  directories. The pre-flight and every whole-set loader use it, so `paths.entities: definitions` with
+  directories. `nonEntityDirs` is a **required** parameter of every caller — `loadEntities`, `loadEntityRegistry`,
+  `loadEntityDefinitions`, `analyzeDomain`, `validateEntities`, the barrel / scope-union / event generators, Studio's
+  `listFiles` — never an optional exclusion, so a caller that forgets it does not compile (2026-11-15). The pre-flight,
+  `entity validate`, `project inspect` / `graph` and every whole-set loader use it, so `paths.entities: definitions` with
   `definitions/providers/` and `definitions/jobs/` beside the entities works. A directory that does not exist is the
   empty set; one that exists and cannot be read is an error. `codegen init` seeds `entities/README.md`, not a YAML file,
-  so the first command after it is never rejected by its own scaffold.
+  so the first command after it is never rejected by its own scaffold. Two walks remain that do not list entities
+  and are not whole-set loaders: `templates/entity/new/prompt.js` `loadOwnedTableNames` (parse-only; a file that does
+  not parse contributes no table name, the pre-flight having already rejected it) and `computeEntityFilesHash`
+  (`src/analyzer/manifest.ts`), which hashes **every** YAML under the entities root on purpose — it is a
+  change detector, and a provider or job edit under that root should invalidate the manifest.
+- **One relationships directory (#915 review, 2026-11-15).** `project graph` no longer looks for
+  `dirname(entities)/relationships` or `<entities>/relationships` before `relationshipsDirFor(cwd)`; it reads only
+  `relationshipsDirFor(cwd)`, as `entity new`, the pre-flight, the barrels and `project surface` do, so the Studio
+  canvas draws the relationships the generator sees. An explicit `<dir>` argument moves the entities root only.
+  Behaviour change: a relationship YAML outside `relationshipsDirFor(cwd)` is no longer drawn.
 - An entity whose `emits:` fails the cross-check is now rejected like a bad role, with the message
   `emits: validation failed` and one detail per error. It is not generated and counts as failed. Before, the default mode generated it anyway, and `prompt.js` emitted a TODO-only payload mapping for the
   unknown event. The EVT-7 comment already said "reported and skipped by default".

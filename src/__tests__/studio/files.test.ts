@@ -225,3 +225,35 @@ describe('a project root behind a symlink', () => {
 		expect(fs.existsSync(path.join(projectDir, 'entities', 'lead.yaml'))).toBe(true);
 	});
 });
+
+describe('definitions-root layout — jobs and events are not entities (#915 review F2)', () => {
+	function makeDefinitionsRoot(): string {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-defroot-'));
+		roots.push(root);
+		for (const d of ['providers', 'jobs', 'events']) fs.mkdirSync(path.join(root, 'definitions', d), { recursive: true });
+		fs.writeFileSync(
+			path.join(root, 'codegen.config.yaml'),
+			'paths:\n  entities: definitions\n  events_dir: definitions/events\n',
+		);
+		fs.writeFileSync(path.join(root, 'definitions', 'contact.yaml'), VALID_ENTITY);
+		fs.writeFileSync(path.join(root, 'definitions', 'jobs', 'poll.yaml'), 'type: poll\n');
+		fs.writeFileSync(path.join(root, 'definitions', 'events', 'contact_created.yaml'), 'type: contact_created\n');
+		fs.writeFileSync(path.join(root, 'definitions', 'providers', 'hubspot.yaml'), 'slug: hubspot\n');
+		return root;
+	}
+
+	it('listFiles lists only the entity', () => {
+		const root = makeDefinitionsRoot();
+		expect(listFiles(root).filter((f) => f.kind === 'entity').map((f) => f.path)).toEqual([
+			'definitions/contact.yaml',
+		]);
+	});
+
+	it('kindForPath is null under providers, jobs and events, entity for a real entity', () => {
+		const root = makeDefinitionsRoot();
+		expect(kindForPath(root, 'definitions/contact.yaml')).toBe('entity');
+		expect(kindForPath(root, 'definitions/jobs/poll.yaml')).toBeNull();
+		expect(kindForPath(root, 'definitions/events/contact_created.yaml')).toBeNull();
+		expect(kindForPath(root, 'definitions/providers/hubspot.yaml')).toBeNull();
+	});
+});

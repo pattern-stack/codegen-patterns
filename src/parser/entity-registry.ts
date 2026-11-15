@@ -13,10 +13,11 @@
  * sink the whole set.
  */
 
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { emittedStem } from '../config/file-naming.js';
 import { sqlTableName } from '../config/table-naming.js';
-import { findYamlFiles } from '../utils/find-yaml-files';
+import { listEntityYamls } from '../utils/find-yaml-files';
 import { loadEntityFromYaml, type LoadError } from '../utils/yaml-loader';
 import type { AnalysisIssue } from '../analyzer/types';
 
@@ -93,7 +94,7 @@ export function loadEntityRegistry(
 		/** The project's resolved `tables.prefix`; every entry's `table` is the SQL name. */
 		tablePrefix: string;
 		/** Other definition kinds under the entities root (`ProjectLayout.nonEntityDirs`). */
-		nonEntityDirs?: readonly string[];
+		nonEntityDirs: readonly string[];
 	},
 ): LoadEntityRegistryResult {
 	const registry = new Map<string, EntityRegistryEntry>();
@@ -103,7 +104,9 @@ export function loadEntityRegistry(
 
 	let files: string[];
 	try {
-		files = findYamlFiles(resolvedDir, { excludeDirs: [...(opts.nonEntityDirs ?? [])] });
+		// A missing root is a read failure here, not the empty set `listEntityYamls` returns.
+		if (!existsSync(resolvedDir)) throw new Error('missing');
+		files = listEntityYamls(resolvedDir, opts.nonEntityDirs);
 	} catch {
 		issues.push({
 			severity: 'error',

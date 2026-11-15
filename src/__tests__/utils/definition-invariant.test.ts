@@ -123,7 +123,7 @@ describe('whole-set loaders throw on an invalid definition (#915)', () => {
 
 	test('the directory exemption is a directory that does not exist, nothing else', () => {
 		const missing = path.join(mkRoot(), 'no-such-dir');
-		const read = (dir: string) => loadEntityRegistry(dir, { tablePrefix: '' }).issues;
+		const read = (dir: string) => loadEntityRegistry(dir, { tablePrefix: '', nonEntityDirs: [] }).issues;
 		// Absent: an empty set, not an invalid definition.
 		expect(() => assertNoInvalidDefinitions(read(missing))).not.toThrow();
 		// Present but not a directory (ENOTDIR): the read fails and the invariant says so.
@@ -154,7 +154,7 @@ describe('whole-set loaders throw on an invalid definition (#915)', () => {
 
 	test('relations manifest: loadEntityDefinitions / loadJunctionDefinitions / loadRelationsEmitContext', () => {
 		const bad = withBadEntity();
-		expectInvariant(() => loadEntityDefinitions(path.join(bad, 'entities')), 'bad.yaml');
+		expectInvariant(() => loadEntityDefinitions(path.join(bad, 'entities'), []), 'bad.yaml');
 		expectInvariant(() => loadRelationsEmitContext(bad, null, { entitiesDir: path.join(bad, 'entities') }), 'bad.yaml');
 		const junction = withBadJunction();
 		expectInvariant(() => loadJunctionDefinitions(path.join(junction, 'junctions')), 'broken.yaml');
