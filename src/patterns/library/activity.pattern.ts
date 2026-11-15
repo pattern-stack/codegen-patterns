@@ -45,12 +45,13 @@ type ActivityPatternConfig = z.infer<typeof ActivityPatternConfigSchema>;
 
 /**
  * The columns `ActivityEntityRepository` reads (`activity-entity-repository.ts`):
- * the recency column (`occurredAt`, default `occurred_at`) and, when the config
+ * the recency column (`occurredAt`, default `occurred_at`), the actor column
+ * `user_id` (`findByUserId` reads it unconditionally) and, when the config
  * names one, the subject FK (`subjectColumn`, else `<subject>_id`).
  */
 export function activityColumnsRead(config: ActivityPatternConfig | undefined): string[] {
 	const subject = config?.subjectColumn ?? (config?.subject ? `${config.subject}_id` : undefined);
-	return [config?.occurredAt ?? 'occurred_at', ...(subject !== undefined ? [subject] : [])];
+	return [config?.occurredAt ?? 'occurred_at', 'user_id', ...(subject !== undefined ? [subject] : [])];
 }
 
 export const ActivityPattern = definePattern<ActivityPatternConfig>({

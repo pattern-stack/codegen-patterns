@@ -25,21 +25,21 @@
 
 import type { AnalysisIssue, ParsedEntity, ParsedRelationship } from '../analyzer/types.js';
 import { getBehavior } from '../behaviors/index.js';
+import { declaredPatternNames } from '../patterns/compose.js';
 import { getPattern } from '../patterns/registry.js';
 import { resolveImpliedBehaviors } from '../patterns/implied-behaviors.js';
 import { foreignKeyColumnNullable } from '../schema/field-nullability.js';
 import {
-	DEFAULT_TENANT_COLUMN,
 	baseTenantColumnIssue,
 	tenantColumnName,
 	type TenancyEntityInput,
 } from '../schema/tenancy.js';
 
 export interface ValidateInheritanceOptions {
-	/** The project's `tenancy.column`. Defaults to `tenant_id`. */
-	tenancyColumn?: string;
-	/** The project's `frontend.sync.mode`, which an entity with no `sync:` resolves to. Defaults to `electric` (the config default). */
-	syncMode?: 'api' | 'electric';
+	/** The project's `tenancy.column`, resolved through `TenancyConfigSchema` by the caller (the one owner of the default). */
+	tenancyColumn: string;
+	/** The project's `frontend.sync.mode`, which an entity with no `sync:` resolves to, resolved through `FrontendSyncConfigSchema` by the caller. */
+	syncMode: 'api' | 'electric';
 }
 
 /** `match:` of a relationship as `[local, target]` pairs (empty without one). */
@@ -100,6 +100,11 @@ function implicitColumns(
 	const implied = resolveImpliedBehaviors({ pattern: e.pattern, patterns: e.patterns });
 	for (const name of new Set([...e.behaviors, ...implied])) {
 		for (const f of getBehavior(name)?.fields ?? []) cols.set(f.name, `the '${f.name}' column of the '${name}' behavior`);
+	}
+	for (const patternName of declaredPatternNames(e)) {
+		for (const c of getPattern(patternName)?.columns ?? []) {
+			cols.set(c.name, `the '${c.name}' column of the '${patternName}' pattern`);
+		}
 	}
 	const tenant = tenantColumnName(e.tenantScoped, tenancyColumn);
 	if (tenant !== null) cols.set(tenant, `the tenant column '${tenant}'`);
@@ -171,10 +176,9 @@ function declaresColumn(e: ParsedEntity, column: string): 'field' | 'foreign key
 /** Cross-validate the whole entity set. Never throws. */
 export function validateInheritance(
 	entities: ParsedEntity[],
-	options: ValidateInheritanceOptions = {},
+	options: ValidateInheritanceOptions,
 ): AnalysisIssue[] {
-	const tenancyColumn = options.tenancyColumn ?? DEFAULT_TENANT_COLUMN;
-	const syncMode = options.syncMode ?? 'electric';
+	const { tenancyColumn, syncMode } = options;
 	const issues: AnalysisIssue[] = [];
 	const byName = new Map<string, ParsedEntity>();
 	for (const e of entities) byName.set(e.name, e);
@@ -313,12 +317,14 @@ export function validateInheritance(
 		// R6: a child declares a pattern only over the columns it owns.
 		const baseColumns = new Set<string>([...baseOwn.keys(), ...baseImplicit.keys()]);
 		const baseOnly = (col: string) => baseColumns.has(col) && !childOwn.has(col);
-		for (const patternName of [e.pattern, ...(e.patterns ?? [])]) {
-			if (patternName === undefined) continue;
+		for (const patternName of declaredPatternNames(e)) {
 			const definition = getPattern(patternName);
+			// Parsed through the pattern's own schema, as composition does: a config that fails it is
+			// reported there, and reads as no config here.
+			const parsed = definition?.configSchema?.safeParse(e.patternConfig?.[patternName] ?? {});
 			const read =
 				definition !== undefined && 'columnsRead' in definition
-					? (definition.columnsRead?.(e.patternConfig?.[patternName] as never) ?? [])
+					? (definition.columnsRead?.(parsed?.success ? parsed.data : undefined) ?? [])
 					: [];
 			for (const col of read) {
 				if (baseOnly(col)) {
@@ -389,7 +395,9 @@ export function validateInheritance(
 			const issue = baseTenantColumnIssue(e.name, tenancyInput(e), tenancyColumn);
 			if (issue !== null) error(e, 'inherits_tenancy', `R10 — ${issue}`);
 		} catch (err) {
-			error(e, 'inherits_tenancy', `R10 — ${err instanceof Error ? err.message : String(err)}`);
+			// Not necessarily R10: a tenant column that collides with a behavior column or adopts a non-uuid
+			// field is the tenancy resolver's own refusal, so it is reported as the resolver words it.
+			error(e, 'inherits_tenancy', err instanceof Error ? err.message : String(err));
 		}
 	}
 

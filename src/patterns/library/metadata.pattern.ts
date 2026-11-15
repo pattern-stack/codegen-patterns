@@ -18,6 +18,8 @@ export const MetadataPattern = definePattern({
 	serviceClass: 'MetadataEntityService',
 	repositoryImport: '@shared/base-classes/metadata-entity-repository',
 	serviceImport: '@shared/base-classes/metadata-entity-service',
+	// The fixed columns `MetadataEntityRepository` reads (findByEntityIdAndType, listByEntityId, listHistoryByEntityId).
+	columnsRead: () => ['entity_id', 'entity_type', 'valid_from'],
 	repositoryInheritedMethods: [
 		'findById, findByIds, list, count, exists, create, update, delete, upsertMany',
 		'findByEntityIdAndType, listByEntityId, listHistoryByEntityId',

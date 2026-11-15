@@ -139,9 +139,10 @@ defaults to `entity.name` and must be one of the base's discriminator choices.
 | R10 | A `tenant_scoped` base declares its tenant column itself, NOT NULL: a `type: uuid, required: true` field, or a `belongs_to` whose FK is not `nullable`. | The column `tenant_scoped` emits on its own is nullable (`entity.ejs.t:51-57`), and a composite FK is not checked for a NULL. An adopted column keeps its own declaration (`src/schema/tenancy.ts:126-166`). |
 | R11 | At most one `unique_indexes` entry per entity carries `natural_key: true`, and every column in it is NOT NULL. A child declares none. | It is the `ON CONFLICT` target of the upsert, and a NULL in it never conflicts. |
 
-R1 to R3, R5, R10 and R11 are schema or cross-entity checks. The cross-entity ones belong in a new
-`src/parser/validate-inheritance.ts`, called from the `entity new` pre-flight next to `validateSemanticModel`
-(`src/cli/commands/entity.ts:45`), because they read two YAML files.
+R1 to R3, R5, R9, R10 and R11 are schema or cross-entity checks. The single-file ones (R5, R9, R11, R1's and R3's
+own-file halves) are a Zod refinement in `src/schema/inheritance.ts`. The cross-entity ones are in
+`src/parser/validate-inheritance.ts`, called from the `entity new` pre-flight and from `analyzeDomain`, because they
+read two files (§13.2, "S1 as built").
 
 ### 1.3 Patterns, capabilities and `roles:`
 
@@ -153,8 +154,9 @@ A pattern base class reads columns on its own table (`ActivityEntityRepository` 
 - **`Communication` + `roles:`** go on the base. Role FK columns and junctions hang off `communications`. A role
   declared on the base is read through the base (`communicationService.findByRole`), not re-exposed on each child.
 - **`Actor`** may be declared on a base or a child. A role may target a child: that is a real FK to the child table.
-- A child may declare a pattern whose config names only its own columns. Config that names a base field is an error
-  naming the base.
+- A child may declare a pattern only over its own columns. R6 compares the columns the pattern says it reads
+  (`PatternDefinition.columnsRead`, §13.2), not config strings. A pattern whose repository reads a column the base
+  owns is an error naming the base.
 
 Doug's draft models participants as an entity (`communication_participant`), not `roles:` FK columns. Both work. The
 entity form is the one drawn in §7.
@@ -891,7 +893,7 @@ follow-up.
 - Multi-level inheritance, and more than one base.
 - Changing a row's kind.
 - A non-`uuid` or composite key. The generator emits one key shape (`entity.ejs.t:32`).
-- `eav: true` and `pattern: Junction` in a family.
+- `eav: true` and `pattern: Junction` in a family (R9), and `eav_value_table: true` on a child (a child-only refusal, not R9).
 - `pattern: Integrated`, `surface:`, `integration:` or `detection:` on a child. The integration upsert's conflict
   target and write columns are one table's (`repository.ejs.t:216-227`). v1 loads a family through
   `upsertByNaturalKey`; the sink adapter is a follow-up slice (§4.2).
@@ -965,7 +967,7 @@ The summary. §13 is the build plan, slice by slice.
 | # | Item | Where |
 |---|---|---|
 | 1 | Keys: `inherits:`, `discriminator:`, `match:` on a relationship, `natural_key:` on a unique index, `choices_of:` | `src/schema/entity-definition.schema.ts` (`:208`, `:451`, `:1141-1368`) |
-| 2 | Cross-entity rules R1 to R11 and M1 to M5 | new `src/parser/validate-inheritance.ts` |
+| 2 | Rules R1 to R11 and M1 to M5 | single-file rules in `src/schema/inheritance.ts`; cross-entity rules in new `src/parser/validate-inheritance.ts` |
 | 3 | Child `id` line; `foreignKey` + `check` in the extra-config list; base and target unique indexes; derived tenant and `match:` columns | `entity.ejs.t:32`, `:41`; `entity-locals.js:761`, `:2168` |
 | 4 | Two edges per child with the `inherits` marker; base scope on `ScopeConfigLiteral` | `src/emitters/relations/build-graph.ts`, `types.ts`, `emit-manifest.ts` |
 | 5 | `inheritance.ts`; base scope in `scopeFilter`; `BaseService` event changes | `runtime/base-classes/` |
@@ -1129,7 +1131,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   R10, M1–M5) are `validateInheritance` in `src/parser/validate-inheritance.ts`, called from `entity new`'s
   pre-flight (`preflightEntityTargets`, so `--all`, a single target and `junction new` all see it) and from
   `analyzeDomain` (so `entity validate` and `project inspect --kind analyze` report the same errors). The
-  validator reads `ParsedEntity`, the model S3's `build-graph` reads. `inherits`, `discriminator`, `naturalKey`,
+  validator reads `ParsedEntity`, the model S3's `build-graph` reads. `inherits`, `discriminator`,
   `sync`, a field's `choicesOf` and a relationship's `match` / `nullable` / `onDelete` are carried onto it, so
   the columns a `roles:` entry derives (`<role>_<target>_id`) are visible to M2 and R4, and the directory is
   loaded once.
@@ -1143,13 +1145,19 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
 - **R4** also sees the columns a `match:` derives (a child deriving `thread_topic` collides with a base field of
   that name) and the FK columns a role derives.
 - **R6** reads the columns a pattern says it reads: `PatternDefinition.columnsRead(config)`, stated next to the
-  pattern's own config (`activityColumnsRead`: `occurredAt`, default `occurred_at`; `subjectColumn`, else
-  `<subject>_id`). A child declaring a pattern whose columns include one the base owns is an error. Config strings
-  are not compared; only a pattern that declares `columnsRead` is checked (today, `Activity`).
+  pattern's own config. `Activity` reads `occurredAt` (default `occurred_at`), `user_id` (`findByUserId`) and the
+  subject column (`subjectColumn`, else `<subject>_id`); `Metadata` reads `entity_id`, `entity_type` and
+  `valid_from`. A child declaring a pattern whose columns include one the base owns is an error. Config strings are
+  not compared. The config is parsed through the pattern's own schema first. A pattern with no `columnsRead`
+  (every other pattern, and every capability) is not checked: whether R6 should instead fail closed there is
+  pending a decision.
+- **R4 and M2** see the columns a pattern contributes (`PatternDefinition.columns`) as well as behavior, tenant and
+  derived columns.
 - **R7** covers `by`, `select` and `order` of the by-column queries and the `filters` and `search` column of a
   search query. Both shapes are on `ParsedEntity` (`queries`, `searchQueries`).
 - **R8** compares **resolved** modes: `entity.sync ?? frontend.sync.mode`. The project mode reaches the validator
-  as an option (`syncMode`, from `ctx.config.frontend`, as `tenancyColumn` does), so a base `sync: electric` with
+  as a required option (`syncMode`, resolved by the caller through `FrontendSyncConfigSchema`, as `tenancyColumn`
+  is through `TenancyConfigSchema`; the validator holds no default), so a base `sync: electric` with
   undeclared children under a global `electric` is fine, and is an error under a global `api`.
 - **R11** adds two refusals the rule implies: a `natural_key` entry may not have `where` (a partial index is not an
   `ON CONFLICT` target without its predicate), and its columns must be declared fields or `belongs_to` foreign

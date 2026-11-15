@@ -9,20 +9,23 @@
 
 import { describe, expect, it } from 'bun:test';
 
+import { registerLibraryPattern, _unregisterLibraryPatternForTests } from '../../patterns/registry';
 import { validateInheritance } from '../../parser/validate-inheritance';
 import { familyWith, loadFamily, type Mutations } from './inheritance-family';
 
+const OPTS = { tenancyColumn: 'tenant_id', syncMode: 'electric' } as const;
+
 function errorsFor(mutations: Mutations) {
-	return validateInheritance(familyWith(mutations)).filter((i) => i.severity === 'error');
+	return validateInheritance(familyWith(mutations), OPTS).filter((i) => i.severity === 'error');
 }
 
 /**
- * The messages a case produces, joined. One change can break more than one
+ * The messages a case produces, joined (at least one error, not exactly one). One change can break more than one
  * rule (a lookup enum that stops being shared also fails the participant that
  * matches it), so a case asserts the message it is about is present — and that
  * the family stops being clean, which `errors.length > 0` states.
  */
-function only(mutations: Mutations): string {
+function errorMessages(mutations: Mutations): string {
 	const errors = errorsFor(mutations);
 	expect(errors.length).toBeGreaterThan(0);
 	return errors.map((e) => e.message).join('\n');
@@ -30,7 +33,7 @@ function only(mutations: Mutations): string {
 
 describe('the fixture family', () => {
 	it('validates clean through the real loader', () => {
-		expect(validateInheritance(loadFamily())).toEqual([]);
+		expect(validateInheritance(loadFamily(), OPTS)).toEqual([]);
 	});
 
 	it('contains both bases, three children and the match-only entities', () => {
@@ -53,7 +56,7 @@ describe('the fixture family', () => {
 
 describe('R1 — discriminator and choices_of', () => {
 	it('R1: a child whose base declares no discriminator', () => {
-		const msg = only({ communication: (r) => delete r.discriminator });
+		const msg = errorMessages({ communication: (r) => delete r.discriminator });
 		// meeting, email and the parts' base are unaffected; both children of communication fail.
 		expect(msg).toContain('R1');
 	});
@@ -66,7 +69,7 @@ describe('R1 — discriminator and choices_of', () => {
 	});
 
 	it('R1: choices_of naming an entity that does not exist', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication_participant_role: (r) => {
 				r.fields.kind.choices_of = 'nowhere.kind';
 			},
@@ -76,7 +79,7 @@ describe('R1 — discriminator and choices_of', () => {
 	});
 
 	it('R1: choices_of naming a field the owner does not declare', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication_participant_role: (r) => {
 				r.fields.kind.choices_of = 'communication.missing';
 			},
@@ -85,7 +88,7 @@ describe('R1 — discriminator and choices_of', () => {
 	});
 
 	it('R1: choices_of naming a field that is not an enum', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication_participant_role: (r) => {
 				r.fields.kind.choices_of = 'communication.source';
 			},
@@ -105,7 +108,7 @@ describe('R1 — discriminator and choices_of', () => {
 	});
 
 	it('R1: choices_of may not name the entity itself', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication_participant_role: (r) => {
 				r.fields.kind.choices_of = 'communication_participant_role.role';
 			},
@@ -116,8 +119,8 @@ describe('R1 — discriminator and choices_of', () => {
 
 	it('R1: a discriminator whose choices come from choices_of resolves to the referenced list', () => {
 		// communication_part.kind is choices_of: communication.kind; the child's `as: meeting` is checked against it.
-		expect(validateInheritance(loadFamily())).toEqual([]);
-		const msg = only({
+		expect(validateInheritance(loadFamily(), OPTS)).toEqual([]);
+		const msg = errorMessages({
 			transcript_communication_part: (r) => {
 				r.inherits = { base: 'communication_part', as: 'voicemail' };
 			},
@@ -129,7 +132,7 @@ describe('R1 — discriminator and choices_of', () => {
 
 describe('R2 — one child per choice; `as:` is a choice', () => {
 	it('R2: `as:` names a value the base does not list', () => {
-		const msg = only({ meeting: (r) => (r.inherits = { base: 'communication', as: 'call' }) });
+		const msg = errorMessages({ meeting: (r) => (r.inherits = { base: 'communication', as: 'call' }) });
 		expect(msg).toContain('R2');
 		expect(msg).toContain("'meeting'");
 		expect(msg).toContain("'communication.kind'");
@@ -137,7 +140,7 @@ describe('R2 — one child per choice; `as:` is a choice', () => {
 	});
 
 	it('R2: two children of one kind', () => {
-		const msg = only({
+		const msg = errorMessages({
 			email: (r) => (r.inherits = { base: 'communication', as: 'meeting' }),
 		});
 		expect(msg).toContain('R2');
@@ -146,14 +149,15 @@ describe('R2 — one child per choice; `as:` is a choice', () => {
 		expect(msg).toContain("both the 'meeting' kind of 'communication'");
 	});
 
-	it('R2: a choice with no child is a base-only kind and is fine (message)', () => {
-		expect(validateInheritance(loadFamily())).toEqual([]);
+	it('R2: a base-only kind is fine: a choice with no child', () => {
+		// Drop the only child of the 'email' kind; the choice stays on the base.
+		expect(errorsFor({ email: (r) => (r.inherits = undefined) }).filter((e) => e.message.includes('R2'))).toEqual([]);
 	});
 });
 
 describe('R3 — one level', () => {
 	it('R3: a child cannot be a base', () => {
-		const msg = only({
+		const msg = errorMessages({
 			meeting_transcript: (r) => {
 				r.inherits = 'meeting';
 			},
@@ -164,26 +168,26 @@ describe('R3 — one level', () => {
 	});
 
 	it('R3: inheriting an entity that does not exist names it', () => {
-		const msg = only({ meeting: (r) => (r.inherits = 'conversation') });
+		const msg = errorMessages({ meeting: (r) => (r.inherits = 'conversation') });
 		expect(msg).toContain("'meeting' inherits 'conversation'");
 		expect(msg).toContain('no entity');
 	});
 
 	it('R3: an entity cannot inherit itself', () => {
-		expect(only({ meeting: (r) => (r.inherits = 'meeting') })).toContain("'meeting' inherits itself");
+		expect(errorMessages({ meeting: (r) => (r.inherits = 'meeting') })).toContain("'meeting' inherits itself");
 	});
 });
 
 describe('R4 — no name on both tables', () => {
 	it('R4: a child field that the base declares', () => {
-		const msg = only({ meeting: (r) => (r.fields.source = { type: 'string', nullable: true }) });
+		const msg = errorMessages({ meeting: (r) => (r.fields.source = { type: 'string', nullable: true }) });
 		expect(msg).toContain('R4');
 		expect(msg).toContain("'meeting' declares field 'source'");
 		expect(msg).toContain("base 'communication'");
 	});
 
 	it('R4: a child FK column that the base declares', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication: (r) => {
 				r.fields.thread_id = { type: 'uuid', nullable: true };
 			},
@@ -193,7 +197,7 @@ describe('R4 — no name on both tables', () => {
 	});
 
 	it('R4: a child relation key that the base declares', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication: (r) => {
 				r.relationships = { transcripts: { type: 'has_many', target: 'meeting_transcript', foreign_key: 'meeting_id' } };
 			},
@@ -203,27 +207,27 @@ describe('R4 — no name on both tables', () => {
 	});
 
 	it('R4: a child that redeclares the base discriminator or a behavior column', () => {
-		const discriminator = only({ meeting: (r) => (r.fields.kind = { type: 'string', nullable: true }) });
+		const discriminator = errorMessages({ meeting: (r) => (r.fields.kind = { type: 'string', nullable: true }) });
 		expect(discriminator).toContain("'meeting' declares field 'kind'");
-		const behavior = only({ meeting: (r) => (r.fields.created_at = { type: 'datetime', nullable: true }) });
+		const behavior = errorMessages({ meeting: (r) => (r.fields.created_at = { type: 'datetime', nullable: true }) });
 		expect(behavior).toContain("'meeting' declares field 'created_at'");
 		expect(behavior).toContain("'timestamps' behavior");
 	});
 
 	it('R4: the reverse — a base declaring what a child declares', () => {
-		const msg = only({ communication: (r) => (r.fields.title = { type: 'string', nullable: true }) });
+		const msg = errorMessages({ communication: (r) => (r.fields.title = { type: 'string', nullable: true }) });
 		expect(msg).toContain("'meeting' declares field 'title'");
 		expect(msg).toContain("'communication' declares field 'title'");
 	});
 
 	it("R4: a child field named after the relation the generator adds to its base", () => {
-		const msg = only({ meeting: (r) => (r.fields.communication = { type: 'string', nullable: true }) });
+		const msg = errorMessages({ meeting: (r) => (r.fields.communication = { type: 'string', nullable: true }) });
 		expect(msg).toContain("'meeting' declares field 'communication'");
 		expect(msg).toContain("relation to its base 'communication'");
 	});
 
 	it("R4: a base field named after the relation the generator adds to a child", () => {
-		const msg = only({ communication: (r) => (r.fields.meeting = { type: 'string', nullable: true }) });
+		const msg = errorMessages({ communication: (r) => (r.fields.meeting = { type: 'string', nullable: true }) });
 		expect(msg).toContain("'communication' declares field 'meeting'");
 		expect(msg).toContain("relation to its child 'meeting'");
 	});
@@ -231,7 +235,7 @@ describe('R4 — no name on both tables', () => {
 
 describe('R4 — match-derived and role-derived columns', () => {
 	it('R4: a child deriving a column via match: that the base declares', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication: (r) => (r.fields.thread_topic = { type: 'string', nullable: true }),
 			email_thread: (r) => {
 				r.fields.topic = { type: 'string', required: true };
@@ -245,7 +249,7 @@ describe('R4 — match-derived and role-derived columns', () => {
 	});
 
 	it('R4: a child role whose derived FK column the base declares', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication: (r) => (r.fields.attendee_person_id = { type: 'uuid', nullable: true }),
 			meeting: (r) => (r.roles = { attendee: { target: 'person', cardinality: 'one' } }),
 		});
@@ -256,7 +260,7 @@ describe('R4 — match-derived and role-derived columns', () => {
 
 describe('R6 — a child declares a pattern only over its own columns', () => {
 	it('R6: pattern config naming a base column', () => {
-		const msg = only({
+		const msg = errorMessages({
 			meeting: (r) => {
 				r.entity.patterns = ['Activity'];
 				r.entity.config = { Activity: { occurredAt: 'created_at' } };
@@ -268,13 +272,13 @@ describe('R6 — a child declares a pattern only over its own columns', () => {
 	});
 
 	it('R6: Activity on a child reads occurred_at, which the base owns', () => {
-		const msg = only({ meeting: (r) => (r.entity.patterns = ['Activity']) });
+		const msg = errorMessages({ meeting: (r) => (r.entity.patterns = ['Activity']) });
 		expect(msg).toContain("'meeting' declares pattern 'Activity', which reads the column 'occurred_at'");
 		expect(msg).toContain("'communication'");
 	});
 
 	it('R6: Activity reads its derived subject column (subject: owner -> owner_id), which the base owns', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication: (r) => {
 				r.relationships = { owner: { type: 'belongs_to', target: 'person', foreign_key: 'owner_id' } };
 			},
@@ -288,7 +292,7 @@ describe('R6 — a child declares a pattern only over its own columns', () => {
 	});
 
 	it('R6: an explicit subjectColumn the base owns', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication: (r) => {
 				r.relationships = { owner: { type: 'belongs_to', target: 'person', foreign_key: 'owner_id' } };
 			},
@@ -306,10 +310,36 @@ describe('R6 — a child declares a pattern only over its own columns', () => {
 			errorsFor({
 				meeting: (r) => {
 					r.entity.patterns = ['Activity'];
-					r.entity.config = { Activity: { occurredAt: 'starts_at' } };
+					r.entity.config = { Activity: { occurredAt: 'starts_at', subject: 'source' } };
 				},
 			}),
 		).toEqual([]);
+	});
+
+	it('R6: Activity reads user_id (findByUserId), which the base owns', () => {
+		const msg = errorMessages({
+			communication: (r) => (r.fields.user_id = { type: 'uuid', required: true }),
+			meeting: (r) => {
+				r.entity.patterns = ['Activity'];
+				r.entity.config = { Activity: { occurredAt: 'starts_at' } };
+			},
+		});
+		expect(msg).toContain("'meeting' declares pattern 'Activity', which reads the column 'user_id'");
+	});
+
+	it('R6: Metadata reads entity_id and entity_type, which the base owns', () => {
+		const msg = errorMessages({
+			communication: (r) => {
+				r.fields.entity_id = { type: 'uuid', required: true };
+				r.fields.entity_type = { type: 'string', required: true };
+			},
+			meeting: (r) => {
+				delete r.entity.patterns;
+				r.entity.pattern = 'Metadata';
+			},
+		});
+		expect(msg).toContain("'meeting' declares pattern 'Metadata', which reads the column 'entity_id'");
+		expect(msg).toContain("which reads the column 'entity_type'");
 	});
 
 	it('R6: Activity on a child over its own column is fine', () => {
@@ -323,26 +353,42 @@ describe('R6 — a child declares a pattern only over its own columns', () => {
 	});
 });
 
+describe('R4 — pattern-contributed columns', () => {
+	it('R4: a pattern on the base contributes a column the child also declares', () => {
+		registerLibraryPattern({ name: 'ProbeNamed', extends: ['Base'], columns: [{ name: 'display_name', type: 'text' }] });
+		try {
+			const msg = errorMessages({
+				communication: (r) => (r.entity.patterns = ['ProbeNamed']),
+				meeting: (r) => (r.fields.display_name = { type: 'string' }),
+			});
+			expect(msg).toContain('R4');
+			expect(msg).toContain("the 'display_name' column of the 'ProbeNamed' pattern");
+		} finally {
+			_unregisterLibraryPatternForTests('ProbeNamed');
+		}
+	});
+});
+
 describe('R7 — a child query names only its own columns', () => {
 	it('R7: a finder by a base column', () => {
-		const msg = only({ meeting: (r) => (r.queries = [{ by: ['source'] }]) });
+		const msg = errorMessages({ meeting: (r) => (r.queries = [{ by: ['source'] }]) });
 		expect(msg).toContain('R7');
 		expect(msg).toContain("query on 'meeting' names 'source'");
 		expect(msg).toContain("base 'communication'");
 	});
 
 	it('R7: an order by a base column', () => {
-		const msg = only({ meeting: (r) => (r.queries = [{ by: ['title'], order: 'occurred_at desc' }]) });
+		const msg = errorMessages({ meeting: (r) => (r.queries = [{ by: ['title'], order: 'occurred_at desc' }]) });
 		expect(msg).toContain("'occurred_at'");
 	});
 
 	it('R7: a search query filtering a base column', () => {
-		const msg = only({ meeting: (r) => (r.queries = [{ name: 'search', filters: ['title', 'source'] }]) });
+		const msg = errorMessages({ meeting: (r) => (r.queries = [{ name: 'search', filters: ['title', 'source'] }]) });
 		expect(msg).toContain("R7 — a query on 'meeting' names 'source', a column of its base 'communication'");
 	});
 
 	it('R7: a search query whose free-text column is a base column', () => {
-		const msg = only({
+		const msg = errorMessages({
 			meeting: (r) => (r.queries = [{ name: 'search', filters: ['title'], search: 'external_id' }]),
 		});
 		expect(msg).toContain("names 'external_id'");
@@ -359,7 +405,7 @@ describe('R7 — a child query names only its own columns', () => {
 
 describe('R8 — one RESOLVED sync mode per family', () => {
 	const run = (mutations: Mutations, syncMode?: 'api' | 'electric') =>
-		validateInheritance(familyWith(mutations), { syncMode }).filter((i) => i.severity === 'error');
+		validateInheritance(familyWith(mutations), { ...OPTS, syncMode }).filter((i) => i.severity === 'error');
 
 	it('R8: a child that differs from its base', () => {
 		const messages = run({
@@ -398,18 +444,18 @@ describe('R8 — one RESOLVED sync mode per family', () => {
 
 describe('R10 — a tenant_scoped base declares its tenant column NOT NULL', () => {
 	it('R10: the tenant column is not declared (it would be emitted nullable)', () => {
-		const msg = only({ communication: (r) => delete r.fields.tenant_id });
+		const msg = errorMessages({ communication: (r) => delete r.fields.tenant_id });
 		expect(msg).toContain('R10');
 		expect(msg).toContain("'communication' is tenant_scoped but does not declare its tenant column 'tenant_id'");
 	});
 
 	it('R10: the tenant column is declared nullable', () => {
-		const msg = only({ communication: (r) => (r.fields.tenant_id = { type: 'uuid', nullable: true }) });
+		const msg = errorMessages({ communication: (r) => (r.fields.tenant_id = { type: 'uuid', nullable: true }) });
 		expect(msg).toContain("'communication' declares its tenant column 'tenant_id' as nullable");
 	});
 
 	it('R10: the tenant column is adopted from a nullable belongs_to', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication: (r) => {
 				delete r.fields.tenant_id;
 				r.relationships = { tenant: { type: 'belongs_to', target: 'person', foreign_key: 'tenant_id', nullable: true } };
@@ -444,7 +490,7 @@ describe('R10 — a tenant_scoped base declares its tenant column NOT NULL', () 
 
 describe('M1 — match: targets', () => {
 	it('M1: a target column the target does not declare', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication_part: (r) => (r.relationships.communication.match = { kind: 'category' }),
 		});
 		expect(msg).toContain('M1');
@@ -453,7 +499,7 @@ describe('M1 — match: targets', () => {
 	});
 
 	it('M1: a nullable target column', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication_participant_role: (r) => (r.fields.kind.required = false),
 		});
 		// the lookup's kind is now nullable: the role FK's target column must be NOT NULL.
@@ -469,14 +515,14 @@ describe('M1 — match: targets', () => {
 	});
 
 	it('M1: the shorthand list names a column the target lacks', () => {
-		const msg = only({ communication_part: (r) => (r.relationships.communication.match = ['revision']) });
+		const msg = errorMessages({ communication_part: (r) => (r.relationships.communication.match = ['revision']) });
 		expect(msg).toContain("declares no field or foreign key column 'revision'");
 	});
 });
 
 describe('M2 — the local column is derived, except the discriminator', () => {
 	it('M2: the local column is already a declared field', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication_participant: (r) => (r.fields.communication_kind = { type: 'string', required: true }),
 		});
 		expect(msg).toContain('M2');
@@ -504,11 +550,11 @@ describe('M2 — the local column is derived, except the discriminator', () => {
 
 	it('M2 exception, allowed: the entity discriminator whose enum is the target column (choices_of)', () => {
 		// communication_part.kind is the discriminator, choices_of: communication.kind, matched on `kind`.
-		expect(validateInheritance(loadFamily())).toEqual([]);
+		expect(validateInheritance(loadFamily(), OPTS)).toEqual([]);
 	});
 
 	it('M2 exception, refused: the discriminator without the target column\'s enum', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication_part: (r) => {
 				r.fields.kind = { type: 'enum', choices: ['meeting', 'email', 'message'], required: true };
 			},
@@ -519,7 +565,7 @@ describe('M2 — the local column is derived, except the discriminator', () => {
 	});
 
 	it('M2 exception, refused: a field that is not the discriminator', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication_part: (r) => {
 				r.fields.revision = { type: 'enum', choices_of: 'communication.kind', required: true };
 				r.relationships.communication.match = { revision: 'kind' };
@@ -563,7 +609,7 @@ describe('M2 — the discriminator exception compares SQL types, not strings', (
 	});
 
 	it('refused: the discriminator against a non-enum target column names the types, with no choices_of advice', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication_part: (r) => {
 				r.relationships.role = {
 					type: 'belongs_to',
@@ -581,7 +627,7 @@ describe('M2 — the discriminator exception compares SQL types, not strings', (
 
 describe('M2 — a child\'s derived columns are not available to a match', () => {
 	it("a child matching the base's tenant column", () => {
-		const msg = only({
+		const msg = errorMessages({
 			meeting: (r) => {
 				r.relationships.origin = {
 					type: 'belongs_to',
@@ -597,7 +643,7 @@ describe('M2 — a child\'s derived columns are not available to a match', () =>
 	});
 
 	it("a child matching the base's discriminator", () => {
-		const msg = only({
+		const msg = errorMessages({
 			transcript_communication_part: (r) => {
 				r.relationships.origin = {
 					type: 'belongs_to',
@@ -612,7 +658,7 @@ describe('M2 — a child\'s derived columns are not available to a match', () =>
 	});
 
 	it('a role-derived FK column is not available either', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication_participant: (r) => {
 				r.roles = { attendee: { target: 'person', cardinality: 'one' } };
 				r.relationships.communication.match = { attendee_person_id: 'kind' };
@@ -624,7 +670,7 @@ describe('M2 — a child\'s derived columns are not available to a match', () =>
 
 describe('M3 — two relationships may match one column when the types agree', () => {
 	it('M3: the same local column matched against columns of different types', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication_participant: (r) => {
 				// role.role is a string; communications.kind is an enum.
 				r.relationships.role.match = { communication_kind: 'role' };
@@ -637,13 +683,13 @@ describe('M3 — two relationships may match one column when the types agree', (
 	});
 
 	it('M3: two relationships on one column with equal types is the §2.4 case 2 (clean)', () => {
-		expect(validateInheritance(loadFamily())).toEqual([]);
+		expect(validateInheritance(loadFamily(), OPTS)).toEqual([]);
 	});
 });
 
 describe('M4 — a matched column is immutable', () => {
 	it('M4: on_delete set_null would rewrite the matched column', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication_participant: (r) => {
 				r.relationships.role.on_delete = 'set_null';
 				r.relationships.role.nullable = true;
@@ -657,7 +703,7 @@ describe('M4 — a matched column is immutable', () => {
 
 describe('M5 — one Postgres enum type on both sides', () => {
 	it('M5: a lookup enum that is its own type, matched against the communication enum', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication_participant_role: (r) => {
 				r.fields.kind = { type: 'enum', choices: ['meeting', 'email', 'message'], required: true };
 			},
@@ -670,7 +716,7 @@ describe('M5 — one Postgres enum type on both sides', () => {
 	});
 
 	it('M5: a discriminator whose choices_of names a different enum than the match target', () => {
-		const msg = only({
+		const msg = errorMessages({
 			communication_part: (r) => {
 				r.fields.kind = { type: 'enum', choices_of: 'communication_participant_role.kind', required: true };
 			},

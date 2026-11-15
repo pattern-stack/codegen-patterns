@@ -122,6 +122,9 @@ describe('generation is refused until S2', () => {
 		const r = run(root, ['entity', 'new', '--all', '--force']);
 		expect(r.status).toBe(0);
 		expect(fs.existsSync(path.join(root, 'src/modules/email-threads/email-thread.entity.ts'))).toBe(true);
+		// Positive control for the negatives above: these are the paths the barrels are written to.
+		expect(fs.existsSync(path.join(root, 'src/generated/schema.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(root, 'src/generated/relations.ts'))).toBe(true);
 	});
 });
 

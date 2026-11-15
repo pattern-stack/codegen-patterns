@@ -96,9 +96,9 @@ export interface LoadEntitiesResult {
 export function transformToEntity(result: LoadResult, tablePrefix: string): ParsedEntity {
 	const { definition, filePath } = result;
 
-	// Search queries use a different shape (name/filters/search) and
-	// are consumed directly by the codegen templates, not by the analyzer.
-	// Narrow to the by-column variant here for ParsedQuery mapping.
+	// Search queries use a different shape (name/filters/search). The by-column
+	// variant maps to ParsedQuery here; the search variant is carried below as
+	// `searchQueries` (RFC-0006 R7 reads it).
 	const queries: ParsedQuery[] | undefined = definition.queries
 		?.filter((q): q is Extract<typeof q, { by: unknown }> => 'by' in q)
 		.map((q) => ({
@@ -138,8 +138,6 @@ export function transformToEntity(result: LoadResult, tablePrefix: string): Pars
 	const inherits = inheritsOf(definition);
 	if (inherits !== null) entity.inherits = inherits;
 	if (definition.discriminator !== undefined) entity.discriminator = definition.discriminator;
-	const naturalKey = definition.unique_indexes?.find((u) => u.natural_key === true);
-	if (naturalKey !== undefined) entity.naturalKey = naturalKey.fields;
 
 	// Parse fields
 	for (const [name, fieldDef] of Object.entries(definition.fields)) {

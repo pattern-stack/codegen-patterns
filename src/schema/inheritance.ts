@@ -3,16 +3,18 @@
  *
  * Everything here reads ONE entity's YAML; the rules that read two files (the
  * base's choices, a child's collisions with its base, `match:` targets) are in
- * `src/parser/validate-inheritance.ts`. Both halves read the declaration shape
- * through the helpers below, so "which entity is a child, which a base, what is
- * its kind value" is stated once.
+ * `src/parser/validate-inheritance.ts`, which reads the parsed model. The two
+ * halves share `inheritsOf` ("which entity is a child, which a base, what is its
+ * kind value"); each keeps its own column lookup because it reads a different
+ * model (raw YAML here, `ParsedEntity` there).
  *
  * Rule numbers are the RFC's (§1.2 R1–R11, §2.4 M1–M5, §8 refusals).
  */
 
+import { declaredPatternNames } from '../patterns/compose.js';
 import type { EntityDefinition } from './entity-definition.schema.js';
 import { fieldColumnNullable, foreignKeyColumnNullable } from './field-nullability.js';
-import { isTenantScoped, lifecycleBehaviorsDeclared } from './tenancy.js';
+import { BASE_ONLY_BEHAVIORS, isTenantScoped, lifecycleBehaviorsDeclared } from './tenancy.js';
 
 export interface InheritsDeclaration {
 	base: string;
@@ -34,22 +36,6 @@ export function inheritsOf(
 export interface InheritanceIssue {
 	path: (string | number)[];
 	message: string;
-}
-
-/** The pattern names an entity declares (`pattern:` and `patterns:`). */
-export function declaredPatternNames(def: Pick<EntityDefinition, 'entity'>): string[] {
-	const names: string[] = [];
-	if (def.entity.pattern) names.push(def.entity.pattern);
-	if (def.entity.patterns) names.push(...def.entity.patterns);
-	return names;
-}
-
-/** Whether a name is a column the entity declares on its own table (a field, or a `belongs_to` FK). */
-export function declaresColumn(def: EntityDefinition, column: string): boolean {
-	if (def.fields[column] !== undefined) return true;
-	return Object.values(def.relationships ?? {}).some(
-		(r) => r.type === 'belongs_to' && r.foreign_key === column,
-	);
 }
 
 /** Whether the column is NOT NULL, for a declared field or FK column; `undefined` when not declared. */
@@ -116,7 +102,7 @@ export function inheritanceIssues(def: EntityDefinition): InheritanceIssue[] {
 		if (def.eav === true) {
 			add(['eav'], `R9 — '${name}' is ${role} and declares 'eav: true'. EAV is refused anywhere in a family in v1.`);
 		}
-		if (declaredPatternNames(def).includes('Junction')) {
+		if (declaredPatternNames(def.entity).includes('Junction')) {
 			add(
 				['entity', def.entity.patterns ? 'patterns' : 'pattern'],
 				`R9 — '${name}' is ${role} and declares 'pattern: Junction'. Junctions are refused anywhere in a family in v1.`,
@@ -152,7 +138,7 @@ export function inheritanceIssues(def: EntityDefinition): InheritanceIssue[] {
 			add(
 				['behaviors'],
 				`R5 — '${name}' is a child of '${child.base}' and declares or implies the '${behavior}' behavior. ` +
-					`'timestamps', 'soft_delete', 'user_tracking' and 'external_id_tracking' live on the base ` +
+					`'${BASE_ONLY_BEHAVIORS.join("', '")}' live on the base ` +
 					`('${child.base}') only.`,
 			);
 		}
@@ -160,7 +146,7 @@ export function inheritanceIssues(def: EntityDefinition): InheritanceIssue[] {
 		// ---- §8: refused on a child in v1.
 		const refuse = (key: string, path: (string | number)[], why: string) =>
 			add(path, `'${name}' is a child of '${child.base}' and declares ${key}. ${why}`);
-		if (declaredPatternNames(def).includes('Integrated')) {
+		if (declaredPatternNames(def.entity).includes('Integrated')) {
 			refuse(
 				"'pattern: Integrated'",
 				['entity', def.entity.patterns ? 'patterns' : 'pattern'],
@@ -177,7 +163,7 @@ export function inheritanceIssues(def: EntityDefinition): InheritanceIssue[] {
 			refuse("'detection:'", ['detection'], 'Change detection is refused on a child in v1.');
 		}
 		if (def.eav_value_table === true) {
-			refuse("'eav_value_table: true'", ['eav_value_table'], 'EAV is refused in a family in v1 (R9).');
+			refuse("'eav_value_table: true'", ['eav_value_table'], 'An EAV value table on a child is refused in v1 (RFC-0006 §8).');
 		}
 	}
 

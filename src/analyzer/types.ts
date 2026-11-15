@@ -265,8 +265,6 @@ export interface ParsedEntity {
 	inherits?: { base: string; as: string };
 	/** `discriminator:` (RFC-0006): the base's kind enum field. */
 	discriminator?: string;
-	/** The columns of the `unique_indexes` entry marked `natural_key: true`, if any (RFC-0006 R11). */
-	naturalKey?: string[];
 	queries?: ParsedQuery[];
 	/** The search-shape `queries:` entries (see {@link ParsedSearchQuery}). */
 	searchQueries?: ParsedSearchQuery[];
