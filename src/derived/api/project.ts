@@ -199,7 +199,7 @@ function delegateWarnings(entities: Record<string, EntityApiSurface>, junctionNa
 	return warnings;
 }
 
-function checkDelegate(
+export function checkDelegate(
 	from: EntityApiSurface,
 	layer: MethodRef['layer'],
 	method: RepositoryMethod | ServiceMethod,
@@ -208,7 +208,7 @@ function checkDelegate(
 ): string | undefined {
 	const site = originId(method.origin) ?? `${from.entity}.${method.name}`;
 	const callee = `\`${target ? className(target, to.layer) : to.entity}.${to.method}\``;
-	const head = `${site}: \`${from.service.className}.${method.name}\` calls ${callee}`;
+	const head = `${site}: \`${className(from, layer)}.${method.name}\` calls ${callee}`;
 
 	const listed = target
 		? (to.layer === 'repository' ? target.repository.methods : target.service.methods).find((m) => m.name === to.method)

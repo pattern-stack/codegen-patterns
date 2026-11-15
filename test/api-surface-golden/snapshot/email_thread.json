@@ -316,6 +316,13 @@
 				"layer": "service",
 				"method": "delete"
 			},
+			"alsoCalls": [
+				{
+					"entity": "email_thread",
+					"layer": "service",
+					"method": "findById"
+				}
+			],
 			"origin": {
 				"from": "base"
 			}

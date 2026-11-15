@@ -508,6 +508,13 @@
 						"layer": "service",
 						"method": "delete"
 					},
+					"alsoCalls": [
+						{
+							"entity": "lead",
+							"layer": "service",
+							"method": "findById"
+						}
+					],
 					"origin": {
 						"from": "base"
 					}

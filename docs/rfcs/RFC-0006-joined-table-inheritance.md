@@ -1709,7 +1709,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   does not change kind.
 - **The base's create `kind` is `z.enum([<base-only kinds>])`**, or `z.never()` when every kind has a child (the field stays so
   a child's `.omit({ kind })` has a key to omit). When every kind has a child the base has **no create use case, no create
-  provider, no `POST` route and no registered `Create<Base>Dto`** (`generateCreate`, a local next to `generateWrites`);
+  provider, no `POST` route and no registered `Create<Base>Dto`** (`createDisabledBy`, derived into the use-case list — no `generateCreate` local);
   `communication_part` is that case, and `verify-openapi` asserts it.
 - **`<Base>OfKindSchema`** is a `z.discriminatedUnion` in its own file, `dto/<base>-of-kind.dto.ts`: the children's output
   schemas extend the base's, so putting the union in the base's output file would be an import cycle. Each arm is the base's
@@ -1750,10 +1750,10 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
     the update DTO no `kind`), so they are covered through the generated controllers with stub use cases
     (`inheritance-http.test.ts`). `MatchColumnImmutableError` and `OutOfScopeWriteError` are not mapped: neither is reachable
     through a generated route. A host that wants a global filter instead can move the three `instanceof` checks into one.
-- **Write use cases and results.** A child's create / update / delete use cases exist (`generateWrites` is no longer false for
-  a child) and return `<Child>Flat`; the delete use case's event path reads `findWithBase` so a payload expression sees the
+- **Write use cases and results.** A child's create / update / delete use cases exist (`writesDisabledBy` no longer fires for
+  a child; they are entries of the derived use-case list) and return `<Child>Flat`; the delete use case's pre-read (its derived `alsoCalls`) is `findWithBase` so a payload expression sees the
   flat row. A child's `search` use case returns `Page<<Child>Flat>` and its `where` is a row filter on the child's table.
-- **The "Inherited from …" comments list what is inherited.** The repository's named methods the class overrides
+- **The "Inherited from …" comments list what is inherited.** *(Superseded: the comments are #893's, printed from the derived surface, listing the pattern's lines verbatim; no template filters them. The paragraph below is the S5-as-built state, kept for the record.)* The repository's named methods the class overrides
   (`findById`, `findByIds`, `list`, `count` for every entity; `create`, `update`, `delete` for a child; `update` for a base);
   the service's named the three forwarded reads and a child's / base's `create` / `update`. Both are filtered in their
   templates, for every entity, which is why 12 plain repositories' and every service's snapshots changed by one comment line.
@@ -1796,8 +1796,8 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   / `includes` / `familySurface` / `familyWrites` locals. `entity-locals.js` now passes `discriminatorKinds` to the derivation.
   **Bytes vs phase R:** the `// Inherited from <Base>:` comments list the pattern's lines verbatim again (S5's filter of overridden
   methods contradicted #893's named expectation, which pins a single unfiltered read); every controller's include-400 body gains
-  `statusCode` / `error` (S5's own change, now visible in the render goldens). Render goldens: every `*.controller.ts` re-blessed for the 400
-  body; `matrix-family-no-natural-key` and `matrix-discriminator-no-child` gain S5's writes / `kindError` / flat DTOs;
+  `statusCode` / `error` (S5's own change, now visible in the render goldens). Render goldens: 33 of 35 `*.controller.ts` re-blessed for the 400
+  body (the two `task-search.controller.ts` correctly unchanged); `matrix-family-no-natural-key` gains S5's writes / flat DTOs, and `matrix-discriminator-no-child` gains only `kindError` and the update DTO's `.omit({ kind })`;
   `matrix-family-every-kind-has-child` is new. The allowlist did not grow.
 - **Known v1 edge: `createDisabledBy` counts any child as covering its kind.** A child with `generate.writes: false` or
   `api: false` leaves its kind with no HTTP create path at all, while the base (which has no create either) answers a

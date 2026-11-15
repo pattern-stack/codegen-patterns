@@ -316,6 +316,13 @@
 				"layer": "service",
 				"method": "delete"
 			},
+			"alsoCalls": [
+				{
+					"entity": "tenant",
+					"layer": "service",
+					"method": "findById"
+				}
+			],
 			"origin": {
 				"from": "base"
 			}

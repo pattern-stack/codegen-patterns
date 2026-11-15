@@ -493,6 +493,13 @@
 				"layer": "service",
 				"method": "delete"
 			},
+			"alsoCalls": [
+				{
+					"entity": "opportunity",
+					"layer": "service",
+					"method": "findById"
+				}
+			],
 			"origin": {
 				"from": "base"
 			}

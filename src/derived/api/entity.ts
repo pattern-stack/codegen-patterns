@@ -899,6 +899,10 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 				className: useCaseClassName(kind, entityName, plural),
 				kind,
 				calls: serviceRef(entityName, method),
+				// A child's delete reads the flat row first: the event payload reads base fields too (RFC-0006 §5).
+				...(kind === 'delete'
+					? { alsoCalls: [serviceRef(entityName, family.child ? FAMILY_METHOD.findWithBase : 'findById')] }
+					: {}),
 				origin: BASE,
 			});
 		}

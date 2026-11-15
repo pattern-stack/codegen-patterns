@@ -809,6 +809,13 @@
 				"layer": "service",
 				"method": "delete"
 			},
+			"alsoCalls": [
+				{
+					"entity": "deal",
+					"layer": "service",
+					"method": "findById"
+				}
+			],
 			"origin": {
 				"from": "base"
 			}

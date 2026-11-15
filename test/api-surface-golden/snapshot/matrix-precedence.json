@@ -650,6 +650,13 @@
 						"layer": "service",
 						"method": "delete"
 					},
+					"alsoCalls": [
+						{
+							"entity": "ticket",
+							"layer": "service",
+							"method": "findById"
+						}
+					],
 					"origin": {
 						"from": "base"
 					}

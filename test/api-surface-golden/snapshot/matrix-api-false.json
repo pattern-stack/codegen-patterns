@@ -320,6 +320,13 @@
 						"layer": "service",
 						"method": "delete"
 					},
+					"alsoCalls": [
+						{
+							"entity": "audit_entry",
+							"layer": "service",
+							"method": "findById"
+						}
+					],
 					"origin": {
 						"from": "base"
 					}
@@ -718,6 +725,13 @@
 						"layer": "service",
 						"method": "delete"
 					},
+					"alsoCalls": [
+						{
+							"entity": "sync_cursor",
+							"layer": "service",
+							"method": "findById"
+						}
+					],
 					"origin": {
 						"from": "base"
 					}

@@ -197,7 +197,7 @@ _%>
   }
 <%_ } else if (m.kind === 'count_flat') { _%>
 
-  /** How many rows `listFlat` ranges over, on the same scope. */
+  /** How many rows `<%= apiSurface.service.methods.find((x) => x.kind === 'list_flat').name %>` ranges over, on the same scope. */
   <%= m.name %>(<%= m.params[0].name %>?: RowFilter<typeof <%= _child.baseTable %>>): Promise<number> {
     return this.repository.<%= m.delegatesTo.method %>(<%= m.params[0].name %>);
   }
