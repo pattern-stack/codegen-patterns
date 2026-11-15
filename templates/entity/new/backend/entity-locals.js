@@ -50,7 +50,7 @@ import {
   timestampColumn,
 } from '../../../../src/schema/field-timestamp.js';
 import { resolveTenancy } from '../../../../src/schema/tenancy.js';
-import { inheritsOf, matchPairsOf } from '../../../../src/schema/inheritance.js';
+import { matchPairsOf } from '../../../../src/schema/inheritance.js';
 import { sqlTableName } from '../../../../src/config/table-naming.js';
 import { rewriteSharedImport, subsystemsImport } from '../../../../src/config/runtime-mode.mjs';
 import { DEFAULT_CODEGEN_CONFIG } from '../../../../src/config/project-config.js';
