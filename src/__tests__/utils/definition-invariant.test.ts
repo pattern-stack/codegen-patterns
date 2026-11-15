@@ -70,15 +70,15 @@ describe('whole-set loaders throw on an invalid definition (#915)', () => {
 	test('event codegen: collectEntityEvents / collectMergedEvents', () => {
 		const root = withBadEntity();
 		const entitiesDir = path.join(root, 'entities');
-		expectInvariant(() => collectEntityEvents(entitiesDir), 'bad.yaml');
-		expectInvariant(() => collectMergedEvents({ entitiesDir, eventsDir: path.join(root, 'events') }), 'bad.yaml');
+		expectInvariant(() => collectEntityEvents(entitiesDir, { nonEntityDirs: [] }), 'bad.yaml');
+		expectInvariant(() => collectMergedEvents({ entitiesDir, nonEntityDirs: [], eventsDir: path.join(root, 'events') }), 'bad.yaml');
 		// The pre-flight's explicit opt-in still skips.
-		expect(() => collectMergedEvents({ entitiesDir, eventsDir: path.join(root, 'events'), skipInvalid: true })).not.toThrow();
+		expect(() => collectMergedEvents({ entitiesDir, nonEntityDirs: [], eventsDir: path.join(root, 'events'), skipInvalid: true })).not.toThrow();
 	});
 
 	test('scope union: collectScopeableNames', () => {
 		const root = withBadEntity();
-		expectInvariant(() => collectScopeableNames(path.join(root, 'entities')), 'bad.yaml');
+		expectInvariant(() => collectScopeableNames(path.join(root, 'entities'), []), 'bad.yaml');
 	});
 
 	test('barrels: an entity, a junction and a relationship each throw, naming its own file', async () => {
@@ -102,7 +102,7 @@ describe('whole-set loaders throw on an invalid definition (#915)', () => {
 			try {
 				await regenerateBarrels({
 					ctx,
-					entitiesDir: path.join(root, 'entities'),
+					entitiesDir: path.join(root, 'entities'), nonEntityDirs: [],
 					relationshipsDir: path.join(root, 'relationships'),
 					junctionsDir: path.join(root, 'junctions'),
 					generatedDir: path.join(root, 'generated'),
@@ -147,7 +147,7 @@ describe('whole-set loaders throw on an invalid definition (#915)', () => {
 		fs.writeFileSync(path.join(root, 'entities', 'providers', 'p.yaml'), 'slug: p\n');
 		const nonEntityDirs = [path.join(root, 'entities', 'providers')];
 		expect(collectScopeableNames(path.join(root, 'entities'), nonEntityDirs)).toEqual([]);
-		expect(() => collectScopeableNames(path.join(root, 'entities'))).toThrow('p.yaml');
+		expect(() => collectScopeableNames(path.join(root, 'entities'), [])).toThrow('p.yaml');
 		expect(loadEntityDefinitions(path.join(root, 'entities'), nonEntityDirs).size).toBe(1);
 		expect(collectEntityEvents(path.join(root, 'entities'), { nonEntityDirs }).events).toEqual([]);
 	});

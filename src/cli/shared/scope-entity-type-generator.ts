@@ -33,7 +33,7 @@ export interface ScopeEntityTypeGeneratorOptions {
 	entitiesDir: string;
 	/** Absolute path of the output file. */
 	/** Other definition kinds under the entities root (`ProjectLayout.nonEntityDirs`); skipped by entity discovery. */
-	nonEntityDirs?: string[];
+	nonEntityDirs: string[];
 	outputPath: string;
 	/** If true, compute content but don't write to disk. */
 	dryRun?: boolean;
@@ -65,7 +65,7 @@ const HEADER =
  * Walk `entitiesDir`, load each YAML, and return the names of all entities
  * with `scopeable: true`, sorted alphabetically.
  */
-export function collectScopeableNames(entitiesDir: string, nonEntityDirs: readonly string[] = []): string[] {
+export function collectScopeableNames(entitiesDir: string, nonEntityDirs: readonly string[]): string[] {
 	const files = listEntityYamls(entitiesDir, nonEntityDirs);
 
 	const names: string[] = [];
@@ -127,7 +127,7 @@ export function buildScopeEntityTypeContent(names: string[]): string {
 export async function generateScopeEntityType(
 	opts: ScopeEntityTypeGeneratorOptions,
 ): Promise<ScopeEntityTypeResult> {
-	const { entitiesDir, outputPath, dryRun = false, nonEntityDirs = [] } = opts;
+	const { entitiesDir, outputPath, dryRun = false, nonEntityDirs } = opts;
 
 	const scopeableNames = collectScopeableNames(entitiesDir, nonEntityDirs);
 	const content = buildScopeEntityTypeContent(scopeableNames);

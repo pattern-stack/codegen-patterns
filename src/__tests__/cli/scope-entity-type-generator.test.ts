@@ -127,7 +127,7 @@ describe('collectScopeableNames', () => {
 			{ name: 'user' }, // scopeable omitted → defaults to false
 		]);
 
-		const names = collectScopeableNames(dir);
+		const names = collectScopeableNames(dir, []);
 		expect(names).toEqual(['account', 'zebra']);
 	});
 
@@ -137,12 +137,12 @@ describe('collectScopeableNames', () => {
 			{ name: 'user' },
 		]);
 
-		const names = collectScopeableNames(dir);
+		const names = collectScopeableNames(dir, []);
 		expect(names).toEqual([]);
 	});
 
 	test('returns empty array when directory does not exist', () => {
-		const names = collectScopeableNames('/nonexistent/path/entities');
+		const names = collectScopeableNames('/nonexistent/path/entities', []);
 		expect(names).toEqual([]);
 	});
 
@@ -152,7 +152,7 @@ describe('collectScopeableNames', () => {
 			{ name: 'account', scopeable: true },
 		]);
 
-		const names = collectScopeableNames(dir);
+		const names = collectScopeableNames(dir, []);
 		expect(names).toEqual(['account', 'contact']);
 	});
 });
@@ -168,7 +168,7 @@ describe('generateScopeEntityType', () => {
 		const outputPath = path.join(parentDir, 'runtime/subsystems/jobs/generated/scope-entity-type.ts');
 
 		const result = await generateScopeEntityType({
-			entitiesDir,
+			entitiesDir, nonEntityDirs: [],
 			outputPath,
 			dryRun: true,
 		});
@@ -189,7 +189,7 @@ describe('generateScopeEntityType', () => {
 		const outputPath = path.join(parentDir, 'runtime/subsystems/jobs/generated/scope-entity-type.ts');
 
 		const result = await generateScopeEntityType({
-			entitiesDir,
+			entitiesDir, nonEntityDirs: [],
 			outputPath,
 		});
 
@@ -208,7 +208,7 @@ describe('generateScopeEntityType', () => {
 		const parentDir = path.dirname(entitiesDir);
 		const outputPath = path.join(parentDir, 'deeply/nested/output/scope-entity-type.ts');
 
-		const result = await generateScopeEntityType({ entitiesDir, outputPath });
+		const result = await generateScopeEntityType({ entitiesDir, nonEntityDirs: [], outputPath });
 
 		expect(result.written).toBe(true);
 		expect(fs.existsSync(outputPath)).toBe(true);
@@ -219,7 +219,7 @@ describe('generateScopeEntityType', () => {
 		const parentDir = path.dirname(entitiesDir);
 		const outputPath = path.join(parentDir, 'runtime/subsystems/jobs/generated/scope-entity-type.ts');
 
-		const result = await generateScopeEntityType({ entitiesDir, outputPath });
+		const result = await generateScopeEntityType({ entitiesDir, nonEntityDirs: [], outputPath });
 
 		expect(result.written).toBe(true);
 		expect(result.scopeableNames).toEqual([]);

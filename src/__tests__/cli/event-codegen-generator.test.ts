@@ -1187,7 +1187,7 @@ events:
 `,
 		);
 
-		const { events, issues } = collectEntityEvents(entitiesDir);
+		const { events, issues } = collectEntityEvents(entitiesDir, { nonEntityDirs: [] });
 		expect(issues).toEqual([]);
 		expect(events).toHaveLength(1);
 		const first = events[0];
@@ -1212,14 +1212,14 @@ fields:
     required: true
 `,
 		);
-		const { events, issues } = collectEntityEvents(entitiesDir);
+		const { events, issues } = collectEntityEvents(entitiesDir, { nonEntityDirs: [] });
 		expect(events).toEqual([]);
 		expect(issues).toEqual([]);
 	});
 
 	test('returns empty when entities directory is absent', () => {
 		const root = mkTempRoot();
-		const { events, issues } = collectEntityEvents(path.join(root, 'missing'));
+		const { events, issues } = collectEntityEvents(path.join(root, 'missing'), { nonEntityDirs: [] });
 		expect(events).toEqual([]);
 		expect(issues).toEqual([]);
 	});
@@ -1272,7 +1272,7 @@ fields:
 		);
 
 		const result = await generateEventCodegen({
-			entitiesDir,
+			entitiesDir, nonEntityDirs: [],
 			eventsDir,
 			outputDir,
 			dryRun: true,
@@ -1314,7 +1314,7 @@ payload:
 		);
 
 		const result = await generateEventCodegen({
-			entitiesDir,
+			entitiesDir, nonEntityDirs: [],
 			eventsDir,
 			outputDir,
 		});
@@ -1338,7 +1338,7 @@ payload:
 		fs.mkdirSync(entitiesDir, { recursive: true });
 
 		const result = await generateEventCodegen({
-			entitiesDir,
+			entitiesDir, nonEntityDirs: [],
 			eventsDir,
 			outputDir,
 		});
@@ -1401,7 +1401,7 @@ payload:
 		);
 
 		const result = await generateEventCodegen({
-			entitiesDir,
+			entitiesDir, nonEntityDirs: [],
 			eventsDir,
 			outputDir,
 		});
@@ -1436,7 +1436,7 @@ payload: {}
 		);
 
 		const result = await generateEventCodegen({
-			entitiesDir,
+			entitiesDir, nonEntityDirs: [],
 			eventsDir,
 			outputDir,
 		});
@@ -1487,9 +1487,9 @@ payload:
 `,
 		);
 
-		const helper = collectMergedEvents({ entitiesDir, eventsDir });
+		const helper = collectMergedEvents({ entitiesDir, nonEntityDirs: [], eventsDir });
 		const genRun = await generateEventCodegen({
-			entitiesDir,
+			entitiesDir, nonEntityDirs: [],
 			eventsDir,
 			outputDir,
 			dryRun: true,
@@ -1507,7 +1507,7 @@ payload:
 		const entitiesDir = path.join(root, 'missing-entities');
 		const eventsDir = path.join(root, 'missing-events');
 
-		const result = collectMergedEvents({ entitiesDir, eventsDir });
+		const result = collectMergedEvents({ entitiesDir, nonEntityDirs: [], eventsDir });
 		expect(result.events).toEqual([]);
 		expect(result.issues.some((i) => i.type === 'no_events_dir')).toBe(true);
 	});

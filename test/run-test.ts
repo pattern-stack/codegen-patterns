@@ -237,7 +237,7 @@ function runCodegen() {
       `import { regenerateRelationsManifest } from './src/cli/shared/relations-generator.js'; ` +
       `import { loadCodegenConfig } from './src/config/project-config.js'; ` +
       `const ctx = { cwd: '${ROOT}', configPath: '${TEST_CONFIG}', config: loadCodegenConfig('${TEST_CONFIG}'), isInitialized: true, framework: null, installedSubsystems: [], entityCount: 0, json: false, verbose: false }; ` +
-      `await regenerateBarrels({ ctx, entitiesDir: '${ENTITY_FIXTURES_DIR}', generatedDir: '${generatedDir}' }); ` +
+      `await regenerateBarrels({ ctx, entitiesDir: '${ENTITY_FIXTURES_DIR}', nonEntityDirs: [], generatedDir: '${generatedDir}' }); ` +
       `await regenerateRelationsManifest({ ctx, entitiesDir: '${ENTITY_FIXTURES_DIR}', generatedDir: '${generatedDir}' });` +
       `"`,
     { cwd: CODEGEN_DIR, stdio: 'pipe' },
@@ -246,7 +246,7 @@ function runCodegen() {
   // JOB-7: generate ScopeEntityType union from fixtures (mirrors EntityNewCommand post-step).
   console.log('   Generating: scope-entity-type.ts');
   execSync(
-    `bun -e "import { generateScopeEntityType } from './src/cli/shared/scope-entity-type-generator.js'; await generateScopeEntityType({ entitiesDir: '${stageEntityOnlyFixtures()}', outputPath: '${join(ROOT, 'runtime/subsystems/jobs/generated/scope-entity-type.ts')}' });"`,
+    `bun -e "import { generateScopeEntityType } from './src/cli/shared/scope-entity-type-generator.js'; await generateScopeEntityType({ entitiesDir: '${stageEntityOnlyFixtures()}', nonEntityDirs: [], outputPath: '${join(ROOT, 'runtime/subsystems/jobs/generated/scope-entity-type.ts')}' });"`,
     { cwd: CODEGEN_DIR, stdio: 'pipe' },
   );
 
@@ -257,7 +257,7 @@ function runCodegen() {
   const eventsFixturesDir = join(FIXTURES_DIR, 'events');
   const eventCodegenOutputDir = join(ROOT, 'runtime/subsystems/events/generated');
   execSync(
-    `bun -e "import { generateEventCodegen } from './src/cli/shared/event-codegen-generator.js'; await generateEventCodegen({ entitiesDir: '${stageEntityOnlyFixtures()}', eventsDir: '${eventsFixturesDir}', outputDir: '${eventCodegenOutputDir}' });"`,
+    `bun -e "import { generateEventCodegen } from './src/cli/shared/event-codegen-generator.js'; await generateEventCodegen({ entitiesDir: '${stageEntityOnlyFixtures()}', nonEntityDirs: [], eventsDir: '${eventsFixturesDir}', outputDir: '${eventCodegenOutputDir}' });"`,
     { cwd: CODEGEN_DIR, stdio: 'pipe' },
   );
 

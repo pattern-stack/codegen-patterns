@@ -36,7 +36,7 @@ function isYaml(name: string): boolean {
  * cannot disagree about the set. A missing `dir` is the empty set; a directory
  * that exists but cannot be read throws.
  */
-export function listEntityYamls(dir: string, nonEntityDirs: readonly string[] = []): string[] {
+export function listEntityYamls(dir: string, nonEntityDirs: readonly string[]): string[] {
 	if (!existsSync(dir)) return [];
 	return findYamlFiles(dir, { excludeDirs: [...nonEntityDirs] });
 }

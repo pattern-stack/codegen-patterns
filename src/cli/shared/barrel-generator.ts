@@ -56,7 +56,7 @@ export interface BarrelGeneratorOptions {
 	/** Absolute path to the entities directory. */
 	entitiesDir: string;
 	/** Other definition kinds under the entities root (`ProjectLayout.nonEntityDirs`); skipped by entity discovery. */
-	nonEntityDirs?: string[];
+	nonEntityDirs: string[];
 	/**
 	 * Absolute path to the relationships directory. Optional — when present
 	 * relationship modules are included in the generated barrels alongside entity
@@ -296,7 +296,7 @@ export async function regenerateBarrels(
 	const {
 		ctx,
 		entitiesDir,
-		nonEntityDirs = [],
+		nonEntityDirs,
 		relationshipsDir = relationshipsDirFor(ctx.cwd),
 		junctionsDir = junctionsDirFor(ctx.cwd),
 		generatedDir,

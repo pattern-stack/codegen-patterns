@@ -128,7 +128,7 @@ export interface EventCodegenGeneratorOptions {
 	/** Absolute path to the entities directory (used for desugaring entity events: blocks). */
 	entitiesDir: string;
 	/** Other definition kinds under the entities root (`ProjectLayout.nonEntityDirs`); skipped by entity discovery. */
-	nonEntityDirs?: string[];
+	nonEntityDirs: string[];
 	/** Absolute path to the events directory (top-level events/*.yaml files). */
 	eventsDir: string;
 	/** Absolute path to the generator's output directory. */
@@ -276,7 +276,7 @@ function aggregateTypeLiteral(ev: EventDefinition): string {
  */
 export function collectEntityEvents(
 	entitiesDir: string,
-	opts: { skipInvalid?: boolean; nonEntityDirs?: readonly string[] } = {},
+	opts: { skipInvalid?: boolean; nonEntityDirs: readonly string[] },
 ): {
 	events: EventDefinition[];
 	issues: AnalysisIssue[];
@@ -353,7 +353,7 @@ export interface CollectMergedEventsOptions {
 	/** Absolute path to the entities directory. */
 	entitiesDir: string;
 	/** Other definition kinds under the entities root (`ProjectLayout.nonEntityDirs`); skipped by entity discovery. */
-	nonEntityDirs?: string[];
+	nonEntityDirs: string[];
 	/** Absolute path to the events directory. */
 	eventsDir: string;
 	/**

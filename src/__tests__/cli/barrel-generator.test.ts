@@ -163,7 +163,7 @@ describe('#403 — context: nests the module folder', () => {
 
 		const result = await regenerateBarrels({
 			ctx,
-			entitiesDir: path.join(root, 'entities'),
+			entitiesDir: path.join(root, 'entities'), nonEntityDirs: [],
 			generatedDir: path.join(root, 'src/generated'),
 		});
 
@@ -210,7 +210,7 @@ describe('regenerateBarrels — end-to-end', () => {
 
 		const result = await regenerateBarrels({
 			ctx,
-			entitiesDir: path.join(root, 'entities'),
+			entitiesDir: path.join(root, 'entities'), nonEntityDirs: [],
 			generatedDir: path.join(root, 'src/generated'),
 		});
 
@@ -240,7 +240,7 @@ describe('regenerateBarrels — end-to-end', () => {
 
 		const result = await regenerateBarrels({
 			ctx,
-			entitiesDir: path.join(root, 'entities'),
+			entitiesDir: path.join(root, 'entities'), nonEntityDirs: [],
 			generatedDir: path.join(root, 'src/generated'),
 			dryRun: true,
 		});
@@ -265,7 +265,7 @@ describe('regenerateBarrels — end-to-end', () => {
 
 		const result = await regenerateBarrels({
 			ctx,
-			entitiesDir: path.join(root, 'entities'),
+			entitiesDir: path.join(root, 'entities'), nonEntityDirs: [],
 			generatedDir: path.join(root, 'src/generated'),
 		});
 
@@ -290,6 +290,7 @@ describe('regenerateBarrels — end-to-end', () => {
 		const args = {
 			ctx,
 			entitiesDir: path.join(root, 'entities'),
+			nonEntityDirs: [],
 			generatedDir: path.join(root, 'src/generated'),
 		};
 
