@@ -57,14 +57,6 @@ export interface SerializedRelationship {
   role?: string;
   /** The parsed `on_delete:` (ADR-021); `restrict` by default. Absent on a junction's synthesized edge. */
   onDelete?: 'restrict' | 'cascade' | 'set_null' | 'no_action';
-  /**
-   * On a `belongs_to` only: its FK column is unique — the field says
-   * `unique: true`, or a `unique_indexes:` entry lists that column and nothing
-   * else. A composite entry does not make the column unique; the tenant column
-   * a `tenant_scoped` entity prefixes onto every unique does not change the
-   * answer (unique per tenant is still one row per parent). See `fkColumnUnique`.
-   */
-  fkUnique?: boolean;
 }
 
 export interface SerializedRelationshipDefinition {
@@ -117,10 +109,7 @@ function serializeFields(fields: Map<string, ParsedField>): Record<string, Seria
  * through this — they used to carry separate field-by-field copies, and the
  * edge copy silently dropped `role` (#698).
  */
-function serializeRelationship(
-  r: ParsedRelationship,
-  holder: ParsedEntity | undefined,
-): SerializedRelationship {
+function serializeRelationship(r: ParsedRelationship): SerializedRelationship {
   return {
     name: r.name,
     type: r.type,
@@ -131,32 +120,13 @@ function serializeRelationship(
     resolved: r.resolved,
     role: r.role,
     onDelete: r.onDelete,
-    ...(r.type === 'belongs_to' && holder !== undefined
-      ? { fkUnique: fkColumnUnique(holder, r.foreignKey) }
-      : {}),
   };
-}
-
-/**
- * Whether `column` on `entity` is unique: its field declares `unique: true`, or
- * a `unique_indexes:` entry lists it alone.
- *
- * **A temporary duplicate.** The generator decides the same thing where it
- * emits the constraints — `fieldUniqueEntries` + `processUniqueIndexes` in
- * `templates/entity/new/backend/entity-locals.js`, over the raw YAML — and no
- * function under `src/` owns the rule yet. Until one does, the parity test
- * (`src/__tests__/analyzer/serialize-graph-fk-unique-parity.test.ts`) holds
- * this copy equal to what the generator emits.
- */
-export function fkColumnUnique(entity: ParsedEntity, column: string): boolean {
-  if (entity.fields.get(column)?.unique === true) return true;
-  return entity.uniqueIndexes.some((ui) => ui.fields.length === 1 && ui.fields[0] === column);
 }
 
 function serializeRelationships(entity: ParsedEntity): Record<string, SerializedRelationship> {
   const result: Record<string, SerializedRelationship> = {};
   for (const [key, r] of entity.relationships) {
-    result[key] = serializeRelationship(r, entity);
+    result[key] = serializeRelationship(r);
   }
   return result;
 }
@@ -220,7 +190,7 @@ export function serializeDomainGraph(graph: DomainGraph): SerializedDomainGraph 
     edges: graph.edges.map((e) => ({
       from: e.from,
       to: e.to,
-      relationship: serializeRelationship(e.relationship, graph.entities.get(e.from)),
+      relationship: serializeRelationship(e.relationship),
       cardinality: e.cardinality,
       bidirectional: e.bidirectional,
     })),

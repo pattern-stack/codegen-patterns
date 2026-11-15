@@ -13,7 +13,7 @@
 //
 // It lives beside the `@repo/db/entities` fixtures because it is the same kind
 // of thing — consumer code the smoke compiles against the generated tree.
-import { communicationPartApi, meetingApi } from '../apps/frontend/src/generated/api/index';
+import { auditEntryApi, communicationPartApi, meetingApi } from '../apps/frontend/src/generated/api/index';
 import * as entityHooks from '../apps/frontend/src/generated/entities/index';
 import {
 	graph,
@@ -120,6 +120,25 @@ export function typeGate(id: string): unknown {
 	// @ts-expect-error the api's `create` takes `never`
 	communicationPartApi.create({});
 
+	// ── S6 R2: an entity generated without writes has no mutation at all ──────
+	// `audit_entry` says `generate: { writes: false }`: the backend has no create / update / delete use case, so the
+	// frontend reads that from the derived API surface and emits none — not a hook re-export, not a typed body.
+	const auditReads = [entityHooks.useAuditEntryList, entityHooks.useAuditEntry];
+	// @ts-expect-error no `useCreateAuditEntry`: writes are off
+	entityHooks.useCreateAuditEntry;
+	// @ts-expect-error no `useUpdateAuditEntry`: writes are off
+	entityHooks.useUpdateAuditEntry;
+	// @ts-expect-error no `useDeleteAuditEntry`: writes are off
+	entityHooks.useDeleteAuditEntry;
+	// @ts-expect-error the factory's `useCreate` takes `never`: nothing can be created
+	entityHooks.auditEntryHooks.useCreate().mutate({ note: 'x' });
+	// @ts-expect-error the factory's `useUpdate` takes `never`: nothing can be updated
+	entityHooks.auditEntryHooks.useUpdate().mutate({ id: 'a', data: { note: 'x' } });
+	// @ts-expect-error the api's `create` takes `never`
+	auditEntryApi.create({ note: 'x' });
+	// @ts-expect-error the api's `update` takes `never`
+	auditEntryApi.update('a', { note: 'x' });
+
 	// ── S6 review: a child's REST client speaks the FLAT contract ─────────────
 	// A create body carries the base's fields (`occurredAt`, `source`, `externalId`) with the child's, and no `kind`.
 	const created: Promise<MeetingWithBase> = meetingApi.create({
@@ -134,6 +153,7 @@ export function typeGate(id: string): unknown {
 	meetingApi.create({ title: 'x', kind: 'meeting' });
 
 	return {
+		auditReads,
 		meetingBase,
 		occurredAt,
 		title,

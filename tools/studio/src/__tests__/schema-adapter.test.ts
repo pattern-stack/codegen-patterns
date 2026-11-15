@@ -255,6 +255,8 @@ describe('buildEdges', () => {
       cardinality: '1:1',
       label: 'meeting',
       type: 'fk',
+      // a real relation (the derivation lists `<child>.inherits`), not "one half of a pairing"
+      relationId: 'meeting.inherits',
     });
   });
 
@@ -650,8 +652,7 @@ describe('the canvas counts differently from the API, on purpose', () => {
 
 describe('buildEdges — spine and secondary lines (STUDIO-3)', () => {
   /**
-   * The owner's shape: a child that `belongs_to` parent A through a unique FK
-   * with cascade, and `belongs_to` parent B plainly — B declared first, so
+   * The owner's shape: a child that `belongs_to` parent A with cascade, and `belongs_to` parent B plainly — B declared first, so
    * only the signals can pick A.
    */
   const OWNER_SHAPE = graph({
@@ -660,25 +661,25 @@ describe('buildEdges — spine and secondary lines (STUDIO-3)', () => {
       {
         from: 'child',
         to: 'parent_b',
-        relationship: relationship({ name: 'parent_b', target: 'parent_b', foreignKey: 'parent_b_id', onDelete: 'restrict', fkUnique: false }),
+        relationship: relationship({ name: 'parent_b', target: 'parent_b', foreignKey: 'parent_b_id', onDelete: 'restrict' }),
         cardinality: 'N:1',
         bidirectional: false,
       },
       {
         from: 'child',
         to: 'parent_a',
-        relationship: relationship({ name: 'parent_a', target: 'parent_a', foreignKey: 'parent_a_id', onDelete: 'cascade', fkUnique: true }),
+        relationship: relationship({ name: 'parent_a', target: 'parent_a', foreignKey: 'parent_a_id', onDelete: 'cascade' }),
         cardinality: 'N:1',
         bidirectional: false,
       },
     ],
   });
 
-  test('picks the unique-FK parent as the spine, and says why on the line', () => {
+  test('picks the cascading parent as the spine, and says why on the line', () => {
     const edges = buildEdges(OWNER_SHAPE);
     expect(edges.map((e) => [e.target, e.treeRole, e.treeReason])).toEqual([
-      ['parent_b', 'secondary', "secondary: child's spine is parent_a (unique FK (1:1))"],
-      ['parent_a', 'spine', 'spine: unique FK (1:1)'],
+      ['parent_b', 'secondary', "secondary: child's spine is parent_a (on_delete: cascade)"],
+      ['parent_a', 'spine', 'spine: on_delete: cascade'],
     ]);
   });
 

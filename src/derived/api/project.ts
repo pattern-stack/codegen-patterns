@@ -31,7 +31,7 @@ import type { RelationEdge, RelationsEmitContext } from '../../emitters/relation
 import type { PatternDeclaringEntity } from '../../patterns/compose.js';
 import { resolvePatternComposition } from '../../patterns/resolve-composition.js';
 import type { EntityDefinition } from '../../schema/entity-definition.schema.js';
-import { discriminatorKindsOf, inheritanceBaseOf, inheritanceChildrenOf } from '../../schema/inheritance.js';
+import { discriminatorKindsOf, inheritanceBaseOf, inheritanceChildrenOf, inheritsOf } from '../../schema/inheritance.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import { detectYamlType, loadRelationshipFromYaml } from '../../utils/yaml-loader.js';
 import {
@@ -292,6 +292,15 @@ function relationSurfaces(
 		for (const [role, r] of Object.entries(def.roles ?? {})) {
 			relations.push(surfaceOf(`${def.entity.name}.roles.${role}`, def.entity.name, r.target, 'role'));
 		}
+	}
+
+	// `inherits:` (RFC-0006) — one relation per child, child → base. It is a key of the entity, not an entry of
+	// `relationships:`, and REL-1's graph has no edge for it (a child's reads reach the base through the repository's
+	// own join, not a relation include), so `includeKeys` is empty; the methods that name `<child>.inherits` as their
+	// origin are what it generates.
+	for (const def of definitions) {
+		const decl = inheritsOf(def);
+		if (decl) relations.push(surfaceOf(`${def.entity.name}.inherits`, def.entity.name, decl.base, 'inherits'));
 	}
 
 	// Junctions — REL-1's `junction <name>` origin; the fan-out methods on each parent name the junction.

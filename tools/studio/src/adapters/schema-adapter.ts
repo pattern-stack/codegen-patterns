@@ -202,8 +202,11 @@ function foreignKeyOf(edge: SerializedEdge): string | undefined {
  * **The canvas therefore counts differently from the API, on purpose.** One
  * first-class relationship is a single `N:M` entry in `graph.edges`, but a node
  * plus two edges here — because the relationship carries its own fields, types
- * and temporal/sourced flags, and a line has nowhere to put them — and an
- * inverse pair is two entries in `graph.edges` but one line here. A graph the
+ * and temporal/sourced flags, and a line has nowhere to put them — an
+ * inverse pair is two entries in `graph.edges` but one line here, and an
+ * `inherits:` has no `graph.edges` entry at all (a child names its base on the
+ * entity itself) yet draws one line, child → base, which is a real relation
+ * (`<child>.inherits`) in the derived surface. A graph the
  * API reports as 3 entities and 5 edges (two `belongs_to`, their two inverse
  * `has_many`, one junction) draws as 4 nodes and 4 edges. That is not drift
  * between the two; do not "fix" it by keeping the skipped edge, by dropping the
@@ -316,6 +319,8 @@ export function buildEdges(graph: SerializedDomainGraph): StudioEdgeData[] {
       type: libraryType('inherits'),
       bidirectional: false,
       studioKind: 'inherits',
+      // The derivation lists the relation `<child>.inherits` (`relationSurfaces`), whose methods carry that origin.
+      relationId: `${entity.name}.inherits`,
     })) candidate(id, entity.name, entity.inherits.base, { ...NO_SIGNALS, inherits: true });
   }
 
@@ -366,7 +371,6 @@ type UntreedEdge = Omit<StudioEdgeData, 'treeRole' | 'treeReason' | 'channelY'>;
 export function spineSignalsOf(edge: SerializedEdge): SpineSignals {
   return {
     inherits: false,
-    fkUnique: edge.relationship.fkUnique === true,
     cascade: edge.relationship.onDelete === 'cascade',
   };
 }

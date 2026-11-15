@@ -26,7 +26,8 @@ import { join, resolve } from 'node:path';
 
 import { buildBackendLocals } from '../../../../templates/entity/new/backend/entity-locals.js';
 import { withEntities } from '../../backend/_entity-lookup';
-import { hasCreateRoute } from '../../../emitters/frontend/emit-utils';
+import { deriveProjectApiSurface } from '../../../derived/api/project';
+import { writeRoutes } from '../../../emitters/frontend/emit-utils';
 import { createEntityLookup } from '../../../../templates/_shared/entity-naming.mjs';
 import { buildClientGraph, emitFrontendSet, loadFrontendEmitContext } from '../../../emitters/frontend/index';
 import { buildRelationGraph } from '../../../emitters/relations/build-graph';
@@ -183,18 +184,55 @@ describe('a base with a child for every kind has no create route (S5)', () => {
 		expect(read('fields/communication.ts')).toContain('create: true,');
 	});
 
-	it('agrees with the backend’s REAL `generateCreate` for every entity of the set', () => {
-		// buildBackendLocals is what renders the controller: a change to its `generateCreate` turns this red.
+	it('agrees with the surface the backend’s REAL locals print its controller from, for every entity of the set', () => {
+		// buildBackendLocals is what renders the controller (it prints `apiSurface.http.routes`): a route the backend
+		// does not generate turns this red if the frontend still emits its mutation.
 		const lookup = createEntityLookup(ENTITIES, { tablePrefix: '' });
 		const definitions = ctx.definitions!;
 		let noCreate = 0;
 		for (const name of definitions.keys()) {
 			const locals = buildBackendLocals(lookup.definition(name), { ...withEntities(), entityLookup: lookup });
-			const has = hasCreateRoute(ctx.entities.find((e) => e.name === name)!, ctx);
-			expect(has, name).toBe(locals.generateCreate as boolean);
-			if (!has) noCreate += 1;
+			const routes = writeRoutes(ctx.entities.find((e) => e.name === name)!, ctx);
+			const printed = (handler: string) =>
+				(locals.apiSurface as { http: { routes: { handler: string }[] } }).http.routes.some((r) => r.handler === handler);
+			expect(routes.create, `${name} create`).toBe(printed('create'));
+			expect(routes.update, `${name} update`).toBe(printed('update'));
+			expect(routes.delete, `${name} delete`).toBe(printed('remove') || printed('delete'));
+			if (!routes.create) noCreate += 1;
 		}
-		expect(noCreate).toBe(1); // communication_part; communication keeps its base-only kind `message`
+		expect(noCreate).toBe(2); // communication_part (every kind has a child) and audit_entry (writes: false); communication keeps its base-only kind `message`
+	});
+});
+
+describe('an entity generated without writes has no mutation (S6 R2: the emitter reads the derived surface)', () => {
+	it('emits no write request, no write hook, and capabilities that say so; its reads stay', () => {
+		const api = read('api/audit-entry.ts');
+		expect(api).not.toMatch(/'(POST|PATCH|DELETE)'/);
+		expect(api).toContain('create: (_data: never)');
+		expect(api).toContain('update: (_id: string, _data: never)');
+		expect(read('entities/audit-entry.ts')).toContain('createEntityHooks<AuditEntry, never, never>');
+		for (const file of ['entities/audit-entry.ts', 'entities/index.ts']) {
+			expect(read(file)).not.toMatch(/use(Create|Update|Delete)AuditEntry\b/);
+		}
+		expect(read('entities/index.ts')).toMatch(/useAuditEntryList,\n\tuseAuditEntry,\n\tauditEntryKeys,/);
+		const fields = read('fields/audit-entry.ts');
+		expect(fields).toContain('create: false,');
+		expect(fields).toContain('update: false,');
+		expect(fields).toContain('delete: false,');
+		expect(fields).toContain('list: true,');
+	});
+
+	it('agrees with the derived surface on every entity: a mutation exists iff its use case does', () => {
+		for (const entity of ctx.entities) {
+			const surface = deriveProjectApiSurface({
+				relations: { entities: ctx.entities, definitions: ctx.definitions!, junctions: ctx.junctions ?? [], tenancyColumn: ctx.config.tenancyColumn },
+				relationships: [],
+			}).entities[entity.name]!;
+			const routes = writeRoutes(entity, ctx);
+			for (const kind of ['create', 'update', 'delete'] as const) {
+				expect(routes[kind], `${entity.name} ${kind}`).toBe(surface.useCases.some((u) => u.kind === kind));
+			}
+		}
 	});
 });
 

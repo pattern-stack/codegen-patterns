@@ -141,6 +141,89 @@
 			]
 		},
 		{
+			"id": "email.inherits",
+			"from": "email",
+			"to": "communication",
+			"kind": "inherits",
+			"generates": [
+				{
+					"entity": "email",
+					"layer": "repository",
+					"method": "findWithBase"
+				},
+				{
+					"entity": "email",
+					"layer": "repository",
+					"method": "findManyWithBase"
+				},
+				{
+					"entity": "email",
+					"layer": "repository",
+					"method": "listFlat"
+				},
+				{
+					"entity": "email",
+					"layer": "repository",
+					"method": "countFlat"
+				},
+				{
+					"entity": "email",
+					"layer": "repository",
+					"method": "create"
+				},
+				{
+					"entity": "email",
+					"layer": "repository",
+					"method": "update"
+				},
+				{
+					"entity": "email",
+					"layer": "repository",
+					"method": "delete"
+				},
+				{
+					"entity": "email",
+					"layer": "service",
+					"method": "findWithBase"
+				},
+				{
+					"entity": "email",
+					"layer": "service",
+					"method": "findManyWithBase"
+				},
+				{
+					"entity": "email",
+					"layer": "service",
+					"method": "listFlat"
+				},
+				{
+					"entity": "email",
+					"layer": "service",
+					"method": "countFlat"
+				},
+				{
+					"entity": "email",
+					"layer": "service",
+					"method": "create"
+				},
+				{
+					"entity": "email",
+					"layer": "service",
+					"method": "update"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "communications",
+					"key": "email"
+				},
+				{
+					"table": "emails",
+					"key": "communication"
+				}
+			]
+		},
+		{
 			"id": "email.relationships.thread",
 			"from": "email",
 			"to": "email_thread",
@@ -186,6 +269,89 @@
 				{
 					"table": "meeting_transcripts",
 					"key": "meeting"
+				}
+			]
+		},
+		{
+			"id": "meeting.inherits",
+			"from": "meeting",
+			"to": "communication",
+			"kind": "inherits",
+			"generates": [
+				{
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "findWithBase"
+				},
+				{
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "findManyWithBase"
+				},
+				{
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "listFlat"
+				},
+				{
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "countFlat"
+				},
+				{
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "create"
+				},
+				{
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "update"
+				},
+				{
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "delete"
+				},
+				{
+					"entity": "meeting",
+					"layer": "service",
+					"method": "findWithBase"
+				},
+				{
+					"entity": "meeting",
+					"layer": "service",
+					"method": "findManyWithBase"
+				},
+				{
+					"entity": "meeting",
+					"layer": "service",
+					"method": "listFlat"
+				},
+				{
+					"entity": "meeting",
+					"layer": "service",
+					"method": "countFlat"
+				},
+				{
+					"entity": "meeting",
+					"layer": "service",
+					"method": "create"
+				},
+				{
+					"entity": "meeting",
+					"layer": "service",
+					"method": "update"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "communications",
+					"key": "meeting"
+				},
+				{
+					"table": "meetings",
+					"key": "communication"
 				}
 			]
 		},

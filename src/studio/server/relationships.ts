@@ -24,6 +24,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import pluralize from 'pluralize';
+import { discriminatorKindsOf } from '../../schema/inheritance.js';
 import { Document, parseDocument, stringify as stringifyYaml } from 'yaml';
 
 import type {
@@ -152,31 +153,33 @@ function editedEntity(
 }
 
 /**
- * The base's discriminator field name and its kinds: literal `choices:`, or one hop of `choices_of: <entity>.<field>`
- * through the owner's file. `discriminator` is null for a base that declares none; `kinds` is null when they do not
- * resolve (the generator's own validation then speaks).
+ * The base's discriminator field name and its kinds — `discriminatorKindsOf`, the generator's own resolver
+ * (`src/schema/inheritance.ts`: literal `choices:`, or one hop of `choices_of: <entity>.<field>`), fed the base's
+ * file and, for a `choices_of`, its owner's. `discriminator` is null for a base that declares none; `kinds` is null
+ * when they do not resolve (the generator's own validation then speaks). There is no second reading of `choices_of`
+ * here (RFC-0006 S6 R2).
  */
 function baseKinds(
 	projectDir: string,
 	baseFile: string,
 ): { discriminator: string | null; kinds: string[] | null } {
-	const doc = parseDocument(fs.readFileSync(baseFile, 'utf-8'));
-	const discriminator = doc.get('discriminator');
-	if (typeof discriminator !== 'string') return { discriminator: null, kinds: null };
-	const literal = doc.getIn(['fields', discriminator, 'choices']);
-	const choicesOf = doc.getIn(['fields', discriminator, 'choices_of']);
-	const toList = (v: unknown): string[] | null => {
-		const json = (v as { toJSON?: () => unknown } | undefined)?.toJSON?.() ?? v;
-		return Array.isArray(json) ? json.map(String) : null;
-	};
-	if (typeof choicesOf === 'string') {
-		const [owner, ownerField] = choicesOf.split('.');
-		const ownerFile = owner ? entityFile(projectDir, owner) : null;
-		if (!ownerFile || !ownerField) return { discriminator, kinds: null };
-		const ownerDoc = parseDocument(fs.readFileSync(ownerFile, 'utf-8'));
-		return { discriminator, kinds: toList(ownerDoc.getIn(['fields', ownerField, 'choices'])) };
+	const base = parseDocument(fs.readFileSync(baseFile, 'utf-8')).toJSON() as Record<string, unknown> | null;
+	const discriminator = base?.discriminator;
+	if (!base || typeof discriminator !== 'string') return { discriminator: null, kinds: null };
+	const definitions: Record<string, unknown>[] = [base];
+	const field = (base.fields as Record<string, { choices_of?: unknown } | undefined> | undefined)?.[discriminator];
+	if (typeof field?.choices_of === 'string') {
+		const ownerFile = entityFile(projectDir, field.choices_of.split('.')[0] ?? '');
+		if (ownerFile) {
+			const owner = parseDocument(fs.readFileSync(ownerFile, 'utf-8')).toJSON() as Record<string, unknown> | null;
+			if (owner) definitions.push(owner);
+		}
 	}
-	return { discriminator, kinds: toList(literal) };
+	const kinds = discriminatorKindsOf(
+		base as Parameters<typeof discriminatorKindsOf>[0],
+		definitions as unknown as Parameters<typeof discriminatorKindsOf>[1],
+	);
+	return { discriminator, kinds };
 }
 
 /**

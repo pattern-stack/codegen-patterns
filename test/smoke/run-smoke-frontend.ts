@@ -278,6 +278,15 @@ async function main(): Promise<number> {
 			throw new Error('communication keeps a base-only kind, so it must keep its create route');
 		}
 
+		// RFC-0006 S6 R2: `audit_entry` is generated with `writes: false`, so the backend has no create / update / delete
+		// route and nothing emitted may aim a request at one (the emitter reads the derived API surface).
+		if (/'(POST|PATCH|DELETE)'/.test(emitted('api/audit-entry.ts'))) {
+			throw new Error('api/audit-entry.ts emits a write request for an entity generated without writes');
+		}
+		if (/use(Create|Update|Delete)AuditEntry\b/.test(emitted('entities/audit-entry.ts') + emitted('entities/index.ts'))) {
+			throw new Error('a write hook is re-exported for an entity generated without writes');
+		}
+
 		// 5. The consumer-owned modules the contract requires. Not stubs of
 		//    generated code — no template writes to either location (ADR-038).
 		const consumerDir = path.join(tmpDir, 'consumer');

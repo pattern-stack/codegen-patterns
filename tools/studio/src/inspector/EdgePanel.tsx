@@ -63,7 +63,7 @@ export function EdgePanel({ edge, surface, ...link }: EdgePanelProps) {
 }
 
 /**
- * The line's place in the tree and why — `spine: unique FK (1:1)` — exactly as
+ * The line's place in the tree and why — `spine: on_delete: cascade` — exactly as
  * the adapter wrote it on the line (`treeReason`); the canvas tooltip prints
  * the same string.
  */

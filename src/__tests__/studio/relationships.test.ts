@@ -154,6 +154,29 @@ describe('`inherits` (RFC-0006, #875 S6)', () => {
 		).toThrow(/does not list 'fax'/);
 	});
 
+	it('is refused by `validateContent` itself when the resulting child YAML is invalid (R5: a child declares no `timestamps`)', () => {
+		// The kind is listed and the base declares its discriminator, so every Studio-side check passes; only the
+		// single-file schema can object — which is what "validates like every Studio write" means, and what can fail.
+		write('stamped', 'entity:\n  name: stamped\n  plural: stampeds\nbehaviors: [timestamps]\nfields:\n  title:\n    type: string\n');
+		write(
+			'stamp_base',
+			'entity:\n  name: stamp_base\n  plural: stamp_bases\ndiscriminator: kind\nfields:\n  kind:\n    type: enum\n    choices: [stamped]\n    required: true\n',
+		);
+		expect(() => previewRelationship(project, { from: 'stamped', to: 'stamp_base', kind: 'inherits' })).toThrow(
+			/the resulting stamped YAML would be invalid/,
+		);
+	});
+
+	it('an empty `choices:` is “unknown”, not “none” (the generator’s own resolver): Studio does not guess, generation validates', () => {
+		write(
+			'empty_base',
+			'entity:\n  name: empty_base\n  plural: empty_bases\ndiscriminator: kind\nfields:\n  kind:\n    type: enum\n    choices: []\n',
+		);
+		write('lonely', 'entity:\n  name: lonely\n  plural: lonelies\nfields:\n  title:\n    type: string\n');
+		const [file] = previewRelationship(project, { from: 'lonely', to: 'empty_base', kind: 'inherits' });
+		expect(file?.content).toMatch(/^inherits: empty_base$/m);
+	});
+
 	it('refuses a child that already inherits, itself, and a base that does not exist', () => {
 		expect(() => previewRelationship(project, { from: 'email', to: 'communication', kind: 'inherits' })).toThrow(/already declares/);
 		expect(() => previewRelationship(project, { from: 'meeting', to: 'meeting', kind: 'inherits' })).toThrow(/cannot inherit itself/);

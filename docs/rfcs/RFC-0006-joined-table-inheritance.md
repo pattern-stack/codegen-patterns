@@ -50,7 +50,7 @@ The mapping is not: there is no polymorphic object mapper, and §9 argues why.
 | Levels | One. A child cannot be a base. |
 | Reads | The READ-1 surface is unchanged. The base row is a relation (`with: { communication: true }`). Flat rows are a projection of that read, not a second query path. |
 | Writes | The child repository's `create` / `update` / `delete` write the pair in one transaction. |
-| Upsert | `upsertByNaturalKey` on the child: the base on its declared natural key, then the child on `id`, one transaction. In v1. |
+| Upsert | `upsertByNaturalKey` exists on every entity that declares a `natural_key` (family or not) → `{ row, created }`. A child gets it through its **base's** key → `{ row, created, baseCreated }`: the base on its key, then the child on `id`, one transaction. A child of a keyless base has none. In v1. |
 | Cross-family rules | `match:` on a `belongs_to` emits a composite FK to the parent's `(id, <column>)`. In v1. |
 | Frontend | The graph gets both edges. v1 also emits a typed "child with its base" query and hook per `electric` child. |
 | DTOs | Child DTOs are flat (base fields + child fields, no `kind` on input). |
@@ -1018,7 +1018,7 @@ The summary. §13 is the build plan, slice by slice.
 | 6 | Repository overrides, typed reads, `upsertByNaturalKey`; service forwarders; base repository injection | `repository.ejs.t`, `service.ejs.t`, `module.ejs.t` |
 | 7 | Flat DTOs; base union output; base create restricted to base-only kinds | `dto/*.ejs.t` |
 | 8 | Child find and list use cases return flat rows; controller output | `use-cases/find-by-id.ejs.t`, `list.ejs.t`, `controller.ejs.t` |
-| 9 | Frontend: inner-joined child-to-base hop; `<child>WithBase` query and hooks; the child's flat api types; no create hook for an all-kinds base | `src/emitters/frontend/graph-model.ts`, `emit-graph.ts`, `emit-api.ts`, `emit-entities.ts`, `emit-fields.ts`, `emit-store.ts`, `emit-utils.ts`, `emit-collections.ts`; `src/derived/api/entity.ts` is read, not edited (`createDisabledBy`) |
+| 9 | Frontend: inner-joined child-to-base hop; `<child>WithBase` query and hooks; the child's flat api types; no create hook for an all-kinds base | `src/emitters/frontend/graph-model.ts`, `emit-graph.ts`, `emit-api.ts`, `emit-entities.ts`, `emit-fields.ts`, `emit-store.ts`, `emit-utils.ts`, `emit-collections.ts`; the derivation (`src/derived/api/entity.ts`, `deriveProjectApiSurface`) is read for route existence, and `project.ts` lists the `inherits` relation |
 | 10 | Studio: one row in each vocabulary table, the serialized `inherits`, the adapter's edge, the `inherits` relationship write | `tools/studio/src/inspector/relationship-kinds.ts`, `tools/studio/src/graph/edge-kinds.ts`, `tools/studio/src/adapters/schema-adapter.ts`, `src/analyzer/serialize-graph.ts`, `src/studio/server/relationships.ts`, `src/studio/shared/api.ts` |
 | 11 | The derived API surface (family reads, `hasTypedInclude`, the include gate); Studio's `Record<RepositoryKind, …>` | `src/derived/api/*`, `src/emitters/relations/build-includes.ts`, `tools/studio/src/inspector/surface-kinds.ts` |
 
@@ -1920,12 +1920,18 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   1:1 that is not an inheritance is still a modelling choice the rule should place sensibly; `inherits:` is how an author says
   "is a". `spine.test.ts` pins the tier, `schema-adapter.test.ts` pins that a child with a `belongs_to` of its own keeps its base
   as spine and that the inheritance line is never absorbed into a pair.
-- **ADR-046 (phase R).** S6 adds frontend files and a Studio edge, not backend API surface, so **nothing new moved into
-  `src/derived/api/`**. What changed is ownership: S6's own copies of `enumChoices`, `baseOnlyKinds` and `baseHasNoCreateRoute`
-  are gone, and the frontend's `hasCreateRoute` reads the derivation's `createDisabledBy` (`src/derived/api/entity.ts`) — it
-  calls the function over `inheritanceChildrenOf` + `discriminatorKindsOf` rather than a whole `deriveProjectApiSurface`, whose
-  relation-graph inputs the emitter has no other use for. `inherits-graph.test.ts` still pins it against the backend's real
-  `generateCreate`. No golden under `test/api-surface-golden/` changes.
+- **ADR-046 (phase R).** S6 adds frontend files and a Studio edge, not backend API surface. What changed is ownership: S6's own
+  copies of `enumChoices`, `baseOnlyKinds` and `baseHasNoCreateRoute` are gone, and (phase R2) so is Studio's own `choices_of` reader
+  (`baseKinds` in `src/studio/server/relationships.ts` now calls `discriminatorKindsOf`, so an empty `choices: []` reads as
+  "unknown" there exactly as in the generator). The frontend reads route existence from `deriveProjectApiSurface` (above).
+  The one derivation addition is the `inherits` relation (`RelationApiSurface.kind`), which changes the project goldens only by
+  those entries.
+- **ADR-046 Phase B (phase R2).** Rebased onto S5's Phase-B tip with no conflicts: S6 touches no template, no `entity-locals.js` and
+  has no flag local, so there was nothing to move onto `apiSurface`; the kind renames (`all_kinds`, `pair_create`, `list_flat`, …) were
+  already in `surface-kinds.ts`, whose tables are `Record`s over every kind (the Studio typecheck is the coverage check). Generated
+  backend output is byte-identical; the frontend output changes only for an entity with `generate: { writes: false }` (none in the
+  baseline). The `/api/relationships` inherits write has a test where `validateContent` itself refuses (a child declaring its own
+  `timestamps`, R5), so "validates like every Studio write" can fail.
 
 **S7 — `Integrated` on a child. Not in v1.** Described in §4.2. S7 also widens R11 to accept behavior columns in a natural key (§4.2). File it as its own issue when a consumer writes a
 family through the generated sink.

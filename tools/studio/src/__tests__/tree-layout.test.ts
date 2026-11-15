@@ -46,7 +46,6 @@ function fk(child: string, parent: string, over: Partial<Rel> = {}): Edge[] {
         foreignKey: column,
         resolved: true,
         onDelete: 'restrict',
-        fkUnique: false,
         ...over,
       },
       cardinality: 'N:1',
@@ -172,7 +171,7 @@ describe('treeLayout — parents above children (#778)', () => {
 
 /**
  * Two parents and a two-parent child. `sheet` declares `binder` first (plain)
- * and `folder` second through a unique FK with cascade — so its spine is
+ * and `folder` second through a cascading FK — so its spine is
  * `folder` and `binder` is a secondary line. `binder` has two children of its
  * own, `memo` and `note`; `tag` is a lone root.
  */
@@ -180,7 +179,7 @@ const NAMES = ['binder', 'folder', 'memo', 'note', 'sheet', 'tag'];
 const SPINE_EDGES: Edge[] = [
   ...fk('memo', 'binder'),
   ...fk('note', 'binder'),
-  ...fk('sheet', 'folder', { fkUnique: true, onDelete: 'cascade' }),
+  ...fk('sheet', 'folder', { onDelete: 'cascade' }),
 ];
 const SECONDARY_SHEET_BINDER = fk('sheet', 'binder');
 const SECONDARY_MEMO_FOLDER = fk('memo', 'folder');
@@ -190,7 +189,7 @@ const TWO_PARENT = graphOf(NAMES, [
   ...fk('memo', 'binder'),
   ...fk('note', 'binder'),
   ...SECONDARY_SHEET_BINDER,
-  ...fk('sheet', 'folder', { fkUnique: true, onDelete: 'cascade' }),
+  ...fk('sheet', 'folder', { onDelete: 'cascade' }),
 ]);
 
 function lay(graph: SerializedDomainGraph) {

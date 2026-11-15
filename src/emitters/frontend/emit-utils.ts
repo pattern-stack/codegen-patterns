@@ -10,28 +10,56 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-import { createDisabledBy } from '../../derived/api/entity.js';
-import { discriminatorKindsOf, inheritanceChildrenOf, inheritsOf } from '../../schema/inheritance.js';
+import { deriveProjectApiSurface } from '../../derived/api/project.js';
+import type { ProjectApiSurface } from '../../derived/api/types.js';
+import { inheritsOf } from '../../schema/inheritance.js';
 import { generating } from '../../utils/generated-file.js';
 import type { EntityRegistryEntry, FrontendEmitContext } from './types';
 
+const surfaceCache = new WeakMap<FrontendEmitContext, ProjectApiSurface | null>();
+
 /**
- * Whether the backend generates `POST /<plural>` for this entity, as far as a FAMILY decides it: false for a
- * discriminator base whose every kind has a child table (RFC-0006 §4.1). The answer is the derivation's
- * `createDisabledBy` (`src/derived/api/entity.ts`, ADR-046), the function the backend's `generateCreate` calls too;
- * the frontend reaches it directly rather than through a whole `deriveProjectApiSurface`, which needs the relation
- * graph's inputs this emitter has no other use for. The api client, the hooks and the field capabilities all
- * ask here, so no create mutation is emitted for a route that does not exist.
- *
- * It does NOT read `generate: { writes: false }`, which the backend's `generateCreate` also reads: the frontend
- * emitter ignores that key for every entity (a known, entity-general gap, RFC-0006 S6 as built). A context built
- * without `definitions` (a registry-only fixture) has no families.
+ * The project's derived API surface (ADR-046), once per emit. The frontend asks it what the backend generates —
+ * a create / update / delete use case — instead of re-deciding it: `deriveProjectApiSurface` is the one owner of
+ * route and use-case existence (`generate: { writes: false }`, a base with no create route), and the backend's
+ * templates print from the same derivation. It is fed the same relation inputs `buildClientGraph` hands REL-1's
+ * `buildRelationGraph` (charter I1). `null` for a context built without `definitions` (a registry-only fixture):
+ * it has no families and no write switch, so every mutation exists.
  */
-export function hasCreateRoute(entity: EntityRegistryEntry, ctx: FrontendEmitContext): boolean {
-	const def = ctx.definitions?.get(entity.name);
-	if (!def || !ctx.definitions) return true;
-	const all = [...ctx.definitions.values()];
-	return createDisabledBy(def, inheritanceChildrenOf(entity.name, all), discriminatorKindsOf(def, all)) === null;
+export function projectSurface(ctx: FrontendEmitContext): ProjectApiSurface | null {
+	if (surfaceCache.has(ctx)) return surfaceCache.get(ctx) ?? null;
+	const surface = ctx.definitions
+		? deriveProjectApiSurface({
+				relations: {
+					entities: ctx.entities,
+					definitions: ctx.definitions,
+					junctions: ctx.junctions ?? [],
+					tenancyColumn: ctx.config.tenancyColumn,
+				},
+				relationships: [],
+			})
+		: null;
+	surfaceCache.set(ctx, surface);
+	return surface;
+}
+
+export interface WriteRoutes {
+	create: boolean;
+	update: boolean;
+	delete: boolean;
+}
+
+/**
+ * Which mutations the backend generates for this entity — read from its derived `useCases`, so the answer is the
+ * backend's (`generate: { writes: false }` removes all three; a discriminator base whose every kind has a child
+ * removes `create`, RFC-0006 §4.1). The api client, the hooks, the store and the field capabilities all ask here, so
+ * no mutation is emitted for a route that does not exist.
+ */
+export function writeRoutes(entity: EntityRegistryEntry, ctx: FrontendEmitContext): WriteRoutes {
+	const surface = projectSurface(ctx)?.entities[entity.name];
+	if (!surface) return { create: true, update: true, delete: true };
+	const has = (kind: 'create' | 'update' | 'delete'): boolean => surface.useCases.some((u) => u.kind === kind);
+	return { create: has('create'), update: has('update'), delete: has('delete') };
 }
 
 /**

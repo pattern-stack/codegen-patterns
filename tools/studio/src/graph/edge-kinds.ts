@@ -47,7 +47,7 @@ export interface StudioEdgeData extends GraphEdgeData {
    * `secondary` is every other foreign key, drawn lighter and never ranked.
    */
   treeRole: TreeRole;
-  /** Why — `spine: unique FK (1:1)`, `secondary: chart's spine is catalog (…)`. Shown on the line. */
+  /** Why — `spine: on_delete: cascade`, `secondary: chart's spine is catalog (…)`. Shown on the line. */
   treeReason: string;
   /**
    * The y of this line's horizontal run, in flow coordinates (#890): each line

@@ -21,7 +21,7 @@
 import { join } from 'node:path';
 import type { EntityRegistryEntry, FrontendEmitContext } from './types';
 import { sortEntities } from './types';
-import { flatChild, hasCreateRoute, withBanner, writeFile } from './emit-utils';
+import { flatChild, writeRoutes, withBanner, writeFile } from './emit-utils';
 
 const SOURCE_DESC_SET = 'the entity set';
 
@@ -36,14 +36,23 @@ export function buildEntityHooksFile(
 	const { camelName, className, name, fileStem } = entity;
 	// No `useCreate<Class>` for a base whose every kind has a child (RFC-0006 §4.1): its create route does not exist, so
 	// `TCreate` is `never` and `useCreate().mutate(...)` cannot be called. A child's create / update take the flat body.
-	const createRoute = hasCreateRoute(entity, ctx);
+	// The same holds for a write the backend does not generate (`generate: { writes: false }`): `TUpdate` is `never`
+	// and its hook is not re-exported. `createEntityHooks` has no type parameter for delete, so the hooks object still
+	// carries `useDelete` (the api rejects); only the named re-export goes (RFC-0006 S6 R2).
+	const routes = writeRoutes(entity, ctx);
 	const flat = flatChild(entity, ctx);
-	const useCreate = createRoute ? `\tuseCreate: useCreate${className},\n` : '';
-	const typeArgs = flat
-		? `${className}, ${className}FlatInput, ${className}FlatInput`
-		: createRoute
-			? className
-			: `${className}, never`;
+	const useCreate = routes.create ? `\tuseCreate: useCreate${className},\n` : '';
+	const useUpdate = routes.update ? `\tuseUpdate: useUpdate${className},\n` : '';
+	const useDelete = routes.delete ? `\tuseDelete: useDelete${className},\n` : '';
+	// Type arguments, trailing defaults dropped (`TCreate` / `TUpdate` default to `Partial<TEntity>`).
+	const typeArgList = [
+		className,
+		routes.create ? (flat ? `${className}FlatInput` : null) : 'never',
+		routes.update ? (flat ? `${className}FlatInput` : null) : 'never',
+	];
+	const filled = typeArgList.map((a, i) => a ?? (i === 0 ? className : `globalThis.Partial<${className}>`));
+	while (filled.length > 1 && typeArgList[filled.length - 1] === null) filled.pop();
+	const typeArgs = filled.join(', ');
 	const apiImport = flat ? `import { ${camelName}Api, type ${className}FlatInput } from '../api/${fileStem}';` : `import { ${camelName}Api } from '../api/${fileStem}';`;
 
 	const body = `import { createEntityHooks } from '@pattern-stack/frontend-patterns';
@@ -70,9 +79,7 @@ export const ${camelName}Hooks = createEntityHooks<${typeArgs}>({
 export const {
 \tuseList: use${className}List,
 \tuseGet: use${className},
-${useCreate}\tuseUpdate: useUpdate${className},
-\tuseDelete: useDelete${className},
-\tkeys: ${camelName}Keys,
+${useCreate}${useUpdate}${useDelete}\tkeys: ${camelName}Keys,
 } = ${camelName}Hooks;
 `;
 	return withBanner(`entities/${name}.yaml`, body);
@@ -87,14 +94,15 @@ export function buildEntitiesIndexFile(ctx: FrontendEmitContext): string {
 	const entities = sortEntities(ctx.entities);
 	const blocks = entities.map((e) => {
 		const { camelName, className, fileStem } = e;
-		const useCreate = hasCreateRoute(e, ctx) ? `\tuseCreate${className},\n` : '';
+		const routes = writeRoutes(e, ctx);
+		const useCreate = routes.create ? `\tuseCreate${className},\n` : '';
+		const useUpdate = routes.update ? `\tuseUpdate${className},\n` : '';
+		const useDelete = routes.delete ? `\tuseDelete${className},\n` : '';
 		return `export {
 \t${camelName}Hooks,
 \tuse${className}List,
 \tuse${className},
-${useCreate}\tuseUpdate${className},
-\tuseDelete${className},
-\t${camelName}Keys,
+${useCreate}${useUpdate}${useDelete}\t${camelName}Keys,
 } from './${fileStem}';`;
 	});
 	return withBanner(SOURCE_DESC_SET, `${blocks.join('\n\n')}\n`);

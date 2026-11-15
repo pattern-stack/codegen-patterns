@@ -12,7 +12,7 @@
 import { join } from 'node:path';
 import type { EntityRegistryEntry, FrontendEmitContext } from './types';
 import { sortEntities } from './types';
-import { flatChild, hasCreateRoute, withBanner, writeFile } from './emit-utils';
+import { flatChild, writeRoutes, withBanner, writeFile } from './emit-utils';
 
 const SOURCE_DESC_SET = 'the entity set';
 
@@ -161,9 +161,20 @@ export type ${className}FlatInput = globalThis.Partial<globalThis.Omit<${classNa
 		: '';
 	// A base whose every kind has a child has no `POST /<plural>` (RFC-0006 §4.1): `create` takes `never`, so
 	// nothing can call it, and it issues no request. (`createEntityHooks` types `api.create` as required.)
-	const createMethod = hasCreateRoute(entity, ctx)
+	const routes = writeRoutes(entity, ctx);
+	const createMethod = routes.create
 		? `\tcreate: (data: ${inputType}): Promise<${readType}> =>\n\t\trequest<${readType}>('POST', '/${plural}', data),\n\n`
 		: `\t/** No \`POST /${plural}\`: every kind of ${name} is created through its child (RFC-0006 §4.1). */\n\tcreate: (_data: never): Promise<${className}> =>\n\t\tPromise.reject(new Error('${name} has no create route: create a row of any kind through its child')),\n\n`;
+
+	// A write the backend does not generate (`generate: { writes: false }`) has no route either: `update` takes `never`
+	// and `delete` is never called by a hook the entity re-exports; both are still on the object because
+	// `EntityApi` requires them (RFC-0006 S6 R2).
+	const updateMethod = routes.update
+		? `\tupdate: (id: string, data: ${inputType}): Promise<${readType}> =>\n\t\trequest<${readType}>('PATCH', \`/${plural}/\${id}\`, data),\n\n`
+		: `\t/** No \`PATCH /${plural}/:id\`: ${name} is generated without writes. */\n\tupdate: (_id: string, _data: never): Promise<${className}> =>\n\t\tPromise.reject(new Error('${name} has no update route')),\n\n`;
+	const deleteMethod = routes.delete
+		? `\tdelete: (id: string): Promise<void> =>\n\t\trequest<void>('DELETE', \`/${plural}/\${id}\`),\n`
+		: `\t/** No \`DELETE /${plural}/:id\`: ${name} is generated without writes. */\n\tdelete: (_id: string): Promise<void> =>\n\t\tPromise.reject(new Error('${name} has no delete route')),\n`;
 
 	const body = `import { MAX_PAGE_SIZE, type ListQuery, type Page, request, toListQueryString } from './client';
 import type { ${className} } from '${config.dbEntitiesImport}/${name}';
@@ -204,12 +215,7 @@ export const ${camelName}Api = {
 \tget: (id: string): Promise<${readType}> =>
 \t\trequest<${readType}>('GET', \`/${plural}/\${id}\`),
 
-${createMethod}\tupdate: (id: string, data: ${inputType}): Promise<${readType}> =>
-\t\trequest<${readType}>('PATCH', \`/${plural}/\${id}\`, data),
-
-\tdelete: (id: string): Promise<void> =>
-\t\trequest<void>('DELETE', \`/${plural}/\${id}\`),
-};
+${createMethod}${updateMethod}${deleteMethod}};
 `;
 	return withBanner(`entities/${name}.yaml`, body);
 }

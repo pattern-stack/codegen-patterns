@@ -131,3 +131,49 @@ describe('relationChip', () => {
     }
   });
 });
+
+describe('edge panel — an `inherits:` line (RFC-0006)', () => {
+  const origin = { from: 'yaml', at: { doc: { kind: 'entity', name: 'meeting' }, path: ['inherits'] } } as const;
+  const method = (name: string, kind: 'with_base' | 'list_flat') => ({
+    name,
+    kind,
+    emitted: true,
+    params: [{ name: 'id' }],
+    returns: 'one' as const,
+    readOptions: 'none' as const,
+    origin,
+  });
+  const surface = {
+    entities: {
+      meeting: {
+        entity: 'meeting',
+        repository: { methods: [method('findWithBase', 'with_base'), method('listFlat', 'list_flat')] },
+        service: { methods: [] },
+      },
+    },
+    relations: [
+      {
+        id: 'meeting.inherits',
+        from: 'meeting',
+        to: 'communication',
+        kind: 'inherits',
+        generates: [
+          { entity: 'meeting', layer: 'repository', method: 'findWithBase' },
+          { entity: 'meeting', layer: 'repository', method: 'listFlat' },
+        ],
+        includeKeys: [],
+      },
+    ],
+    unmodelled: [],
+    warnings: [],
+  } as unknown as ProjectApiSurface;
+
+  test('shows the methods the relation generates, with their provenance — not "half of a junction pairing"', () => {
+    const view = edgePanelView(surface, { relationId: 'meeting.inherits' });
+    if (view.state !== 'relation') throw new Error(`expected a relation view, got ${view.state}`);
+    expect(view.relation.text).toBe('meeting.inherits');
+    expect(view.relation.edgeKind).toBe('inherits');
+    expect(outline(view)[0]).toBe('on meeting: findWithBase(id) → one | listFlat(id) → one');
+    expect(view.groups[0]!.rows[0]!.origin?.text).toBe('← inherits');
+  });
+});

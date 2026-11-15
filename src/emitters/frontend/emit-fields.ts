@@ -41,7 +41,7 @@ import { join } from 'node:path';
 import type { ParsedEntity } from '../../analyzer/types';
 import type { EntityRegistryEntry, FrontendEmitContext } from './types';
 import { sortEntities } from './types';
-import { hasCreateRoute, withBanner, writeFile } from './emit-utils';
+import { writeRoutes, withBanner, writeFile } from './emit-utils';
 import {
 	deriveFieldMeta,
 	hasExternalSyncShape,
@@ -321,8 +321,12 @@ export function buildEntityFieldsFile(
 	// Capabilities: write gated on repository|trpc exposure (default-on).
 	const expose = parsed?.expose ?? ['repository', 'rest', 'trpc'];
 	const canWrite = expose.includes('repository') || expose.includes('trpc');
-	// A base whose every kind has a child has no create route (RFC-0006 §4.1).
-	const canCreate = canWrite && hasCreateRoute(entity, ctx);
+	// What the backend generates (its derived use cases) narrows what `expose` allows: a base whose every kind has a
+	// child has no create route (RFC-0006 §4.1), an entity generated without writes has none of the three.
+	const routes = writeRoutes(entity, ctx);
+	const canCreate = canWrite && routes.create;
+	const canUpdate = canWrite && routes.update;
+	const canDelete = canWrite && routes.delete;
 
 	const body = `import type { FieldMeta, FieldType, FieldImportance } from './field-meta';
 import type { ${className} } from '${ctx.config.dbEntitiesImport}/${name}';
@@ -352,8 +356,8 @@ ${searchFields}
 
 \tcapabilities: {
 \t\tcreate: ${canCreate},
-\t\tupdate: ${canWrite},
-\t\tdelete: ${canWrite},
+\t\tupdate: ${canUpdate},
+\t\tdelete: ${canDelete},
 \t\tlist: true,
 \t\tget: true,
 \t},
