@@ -184,6 +184,16 @@ const workspace = def({
 	fields: { name: { type: 'string', required: true } },
 });
 
+// ── A base no child inherits (RFC-0006 §3.3): its discriminator is just an enum ──
+const notice = def({
+	entity: { name: 'notice', plural: 'notices' },
+	discriminator: 'kind',
+	fields: {
+		kind: { type: 'enum', choices: ['info', 'alert'], required: true },
+		body: { type: 'string', required: true },
+	},
+});
+
 export const RENDER_MATRIX: readonly MatrixCase[] = [
 	{
 		id: 'matrix-eav',
@@ -237,6 +247,13 @@ export const RENDER_MATRIX: readonly MatrixCase[] = [
 		covers: '`generate.writes: false` — no write use cases or routes; a search beside it',
 		subjects: ['task'],
 		entities: [project, task, account],
+		junctions: [],
+	},
+	{
+		id: 'matrix-discriminator-no-child',
+		covers: 'a `discriminator:` base with no child table: no cross-kind reads, no typed include',
+		subjects: ['notice'],
+		entities: [notice],
 		junctions: [],
 	},
 	{

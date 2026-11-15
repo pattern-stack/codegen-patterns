@@ -27,12 +27,33 @@ const _readGenerics = _typedInclude
 const _readOpts = _typedInclude ? 'ReadOptions<W, C>' : 'ReadOptions<never, C>';
 const _readResult = _typedInclude ? `${E}Result<W, C>` : `${E}Result<${E}NoInclude, C>`;
 const _withLine = _typedInclude ? '\n      with: opts?.with,' : '';
+// RFC-0006 (#875) S3 — the read half of a joined-table family. Which reads exist is the derivation's call
+// (`with_base` / `all_kinds` / `kind_by_id` / `list_kind` / `count_kind` / `orphans` entries); the facts the bodies print (the base edge, the kind column and
+// its child keys) come from `familyChild` / `familyBase`.
+const _ACROSS = ['all_kinds', 'kind_by_id', 'list_kind', 'count_kind'];
+const _isAcross = (m) => _ACROSS.includes(m.kind);
+const _isRead = (m) => m.kind === 'count' || m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans';
+const _child = _methods.some((m) => m.kind === 'with_base') ? familyChild : null;
+const _base = _methods.some(_isAcross) ? familyBase : null;
+const _listName = _methods.find((x) => x.kind === 'list').name;
+const _findByIdName = _methods.find((x) => x.kind === 'find_by_id').name;
+const _EU = entityName.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+const _eLower = E.charAt(0).toLowerCase() + E.slice(1);
 _%>
-<%# READ-1: `eq` / `inArray` are unconditional — `findById` / `findByIds` use them. %>
-import { eq, inArray<%= hasMultiFieldQuery ? ', and' : '' %><%= _needsOrderFns ? ', desc, asc' : '' %> } from 'drizzle-orm';
-<% if (eavValueTable) { -%>
-import { sql } from 'drizzle-orm';
-<% } -%>
+<%_
+// ONE `drizzle-orm` import (a name twice is TS2300). READ-1: `eq` / `inArray` are unconditional — `findById` /
+// `findByIds` use them. The cross-kind reads add `and` / `notExists` / `or` / `sql`, the EAV value table `sql`.
+const _ormNames = [
+  'eq',
+  'inArray',
+  ...(hasMultiFieldQuery || _base ? ['and'] : []),
+  ...(_needsOrderFns ? ['desc', 'asc'] : []),
+  ...(_base ? ['notExists', 'or'] : []),
+  ...(eavValueTable || _base ? ['sql'] : []),
+];
+_%>
+
+import { <%- _ormNames.join(', ') %> } from 'drizzle-orm';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient<% if (eavValueTable || hasIntegrationSurface) { %>, DrizzleTx<% } %> } from '<%= drizzleTypeImport %>';
 // REL-2 (#587): the generated relation graph. `Relations` binds the repository's
@@ -51,11 +72,25 @@ import { <%= cap.mixin %> } from '<%= cap.importPath %>';
 <% if (hasIntegrationSurface) { -%>
 import type { IntegrationUpsertConfig } from '<%= integrationUpsertConfigImport %>';
 <% } -%>
-import type { <% if (hasTimestamps || hasSoftDelete || hasUserTracking || tenantScoped) { %>BehaviorConfig, <% } %>ListOptions, ReadOptions, RowFilter } from '<%= baseRepositoryImport %>';
+import type { <% if (hasTimestamps || hasSoftDelete || hasUserTracking || scopeTenantScoped || _child?.baseScope) { %>BehaviorConfig, <% } %>ListOptions, ReadOptions, RowFilter } from '<%= baseRepositoryImport %>';
+<% if (_child) { -%>
+import { flattenBase, type Flattened } from '<%= inheritanceImport %>';
+<% } -%>
+<% if (_base) { -%>
+import { asKind, type Flattened, flattenBase } from '<%= inheritanceImport %>';
+<% } -%>
 <% if (eavEnabled) { -%>
 import { FieldValueService } from '<%= eavFieldValueImportDir %>/<%= eavFieldValueStem %>.service';
 <% } -%>
 import { <%= entityNamePlural %>, type <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
+<%_ if (_child?.baseScope) { _%>
+import { <%= _child.baseTable %> } from '<%= _child.baseImportPath %>';
+<%_ } _%>
+<%_ if (_base) { _%>
+<%_ _base.children.forEach((c) => { _%>
+import { <%= c.plural %>, type <%= c.className %> } from '<%= c.entityImportPath %>';
+<%_ }) _%>
+<%_ } _%>
 <%_ capabilityConfigImports.forEach((imp) => { _%>
 import { <%= imp.name %> } from '<%= imp.importPath %>';
 <%_ }) _%>
@@ -143,6 +178,75 @@ export type <%= E %>Result<
 export type <%= classNames.entity %>ApiResult = <%= classNames.entity %> &
   globalThis.Partial<<%= classNames.entity %>Result<<%= classNames.entity %>Include>>;
 
+<%_ if (_child) { _%>
+/**
+ * A <%= entityName %> with its base row's columns hoisted to the root (RFC-0006 §3.2) — a projection of ONE
+ * read (<%= E %>'s table plus a primary-key join to the base), never a second query path. `columns`, `with`
+ * and the scope apply to the read that produced it.
+ */
+export type <%= E %>Flat<
+  TWith extends <%= E %>Include = <%= E %>NoInclude,
+  TColumns extends <%= E %>Columns | undefined = undefined,
+> = Flattened<<%= E %>Result<TWith & { <%= _child.relKey %>: true }, TColumns>, '<%= _child.relKey %>'>;
+
+<%_ } _%>
+<%_ if (_base) { _%>
+/** The kinds of a <%= entityName %>: the discriminator's choices. */
+export type <%= E %>Kind = <%= E %>['<%= _base.discriminatorProp %>'];
+
+/**
+ * A <%= entityName %> read across its kinds (RFC-0006 §3.3): each child nested under its own key, a
+ * base-only kind bare. Narrow it with a `switch` on `<%= _base.discriminatorProp %>`.
+ */
+export type <%= E %>OfKind =
+<%- _base.kinds.map((k) => { const c = _base.children.find((x) => x.as === k); return `  | (${E} & { ${_base.discriminatorProp}: '${k}'${c ? `; ${c.relKey}: ${c.className}` : ''} })`; }).join('\n') %>;
+
+/** One kind, flat: the base's columns and the child's, at one level. What `listKind` returns. */
+export interface <%= E %>FlatByKind {
+<%_ _base.children.forEach((c) => { _%>
+  <%= c.as %>: Flattened<<%= E %> & { <%= c.relKey %>: <%= c.className %> }, '<%= c.relKey %>'>;
+<%_ }) _%>
+}
+
+/** A row filter over this table — what the cross-kind reads hand `list`. */
+type <%= E %>RowFilter = RowFilter<typeof <%= entityNamePlural %>>;
+
+/** The relation key each child kind is read under, and the one `asKind` narrows by. */
+const <%= _EU %>_CHILD_KEY_BY_KIND = {
+<%_ _base.children.forEach((c) => { _%>
+  <%= c.as %>: '<%= c.relKey %>',
+<%_ }) _%>
+} as const;
+
+/** The children a read of these kinds joins — only the kinds asked for, all of them when none are. */
+function <%= _eLower %>KindJoins(kinds: readonly <%= E %>Kind[] | undefined): {
+<%_ _base.children.forEach((c) => { _%>
+  <%= c.relKey %>?: true;
+<%_ }) _%>
+} {
+  return {
+<%_ _base.children.forEach((c) => { _%>
+    ...(kinds === undefined || kinds.includes('<%= c.as %>') ? { <%= c.relKey %>: true as const } : {}),
+<%_ }) _%>
+  };
+}
+
+/**
+ * The orphan predicate: a row whose kind has a child table but no child row (RFC-0006 §2.2). A module-level
+ * function with camelCase bindings only, because it reads the children's table exports (emitted-name hygiene, #813).
+ */
+function <%= _eLower %>OrphanFilter(dbClient: DrizzleClient<Relations>, rootRow: typeof <%= entityNamePlural %>) {
+  return or(
+<%_ _base.children.forEach((c) => { _%>
+    and(
+      eq(rootRow.<%= _base.discriminatorProp %>, '<%= c.as %>'),
+      notExists(dbClient.select({ one: sql`1` }).from(<%= c.plural %>).where(eq(<%= c.plural %>.id, rootRow.id))),
+    ),
+<%_ }) _%>
+  );
+}
+
+<%_ } _%>
 @Injectable()
 <%_ /* ADR-041: the spine alone, the spine wrapped in one capability mixin, or
       the generated `<Entity>ComposedBase` when two or more stack. Built in
@@ -151,20 +255,29 @@ export type <%= classNames.entity %>ApiResult = <%= classNames.entity %> &
       carries the manifest exactly as a bare spine does. */ _%>
 export class <%= classNames.repository %> extends <%- repositoryExtendsClause %> {
   readonly table = <%= entityNamePlural %>;
-<% if (hasTimestamps || hasSoftDelete || hasUserTracking || tenantScoped) { -%>
+<% if (hasTimestamps || hasSoftDelete || hasUserTracking || scopeTenantScoped || _child?.baseScope) { -%>
 
+<% if (_child) { -%>
+  // Behaviors of a joined-table child (RFC-0006 §2.3). The child declares none of the lifecycle behaviors
+  // (R5): its tenant column is a copy of the base's, pinned by a composite FK<% if (_child.baseScope) { %>, and its row is in scope only
+  // while its base row is (`baseScope`)<% } %>.
+<% } else { -%>
   // Behaviors declared in YAML -> generated as config object
+<% } -%>
   protected override readonly behaviors: BehaviorConfig = {
     timestamps: <%= !!hasTimestamps %>,
     softDelete: <%= !!hasSoftDelete %>,
     userTracking: <%= !!hasUserTracking %>,
-    tenantScoped: <%= !!tenantScoped %>,
-<% if (tenantScoped) { -%>
-    tenantColumn: '<%= behaviorTenantColumn %>',
+    tenantScoped: <%= !!scopeTenantScoped %>,
+<% if (scopeTenantScoped) { -%>
+    tenantColumn: '<%= scopeTenantColumn %>',
+<% } -%>
+<% if (_child?.baseScope) { -%>
+    baseScope: { table: <%= _child.baseTable %>, softDelete: <%= _child.baseScope.softDelete %>, userTracking: <%= _child.baseScope.userTracking %> },
 <% } -%>
   };
 <% } -%>
-<% if (tenantScoped) { -%>
+<% if (scopeTenantScoped) { -%>
 
   // ADR-042 / TEN-1 — a tenant-scoped entity enforces STRICTLY, with no
   // opt-down: a missing ambient tenant throws rather than reading the union of
@@ -270,7 +383,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
 
 <%_ /* ADR-046: one loop over the derived, emitted repository methods; `m.kind`
       chooses the body. Names and parameter names are printed, never built. */ _%>
-<%_ _methods.forEach((m) => { _%>
+<%_ _methods.forEach((m, i) => { _%>
 <%_ if (m.kind === 'find_by_id') { _%>
   override async <%= m.name %><%- _readGenerics %>(
     <%= m.params[0].name %>: string,
@@ -339,14 +452,133 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
   override async <%= m.name %>(<%= m.params[0].name %>?: RowFilter<typeof <%= entityNamePlural %>>): Promise<number> {
     return super.<%= m.name %>(<%= m.params[0].name %>);
   }
-<%_ /* The section banner prints whenever the YAML declares a by-column finder,
-      even one that lost its name to an FK finder below. */ _%>
-<% if (hasDeclarativeQueries) { -%>
+<%_ } else if (m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans') { _%>
+<%_ /* RFC-0006 (#875) §3 — the family reads. Each is a derived method (`src/derived/api/entity.ts`, caused by the
+      child's `inherits:` or the base's `discriminator:`); the first of each kind opens its banner. */ _%>
+<%_ const _p = m.params.map((x) => x.name); _%>
+<%_ const _firstOfKind = i === 0 || (_isAcross(m) ? !_isAcross(_methods[i - 1]) : _methods[i - 1].kind !== m.kind); _%>
+<%_ if (m.kind === 'with_base') { _%>
+<%_ if (_firstOfKind) { _%>
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Declarative queries (from queries: block in entity YAML)
+  // The base row (RFC-0006 §3.2, #875) — a <%= entityName %> IS a kind of a <%= _child.relKey %>
+  //
+  // `findWithBase` is `findById` with the base joined in and its columns hoisted
+  // to the root: it CALLS `findById` / `findByIds`, so ONE statement (a primary-key
+  // lateral join) and the one scope body — `columns` / `with` still apply to this table.
   // ═══════════════════════════════════════════════════════════════════════
-<% } -%>
+<%_ } _%>
+<%_ if (m.returns === 'one') { _%>
+
+  async <%= m.name %><W extends <%= E %>Include & { <%= _child.relKey %>?: never } = <%= E %>NoInclude, C extends <%= E %>Columns | undefined = undefined>(
+    <%= _p[0] %>: string,
+    <%= _p[1] %>?: ReadOptions<W, C>,
+  ): Promise<<%= E %>Flat<W, C> | null> {
+    const row = await this.findById(<%= _p[0] %>, { ...<%= _p[1] %>, with: { ...<%= _p[1] %>?.with, <%= _child.relKey %>: true as const } } as never);
+    return row ? (flattenBase(row as never, '<%= _child.relKey %>') as <%= E %>Flat<W, C>) : null;
+  }
+<%_ } else { _%>
+
+  /** One statement for many ids, flat — it IS `findByIds` (no statement for `[]`, input order, absent when out of scope), with the base joined in. */
+  async <%= m.name %><W extends <%= E %>Include & { <%= _child.relKey %>?: never } = <%= E %>NoInclude, C extends <%= E %>Columns | undefined = undefined>(
+    <%= _p[0] %>: readonly string[],
+    <%= _p[1] %>?: ReadOptions<W, C>,
+  ): Promise<Array<<%= E %>Flat<W, C>>> {
+    const rows = await this.findByIds(<%= _p[0] %>, { ...<%= _p[1] %>, with: { ...<%= _p[1] %>?.with, <%= _child.relKey %>: true as const } } as never);
+    return rows.map((row) => flattenBase(row as never, '<%= _child.relKey %>')) as Array<<%= E %>Flat<W, C>>;
+  }
+<%_ } _%>
+<%_ } else if (_isAcross(m)) { _%>
+<%_ if (_firstOfKind) { _%>
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Reading across kinds (RFC-0006 §3.3, §6, #875)
+  //
+  // The base scan plus ONE primary-key lateral join per child kind asked for —
+  // a single statement (charter I4), on the same root scope as every read here.
+  // Each child is scoped by the relations manifest like any other hop.
+  // ═══════════════════════════════════════════════════════════════════════
+<%_ } _%>
+<%_ if (m.kind === 'all_kinds') { _%>
+
+  /**
+   * Every row with its child nested under its kind's key, a base-only kind bare. `kinds` filters the scan
+   * and joins only those children. A row whose kind has a child table but no child row throws
+   * `OrphanBaseError` (see `findOrphans`).
+   */
+  async <%= m.name %>(
+    <%= _p[0] %>?: ListOptions<typeof <%= entityNamePlural %>> & { kinds?: readonly <%= E %>Kind[] },
+  ): Promise<<%= E %>OfKind[]> {
+    const kinds = <%= _p[0] %>?.kinds;
+    const where: <%= E %>RowFilter = (t) =>
+      and(<%= _p[0] %>?.where?.(t), kinds === undefined ? undefined : inArray(t.<%= _base.discriminatorProp %>, [...kinds]));
+    const rows = await this.<%= _listName %>({
+      where,
+      sort: <%= _p[0] %>?.sort,
+      limit: <%= _p[0] %>?.limit,
+      offset: <%= _p[0] %>?.offset,
+      with: <%= _eLower %>KindJoins(kinds),
+    } as never);
+    return rows.map((row) => asKind<<%= E %>OfKind>(row, '<%= _base.discriminator %>', <%= _EU %>_CHILD_KEY_BY_KIND));
+  }
+<%_ } else if (m.kind === 'kind_by_id') { _%>
+
+  /** One row by id with its child, narrowed by kind. `null` when absent or out of scope. */
+  async <%= m.name %>(<%= _p[0] %>: string): Promise<<%= E %>OfKind | null> {
+    const row = await this.<%= _findByIdName %>(<%= _p[0] %>, { with: <%= _eLower %>KindJoins(undefined) } as never);
+    return row ? asKind<<%= E %>OfKind>(row, '<%= _base.discriminator %>', <%= _EU %>_CHILD_KEY_BY_KIND) : null;
+  }
+<%_ } else if (m.kind === 'list_kind') { _%>
+
+  /**
+   * One kind, flat (the base's columns and the child's at one level), filtered and sorted on BASE columns —
+   * the read a child's HTTP list uses, since `created_at` and `occurred_at` live here.
+   */
+  async <%= m.name %><K extends keyof <%= E %>FlatByKind>(
+    <%= _p[0] %>: K,
+    <%= _p[1] %>?: ListOptions<typeof <%= entityNamePlural %>>,
+  ): Promise<Array<<%= E %>FlatByKind[K]>> {
+    const where: <%= E %>RowFilter = (t) =>
+      and(eq(t.<%= _base.discriminatorProp %>, <%= _p[0] %>), <%= _p[1] %>?.where?.(t));
+    const rows = await this.<%= _listName %>({
+      where,
+      sort: <%= _p[1] %>?.sort,
+      limit: <%= _p[1] %>?.limit,
+      offset: <%= _p[1] %>?.offset,
+      with: <%= _eLower %>KindJoins([<%= _p[0] %>]),
+    } as never);
+    return rows.map((row) =>
+      flattenBase(
+        asKind<<%= E %>OfKind>(row, '<%= _base.discriminator %>', <%= _EU %>_CHILD_KEY_BY_KIND) as never,
+        <%= _EU %>_CHILD_KEY_BY_KIND[<%= _p[0] %>],
+      ),
+    ) as unknown as Array<<%= E %>FlatByKind[K]>;
+  }
+<%_ } else { _%>
+
+  /** How many rows of one kind, on the same scope as `count`. */
+  async <%= m.name %>(<%= _p[0] %>: <%= E %>Kind, <%= _p[1] %>?: RowFilter<typeof <%= entityNamePlural %>>): Promise<number> {
+    return this.count((t) => and(eq(t.<%= _base.discriminatorProp %>, <%= _p[0] %>), <%= _p[1] %>?.(t)));
+  }
+<%_ } _%>
+<%_ } else { _%>
+
+  /**
+   * Rows whose kind has a child table but no child row — the integrity the database cannot enforce (the base
+   * is inserted first, RFC-0006 §2.2). For jobs and tests; the generated write path never produces one. One
+   * statement, on the base's root scope: a child row is looked for whatever ITS scope says, because an absent
+   * child is the question.
+   */
+  async <%= m.name %>(<%= _p[0] %>?: { limit?: number }): Promise<<%= E %>[]> {
+    const rows = await this.db.query.<%= entityNamePlural %>.findMany({
+      where: { RAW: this.rootFilter((t) => <%= _eLower %>OrphanFilter(this.db, t)) },
+      // A `limit` without an order is an arbitrary subset; `id` makes it one.
+      orderBy: { id: 'asc' },
+      limit: <%= _p[0] %>?.limit,
+    });
+    return rows as <%= E %>[];
+  }
+<%_ } _%>
 <%_ } else if (m.kind === 'finder' || m.kind === 'finder_projection') { _%>
 <%_
 // The `by:` columns are the parameters that bind a field; their TS types come
@@ -464,6 +696,16 @@ _%>
       .returning();
     return rows as <%= classNames.entity %>[];
   }
+<%_ } _%>
+<%_ /* The section banner prints once the core and family reads end — whenever the YAML declares a by-column
+      finder, even one that lost its name to an FK finder below. */ _%>
+<%_ if (_isRead(m) && !(i + 1 < _methods.length && _isRead(_methods[i + 1]))) { _%>
+<% if (hasDeclarativeQueries) { -%>
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Declarative queries (from queries: block in entity YAML)
+  // ═══════════════════════════════════════════════════════════════════════
+<% } -%>
 <%_ } _%>
 <%_ }) _%>
 

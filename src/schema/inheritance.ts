@@ -33,6 +33,39 @@ export function inheritsOf(
 }
 
 /**
+ * The relation key of a family edge (RFC-0006 §3.1): the entity name camelCased, `[-_\s]` followed by a letter OR A
+ * DIGIT (`call_2` → `call2`, matching the relations manifest's own `camelCase`, `src/emitters/relations/types.ts`).
+ * The ONE owner — the manifest (`build-graph.ts`) names the edge with it and the generated repositories print the
+ * same key into `with:`, so the two cannot disagree. `src/config/file-naming.ts`'s `camelCase` would keep `call_2`.
+ */
+export function familyRelationKey(entityName: string): string {
+	return entityName.replace(/[-_\s]+([a-zA-Z0-9])/g, (_, c: string) => c.toUpperCase());
+}
+
+/** One child of a base, across an entity set: its name and the kind value it is `as`. */
+export interface InheritanceChild {
+	name: string;
+	as: string;
+}
+
+/**
+ * The children of `baseName` across a whole entity set — every entity whose `inherits:` names it, sorted by kind
+ * value. The ONE answer to "does this base have child tables, and which": the generated family reads, the derived
+ * API surface and the includes gate all read it (RFC-0006 §3.3, ADR-046).
+ */
+export function inheritanceChildrenOf(
+	baseName: string,
+	definitions: Iterable<Pick<EntityDefinition, 'inherits'> & { entity: { name: string } }>,
+): InheritanceChild[] {
+	const out: InheritanceChild[] = [];
+	for (const def of definitions) {
+		const d = inheritsOf(def);
+		if (d !== null && d.base === baseName) out.push({ name: def.entity.name, as: d.as });
+	}
+	return out.sort((a, b) => (a.as < b.as ? -1 : a.as > b.as ? 1 : 0));
+}
+
+/**
  * `match:` as `[local column, target column]` pairs — the ONE normaliser of the
  * two spellings (the object form, and the `[col]` shorthand for `{ col: col }`).
  * Every reader — the schema, the parsed model (`load-entities.ts`), the

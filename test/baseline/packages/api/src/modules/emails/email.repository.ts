@@ -10,7 +10,8 @@ import type { DrizzleClient } from '@shared/types/drizzle';
 // sees it (REL-1 §4).
 import type { ColumnsOf, IncludeOf, Relations, ResultOf } from '../../generated/relations';
 import { BaseRepository } from '@shared/base-classes/base-repository';
-import type { ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
+import type { BehaviorConfig, ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
+import { flattenBase, type Flattened } from '@shared/base-classes/inheritance';
 import { emails, type Email } from './email.entity';
 
 /**
@@ -60,9 +61,39 @@ export type EmailResult<
 export type EmailApiResult = Email &
   globalThis.Partial<EmailResult<EmailInclude>>;
 
+/**
+ * A email with its base row's columns hoisted to the root (RFC-0006 §3.2) — a projection of ONE
+ * read (Email's table plus a primary-key join to the base), never a second query path. `columns`, `with`
+ * and the scope apply to the read that produced it.
+ */
+export type EmailFlat<
+  TWith extends EmailInclude = EmailNoInclude,
+  TColumns extends EmailColumns | undefined = undefined,
+> = Flattened<EmailResult<TWith & { communication: true }, TColumns>, 'communication'>;
+
 @Injectable()
 export class EmailRepository extends BaseRepository<Email, typeof emails, Relations> {
   readonly table = emails;
+
+  // Behaviors of a joined-table child (RFC-0006 §2.3). The child declares none of the lifecycle behaviors
+  // (R5): its tenant column is a copy of the base's, pinned by a composite FK.
+  protected override readonly behaviors: BehaviorConfig = {
+    timestamps: false,
+    softDelete: false,
+    userTracking: false,
+    tenantScoped: true,
+    tenantColumn: 'tenantId',
+  };
+
+  // ADR-042 / TEN-1 — a tenant-scoped entity enforces STRICTLY, with no
+  // opt-down: a missing ambient tenant throws rather than reading the union of
+  // every tenant (charter I3). Install the boundary that supplies `tenantId`
+  // BEFORE flipping `tenant_scoped: true`; see the ADR's rollout section.
+  //
+  // The same knob governs the user axis, so a tenant-scoped entity that also
+  // declares `user_tracking` is strict for that too. Both axes read the same
+  // ambient context, and a missing boundary is a missing boundary.
+  protected override readonly scopeEnforcement = 'strict' as const;
 
   constructor(@Inject(DRIZZLE) db: DrizzleClient<Relations>) {
     super(db);
@@ -162,6 +193,31 @@ export class EmailRepository extends BaseRepository<Email, typeof emails, Relati
    */
   override async count(where?: RowFilter<typeof emails>): Promise<number> {
     return super.count(where);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // The base row (RFC-0006 §3.2, #875) — a email IS a kind of a communication
+  //
+  // `findWithBase` is `findById` with the base joined in and its columns hoisted
+  // to the root: it CALLS `findById` / `findByIds`, so ONE statement (a primary-key
+  // lateral join) and the one scope body — `columns` / `with` still apply to this table.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  async findWithBase<W extends EmailInclude & { communication?: never } = EmailNoInclude, C extends EmailColumns | undefined = undefined>(
+    id: string,
+    opts?: ReadOptions<W, C>,
+  ): Promise<EmailFlat<W, C> | null> {
+    const row = await this.findById(id, { ...opts, with: { ...opts?.with, communication: true as const } } as never);
+    return row ? (flattenBase(row as never, 'communication') as EmailFlat<W, C>) : null;
+  }
+
+  /** One statement for many ids, flat — it IS `findByIds` (no statement for `[]`, input order, absent when out of scope), with the base joined in. */
+  async findManyWithBase<W extends EmailInclude & { communication?: never } = EmailNoInclude, C extends EmailColumns | undefined = undefined>(
+    ids: readonly string[],
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<EmailFlat<W, C>>> {
+    const rows = await this.findByIds(ids, { ...opts, with: { ...opts?.with, communication: true as const } } as never);
+    return rows.map((row) => flattenBase(row as never, 'communication')) as Array<EmailFlat<W, C>>;
   }
 
   // ═══════════════════════════════════════════════════════════════════════

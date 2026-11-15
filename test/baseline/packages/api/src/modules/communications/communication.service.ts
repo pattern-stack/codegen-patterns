@@ -6,10 +6,14 @@ import { ActivityEntityService } from '@shared/base-classes/activity-entity-serv
 import { CommunicationRepository } from './communication.repository';
 import type {
   CommunicationColumns,
+  CommunicationFlatByKind,
+  CommunicationKind,
+  CommunicationOfKind,
+  CommunicationInclude,
   CommunicationNoInclude,
   CommunicationResult,
 } from './communication.repository';
-import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
+import type { ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
 import type { communications, Communication } from './communication.entity';
 
 @Injectable()
@@ -35,29 +39,55 @@ export class CommunicationService extends WithAnalytics(
   // The read surface (READ-1 §7) — pass-through, not composition
   //
   // DELEGATION ONLY: the repository's signatures, forwarded so a use case or the
-  // HTTP layer can carry a column mask to the
+  // HTTP layer can carry a column mask and an allowlisted include to the
   // one place that executes and scopes it. No join logic, no sibling-repository
   // calls, no navigator — the navigator is REL-3's (#588).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override findById<C extends CommunicationColumns | undefined = undefined>(
+  override findById<W extends CommunicationInclude = CommunicationNoInclude, C extends CommunicationColumns | undefined = undefined>(
     id: string,
-    opts?: ReadOptions<never, C>,
-  ): Promise<CommunicationResult<CommunicationNoInclude, C> | null> {
-    return this.repository.findById<C>(id, opts);
+    opts?: ReadOptions<W, C>,
+  ): Promise<CommunicationResult<W, C> | null> {
+    return this.repository.findById<W, C>(id, opts);
   }
 
-  override findByIds<C extends CommunicationColumns | undefined = undefined>(
+  override findByIds<W extends CommunicationInclude = CommunicationNoInclude, C extends CommunicationColumns | undefined = undefined>(
     ids: readonly string[],
-    opts?: ReadOptions<never, C>,
-  ): Promise<Array<CommunicationResult<CommunicationNoInclude, C>>> {
-    return this.repository.findByIds<C>(ids, opts);
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<CommunicationResult<W, C>>> {
+    return this.repository.findByIds<W, C>(ids, opts);
   }
 
-  override list<C extends CommunicationColumns | undefined = undefined>(
-    listOptions?: ListOptions<typeof communications> & ReadOptions<never, C>,
-  ): Promise<Array<CommunicationResult<CommunicationNoInclude, C>>> {
-    return this.repository.list<C>(listOptions);
+  override list<W extends CommunicationInclude = CommunicationNoInclude, C extends CommunicationColumns | undefined = undefined>(
+    listOptions?: ListOptions<typeof communications> & ReadOptions<W, C>,
+  ): Promise<Array<CommunicationResult<W, C>>> {
+    return this.repository.list<W, C>(listOptions);
+  }
+
+  // RFC-0006 §3.3 — reading across kinds: the repository's, forwarded.
+  findAllKinds(
+    query?: ListOptions<typeof communications> & { kinds?: readonly CommunicationKind[] },
+  ): Promise<CommunicationOfKind[]> {
+    return this.repository.findAllKinds(query);
+  }
+
+  findKindById(id: string): Promise<CommunicationOfKind | null> {
+    return this.repository.findKindById(id);
+  }
+
+  listKind<K extends keyof CommunicationFlatByKind>(
+    kind: K,
+    query?: ListOptions<typeof communications>,
+  ): Promise<Array<CommunicationFlatByKind[K]>> {
+    return this.repository.listKind<K>(kind, query);
+  }
+
+  countKind(kind: CommunicationKind, where?: RowFilter<typeof communications>): Promise<number> {
+    return this.repository.countKind(kind, where);
+  }
+
+  findOrphans(opts?: { limit?: number }): Promise<Communication[]> {
+    return this.repository.findOrphans(opts);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

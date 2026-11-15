@@ -22,8 +22,9 @@
  */
 
 import { apiIncludes, type EntityDefinition } from '../../schema/entity-definition.schema';
-import { apiEnabled, declaresOwnRelation } from '../../derived/api/entity';
+import { apiEnabled, hasTypedInclude } from '../../derived/api/entity';
 import { finderName } from '../../derived/api/names';
+import { inheritanceChildrenOf } from '../../schema/inheritance';
 import type { RelationGraph } from './build-graph';
 import { levenshtein } from '../../utils/edit-distance';
 import { camelCase, type RelationEdge, type RelationsEmitContext } from './types';
@@ -154,16 +155,17 @@ export function buildIncludeAllowlists(
     // differently: THIS one resolves dot paths against the whole relation graph
     // (junction-derived edges included), while the controller only wires the
     // emitted map when the entity carries a typed include at all — which is
-    // gated on the entity's OWN `relationships:`, because `DBQueryConfig` has no
-    // `with` slot for a table whose edges all come from elsewhere (REL-2 §2.5).
+    // gated by `hasTypedInclude` (own non-`through:` relationship, a role edge, a
+    // child, or a base with children), because `DBQueryConfig` has no `with` slot
+    // for a table whose edges all come from elsewhere (REL-2 §2.5).
     //
     // Left unchecked, an entity whose every edge comes from a junction YAML
     // compiles a perfectly valid allowlist that the controller never reads, and
     // every allowlisted path 400s with nothing to explain it. Fail here instead,
     // where the message can say why. Same asymmetry #679 settles.
-    if (!declaresOwnRelation(def)) {
+    if (!hasTypedInclude(def, inheritanceChildrenOf(entity.name, ctx.definitions.values()))) {
       throw new IncludeAllowlistError(
-        `${entity.name}.api.includes: this entity declares no direct relationship of its own, ` +
+        `${entity.name}.api.includes: this entity declares no direct relationship of its own and is in no family, ` +
           `so no typed include is emitted for it and the allowlist would never be reached — ` +
           `every path would be a silent 400. Its edges come from a junction (or from a ` +
           `transitive 'through:' relationship, which emits no edge at all). Remove the block ` +

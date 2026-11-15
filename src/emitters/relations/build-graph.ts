@@ -13,7 +13,8 @@ import pluralize from 'pluralize';
 import type { EntityDefinition } from '../../schema/entity-definition.schema';
 import type { JunctionDefinition } from '../../schema/junction-definition.schema';
 import { foreignKeyColumnNullable } from '../../schema/field-nullability';
-import { resolveTenancy } from '../../schema/tenancy';
+import { familyRelationKey, inheritsOf } from '../../schema/inheritance';
+import { resolveChildTenancy, resolveTenancy } from '../../schema/tenancy';
 import {
 	camelCase,
 	RelationKeyCollisionError,
@@ -21,6 +22,7 @@ import {
 	type EntityRegistryEntry,
 	type RelationEdge,
 	type RelationsEmitContext,
+	isUnscopedConfig,
 	type ScopeConfigLiteral,
 } from './types';
 
@@ -102,7 +104,41 @@ function behaviorNames(def: EntityDefinition): Set<string> {
 export function entityScope(
 	def: EntityDefinition,
 	tenancyColumn: string,
+	/**
+	 * A child's base (`inherits:`, RFC-0006 §2.3) with the base's table export. The
+	 * child's tenancy is the base's (`resolveChildTenancy`, the column it carries a
+	 * copy of), and its `soft_delete` / `user_tracking` are the base's, reached
+	 * through `baseScope` — the child declares none of them (R5). Required for a
+	 * child: a child scoped without its base would read unscoped, an absent input
+	 * read as permissive (CLAUDE.md gate rule (c)).
+	 */
+	base?: { def: EntityDefinition; table: string } | null,
 ): ScopeConfigLiteral | null {
+	if (inheritsOf(def) !== null) {
+		if (!base) {
+			throw new Error(
+				`relations: '${def.entity.name}' inherits '${inheritsOf(def)?.base}' but its base was not supplied — ` +
+					'its scope cannot be derived.',
+			);
+		}
+		const tenancy = resolveChildTenancy(base.def.entity.name, base.def, tenancyColumn);
+		const baseNames = behaviorNames(base.def);
+		const baseSoftDelete = baseNames.has('soft_delete');
+		const baseUserTracking = baseNames.has('user_tracking');
+		const cfg: ScopeConfigLiteral = {
+			tenantScoped: tenancy !== null,
+			...(tenancy ? { tenantColumn: tenancy.prop } : {}),
+			softDelete: false,
+			userTracking: false,
+			enforcement: tenancy !== null ? 'strict' : 'lenient',
+			// A tenant-only family emits nothing here: the child's own tenant column
+			// carries the scope.
+			...(baseSoftDelete || baseUserTracking
+				? { baseScope: { table: base.table, softDelete: baseSoftDelete, userTracking: baseUserTracking } }
+				: {}),
+		};
+		return isUnscopedConfig(cfg) ? null : cfg;
+	}
 	const names = behaviorNames(def);
 	const tenancy = resolveTenancy(def.entity.name, def, tenancyColumn);
 	const cfg: ScopeConfigLiteral = {
@@ -112,8 +148,7 @@ export function entityScope(
 		userTracking: names.has('user_tracking'),
 		enforcement: tenancy !== null ? 'strict' : 'lenient',
 	};
-	if (!cfg.tenantScoped && !cfg.softDelete && !cfg.userTracking) return null;
-	return cfg;
+	return isUnscopedConfig(cfg) ? null : cfg;
 }
 
 /**
@@ -138,7 +173,9 @@ export function hopCanDropTarget(
 	targetScope: ScopeConfigLiteral | null,
 ): boolean {
 	if (targetScope === null) return false;
-	if (targetScope.softDelete || targetScope.userTracking) return true;
+	// `baseScope`: a child's base row can be soft-deleted or another user's, which
+	// drops the child — the same ordinary states of valid data.
+	if (targetScope.softDelete || targetScope.userTracking || targetScope.baseScope) return true;
 	return targetScope.tenantScoped && !(sourceScope?.tenantScoped ?? false);
 }
 
@@ -220,7 +257,17 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 					'its scope cannot be derived.',
 			);
 		}
-		return entityScope(def, ctx.tenancyColumn);
+		const decl = inheritsOf(def);
+		if (decl === null) return entityScope(def, ctx.tenancyColumn);
+		const baseDef = ctx.definitions.get(decl.base);
+		const baseEntry = registry.get(decl.base);
+		if (!baseDef || !baseEntry) {
+			throw new Error(
+				`relations: '${entityName}' inherits '${decl.base}', which is not in the entity set — ` +
+					"the child's scope cannot be derived.",
+			);
+		}
+		return entityScope(def, ctx.tenancyColumn, { def: baseDef, table: baseEntry.plural });
 	};
 
 	// ── declared `relationships:` ────────────────────────────────────────────
@@ -293,6 +340,54 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 				origin,
 			});
 		}
+	}
+
+	// ── `inherits:` — two edges per child (RFC-0006 §3.1) ────────────────────
+	//
+	// The child's primary key IS the base row's id, so both edges join id → id:
+	// child → base (`<base name>`, to-one) and base → child (`<child name>`,
+	// to-one, one per child). Relation keys are the entity names camelCased, like
+	// every other key in the manifest; R4 keeps them clear of the declared ones,
+	// and `push` throws on a collision anyway.
+	for (const entity of ctx.entities) {
+		const def = ctx.definitions.get(entity.name);
+		const decl = def ? inheritsOf(def) : null;
+		if (decl === null) continue;
+		const origin = `${entity.name}.inherits`;
+		// Derived first: `scopeOf` throws for a child whose base is not in the entity set (its scope cannot be
+		// derived without it), so a missing base is one error, and past this line the base resolves.
+		const childScope = scopeOf(entity.name);
+		const base = registry.get(decl.base)!;
+		push(byTable, {
+			sourceTable: entity.plural,
+			key: familyRelationKey(decl.base),
+			cardinality: 'one',
+			targetTable: base.plural,
+			from: { table: entity.plural, column: 'id' },
+			to: { table: base.plural, column: 'id' },
+			// The documented exception to `hopCanDropTarget` (RFC-0006 §3.1): the base's
+			// scope WOULD let this hop drop its target (a soft-deleted base), but the
+			// child's own scope already requires its base row to be in scope (§2.3,
+			// `baseScope`), so a child row that was read has a base row that is read
+			// too. The edge is never null, and the type says so.
+			optional: false,
+			targetScope: scopeOf(decl.base),
+			inherits: 'base',
+			origin,
+		});
+		push(byTable, {
+			sourceTable: base.plural,
+			key: familyRelationKey(entity.name),
+			cardinality: 'one',
+			targetTable: entity.plural,
+			from: { table: base.plural, column: 'id' },
+			to: { table: entity.plural, column: 'id' },
+			// A base row of another kind has no row here.
+			optional: true,
+			targetScope: childScope,
+			inherits: 'child',
+			origin,
+		});
 	}
 
 	// ── junctions: the many-to-many hop plus the junction's own two edges ────

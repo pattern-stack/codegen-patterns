@@ -19,7 +19,7 @@ import {
 	IncludeAllowlistError,
 	readRouteKeys,
 } from '../../../emitters/relations/build-includes';
-import { declaresOwnRelation } from '../../../derived/api/entity';
+import { hasTypedInclude } from '../../../derived/api/entity';
 import { buildApiIncludes } from '../../../emitters/relations/emit-includes';
 import type { RelationsEmitContext } from '../../../emitters/relations/types';
 import type { EntityRegistryEntry } from '../../../parser/entity-registry';
@@ -392,12 +392,10 @@ describe('buildApiIncludes — the emitted file', () => {
 	});
 });
 
-// `declaresOwnRelation` (`src/derived/api/entity.ts`, ADR-046) is the one rule:
-// the emitter calls it on the parsed definition, and the hygen half
-// (`apiSurface.repository.typedInclude`) calls it on the raw YAML. If
-// the two ever answered differently, every allowlisted path would be a silent
-// 400 — so the pair is still pinned, across both input spellings.
-describe('declaresOwnRelation matches the template’s includes', () => {
+// `hasTypedInclude` is the one rule for "this entity's repository can name a `with`", read by the derivation (the
+// hygen half is `apiSurface.repository.typedInclude`) and by the allowlist gate. Pinned here against the locals the template actually computes: if the
+// gate said "fine" and the locals said "no include surface", every allowlisted path would be a silent 400.
+describe('hasTypedInclude agrees with the locals the template computes', () => {
 	const cases: Array<{ name: string; relationships: unknown; expected: boolean }> = [
 		{ name: 'none declared', relationships: undefined, expected: false },
 		{ name: 'empty block', relationships: {}, expected: false },
@@ -432,7 +430,7 @@ describe('declaresOwnRelation matches the template’s includes', () => {
 				fields: { account_id: { type: 'uuid' } },
 				...(relationships === undefined ? {} : { relationships }),
 			};
-			expect(declaresOwnRelation(parse(raw))).toBe(expected);
+			expect(hasTypedInclude(parse(raw), [])).toBe(expected);
 
 			// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 			// @ts-ignore -- plain-ESM hygen extension, no types
@@ -447,6 +445,56 @@ describe('declaresOwnRelation matches the template’s includes', () => {
 			expect(locals.apiSurface.repository.typedInclude).toBe(expected);
 		});
 	}
+});
+
+// ---------------------------------------------------------------------------
+// The allowlist gate follows the family and role edges (#875 S3, ADR-046)
+// ---------------------------------------------------------------------------
+
+const KIND_FIELD = { type: 'enum', choices: ['meeting', 'note'], required: true };
+const COMMUNICATION = {
+	entity: { name: 'communication', plural: 'communications' },
+	discriminator: 'kind',
+	fields: { kind: KIND_FIELD },
+};
+const MEETING = {
+	entity: { name: 'meeting', plural: 'meetings' },
+	inherits: 'communication',
+	fields: { agenda: { type: 'string' } },
+};
+
+describe('the include-allowlist gate follows the family and role edges', () => {
+	it('a base with child tables and no relationships of its own accepts api.includes through the family edge', () => {
+		const out = compile([{ ...COMMUNICATION, api: { includes: { list: { max_depth: 1, paths: ['meeting'] } } } }, MEETING]);
+		const base = out.find((e) => e.entity === 'communication');
+		expect(base?.routes.map((r) => r.route)).toEqual(['list']);
+		expect(base?.routes[0]?.paths.map((p) => p.path)).toEqual(['meeting']);
+	});
+
+	it('a child with no relationships of its own accepts api.includes through its base edge', () => {
+		const out = compile([COMMUNICATION, { ...MEETING, api: { includes: { list: { max_depth: 1, paths: ['communication'] } } } }]);
+		expect(out.find((e) => e.entity === 'meeting')?.routes[0]?.paths.map((p) => p.path)).toEqual(['communication']);
+	});
+
+	it('a discriminator: base with no child is in no family and is still refused', () => {
+		expect(() => compile([{ ...COMMUNICATION, api: { includes: { list: { max_depth: 1, paths: ['meeting'] } } } }])).toThrow(
+			/and is in no family/,
+		);
+	});
+
+	// The gate passes; REL-1's graph reads `relationships:` only, so a role edge cannot be a PATH here — what the gate
+	// decides is that the block is not refused as unreachable (the old rule refused it, though the repository types a `with`).
+	it('an entity whose only edge is a cardinality-one role is not refused as having no typed include', () => {
+		const call = {
+			entity: { name: 'call', plural: 'calls' },
+			fields: { subject: { type: 'string', required: true } },
+			roles: { caller: { target: 'contact', cardinality: 'one', column: 'caller_id', nullable: true } },
+			api: { includes: { list: { max_depth: 1, paths: ['caller'] } } },
+		};
+		// Past the gate it fails at path resolution, on the graph — not with the gate's own refusal.
+		expect(() => compile([call, { ...CONTACT, relationships: undefined }])).toThrow(/names no relation at 'caller'/);
+		expect(() => compile([call, { ...CONTACT, relationships: undefined }])).not.toThrow(/in no family/);
+	});
 });
 
 // ---------------------------------------------------------------------------

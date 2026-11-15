@@ -31,6 +31,7 @@ import type { RelationEdge, RelationsEmitContext } from '../../emitters/relation
 import type { PatternDeclaringEntity } from '../../patterns/compose.js';
 import { resolvePatternComposition } from '../../patterns/resolve-composition.js';
 import type { EntityDefinition } from '../../schema/entity-definition.schema.js';
+import { inheritanceChildrenOf } from '../../schema/inheritance.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import { detectYamlType, loadRelationshipFromYaml } from '../../utils/yaml-loader.js';
 import {
@@ -131,6 +132,7 @@ export function deriveProjectApiSurface(ctx: ProjectApiContext): ProjectApiSurfa
 			junctions: rel.junctions,
 			composition: patternComposition(definition.entity),
 			wiredTargets: allNames,
+			inheritanceChildren: inheritanceChildrenOf(definition.entity.name, definitions),
 			entityLookup,
 		});
 	}

@@ -36,7 +36,7 @@ describe('the fixture family', () => {
 		expect(validateInheritance(loadFamily(), OPTS)).toEqual([]);
 	});
 
-	it('contains both bases, three children and the match-only entities', () => {
+	it('contains both bases, their children (one fields-only) and the match-only entities', () => {
 		const names = loadFamily().map((e) => e.name).sort();
 		expect(names).toEqual([
 			'communication',
@@ -48,6 +48,7 @@ describe('the fixture family', () => {
 			'email_communication_part',
 			'email_thread',
 			'meeting',
+			'message_communication_part',
 			'meeting_transcript',
 			'party',
 			'transcript_communication_part',

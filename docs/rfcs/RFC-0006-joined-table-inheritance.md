@@ -2,7 +2,8 @@
 
 **Status:** Draft, revision 3 — Doug's answers of 2026-11-13 are recorded in §11, including OQ-11 (the part-kind
 rule is a composite FK on the part's own discriminator; the user-facing `checks:` key leaves this build). S1
-(schema and validation) and S2 (the DDL) are built; nothing else is. §13.2 S1 and S2 say what each build settled.
+(schema and validation), S2 (the DDL) and S3 (relations, scope and reads) are built; nothing else is. §13.2 S1, S2 and
+S3 say what each build settled.
 **Issue:** #875
 **Date:** 2026-11-12, revised 2026-11-13
 **Owner:** Doug
@@ -479,7 +480,7 @@ meetings: {
 
 Each carries the usual `where: { RAW: (t) => hopScope(…) }` when the target declares a scope (`renderEdge`,
 `emit-manifest.ts:61`). The child-to-base edge is `optional: false`: the child's own scope already requires the base
-row to be in scope (§2.3), so the hop cannot drop it. That is an exception to `hopCanDropTarget`
+row to be in scope (§2.3), so the hop cannot drop it under the read guards (a hand-written `{ softDelete: false }` read of a child drops the base `EXISTS` at the root but not at the hop, so the hop can return `null` there; no generated read passes it). That is an exception to `hopCanDropTarget`
 (`build-graph.ts:141-142`). The edge carries an `inherits` marker so the builder, and the frontend emitter (§3.4),
 can tell.
 
@@ -759,7 +760,7 @@ mechanics in the runtime, typed signatures in the generated class.
 ```ts
 /** Hoist a to-one relation's columns to the root. Pure. */
 export function flattenBase<R extends Record<K, object>, K extends keyof R & string>(row: R, baseKey: K): Flattened<R, K>;
-export type Flattened<R, K extends keyof R> = Omit<R, K> & R[K];
+export type Flattened<R, K extends PropertyKey> = Omit<R, K> & (K extends keyof R ? R[K] : never);
 
 /** Split a flat input into the base's slice and the child's. Pure. */
 export function splitByOwner<T extends object>(input: T, baseKeys: ReadonlySet<string>): { base: Partial<T>; own: Partial<T> };
@@ -793,10 +794,11 @@ override delete(id: string, tx?: DrizzleTx): Promise<void>;
 upsertByNaturalKey(input: MeetingCreate, tx?: DrizzleTx): Promise<{ row: MeetingFlat; created: boolean }>;
 
 /** findById with the base included, flattened. `with` and `columns` still apply to the child. */
-findWithBase<W extends MeetingInclude = MeetingNoInclude>(id: string, opts?: ReadOptions<W, never>): Promise<MeetingFlat<W> | null>;
-findManyWithBase<W extends MeetingInclude = MeetingNoInclude>(ids: readonly string[], opts?: ReadOptions<W, never>): Promise<Array<MeetingFlat<W>>>;
+findWithBase<W extends MeetingInclude = MeetingNoInclude, C extends MeetingColumns | undefined = undefined>(id: string, opts?: ReadOptions<W, C>): Promise<MeetingFlat<W, C> | null>;
+findManyWithBase<W extends MeetingInclude = MeetingNoInclude, C extends MeetingColumns | undefined = undefined>(ids: readonly string[], opts?: ReadOptions<W, C>): Promise<Array<MeetingFlat<W, C>>>;
 
-export type MeetingFlat<W extends MeetingInclude = MeetingNoInclude> = Flattened<MeetingResult<W & { communication: true }>, 'communication'>;
+export type MeetingFlat<W extends MeetingInclude = MeetingNoInclude, C extends MeetingColumns | undefined = undefined> =
+  Flattened<MeetingResult<W & { communication: true }, C>, 'communication'>;
 ```
 
 The brief's `createWithBase` and `updateAcross` are the overrides of `create` and `update`, on purpose. A separately
@@ -811,8 +813,8 @@ a consumer tsconfig has to be measured, not assumed (charter I9).
 findAllKinds(query?: ListOptions<typeof communications> & { kinds?: readonly CommunicationKind[] }): Promise<CommunicationOfKind[]>;
 findKindById(id: string): Promise<CommunicationOfKind | null>;
 
-/** One kind, flat, filtered and sorted on base columns. */
-listKind<K extends ChildKind>(kind: K, query?: ListOptions<typeof communications>): Promise<Array<FlatOfKind<K>>>;
+/** One kind, flat, filtered and sorted on base columns. `CommunicationFlatByKind[K]` is `Flattened<Communication & { <child key>: Child }, '<child key>'>`. */
+listKind<K extends keyof CommunicationFlatByKind>(kind: K, query?: ListOptions<typeof communications>): Promise<Array<CommunicationFlatByKind[K]>>;
 countKind(kind: CommunicationKind, where?: RowFilter<typeof communications>): Promise<number>;
 
 /** Base rows whose kind has a child table but no child row. An integrity check for jobs and tests. */
@@ -837,7 +839,7 @@ discriminator: kind
 behaviors: [soft_delete]
 fields:
   tenant_id: { type: uuid, required: true }
-  kind:      { type: enum, choices_of: communication.kind, required: true }   # message stays base-only
+  kind:      { type: enum, choices_of: communication.kind, required: true }   # every kind has a child table (S3 added `message`)
   sequence:  { type: integer, required: true }
 relationships:
   communication:
@@ -898,8 +900,8 @@ and what v1 adds. A cross-kind list on the client is hand-written in v1.
 | Operation | Cost |
 |---|---|
 | Child read, table-shaped | 1 statement, 1 table. Plus a primary-key `EXISTS` on the base when the base has `soft_delete` or `user_tracking`. |
-| Child read with base, nested or flat | 1 statement, one primary-key lateral join. |
-| Cross-kind read | 1 statement, one primary-key lateral join per child kind requested. |
+| Child read with base, nested or flat | 1 statement, one primary-key lateral join. Plus the base `EXISTS` at the child root when the base has `soft_delete` or `user_tracking`. |
+| Cross-kind read | 1 statement, one primary-key lateral join per child kind requested. Plus the base `EXISTS` on every child hop when the base has `soft_delete` or `user_tracking`. |
 | Create | 2 inserts in 1 transaction. The base insert maintains 1 extra unique index (2 when tenant-scoped). |
 | Upsert | 2 statements in 1 transaction. |
 | `match:` | One derived column per matched column, one unique index on the target, and a scalar subquery on the parent's primary key inside the insert. |
@@ -1002,6 +1004,7 @@ The summary. §13 is the build plan, slice by slice.
 | 8 | Child find and list use cases return flat rows; controller output | `use-cases/find-by-id.ejs.t`, `list.ejs.t`, `controller.ejs.t` |
 | 9 | Frontend: inner-joined child-to-base hop; `<child>WithBase` query and hooks | `src/emitters/frontend/graph-model.ts`, `emit-graph.ts` |
 | 10 | Studio: one row in each vocabulary table | `tools/studio/src/inspector/relationship-kinds.ts`, `tools/studio/src/graph/edge-kinds.ts` |
+| 11 | The derived API surface (family reads, `hasTypedInclude`, the include gate); Studio's `Record<RepositoryKind, …>` | `src/derived/api/*`, `src/emitters/relations/build-includes.ts`, `tools/studio/src/inspector/surface-kinds.ts` |
 
 ## 11. Decisions and open questions
 
@@ -1093,7 +1096,7 @@ three. §13 of the RFC is the build plan.
       One tenant's upsert never touches another tenant's row with the same key.
 - [ ] **A8** With `soft_delete` on the base, a soft-deleted row's child is absent from child reads and from a hop
       into the child. With `tenant_scoped`, another tenant's child is absent at the root and at a hop.
-- [ ] **A9** `findAllKinds` is one statement (`.toSQL()` in `just test-unit`), returns the union, and throws
+- [ ] **A9** `findAllKinds` is one statement (recorded through a fake `pg` client in `just test-unit`, and counted on the generated repositories in `just test-integration`), returns the union, and throws
       `OrphanBaseError` on a base row with a missing child. `findOrphans` returns that row.
 - [ ] **A10** Child DTOs are flat; the child's HTTP routes return the flat shape; the base's create accepts only
       base-only kinds.
@@ -1135,10 +1138,10 @@ names or fields from any host application (this repository is public).
 | Entity | Role in the tests |
 |---|---|
 | `communication` | Base. `tenant_scoped` with a declared NOT NULL `tenant_id`, `timestamps`, `discriminator: kind` with `[meeting, email, message]`, natural key `(source, external_id)`. No `soft_delete`: the tenant-only scope path. |
-| `meeting`, `email` | Children. `message` stays a base-only kind. |
+| `meeting`, `email` | Children. `message` stays a base-only kind of `communication`. |
 | `email_thread`, `meeting_transcript` | Plain entities a child points at and is pointed at by. |
 | `communication_part` | Second base, **with `soft_delete`**: the `EXISTS` scope path. `kind` is `choices_of: communication.kind` with `match: { kind: kind }` to `communication` (§2.4 case 1), natural key `(communication_id, sequence)`. |
-| `transcript_communication_part`, `email_communication_part` | Its children. The second has a typed link to `email`. |
+| `transcript_communication_part`, `email_communication_part`, `message_communication_part` | Its children (`message_communication_part` is a fields-only child, kind `message`, added in S3). The second has a typed link to `email`. **`communication_part` therefore has no base-only kind.** Decided at Gate 2.5 (D4, §11.3): a scaffold-only soft-delete family — `document` (tenant-scoped, `soft_delete`, kinds `memo` / `report`) and its child `report_document` (kind `report`), in `test/scaffold/entities/` and no fixture set — covers a base-only kind (`memo`) on the soft-delete path. Read cases in `inheritance-reads.test.ts` (S3); create / upsert cases in S4, the HTTP case in S5. |
 | `communication_participant_role`, `communication_participant` | `choices_of:` and two `match:` relationships on one column. |
 | `communication_note` | A `match:` whose every FK is nullable: the derived column is nullable and the entity carries a CHECK per FK, `<fk> IS NULL OR <derived> IS NOT NULL` (not NULL-together). |
 
@@ -1370,8 +1373,135 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   `runtime/base-classes/` is not validated by `bun run typecheck` alone (charter I9): run the smokes.
 - Adds: `.toSQL()` unit tests beside `src/__tests__/runtime/base-classes/read-api-sql.spec.ts`; scope tests in
   `test/scaffold/tests/` modelled on `relation-scope.test.ts`.
-- Gates: `just test-unit`, `just test-baseline`, `just test-smoke`, `just test-integration`.
+- Gates: `just test-unit`, `just test-baseline`, `just test-smoke`, `just test-integration`, `just test-studio`.
 - Closes: A8, A9, and the manifest half of A12.
+
+**S3 as built (2026-11-13).** What the build settled, beyond the plan above:
+
+- **The base scope is a field of `BehaviorConfig` and `ScopeConfig`.** `BaseScope` (`runtime/base-classes/scope-filters.ts`) is
+  `{ table, softDelete, userTracking }`: the base table as the schema exports it, and which of the two lifecycle guards the
+  base declares. `scopeFilter` appends `exists (select 1 from <base> where <base>.id = <child>.id and <the base's
+  soft-delete / user axes>)` as its last conjunct, so the root (`scopeAndOn`, `rootFilter`) and every hop (`hopScope`) get it
+  from the one function. The tenant axis is **not** repeated on the base: the child's own tenant column is pinned to the
+  base's by a composite FK. A base with neither guard (a tenant-only family) emits no `baseScope` and the SQL has no
+  `exists`. The subquery names the base by its real table name; it is the innermost FROM entry there, so it also holds under
+  RQBv2's aliased root (`"d0"`), and the unit spec pins the rendered SQL at the root and at a hop. `isUnscoped` /
+  `isUnscopedConfig` count a `baseScope`.
+- **`softDelete` in `scopeAnd` / `scopeConfigFor` means "apply the lifecycle guards", and only that.** Every read passes
+  `softDelete: true`; a by-id write passes nothing and still matches a soft-deleted row. What is applied comes from the
+  declaration: the entity's own `soft_delete` (`behaviors.softDelete`) and, for a child, the base's (`baseScope.softDelete`),
+  both masked by the flag. So a hand-written `{ softDelete: false }` that wants deleted rows gets them at a child's root as on a table
+  (before this, reads passed `behaviors.softDelete`, which is `false` for a child, and the flag meant two things). The limit: a
+  child-to-base HOP still applies the base's scope, so with a base `with` the edge can return `null` where its type says
+  non-null. No generated read passes the flag; only a subclass calling `scopeAnd(…, { softDelete: false })` could reach it.
+  `user_tracking` applies always, as it does on a table.
+- **The child's scope is derived, not declared.** `entityScope(def, tenancyColumn, base?)` takes the base (definition and table
+  export) for a child and **throws without it**: a child scoped without its base would read unscoped, an absent input read as
+  permissive. Tenancy is `resolveChildTenancy` (the base's column, strict); `softDelete` and `userTracking` on the child's own
+  literal are `false`; `baseScope` carries the base's. The manifest renders it as one more key on the child's
+  `tableScope(...)` literal. In the generated repository the same derivation arrives as `scopeTenantScoped` /
+  `scopeTenantColumn` / `familyChild.baseScope` locals (`entity-locals.js`, from `familyReads` in
+  `templates/_shared/inheritance.mjs`); the entity's own `tenantScoped` local is unchanged, because it also drives the
+  DDL and the DTOs, which the child's inherited tenant column already has through `inheritedKeyColumns`.
+- **`hopCanDropTarget` counts `baseScope`.** A target with a base scope can be dropped by a hop (its base is soft-deleted,
+  or another user's), like a target with its own `soft_delete`. That is why a `belongs_to` *into* a soft-delete family's child is `optional` even
+  over a NOT NULL FK. It also changes one pre-existing baseline edge, but **not through `baseScope`**:
+  `meeting_transcripts.meeting` was `optional: false` with no `where`, and is now `optional: true` with
+  `hopScope(t, MEETINGS_SCOPE, …)`. That comes from the existing tenant clause of `hopCanDropTarget` (an unscoped source
+  hopping into a target that is now tenant-scoped, because the child's scope is its base's tenant column); it closes the I3
+  hole (an unscoped read of a tenant-scoped child). **Behaviour change:** a `meeting_transcripts → meeting` traversal with no
+  tenant boundary (a background job) now throws under `strict`, as any hop into a tenant-scoped table does.
+- **The two edges.** `RelationEdge.inherits` is `'base'` on the child's `<base name>` edge and `'child'` on the base's
+  `<child name>` edge (the entity name, camelCased, **not** the kind value: `transcriptCommunicationPart`, not `meeting`).
+  Child to base is `optional: false`, the exception to `hopCanDropTarget` that RFC §3.1 documents and `build-graph.ts`
+  states at the `push`. A child whose base is not in the entity set is an **error**, not a warning
+  (its scope cannot be derived without the base, and `buildRelationGraph` derives it before it emits the edge).
+- **`inheritance.ts`** has `flattenBase`, `Flattened`, `asKind`, `OrphanBaseError`. `Flattened<R, K extends PropertyKey>`, not
+  `K extends keyof R` as §6 first sketched: inside the generated generic method (`MeetingFlat<W, C>`), `R` is a deferred
+  relational-query result and `K extends keyof R` is TS2344 (measured: the baseline typecheck failed on it). `asKind(row,
+  discriminator, childKeyByKind)` drops the other kinds' keys from the row, throws `OrphanBaseError` for a kind in the map whose
+  child is `null`, and passes a base-only kind through bare. `OrphanBaseError` carries `id`, `kind` and `childKey`. It is in
+  `VENDORED_RUNTIME_FILES` and has a `runtime-mode` import (`inheritanceImport`), like every runtime file a generated
+  repository imports.
+- **Base-only kind on the soft-delete path (Gate 2.5 D4).** `test/scaffold/entities/document-scaffold.yaml` + `report-document-scaffold.yaml` (re-exported from `test/scaffold/schema.ts`; scaffold only, in no baseline / smoke / inheritance set) are a `soft_delete` family with `memo` base-only. `inheritance-reads.test.ts` "D4" checks: `findAllKinds` returns a `memo` bare and a `report` nested, a soft-deleted `memo` is absent, and a soft-deleted base hides its `report` at the root and at a hop. Red with the child-side base `soft_delete` guard removed from `baseScopePredicate`.
+- **The reads.** `findWithBase` / `findManyWithBase` take `ReadOptions<W, C>` like every other read and return
+  `MeetingFlat<W, C>`; the base is joined as `with: { ...opts.with, communication: true }`, so a caller's own
+  `communication: {...}` include is overridden by `true`. `findManyWithBase` has `findByIds`' contract. The base repository
+  gets `findAllKinds` (`kinds?` filters the scan and joins only those children), `findKindById`, `listKind<K>` (flat; `K` is a
+  child kind, returned as `<Base>FlatByKind[K]`), `countKind` (`count` on the same scope) and `findOrphans` (a `NOT EXISTS`
+  per child kind, in a module-level `<base>OrphanFilter` with camelCase bindings because it reads the children's table
+  exports (the emitted-name hygiene rule, #813), on the base's root scope, ordered by `id`, so a `limit` is a stable subset). All are one statement and every
+  root predicate is `{ RAW: this.rootFilter(...) }` (the READ-1 §5.3 gate counts them: 6 → 12). `<Base>OfKind`,
+  `<Base>Kind` (= `<Base>['kind']`, so it also holds for a `choices_of:` discriminator), `<Base>FlatByKind` and the
+  per-kind join are emitted into the base repository file; the services forward every method. A base with no child table
+  (every kind base-only) gets none of it.
+- **The typed include follows the family.** Whether an entity's repository can name a `with` is `hasTypedInclude`
+  (`src/derived/api/entity.ts`), read by the templates as `apiSurface.repository.typedInclude`: true when the entity declares
+  a non-`through` relationship, or is a child, or is a base with children (a `cardinality: one` role is counted too, with no
+  manifest edge until CAP-2). So a child's plain reads type `with: { communication: true }` and the base's `findById` /
+  `findByIds` / `list` type `with: { meeting: true, email: true }` (§3.3) by design, including for a fields-only child
+  (`message_communication_part`, which failed to compile with `Cannot find name '…Include'` when the family reads imported the
+  type only under the include flag). Controller and use cases change type-only, **and S3 opens `api.includes` for family
+  members**: `build-includes.ts` accepts a block on a child and on a base that has children, so `GET /meetings/:id?include=communication`
+  resolves in S3. HTTP is unchanged only where no `api.includes` is declared, which is true of every fixture; S5's work
+  is the family's write side and the DTO surface, not the allowlist. `test/baseline-type-assertions.ts` asserts the include
+  typing, with a `@ts-expect-error` so it cannot go vacuous.
+- **The family reads are projections over the READ-1 reads.** `findWithBase` is `findById` and `findManyWithBase` is
+  `findByIds`, each with the base joined in and then `flattenBase`; `findAllKinds` / `listKind` are `list`, and `findKindById`
+  is `findById`, with the per-kind joins as `with`. The scope, the boundary check, the id handling and the `columns` mask
+  live in one body, so a change to a READ-1 read reaches the family reads. `findWithBase`'s `W` excludes the base key
+  (`W extends <E>Include & { communication?: never }`), because the read adds it. The relation key printed in a `with:` and
+  the key the manifest names are one function, `familyRelationKey` (`src/schema/inheritance.ts`): a name with a digit
+  segment (`call_2`) is `call2` on both sides.
+- **S3 also touched** `tools/studio/src/inspector/surface-kinds.ts` (and its test) and `runtime/base-classes/with-communication.ts`:
+  both forced, the first because `Record<RepositoryKind, …>` is exhaustive over the new derived kinds, the second because the
+  `softDelete` flag now has one meaning. `just test-studio` is therefore an S3 gate.
+- **One behaviour derivation in the templates.** `resolvedBehaviorNames(def)` in `entity-locals.js` serves the entity's own
+  behaviors and its base's. The relations emitter keeps its own `behaviorNames` on purpose: it uses the throwing
+  `requireImpliedBehaviors`, because a manifest that silently dropped an unregistered pattern's behavior would narrow a scope.
+- **Gates.** `src/__tests__/runtime/base-classes/inheritance-read-sql.spec.ts` pins the SQL on a hand copy of the template's read shape (it is not the template's text: `findOrphans` inlines the orphan filter, `findWithBase` drops `columns` / `with`, and `findOne` / `findWithChild` are not generated methods; the one-statement check on generated code is `inheritance-reads.test.ts`, under `just test-integration`) (A9: one statement, `kinds` joins
+  one child, `findOrphans`; A8: the `EXISTS` at a child root read and at a hop, none for the tenant-only family, none on a
+  by-id write); `src/__tests__/emitters/relations/inherits-graph.test.ts` pins the two edges and the scope literal on the
+  §13.1 family (the manifest half of A12); `test/scaffold/tests/inheritance-reads.test.ts` runs the union, the orphan,
+  and both scope cases against Postgres through the generated repositories and a hand-written `db.query`;
+  `inheritance-scope-http.test.ts` asserts `GET /meetings` and `GET /meetings/:id` are scoped (it needs a tenant boundary,
+  which the other HTTP suites lack, so it mounts the generated `MeetingsModule` behind a header-driven one). The cross-checks: the generated reads' statement counts are asserted in `inheritance-reads.test.ts`, against the generated code. A15: with the
+  base-scope predicate removed, the soft-delete cases went red; with the child's tenant scope removed (the S2 tree) the HTTP
+  cases went red; both restored.
+- **The frontend.** `bun test src/__tests__/emitters/frontend` and `just test-smoke-frontend` are green and the frontend graph
+  golden is unchanged: the golden's entity set has no `inherits:`, so the new edges do not reach it. S6 owns the
+  inner join and the `<child>WithBase` helper; until then `buildRelationGraph` hands the frontend the `inherits` marker and
+  the frontend ignores it.
+- **ADR-046 (phase R).** The family read surface is derived once in `src/derived/api/`. Kinds: repository `with_base`
+  (`findWithBase`, `findManyWithBase`; origin the child's `inherits:`, `readOptions: columns+with`), `all_kinds` / `kind_by_id` / `list_kind` / `count_kind`
+  (`findAllKinds`, `findKindById`, `listKind`, `countKind`, one kind each) and `orphans` (`findOrphans`) (origin the base's `discriminator:`,
+  its `note` naming the child kinds); the service entries carry the same kinds with `delegatesTo` the repository's. Names are
+  `FAMILY_METHOD` in `names.ts`. Existence: `familyReadSurface(definition, children)` — a child always, a base only when it
+  has at least one child table (a base with none is a plain entity with an enum). Children come from the whole set
+  (`inheritanceChildrenOf` in `src/schema/inheritance.ts`, one owner for the derivation, `familyReads` and the includes gate);
+  `deriveEntityApiSurface` takes them as a required `inheritanceChildren` input (`deriveProjectApiSurface` computes them).
+  **`includes follows the family` moved with it:** `hasTypedInclude(definition, children)` is the one rule (own non-`through`
+  relationships, or a `cardinality: one` role edge, or a child, or a base with children), read by `deriveEntityApiSurface` (`typedInclude` / every read's `readOptions`; `entity-locals.js` reads only `apiSurface.repository.typedInclude`)
+  and by the include-allowlist gate in `build-includes.ts`, which replaces `declaresOwnRelation`. That last reader is a real
+  change, in two ways: a child or a base with children that declares `api.includes` was refused as "no typed include" while its
+  repository typed one, and so was an entity whose only edge is a `cardinality: one` role (the old rule read `relationships:`
+  alone; the template's merged-roles rule typed one). Both now pass the gate; `build-includes.test.ts` pins each. The role-only
+  block passes the gate but every role path is still refused at path resolution (REL-1 emits no role edge until CAP-2).
+  The templates read the methods off `apiSurface` (no flag local); the type names, table exports and import paths stay in `familyReads` (outside ADR-046 §4). Golden: `communication`,
+  `email` and `meeting` gain the methods (and `communication`'s `typedInclude` flips to `true`, which the generated code
+  already was — the derivation had not seen the family); new matrix case `matrix-discriminator-no-child`. No generated byte changes.
+- **ADR-046 Phase B (phase R2).** Rebased onto Phase B (#888–#898) (the 12 slice commits were applied as one 3-way merge onto S2's tip, so each
+  conflict was resolved once). The conflicts were `repository.ejs.t`, `service.ejs.t`, `entity-locals.js`, `build-includes.ts` and its test, and
+  `src/derived/api/entity.ts`. The two templates now print the family reads inside Phase B's loop over `apiSurface.*.methods`, by `m.kind`
+  (`with_base`, `all_kinds` / `kind_by_id` / `list_kind` / `count_kind`, `orphans`; the first read of a group opens its banner, names and parameter names are `m.name` / `m.params`).
+  Deleted: the `familyReadsWithBase` / `familyReadsAcrossKinds` flag locals and the `includes` local; the templates' `_child` / `_base` are now
+  "has a `with_base` / cross-kind method". `declaresOwnRelation` (Phase B B3) is gone — `hasTypedInclude` is its one replacement, read by
+  `deriveEntityApiSurface` (which `entity-locals.js` now gives `inheritanceChildren`) and by the include gate. In the derivation the family
+  entries moved to sit right after the core reads (repository after `count`, service after `list`), so the loop prints them where phase R did:
+  `email` / `meeting` goldens are a pure reorder. The inherited-methods comment moved to the loop's end so it follows the last read of either
+  kind, and the Declarative-queries banner moved to after the run of count + family reads. Render goldens: the new `matrix-discriminator-no-child` case is blessed; every other case is byte-identical. Generated bytes are
+  unchanged from phase R. The allowlist did not grow.
+  **Follow-up (changes bytes, so not in phase R):** the file-private helpers `repository.ejs.t` emits for a base (`<e>KindJoins`, `<e>OrphanFilter`, `<E>_CHILD_KEY_BY_KIND`) are named per entity by inline template string-building; derive those names in `src/derived/api/names.ts` and print them.
 
 **S4 — Pair writes and the upsert.**
 

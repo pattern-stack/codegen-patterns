@@ -13,6 +13,11 @@ import { <%= classNames.repository %> } from './<%= entityFileStem %>.repository
 // the same generics, the same options, the same result.
 const E = classNames.entity;
 const _typedInclude = apiSurface.repository.typedInclude;
+// RFC-0006 (#875) S3 — which family reads exist is the derivation's call (`with_base` / cross-kind entries).
+const _child = apiSurface.service.methods.some((m) => m.kind === 'with_base');
+const _ACROSS = ['all_kinds', 'kind_by_id', 'list_kind', 'count_kind'];
+const _isAcross = (m) => _ACROSS.includes(m.kind);
+const _base = apiSurface.service.methods.some(_isAcross);
 const _readGenerics = _typedInclude
   ? `<W extends ${E}Include = ${E}NoInclude, C extends ${E}Columns | undefined = undefined>`
   : `<C extends ${E}Columns | undefined = undefined>`;
@@ -22,13 +27,21 @@ const _readResult = _typedInclude ? `${E}Result<W, C>` : `${E}Result<${E}NoInclu
 _%>
 import type {
   <%= E %>Columns,
+<% if (_child) { -%>
+  <%= E %>Flat,
+<% } -%>
+<% if (_base) { -%>
+  <%= E %>FlatByKind,
+  <%= E %>Kind,
+  <%= E %>OfKind,
+<% } -%>
 <% if (_typedInclude) { -%>
   <%= E %>Include,
 <% } -%>
   <%= E %>NoInclude,
   <%= E %>Result,
 } from './<%= entityFileStem %>.repository';
-import type { ListOptions, ReadOptions } from '<%= baseRepositoryImport %>';
+import type { ListOptions, ReadOptions<%= _base ? ', RowFilter' : '' %> } from '<%= baseRepositoryImport %>';
 import type { <%= entityNamePlural %>, <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 <% if (eavEnabled) { -%>
 import { FieldValueService } from '<%= eavFieldValueImportDir %>/<%= eavFieldValueStem %>.service';
@@ -110,6 +123,7 @@ const _group = (m) =>
   m.kind.startsWith('junction_') ? 'junction'
   : m.kind === 'relation_one' || m.kind === 'relation_many' ? 'relation'
   : m.kind === 'eav_read' || m.kind === 'eav_write' ? 'eav'
+  : m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans' ? 'read'
   : m.kind;
 _%>
 <%_ _methods.forEach((m, i) => { _%>
@@ -144,18 +158,61 @@ _%>
     return this.repository.<%= m.delegatesTo.method %><%- _readArgs %>(<%= _p %>);
   }
 <%_ } _%>
-<%_ if (_last) { _%>
+<%_ } else if (m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans') { _%>
+<%_ /* RFC-0006 (#875) §3 — the family reads, forwarded verbatim: the repository's names, params and result. */ _%>
+<%_ const _p = m.params.map((x) => x.name); _%>
+<%_ if (m.kind === 'with_base' && m.returns === 'one') { _%>
 
-  // Lifecycle events (created/updated/deleted + per-field changes) are emitted
-  // automatically by BaseService when the events subsystem is installed.
-  //
-  // Inherited from <%= serviceBaseClass %>:
-<%_ /* The pattern's declared lines, verbatim — the derivation lists the
-      inherited methods by name, not the lines a pattern groups them into. */ _%>
-<%_ serviceInheritedMethods.forEach(line => { _%>
-  //   <%= line %>
-<%_ }) _%>
+  // RFC-0006 §3.2 — the base row, flat: the repository's `findWithBase` / `findManyWithBase`, forwarded.
+  <%= m.name %><W extends <%= E %>Include & { <%= familyChild.relKey %>?: never } = <%= E %>NoInclude, C extends <%= E %>Columns | undefined = undefined>(
+    <%= _p[0] %>: string,
+    <%= _p[1] %>?: ReadOptions<W, C>,
+  ): Promise<<%= E %>Flat<W, C> | null> {
+    return this.repository.<%= m.delegatesTo.method %><W, C>(<%= _p[0] %>, <%= _p[1] %>);
+  }
+<%_ } else if (m.kind === 'with_base') { _%>
 
+  <%= m.name %><W extends <%= E %>Include & { <%= familyChild.relKey %>?: never } = <%= E %>NoInclude, C extends <%= E %>Columns | undefined = undefined>(
+    <%= _p[0] %>: readonly string[],
+    <%= _p[1] %>?: ReadOptions<W, C>,
+  ): Promise<Array<<%= E %>Flat<W, C>>> {
+    return this.repository.<%= m.delegatesTo.method %><W, C>(<%= _p[0] %>, <%= _p[1] %>);
+  }
+<%_ } else if (m.kind === 'orphans') { _%>
+
+  <%= m.name %>(<%= _p[0] %>?: { limit?: number }): Promise<<%= E %>[]> {
+    return this.repository.<%= m.delegatesTo.method %>(<%= _p[0] %>);
+  }
+<%_ } else { _%>
+<%_ if (!_isAcross(_methods[i - 1])) { _%>
+
+  // RFC-0006 §3.3 — reading across kinds: the repository's, forwarded.
+<%_ } _%>
+<%_ if (m.kind === 'all_kinds') { _%>
+  <%= m.name %>(
+    <%= _p[0] %>?: ListOptions<typeof <%= entityNamePlural %>> & { kinds?: readonly <%= E %>Kind[] },
+  ): Promise<<%= E %>OfKind[]> {
+    return this.repository.<%= m.delegatesTo.method %>(<%= _p[0] %>);
+  }
+<%_ } else if (m.kind === 'kind_by_id') { _%>
+
+  <%= m.name %>(<%= _p[0] %>: string): Promise<<%= E %>OfKind | null> {
+    return this.repository.<%= m.delegatesTo.method %>(<%= _p[0] %>);
+  }
+<%_ } else if (m.kind === 'list_kind') { _%>
+
+  <%= m.name %><K extends keyof <%= E %>FlatByKind>(
+    <%= _p[0] %>: K,
+    <%= _p[1] %>?: ListOptions<typeof <%= entityNamePlural %>>,
+  ): Promise<Array<<%= E %>FlatByKind[K]>> {
+    return this.repository.<%= m.delegatesTo.method %><K>(<%= _p[0] %>, <%= _p[1] %>);
+  }
+<%_ } else { _%>
+
+  <%= m.name %>(<%= _p[0] %>: <%= E %>Kind, <%= _p[1] %>?: RowFilter<typeof <%= entityNamePlural %>>): Promise<number> {
+    return this.repository.<%= m.delegatesTo.method %>(<%= _p[0] %>, <%= _p[1] %>);
+  }
+<%_ } _%>
 <%_ } _%>
 <%_ } else if (m.kind === 'finder') { _%>
 <%_ if (_first) { _%>
@@ -386,6 +443,19 @@ _%>
     return mergeEavRows(rows as any, defsById);
   }
 <%_ } _%>
+<%_ } _%>
+<%_ if (_last && _group(m) === 'read') { _%>
+
+  // Lifecycle events (created/updated/deleted + per-field changes) are emitted
+  // automatically by BaseService when the events subsystem is installed.
+  //
+  // Inherited from <%= serviceBaseClass %>:
+<%_ /* The pattern's declared lines, verbatim — the derivation lists the
+      inherited methods by name, not the lines a pattern groups them into. */ _%>
+<%_ serviceInheritedMethods.forEach(line => { _%>
+  //   <%= line %>
+<%_ }) _%>
+
 <%_ } _%>
 <%_ }) _%>
 }

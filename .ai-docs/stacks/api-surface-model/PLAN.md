@@ -910,7 +910,7 @@ named.
 | Frozen paths as B2 (from `$B1`) | empty |
 | `grep -c 'apiEnabled' templates/entity/new/backend/*.ejs.t` | every file `:0` |
 | `grep -c 'apiIncludeRoutes\|apiIncludesConst' templates/entity/new/backend/controller.ejs.t` | `0` |
-| `grep -rnE '^export function (apiEnabled\|declaresOwnRelation\|includesConstName)\b' src \| wc -l` | `3`, all three under `src/derived/api/` |
+| `grep -rnE '^export function (apiEnabled\|hasTypedInclude\|includesConstName)\b' src \| wc -l` | `3`, all three under `src/derived/api/` |
 | `grep -n '_API_INCLUDES' templates/entity/new/backend/entity-locals.js` | no output |
 | `test -e src/__tests__/emitters/relations/route-name-parity.test.ts; echo $?` | `1` (nothing left to compare) |
 | **Mutation.** In `src/derived/api/entity.ts`, change the `find_by_id` route path suffix `/:id` to `/:key` (one line). `bun test/run-test.ts generate && bun test/run-test.ts compare` | exit 1; `❌ Content differs: packages/api/src/modules/contacts/contact.controller.ts` |

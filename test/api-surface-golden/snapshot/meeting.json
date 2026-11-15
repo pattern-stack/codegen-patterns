@@ -74,6 +74,60 @@
 				}
 			},
 			{
+				"name": "findWithBase",
+				"kind": "with_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "meeting"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "findManyWithBase",
+				"kind": "with_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "meeting"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
 				"name": "exists",
 				"kind": "inherited",
 				"emitted": false,
@@ -200,6 +254,68 @@
 				},
 				"origin": {
 					"from": "base"
+				}
+			},
+			{
+				"name": "findWithBase",
+				"kind": "with_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "findWithBase"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "meeting"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "findManyWithBase",
+				"kind": "with_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "findManyWithBase"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "meeting"
+						},
+						"path": [
+							"inherits"
+						]
+					}
 				}
 			},
 			{

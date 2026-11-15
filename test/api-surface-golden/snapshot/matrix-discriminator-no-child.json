@@ -1,0 +1,392 @@
+{
+	"case": "matrix-discriminator-no-child",
+	"covers": "a `discriminator:` base with no child table: no cross-kind reads, no typed include",
+	"entities": {
+		"notice": {
+			"entity": "notice",
+			"plural": "notices",
+			"className": "Notice",
+			"repository": {
+				"className": "NoticeRepository",
+				"baseClass": "BaseRepository",
+				"typedInclude": false,
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "find_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "find_by_ids",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "list",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "count",
+						"kind": "count",
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "upsertMany",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"service": {
+				"className": "NoticeService",
+				"baseClass": "BaseService",
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "notice",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "notice",
+							"layer": "repository",
+							"method": "findByIds"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "listOptions"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "notice",
+							"layer": "repository",
+							"method": "list"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "count",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"useCases": [
+				{
+					"className": "FindNoticeByIdUseCase",
+					"kind": "find_by_id",
+					"calls": {
+						"entity": "notice",
+						"layer": "service",
+						"method": "findById"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "ListNoticesUseCase",
+					"kind": "list",
+					"calls": {
+						"entity": "notice",
+						"layer": "service",
+						"method": "list"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "CreateNoticeUseCase",
+					"kind": "create",
+					"calls": {
+						"entity": "notice",
+						"layer": "service",
+						"method": "create"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "UpdateNoticeUseCase",
+					"kind": "update",
+					"calls": {
+						"entity": "notice",
+						"layer": "service",
+						"method": "update"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "DeleteNoticeUseCase",
+					"kind": "delete",
+					"calls": {
+						"entity": "notice",
+						"layer": "service",
+						"method": "delete"
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"http": {
+				"enabled": true,
+				"routes": [
+					{
+						"verb": "GET",
+						"path": "/notices",
+						"controller": "NoticeController",
+						"handler": "getAll",
+						"operationId": "listNotices",
+						"useCase": "ListNoticesUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "GET",
+						"path": "/notices/:id",
+						"controller": "NoticeController",
+						"handler": "getById",
+						"operationId": "findNoticeById",
+						"useCase": "FindNoticeByIdUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "POST",
+						"path": "/notices",
+						"controller": "NoticeController",
+						"handler": "create",
+						"operationId": "createNotice",
+						"useCase": "CreateNoticeUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "PATCH",
+						"path": "/notices/:id",
+						"controller": "NoticeController",
+						"handler": "update",
+						"operationId": "updateNotice",
+						"useCase": "UpdateNoticeUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "DELETE",
+						"path": "/notices/:id",
+						"controller": "NoticeController",
+						"handler": "remove",
+						"operationId": "deleteNotice",
+						"useCase": "DeleteNoticeUseCase",
+						"origin": {
+							"from": "base"
+						}
+					}
+				],
+				"includeRoutes": [],
+				"includesConst": "NOTICES_API_INCLUDES"
+			}
+		}
+	}
+}

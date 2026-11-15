@@ -308,3 +308,44 @@ describe('a requester with no userId — a tenant-only boundary (#853)', () => {
 		});
 	});
 });
+
+// RFC-0006 §2.3 — a child of a `user_tracking` base: the base's USER axis rides inside the one `EXISTS`, rendered
+// against the BASE table (the child declares no `user_id` of its own, R5).
+describe('baseScope — a user_tracking base (RFC-0006 §2.3)', () => {
+	const baseRows = pgTable('base_rows', {
+		id: uuid('id').primaryKey().defaultRandom(),
+		userId: uuid('user_id'),
+	});
+	const childRows = pgTable('child_rows', {
+		id: uuid('id').primaryKey(),
+		body: text('body').notNull(),
+	});
+	const child = (enforcement: 'lenient' | 'strict'): ScopeConfig => ({
+		tenantScoped: false,
+		softDelete: false,
+		userTracking: false,
+		enforcement,
+		baseScope: { table: baseRows, softDelete: false, userTracking: true },
+	});
+	const U1 = '11111111-1111-4111-8111-111111111111';
+
+	it("the EXISTS carries the base's user guard, on the base table, bound to the ambient user", async () => {
+		let out!: ReturnType<typeof render>;
+		await withRequester({ userId: U1, organizationId: null }, async () => {
+			out = render(scopeFilter(childRows, child('strict'), 'child_rows'));
+		});
+		expect(out.sql).toMatch(/^exists \(select 1 from "base_rows" where \(*"base_rows"\."id" = "child_rows"\."id"\)* and \(*"base_rows"\."user_id" = \$1\)*\)$/);
+		expect(out.params).toEqual([U1]);
+	});
+
+	it('strict with no ambient user throws; lenient with none reads without the user guard (and so no EXISTS)', () => {
+		expect(() => scopeFilter(childRows, child('strict'), 'child_rows')).toThrow();
+		expect(scopeFilter(childRows, child('lenient'), 'child_rows')).toBeUndefined();
+	});
+
+	it('a superuser carries no user guard', async () => {
+		await withSuperuserScope(U1, async () => {
+			expect(scopeFilter(childRows, child('strict'), 'child_rows')).toBeUndefined();
+		});
+	});
+});

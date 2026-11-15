@@ -80,7 +80,9 @@ describe('every relational read in emitted/shipped code is root-scoped (READ-1 Â
 	});
 
 	it('the sweep reaches the generated repository (guard against an empty scan)', () => {
-		expect(hits.filter((h) => h.at.startsWith('templates/entity/new/backend/repository.ejs.t')).length).toBe(6);
+		// 6 READ-1 reads, plus the joined-table family's one own relational read (RFC-0006 S3): `findOrphans`. The
+		// other family reads call `findById` / `findByIds` / `list`, so they carry no site of their own.
+		expect(hits.filter((h) => h.at.startsWith('templates/entity/new/backend/repository.ejs.t')).length).toBe(7);
 	});
 
 	it('every allowlist entry still names a real hit (no stale exemptions)', () => {

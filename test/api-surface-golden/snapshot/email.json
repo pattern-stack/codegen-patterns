@@ -74,6 +74,60 @@
 				}
 			},
 			{
+				"name": "findWithBase",
+				"kind": "with_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "email"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "findManyWithBase",
+				"kind": "with_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "email"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
 				"name": "findByThreadId",
 				"kind": "fk_finder",
 				"emitted": true,
@@ -230,6 +284,68 @@
 				},
 				"origin": {
 					"from": "base"
+				}
+			},
+			{
+				"name": "findWithBase",
+				"kind": "with_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "email",
+					"layer": "repository",
+					"method": "findWithBase"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "email"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "findManyWithBase",
+				"kind": "with_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "email",
+					"layer": "repository",
+					"method": "findManyWithBase"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "email"
+						},
+						"path": [
+							"inherits"
+						]
+					}
 				}
 			},
 			{

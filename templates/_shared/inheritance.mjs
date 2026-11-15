@@ -21,7 +21,8 @@
 
 import { camelCase, emittedStem } from '../../src/config/file-naming.js';
 import { resolveChildTenancy, resolveTenancy } from '../../src/schema/tenancy.js';
-import { inheritsOf, matchPairsOf } from '../../src/schema/inheritance.js';
+import { entityClassName } from '../../src/derived/api/names.js';
+import { familyRelationKey, inheritanceChildrenOf, inheritsOf, matchPairsOf } from '../../src/schema/inheritance.js';
 import { entityModuleNaming, relativeModuleDir } from './entity-naming.mjs';
 
 /**
@@ -290,4 +291,79 @@ export function matchColumns({ entityName, relationships, lookup, existing, null
     }
   }
   return { derived, fks };
+}
+
+/**
+ * What the READ surface of a joined-table family needs (RFC-0006 §3, §6; S3).
+ *
+ * `child` — this entity inherits: the relation key of its base edge, the base's
+ * table export and entity file, and which of the base's lifecycle behaviors
+ * reach it through `baseScope` (the child declares none, R5). `baseBehaviors` is
+ * the BASE's resolved behavior names (declared plus pattern-implied), computed by
+ * the caller the way the base's own repository computes them.
+ *
+ * `base` — this entity declares `discriminator:`: its kinds, and each child
+ * (found across the whole entity set, never by pluralizing): the kind value it
+ * is `as`, its relation key on the base, its table export and the type's import.
+ *
+ * @returns {{
+ *   child: null | { relKey: string, baseTable: string, baseImportPath: string,
+ *                   baseScope: null | { softDelete: boolean, userTracking: boolean } },
+ *   base: null | { discriminator: string, discriminatorProp: string, kinds: string[],
+ *                  children: Array<{ as: string, name: string, relKey: string, plural: string,
+ *                                    className: string, entityImportPath: string }> },
+ * }}
+ */
+export function familyReads({ entityName, definition, lookup, ownNaming, modulesDir, baseBehaviors }) {
+  const declaration = inheritsOf(definition);
+  let child = null;
+  if (declaration !== null) {
+    const why = `'${entityName}' inherits '${declaration.base}'`;
+    const ref = moduleRef(lookup, ownNaming, modulesDir, declaration.base, why);
+    const softDelete = baseBehaviors.includes('soft_delete');
+    const userTracking = baseBehaviors.includes('user_tracking');
+    child = {
+      relKey: familyRelationKey(declaration.base),
+      baseTable: ref.plural,
+      baseImportPath: ref.importPath,
+      baseScope: softDelete || userTracking ? { softDelete, userTracking } : null,
+    };
+  }
+
+  let base = null;
+  if (typeof definition.discriminator === 'string') {
+    const field = definition.fields?.[definition.discriminator];
+    const enumRef = resolveEnumField({
+      lookup,
+      modulesDir,
+      fromNaming: ownNaming,
+      entityName,
+      fieldName: definition.discriminator,
+      field,
+    });
+    if (enumRef === null) {
+      throw new Error(`[codegen] '${entityName}': discriminator '${definition.discriminator}' is not an enum field with known choices.`);
+    }
+    if (!lookup?.definitions) {
+      throw new Error(`[codegen] '${entityName}' declares discriminator '${definition.discriminator}', but no entity lookup was supplied to find its children.`);
+    }
+    const children = inheritanceChildrenOf(entityName, lookup.definitions()).map((c) => {
+      const ref = moduleRef(lookup, ownNaming, modulesDir, c.name, `'${c.name}' inherits '${entityName}'`);
+      return {
+        as: c.as,
+        name: c.name,
+        relKey: familyRelationKey(c.name),
+        plural: ref.plural,
+        className: entityClassName(c.name),
+        entityImportPath: ref.importPath,
+      };
+    });
+    base = {
+      discriminator: definition.discriminator,
+      discriminatorProp: camelCase(definition.discriminator),
+      kinds: enumRef.choices,
+      children,
+    };
+  }
+  return { child, base };
 }

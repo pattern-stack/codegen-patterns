@@ -13,6 +13,10 @@
  */
 import type { Account } from '@gen/modules/accounts/account.entity';
 import type { AccountOutputDto } from '@gen/modules/accounts/dto/account-output.dto';
+import type { Communication } from '@gen/modules/communications/communication.entity';
+import type { CommunicationRepository } from '@gen/modules/communications/communication.repository';
+import type { Meeting } from '@gen/modules/meetings/meeting.entity';
+import type { MeetingRepository } from '@gen/modules/meetings/meeting.repository';
 import type { Contact } from '@gen/modules/contacts/contact.entity';
 import type { ContactOutputDto } from '@gen/modules/contacts/dto/contact-output.dto';
 import type { DealState } from '@gen/modules/deal-states/deal-state.entity';
@@ -47,3 +51,25 @@ export type OrganizationOutputIsTheRow = Assert<IsRowProjection<OrganizationOutp
 export type PersonOutputIsTheRow = Assert<IsRowProjection<PersonOutputDto, Person>>;
 export type TenantOutputIsTheRow = Assert<IsRowProjection<TenantOutputDto, Tenant>>;
 export type UserOutputIsTheRow = Assert<IsRowProjection<UserOutputDto, User>>;
+
+/**
+ * RFC-0006 §3.1/§3.3 (#875 S3) — a family member's plain reads type the include its edges give it, by design: the
+ * base takes `with: { meeting: true, email: true }` and the child `with: { communication: true }`, whatever the
+ * entity's own `relationships:` declare. `tsc` reports an unused `@ts-expect-error` (TS2578), so the last line is
+ * what stops this from being a no-op: a key the graph does not have must still be refused.
+ */
+export async function familyIncludesType(
+	communicationRepo: CommunicationRepository,
+	meetingRepo: MeetingRepository,
+): Promise<void> {
+	const rows = await communicationRepo.list({ with: { meeting: true, email: true } });
+	const child: Meeting | null | undefined = rows[0]?.meeting;
+	const base: Communication | undefined = (await meetingRepo.findById('x', { with: { communication: true } }))?.communication;
+	void child;
+	void base;
+	// @ts-expect-error — `nope` is not a relation of communications
+	await communicationRepo.list({ with: { nope: true } });
+	// `findWithBase` adds the base key itself, so a caller cannot also name it (a narrower spec would be dropped).
+	// @ts-expect-error — `communication` is the key `findWithBase` joins
+	await meetingRepo.findWithBase('x', { with: { communication: true } });
+}

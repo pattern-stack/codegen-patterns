@@ -49,10 +49,14 @@ export * from '@gen/modules/meeting-transcripts/meeting-transcript.entity';
 export * from '@gen/modules/communication-parts/communication-part.entity';
 export * from '@gen/modules/transcript-communication-parts/transcript-communication-part.entity';
 export * from '@gen/modules/email-communication-parts/email-communication-part.entity';
+export * from '@gen/modules/message-communication-parts/message-communication-part.entity';
 export * from '@gen/modules/communication-participant-roles/communication-participant-role.entity';
 export * from '@gen/modules/communication-participants/communication-participant.entity';
 export * from '@gen/modules/parties/party.entity';
 export * from '@gen/modules/communication-notes/communication-note.entity';
+// Gate 2.5 D4: a scaffold-only soft-delete family with a base-only kind (`memo`).
+export * from '@gen/modules/documents/document.entity';
+export * from '@gen/modules/report-documents/report-document.entity';
 
 // Subsystem schemas come from `@shared/*` — i.e. `runtime/subsystems/*`, the
 // real source — NOT from a vendored copy generated into the repo root. One

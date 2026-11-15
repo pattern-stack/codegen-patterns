@@ -97,11 +97,9 @@ export class CommunicationController {
     @Query(new ZodValidationPipe(ListCommunicationsQuerySchema)) query: ListCommunicationsQueryDto,
     @Query('include') include?: string,
   ): Promise<Page<CommunicationApiResult>> {
-    // communication has no relations in the generated graph, so there is no
-    // include to expose — but the parameter is still VALIDATED, so `?include=`
-    // is a 400 here exactly as it is on an un-allowlisted route (charter I6).
-    this.resolveInclude(include, undefined);
-    return this.listUseCase.execute(query);
+    return this.listUseCase.execute(query, {
+      include: this.resolveInclude(include, undefined),
+    });
   }
 
   @ApiOperation({ summary: 'Find communication by id', operationId: 'findCommunicationById' })
@@ -122,8 +120,10 @@ export class CommunicationController {
     @Query('include') include?: string,
   ): Promise<CommunicationApiResult> {
     // Use case throws NotFoundException on null/undefined (D2)
-    this.resolveInclude(include, undefined);
-    return this.findByIdUseCase.execute(id);
+    return this.findByIdUseCase.execute(
+      id,
+      this.resolveInclude(include, undefined),
+    );
   }
 
 

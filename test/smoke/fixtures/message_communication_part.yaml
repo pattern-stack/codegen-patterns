@@ -1,0 +1,16 @@
+# RFC-0006 (#875) fixture family — a FIELDS-ONLY child (no relationships:), the shape S2 accepted and S3's service must still compile.
+entity:
+  name: message_communication_part
+  plural: message_communication_parts
+
+inherits:
+  base: communication_part
+  as: message
+
+fields:
+  text:
+    type: string
+    required: true
+  reaction_count:
+    type: integer
+    nullable: true

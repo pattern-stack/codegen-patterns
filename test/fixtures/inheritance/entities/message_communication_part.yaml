@@ -1,0 +1,15 @@
+entity:
+  name: message_communication_part
+  plural: message_communication_parts
+
+inherits:
+  base: communication_part
+  as: message
+
+fields:
+  text:
+    type: string
+    required: true
+  reaction_count:
+    type: integer
+    nullable: true

@@ -18,6 +18,7 @@ import { renderSqlPredicate } from '../../../_shared/sql-predicate.mjs';
 import { TABLE_CALLBACK_PARAM as T } from '../../../_shared/table-callback.mjs';
 import {
   enumTypeNames,
+  familyReads,
   inheritanceFor,
   matchColumns,
   resolveEnumField,
@@ -1567,6 +1568,18 @@ export function buildIntegrationSurface(patternName, processedFields, belongsTo,
 // ============================================================================
 
 /**
+ * The behaviors an entity HAS: those it declares plus those its pattern(s) imply (ADR-031), explicit first. The ONE
+ * derivation for an entity's own behaviors and for its base's (`familyReads`, a child's `baseScope`). The relations
+ * emitter's `behaviorNames` (`src/emitters/relations/build-graph.ts`) states the same rule with the throwing
+ * `requireImpliedBehaviors`, deliberately: a manifest that silently dropped an unregistered pattern's behavior would
+ * narrow a scope, where a template call has registered its patterns already.
+ */
+function resolvedBehaviorNames(def) {
+  const explicit = (def.behaviors ?? []).map((b) => (typeof b === 'string' ? b : b.name));
+  return [...explicit, ...resolveImpliedBehaviors(def.entity).filter((b) => !explicit.includes(b))];
+}
+
+/**
  * Build backend template locals from entity definition and base locals
  *
  * @param {object} definition - Parsed entity YAML
@@ -1580,7 +1593,7 @@ export function buildBackendLocals(definition, baseLocals) {
   const behaviors = definition.behaviors || [];
   const queriesBlock = definition.queries || null;
   // ADR-043 §6 `api: false` and REL-2 §2.5's typed include are decided once, in
-  // the derivation (`apiEnabled` / `declaresOwnRelation`, `src/derived/api/
+  // the derivation (`apiEnabled` / `hasTypedInclude`, `src/derived/api/
   // entity.ts`); the templates read its answers as `apiSurface.http.enabled` /
   // `apiSurface.repository.typedInclude`.
 
@@ -1807,12 +1820,7 @@ export function buildBackendLocals(definition, baseLocals) {
   // with any explicit `behaviors:` entries, explicit-first so order is
   // stable for pre-existing fixtures. Mirrors the dedup in
   // src/patterns/validate-composition.ts.
-  const explicitBehaviorNames = behaviors.map((b) => (typeof b === 'string' ? b : b.name));
-  const impliedBehaviorNames = resolveImpliedBehaviors(entity);
-  const behaviorNames = [
-    ...explicitBehaviorNames,
-    ...impliedBehaviorNames.filter((b) => !explicitBehaviorNames.includes(b)),
-  ];
+  const behaviorNames = resolvedBehaviorNames(definition);
   const hasTimestamps = behaviorNames.includes('timestamps');
   const hasSoftDelete = behaviorNames.includes('soft_delete');
   const hasUserTracking = behaviorNames.includes('user_tracking');
@@ -2065,6 +2073,29 @@ export function buildBackendLocals(definition, baseLocals) {
   });
   const inheritedChild = inheritance.child;
   const isChild = inheritedChild !== null;
+
+  // RFC-0006 §3, §6 (S3): the READ half of a family. A child's reads are scoped
+  // by its base's tenant column and (through `baseScope`) the base's
+  // `soft_delete` / `user_tracking`, which the child does not declare (R5); a
+  // base reads across its kinds.
+  const familyBaseBehaviors = isChild ? resolvedBehaviorNames(entityLookup.definition(inheritedChild.base)) : [];
+  const family = familyReads({
+    entityName,
+    definition,
+    lookup: entityLookup,
+    ownNaming,
+    modulesDir,
+    baseBehaviors: familyBaseBehaviors,
+  });
+  // The entities that `inherits:` this one — the derivation's input (`inheritanceChildren`): a base's cross-kind
+  // reads and a family member's typed include both follow from it (`apiSurface.repository.methods` / `.typedInclude`).
+  // From `familyReads` — the one enumeration of the set (it throws where a base cannot enumerate); a base with no
+  // `discriminator:` has no children (R1).
+  const familyChildren = (family.base?.children ?? []).map((c) => ({ name: c.name, as: c.as }));
+  // The scope a child's repository declares: its tenant column (the base's, carried as a copy) with strict
+  // enforcement, plus the base's lifecycle scope. A plain entity's is its own `tenantScoped`.
+  const scopeTenantColumn = tenantScoped ? tenancy.prop : isChild && inheritedChild.tenant ? inheritedChild.tenant.prop : null;
+  const scopeTenantScoped = scopeTenantColumn !== null;
 
   // The columns a child carries from its base, right after `id`: the kind (the
   // base's own pgEnum, fixed by DEFAULT + CHECK) and the tenant column (NOT
@@ -2402,6 +2433,7 @@ export function buildBackendLocals(definition, baseLocals) {
     junctions: baseLocals.junctions ?? [],
     composition: patternBase,
     wiredTargets: hasMany.filter((r) => r.targetExists).map((r) => r.target),
+    inheritanceChildren: familyChildren,
     entityLookup: (name) => (entityLookup ? entityLookup(name) : null),
   });
   // Whether writes are emitted is the derivation's answer (ADR-046): `generate.writes: false`, or a child (RFC-0006).
@@ -2868,6 +2900,13 @@ export function buildBackendLocals(definition, baseLocals) {
     apiSurface,
     queryTypes,
     relationTypes,
+
+    // RFC-0006 (#875) S3: a family member's scope. Its read surface is `apiSurface.repository.methods` /
+    // `.service.methods` (the derivation), not a flag here; the base-edge and kind-union text is keyed below.
+    familyChild: family.child,
+    familyBase: family.base,
+    scopeTenantScoped,
+    scopeTenantColumn,
 
     // Declarative queries
     processedQueries,

@@ -6,6 +6,7 @@ import { BaseService } from '@shared/base-classes/base-service';
 import { EmailRepository } from './email.repository';
 import type {
   EmailColumns,
+  EmailFlat,
   EmailInclude,
   EmailNoInclude,
   EmailResult,
@@ -62,6 +63,21 @@ export class EmailService extends WithAnalytics(
     listOptions?: ListOptions<typeof emails> & ReadOptions<W, C>,
   ): Promise<Array<EmailResult<W, C>>> {
     return this.repository.list<W, C>(listOptions);
+  }
+
+  // RFC-0006 §3.2 — the base row, flat: the repository's `findWithBase` / `findManyWithBase`, forwarded.
+  findWithBase<W extends EmailInclude & { communication?: never } = EmailNoInclude, C extends EmailColumns | undefined = undefined>(
+    id: string,
+    opts?: ReadOptions<W, C>,
+  ): Promise<EmailFlat<W, C> | null> {
+    return this.repository.findWithBase<W, C>(id, opts);
+  }
+
+  findManyWithBase<W extends EmailInclude & { communication?: never } = EmailNoInclude, C extends EmailColumns | undefined = undefined>(
+    ids: readonly string[],
+    opts?: ReadOptions<W, C>,
+  ): Promise<Array<EmailFlat<W, C>>> {
+    return this.repository.findManyWithBase<W, C>(ids, opts);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

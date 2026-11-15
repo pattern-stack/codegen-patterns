@@ -21,7 +21,12 @@ export {
   tenantPredicateFor,
   userScopePredicateFor,
 } from './scope-filters';
-export type { ScopeConfig, TableScope, TenantAxis } from './scope-filters';
+export type { BaseScope, ScopeConfig, TableScope, TenantAxis } from './scope-filters';
+
+// Joined-table inheritance (RFC-0006, #875) — the read half. The write half
+// (`splitByOwner`, `inTransaction`, the write errors) is S4's.
+export { asKind, flattenBase, OrphanBaseError } from './inheritance';
+export type { Flattened } from './inheritance';
 
 // Ambient tenant scope (AsyncLocalStorage) — read by BaseRepository.scopePredicate,
 // set at request/worker boundaries via withRequester/withUserScope/etc.

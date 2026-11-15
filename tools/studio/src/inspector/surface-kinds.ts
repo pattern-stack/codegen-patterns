@@ -79,7 +79,13 @@ export const REPOSITORY_KINDS: Record<RepositoryKind, KindDescriptor> = {
   finder: { label: 'finder', section: 'repository', order: 5 },
   finder_projection: { label: 'projection finder', section: 'repository', order: 6 },
   eav_upsert: { label: 'EAV upsert', section: 'repository', order: 7 },
-  inherited: { label: 'inherited', section: 'repository', order: 8 },
+  with_base: { label: 'with base', section: 'repository', order: 8 },
+  all_kinds: { label: 'all kinds', section: 'repository', order: 9 },
+  kind_by_id: { label: 'kind by id', section: 'repository', order: 10 },
+  list_kind: { label: 'list kind', section: 'repository', order: 11 },
+  count_kind: { label: 'count kind', section: 'repository', order: 12 },
+  orphans: { label: 'orphans', section: 'repository', order: 13 },
+  inherited: { label: 'inherited', section: 'repository', order: 14 },
 };
 
 export const SERVICE_KINDS: Record<ServiceKind, KindDescriptor> = {
@@ -94,7 +100,13 @@ export const SERVICE_KINDS: Record<ServiceKind, KindDescriptor> = {
   capability_forwarder: { label: 'capability', section: 'service', order: 8 },
   eav_read: { label: 'EAV read', section: 'service', order: 9 },
   eav_write: { label: 'EAV write', section: 'service', order: 10 },
-  inherited: { label: 'inherited', section: 'service', order: 11 },
+  with_base: { label: 'with base', section: 'service', order: 11 },
+  all_kinds: { label: 'all kinds', section: 'service', order: 12 },
+  kind_by_id: { label: 'kind by id', section: 'service', order: 13 },
+  list_kind: { label: 'list kind', section: 'service', order: 14 },
+  count_kind: { label: 'count kind', section: 'service', order: 15 },
+  orphans: { label: 'orphans', section: 'service', order: 16 },
+  inherited: { label: 'inherited', section: 'service', order: 17 },
 };
 
 export const USE_CASE_KINDS: Record<UseCaseKind, KindDescriptor> = {

@@ -227,3 +227,20 @@ export function operationId(kind: OperationKind, entityName: string): string {
 export function includesConstName(plural: string): string {
 	return `${plural.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase()}_API_INCLUDES`;
 }
+
+// ----------------------------------------------------------------------------
+// Joined-table family reads (RFC-0006 §3, #875)
+// ----------------------------------------------------------------------------
+
+/** The method names a family member's repository and service carry. Fixed: no YAML spelling changes them. */
+export const FAMILY_METHOD = {
+	/** A child: the entity with its base row's columns hoisted to the root. */
+	findWithBase: 'findWithBase',
+	findManyWithBase: 'findManyWithBase',
+	/** A base with child tables: reading across its kinds. */
+	findAllKinds: 'findAllKinds',
+	findKindById: 'findKindById',
+	listKind: 'listKind',
+	countKind: 'countKind',
+	findOrphans: 'findOrphans',
+} as const;

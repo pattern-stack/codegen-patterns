@@ -1,0 +1,8 @@
+{
+	"case": "matrix-discriminator-no-child",
+	"covers": "a `discriminator:` base with no child table: no cross-kind reads, no typed include",
+	"relations": [],
+	"unmodelled": [],
+	"warnings": [],
+	"includes": {}
+}

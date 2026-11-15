@@ -107,7 +107,8 @@ these details:
   (kind `role`, `includeKeys: []`); every other relation comes from REL-1's edges, as decided.
 - **The copies are gone.** The `queries:` finder name has one rule (`finderName`; `src/schema/query-routes.ts` and
   `deriveQueryMethodName` deleted, #711); `apiEnabled`, `declaresOwnRelation` and `includesConstName` have one reader
-  each under `src/derived/api/`; `route-name-parity.test.ts`, which compared the copies, is deleted. The entity
+  each under `src/derived/api/` (*revision 2026-11-15:* `declaresOwnRelation` is replaced by `hasTypedInclude`, which also
+  counts a family and role edges, RFC-0006 #875); `route-name-parity.test.ts`, which compared the copies, is deleted. The entity
   backend, `prompt.js` and the junction fan-out helper (`templates/_shared/junction-fan-out.mjs`) take their case
   primitives from `src/config/file-naming.ts` / `src/derived/api/names.ts`; the allowlist has no entry for any of them.
 - **Type text beside the names (decision 4).** A template prints a derived name and takes the TypeScript beside it

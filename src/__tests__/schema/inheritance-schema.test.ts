@@ -14,7 +14,7 @@ const joined = (issues: string[]) => issues.join('\n');
 
 describe('the keys', () => {
 	it('every fixture parses through the schema', () => {
-		expect(loadFamily().length).toBe(12);
+		expect(loadFamily().length).toBe(13);
 	});
 
 	it('inherits: short and long form', () => {

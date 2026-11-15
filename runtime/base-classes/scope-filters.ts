@@ -69,7 +69,31 @@ export type ScopeConfig = TenantAxis & {
   userTracking: boolean;
   /** What a MISSING ambient context means: silence, or a throw. */
   enforcement: 'lenient' | 'strict';
+  /**
+   * `inherits:` (RFC-0006 §2.3) — the BASE's lifecycle scope, for a child table.
+   * `soft_delete` and `user_tracking` live on the base only, with no copy on the
+   * child (`deleted_at` is mutable, a copy would drift), so a child row is in
+   * scope only if its base row is. Emitted only when the base declares one of
+   * them; a tenant-only family emits nothing here, because the child's own tenant
+   * column carries the tenant axis.
+   */
+  baseScope?: BaseScope;
 };
+
+/**
+ * The base-row half of a child's scope: `EXISTS (SELECT 1 FROM <base> b WHERE
+ * b.id = <child>.id AND <the base's soft-delete / user axes on b>)`. The tenant
+ * axis is not repeated — the child's own tenant column is pinned to the base's by
+ * a composite FK.
+ */
+export interface BaseScope {
+  /** The base table, as exported from the generated schema. */
+  table: PgTable;
+  /** The base's `soft_delete` behavior. */
+  softDelete: boolean;
+  /** The base's `user_tracking` behavior. */
+  userTracking: boolean;
+}
 
 /**
  * The tenant half of a scope declaration, as a union the compiler enforces:
@@ -93,7 +117,7 @@ export type TenantAxis =
 
 /** A config with nothing on — no predicate, no `where` emitted for it. */
 export function isUnscoped(cfg: ScopeConfig): boolean {
-  return !cfg.tenantScoped && !cfg.softDelete && !cfg.userTracking;
+  return !cfg.tenantScoped && !cfg.softDelete && !cfg.userTracking && cfg.baseScope === undefined;
 }
 
 /**
@@ -185,8 +209,41 @@ export function userScopePredicateFor(
 }
 
 /**
+ * A child table's base-row guard (RFC-0006 §2.3): the child's row is in scope
+ * only while its base row is. One `EXISTS` on the primary key, so it is one
+ * statement and it rides every call site of {@link scopeFilter} — the root and
+ * every hop — from this one place (charter I3, I4).
+ *
+ * `undefined` when the config carries no base scope, or when the base's own
+ * guards resolve to nothing (a `user_tracking` base read under `lenient` with no
+ * ambient context, or a superuser) and it declares no `soft_delete`.
+ *
+ * The subquery names the base by its real table name. Inside the subquery that
+ * name is the innermost FROM entry, so it also holds when the outer query is
+ * aliased (RQBv2's `"d0"`).
+ */
+function baseScopePredicate(
+  table: PgTable,
+  cfg: ScopeConfig,
+  owner: string,
+): SQL | undefined {
+  const base = cfg.baseScope;
+  if (base === undefined) return undefined;
+  const guards: SQL[] = [];
+  if (base.softDelete) guards.push(isNull(column(base.table, 'deletedAt', owner)));
+  if (base.userTracking) {
+    const user = userScopePredicateFor(base.table, cfg.enforcement, owner);
+    if (user) guards.push(user);
+  }
+  if (guards.length === 0) return undefined;
+  const sameRow = eq(column(base.table, 'id', owner), column(table, 'id', owner));
+  return sql`exists (select 1 from ${base.table} where ${and(sameRow, ...guards)})`;
+}
+
+/**
  * The full scope predicate for one table: soft-delete, then the user axis, then
- * the tenant axis. `undefined` when nothing applies.
+ * the tenant axis, then (for an inheriting child) the base row's own scope.
+ * `undefined` when nothing applies.
  *
  * Conjunct order is fixed (and asserted) so the SQL a query renders is stable
  * whichever of the three call sites built it.
@@ -207,6 +264,9 @@ export function scopeFilter(
 
   const tenant = tenantAxisPredicate(table, cfg, owner);
   if (tenant) conditions.push(tenant);
+
+  const inherited = baseScopePredicate(table, cfg, owner);
+  if (inherited) conditions.push(inherited);
 
   if (conditions.length === 0) return undefined;
   if (conditions.length === 1) return conditions[0];
