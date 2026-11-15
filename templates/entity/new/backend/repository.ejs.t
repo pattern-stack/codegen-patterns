@@ -5,43 +5,28 @@ force: true
 <%- generatedBanner %>
 import { Injectable, Inject } from '@nestjs/common';
 <%_
-// CGP-358: FK methods with opts take priority over same-named declarative query impl.
-// Always emit FK methods; skip declarative body when FK covers same name.
-const _fkMethods = belongsTo;
-const _fkMethodNames = new Set(_fkMethods.map(rel => {
-  const _p = rel.camelField.charAt(0).toUpperCase() + rel.camelField.slice(1);
-  return `findBy${_p}`;
-}));
-// A declarative query and an FK-traversal method can resolve to the SAME method
-// name (e.g. `findByFieldDefinitionId` from both a `belongs_to` FK and an
-// explicit `queries: [{ by: [field_definition_id], unique: true }]`). Emitting
-// both is a duplicate function implementation (TS2393). Exactly one wins:
-//   - plain non-unique single-param declarative → FK method wins (it accepts
-//     `opts` and is a superset), the declarative impl is skipped (CGP-358, the
-//     `_skipClpDq` flag below);
-//   - unique / via / select declarative → the declarative is the more specific
-//     intent (single-row return, junction join, projection), so IT wins and the
-//     FK-traversal method is skipped here.
-const _emittedDqNames = new Set(
-  processedQueries
-    .filter((q) => q.isUnique || q.hasVia || q.hasSelect)
-    .map((q) => q.methodName),
-);
-const _skipFkMethod = (name) => _emittedDqNames.has(name);
+// ADR-046 — this template PRINTS the repository's methods. Which methods exist,
+// what each is called and its parameter names come from `apiSurface`
+// (`src/derived/api/`), including the `queries:` × `belongs_to` precedence (a
+// plain finder and an FK finder resolving to one name emit once). The TS text
+// beside them comes from `queryTypes`, keyed by the derived name (PLAN §4.3).
+const _methods = apiSurface.repository.methods.filter((m) => m.emitted);
 // READ-1: a plain ordered finder now orders through RQBv2's `orderBy` object, so
 // `asc`/`desc` are needed only by an ordered `via:` / `select:` finder.
-const _needsOrderFns = processedQueries.some((q) => q.hasOrder && (q.hasVia || q.hasSelect));
+const _needsOrderFns = _methods.some((m) => m.kind === 'finder_projection' && queryTypes[m.name].order);
+const _firstFkFinder = _methods.find((m) => m.kind === 'fk_finder');
 const E = classNames.entity;
 // READ-1 §2.3 — the generic parameters, options and result of every shaped read.
 // `with` exists only where REL-2 §2.5 allows it; `columns` everywhere.
 // `with` first, `columns` second — everywhere, the order `<Entity>Result` takes,
 // so REL-2's `<Entity>Result<W>` keeps its meaning.
-const _readGenerics = includes
+const _typedInclude = apiSurface.repository.typedInclude;
+const _readGenerics = _typedInclude
   ? `<W extends ${E}Include = ${E}NoInclude, C extends ${E}Columns | undefined = undefined>`
   : `<C extends ${E}Columns | undefined = undefined>`;
-const _readOpts = includes ? 'ReadOptions<W, C>' : 'ReadOptions<never, C>';
-const _readResult = includes ? `${E}Result<W, C>` : `${E}Result<${E}NoInclude, C>`;
-const _withLine = includes ? '\n      with: opts?.with,' : '';
+const _readOpts = _typedInclude ? 'ReadOptions<W, C>' : 'ReadOptions<never, C>';
+const _readResult = _typedInclude ? `${E}Result<W, C>` : `${E}Result<${E}NoInclude, C>`;
+const _withLine = _typedInclude ? '\n      with: opts?.with,' : '';
 _%>
 <%# READ-1: `eq` / `inArray` are unconditional — `findById` / `findByIds` use them. %>
 import { eq, inArray<%= hasMultiFieldQuery ? ', and' : '' %><%= _needsOrderFns ? ', desc, asc' : '' %> } from 'drizzle-orm';
@@ -264,7 +249,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
   // ═══════════════════════════════════════════════════════════════════════
   // The read surface (READ-1, docs/specs/READ-1.md; REL-2 #587)
   //
-  // Every read takes the same shape knobs — a root `columns` mask<% if (includes) { %> and a
+  // Every read takes the same shape knobs — a root `columns` mask<% if (_typedInclude) { %> and a
   // typed `with` include<% } %> — inferred at the call site. The signatures live HERE,
   // not on the base: with `TRelations` and the table key as naked type
   // parameters, `DBQueryConfig<…>['with']` is a TS2536 (REL-2 §2.1).
@@ -283,16 +268,21 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
   // one. The depth cap is an HTTP concern (`api.includes.max_depth`).
   // ═══════════════════════════════════════════════════════════════════════
 
-  override async findById<%- _readGenerics %>(
-    id: string,
+<%_ /* ADR-046: one loop over the derived, emitted repository methods; `m.kind`
+      chooses the body. Names and parameter names are printed, never built. */ _%>
+<%_ _methods.forEach((m) => { _%>
+<%_ if (m.kind === 'find_by_id') { _%>
+  override async <%= m.name %><%- _readGenerics %>(
+    <%= m.params[0].name %>: string,
     opts?: <%- _readOpts %>,
   ): Promise<<%- _readResult %> | null> {
     const row = await this.db.query.<%= entityNamePlural %>.findFirst({
-      where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
+      where: { RAW: this.rootFilter((t) => eq(t.id, <%= m.params[0].name %>)) },
       columns: this.checkColumns<C>(opts?.columns),<%- _withLine %>
     });
     return (row as <%- _readResult %> | undefined) ?? null;
   }
+<%_ } else if (m.kind === 'find_by_ids') { _%>
 
   /**
    * One statement for many ids (READ-1 §2.4): `[]` issues none (after the scope's
@@ -302,11 +292,11 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
    * is selected and stripped again. Not chunked: Postgres caps a statement at
    * 65 535 parameters.
    */
-  override async findByIds<%- _readGenerics %>(
-    ids: readonly string[],
+  override async <%= m.name %><%- _readGenerics %>(
+    <%= m.params[0].name %>: readonly string[],
     opts?: <%- _readOpts %>,
   ): Promise<Array<<%- _readResult %>>> {
-    const unique = this.uniqueIds(ids);
+    const unique = this.uniqueIds(<%= m.params[0].name %>);
     if (unique.length === 0) {
       // No statement — but the same boundary check one would make (strict throws).
       this.assertReadScope();
@@ -319,24 +309,26 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
     });
     return this.inInputOrder(rows, unique, mask.stripId) as Array<<%- _readResult %>>;
   }
+<%_ } else if (m.kind === 'list') { _%>
 
   /**
    * `where` is a ROW FILTER — `(t) => eq(t.name, x)` — never a pre-rendered SQL:
    * it is handed the aliased root. `sort` is column keys, rendered the same way.
    */
-  override async list<%- _readGenerics %>(
-    query?: ListOptions<typeof <%= entityNamePlural %>> & <%- _readOpts %>,
+  override async <%= m.name %><%- _readGenerics %>(
+    <%= m.params[0].name %>?: ListOptions<typeof <%= entityNamePlural %>> & <%- _readOpts %>,
   ): Promise<Array<<%- _readResult %>>> {
-    const sort = query?.sort;
+    const sort = <%= m.params[0].name %>?.sort;
     const rows = await this.db.query.<%= entityNamePlural %>.findMany({
-      where: { RAW: this.rootFilter(query?.where) },
-      columns: this.checkColumns<C>(query?.columns),<%- includes ? '\n      with: query?.with,' : '' %>
+      where: { RAW: this.rootFilter(<%= m.params[0].name %>?.where) },
+      columns: this.checkColumns<C>(<%= m.params[0].name %>?.columns),<%- _typedInclude ? `\n      with: ${m.params[0].name}?.with,` : '' %>
       orderBy: sort === undefined || sort.length === 0 ? undefined : (t) => this.orderByOn(t, sort) ?? [],
-      limit: query?.limit,
-      offset: query?.offset,
+      limit: <%= m.params[0].name %>?.limit,
+      offset: <%= m.params[0].name %>?.offset,
     });
     return rows as Array<<%- _readResult %>>;
   }
+<%_ } else if (m.kind === 'count') { _%>
 
   /**
    * `where` is a ROW FILTER over THIS table. Overridden only to type it: inside a
@@ -344,46 +336,51 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
    * another table's filter through — and, where column names coincide, count on
    * the wrong predicate (READ-1 review R-1).
    */
-  override async count(where?: RowFilter<typeof <%= entityNamePlural %>>): Promise<number> {
-    return super.count(where);
+  override async <%= m.name %>(<%= m.params[0].name %>?: RowFilter<typeof <%= entityNamePlural %>>): Promise<number> {
+    return super.<%= m.name %>(<%= m.params[0].name %>);
   }
+<%_ /* The section banner prints whenever the YAML declares a by-column finder,
+      even one that lost its name to an FK finder below. */ _%>
 <% if (hasDeclarativeQueries) { -%>
 
   // ═══════════════════════════════════════════════════════════════════════
   // Declarative queries (from queries: block in entity YAML)
   // ═══════════════════════════════════════════════════════════════════════
-<%_ processedQueries.forEach((q) => { _%>
+<% } -%>
+<%_ } else if (m.kind === 'finder' || m.kind === 'finder_projection') { _%>
 <%_
-// CGP-358: Skip declarative impl when a FK method covers this method name.
-// FK methods accept opts, making them a superset of a plain non-unique single-param query.
-const _skipClpDq = _fkMethodNames.has(q.methodName) && !q.isUnique && !q.hasVia && !q.hasSelect;
-const _pred = q.params.map(p => `eq(t.${p.camelName}, ${p.camelName})`);
-const _predExpr = q.hasMultipleParams ? `and(${_pred.join(', ')})` : _pred[0];
+// The `by:` columns are the parameters that bind a field; their TS types come
+// from `queryTypes`, in the same order.
+const _t = queryTypes[m.name];
+const _cols = m.params.filter((p) => p.field !== undefined);
+const _sig = _cols.map((p, i) => `${p.name}: ${_t.params[i].tsType}`).join(', ');
+const _multi = _cols.length > 1;
+const _pred = _cols.map((p) => `eq(t.${p.name}, ${p.name})`);
+const _predExpr = _multi ? `and(${_pred.join(', ')})` : _pred[0];
 _%>
-<%_ if (!_skipClpDq) { _%>
 <%_ /* A plain by-column finder takes the read options (READ-1 §2.3). A `select:`
       projection returns picked fields and a `via:` finder joins a junction with
       its own query, so neither carries them — REL-2 §5.4: the read surface
       exposes SHAPES, not queries. */ _%>
-<%_ if (q.hasVia || q.hasSelect) { _%>
+<%_ if (m.kind === 'finder_projection') { _%>
 
-  async <%= q.methodName %>(<%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
-<% if (q.isUnique) { -%>
-    const rows = await this.baseQuery(<%- q.hasMultipleParams ? 'and(' : '' %><%- q.params.map(p => `eq(this.table['${p.camelName}'], ${p.camelName})`).join(', ') %><%- q.hasMultipleParams ? ')' : '' %>)
+  async <%= m.name %>(<%- _sig %>): Promise<<%- _t.returnType %>> {
+<% if (m.unique) { -%>
+    const rows = await this.baseQuery(<%- _multi ? 'and(' : '' %><%- _cols.map(p => `eq(this.table['${p.name}'], ${p.name})`).join(', ') %><%- _multi ? ')' : '' %>)
       .limit(1);
     return (rows[0] as <%= classNames.entity %>) ?? null;
 <% } else { -%>
-    const rows = await this.baseQuery(<%- q.hasMultipleParams ? 'and(' : '' %><%- q.params.map(p => `eq(this.table['${p.camelName}'], ${p.camelName})`).join(', ') %><%- q.hasMultipleParams ? ')' : '' %>)<%- q.hasOrder ? `.orderBy(${q.orderDirection}(this.table['${q.orderBy}']))` : '' %>;
+    const rows = await this.baseQuery(<%- _multi ? 'and(' : '' %><%- _cols.map(p => `eq(this.table['${p.name}'], ${p.name})`).join(', ') %><%- _multi ? ')' : '' %>)<%- _t.order ? `.orderBy(${_t.order.direction}(this.table['${_t.order.property}']))` : '' %>;
     return rows as <%= classNames.entity %>[];
 <% } -%>
   }
 <%_ } else { _%>
 
-  async <%= q.methodName %><%- _readGenerics %>(
-    <%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>,
+  async <%= m.name %><%- _readGenerics %>(
+    <%- _sig %>,
     opts?: <%- _readOpts %>,
-  ): Promise<<%- q.isUnique ? `${_readResult} | null` : `Array<${_readResult}>` %>> {
-<% if (q.isUnique) { -%>
+  ): Promise<<%- m.unique ? `${_readResult} | null` : `Array<${_readResult}>` %>> {
+<% if (m.unique) { -%>
     const row = await this.db.query.<%= entityNamePlural %>.findFirst({
       where: { RAW: this.rootFilter((t) => <%- _predExpr %>) },
       columns: this.checkColumns<C>(opts?.columns),<%- _withLine %>
@@ -393,16 +390,18 @@ _%>
     const rows = await this.db.query.<%= entityNamePlural %>.findMany({
       where: { RAW: this.rootFilter((t) => <%- _predExpr %>) },
       columns: this.checkColumns<C>(opts?.columns),<%- _withLine %>
-<%- q.hasOrder ? `      orderBy: { ${q.orderBy}: '${q.orderDirection}' },\n` : '' %>    });
+<%- _t.order ? `      orderBy: { ${_t.order.property}: '${_t.order.direction}' },\n` : '' %>    });
     return rows as Array<<%- _readResult %>>;
 <% } -%>
   }
 <%_ } _%>
-<%_ } _%>
-<%_ }) _%>
-<% } -%>
-<%_ const _emittedFkMethods = _fkMethods.filter(rel => !_skipFkMethod(`findBy${rel.camelField.charAt(0).toUpperCase() + rel.camelField.slice(1)}`)); _%>
-<%_ if (_emittedFkMethods.length > 0) { _%>
+<%_ } else if (m.kind === 'fk_finder') { _%>
+<%_
+// The FK column's property is the `belongs_to` entry's own, found by the
+// foreign key the derivation names.
+const _fkColumn = belongsTo.find((rel) => rel.field === m.params[0].field).camelField;
+_%>
+<%_ if (m === _firstFkFinder) { _%>
 
   // ═══════════════════════════════════════════════════════════════════════
   // FK traversal methods (from belongs_to relationships — CGP-358b)
@@ -410,14 +409,14 @@ _%>
   // A FK method whose name collides with a unique/via/select declarative query
   // is skipped — that declarative query is the more specific intent and wins.
   // ═══════════════════════════════════════════════════════════════════════
-<%_ _emittedFkMethods.forEach(rel => { _%>
+<%_ } _%>
 
-  async findBy<%= rel.camelField.charAt(0).toUpperCase() + rel.camelField.slice(1) %><%- _readGenerics %>(
-    id: string,
+  async <%= m.name %><%- _readGenerics %>(
+    <%= m.params[0].name %>: string,
     opts?: { limit?: number } & <%- _readOpts %>,
   ): Promise<Array<<%- _readResult %>>> {
     const rows = await this.db.query.<%= entityNamePlural %>.findMany({
-      where: { RAW: this.rootFilter((t) => eq(t.<%= rel.camelField %>, id)) },
+      where: { RAW: this.rootFilter((t) => eq(t.<%= _fkColumn %>, <%= m.params[0].name %>)) },
       columns: this.checkColumns<C>(opts?.columns),<%- _withLine %>
       // A `limit` without an order is an arbitrary subset; `id` makes it one.
       orderBy: opts?.limit === undefined ? undefined : { id: 'asc' },
@@ -425,9 +424,7 @@ _%>
     });
     return rows as Array<<%- _readResult %>>;
   }
-<%_ }) _%>
-<%_ } _%>
-<% if (eavValueTable) { -%>
+<%_ } else if (m.kind === 'eav_upsert') { _%>
 
   // ═══════════════════════════════════════════════════════════════════════
   // EAV compound writes (task #23) — generated from eav_value_table: true
@@ -440,15 +437,15 @@ _%>
    * supports single-column conflict targets — this override uses
    * Drizzle's `onConflictDoUpdate` with an explicit column list.
    */
-  async upsertCurrentValues(
-    inputs: Array<globalThis.Partial<<%= classNames.entity %>>>,
-    tx?: DrizzleTx,
+  async <%= m.name %>(
+    <%= m.params[0].name %>: Array<globalThis.Partial<<%= classNames.entity %>>>,
+    <%= m.params[1].name %>?: DrizzleTx,
   ): Promise<<%= classNames.entity %>[]> {
-    if (inputs.length === 0) return [];
-    const data = inputs.map((input) =>
+    if (<%= m.params[0].name %>.length === 0) return [];
+    const data = <%= m.params[0].name %>.map((input) =>
       this.withTimestamps(input as globalThis.Record<string, unknown>, 'create'),
     );
-    const runner = this.runner(tx);
+    const runner = this.runner(<%= m.params[1].name %>);
     const rows = await runner
       .insert(this.tableRef)
       .values(data)
@@ -467,7 +464,8 @@ _%>
       .returning();
     return rows as <%= classNames.entity %>[];
   }
-<% } -%>
+<%_ } _%>
+<%_ }) _%>
 
   // Inherited from <%= repositoryBaseClass %>:
 <%_ repositoryInheritedMethods.forEach(line => { _%>

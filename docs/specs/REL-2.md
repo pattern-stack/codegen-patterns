@@ -816,6 +816,11 @@ three times in the hygen half. `src/schema/query-routes.ts` is the fourth, pinne
 `route-name-parity.test.ts`. Filed as **#711** — the collapse onto one `.mjs` twin (the `runtime-mode.mjs` pattern) is a
 refactor across three pipelines, not this PR's.
 
+**Revision (2026-11-14, ADR-046 B2):** resolved. #711 closed as one TypeScript rule rather than an `.mjs` twin —
+`finderName` in `src/derived/api/names.ts`, which hygen imports by a `.js` specifier as it does `file-naming.ts`.
+`entity-locals.js`, `templates/relationship/new/prompt.js` and `build-includes.ts#readRouteKeys` all read it;
+`src/schema/query-routes.ts` and the finder half of `route-name-parity.test.ts` are deleted.
+
 ### Found #8 — two harness facts the scaffold needed for a generated controller
 
 Mounting a generated module in the scaffold's Nest app surfaced two gaps, both fixed here:

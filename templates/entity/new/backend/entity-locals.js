@@ -18,14 +18,13 @@ import { renderSqlPredicate } from '../../../_shared/sql-predicate.mjs';
 // library-shipped patterns (Base / Integrated / Activity / Knowledge /
 // Metadata). App-defined patterns are loaded separately in the parent
 // prompt.js via loadAppPatterns() against `codegen.config.yaml patterns:`
-// globs before this helper runs — we only read the registry here.
-import { getPattern } from '../../../../src/patterns/registry.js';
-import {
-  composePatterns,
-  declaredPatternNames,
-  detectMethodCollisions,
-} from '../../../../src/patterns/compose.js';
+// globs before this helper runs — we only read the registry here, through
+// `resolvePatternComposition`.
+import { detectMethodCollisions } from '../../../../src/patterns/compose.js';
+import { resolvePatternComposition } from '../../../../src/patterns/resolve-composition.js';
 import '../../../../src/patterns/library/index.js';
+import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
+import { finderName, fkFinderName } from '../../../../src/derived/api/names.js';
 import { camelCase, emittedStem } from '../../../../src/config/file-naming.js';
 import { resolveImpliedBehaviors } from '../../../../src/patterns/implied-behaviors.js';
 import {
@@ -255,63 +254,16 @@ export function resolveLibraryCapabilityConfig(cap, ctx) {
   return null;
 }
 
-/**
- * Resolve an entity's composition (ADR-041): one inherited **spine** plus N
- * layered **capabilities**.
- *
- * Replaces the PATTERN-5 `resolvePatternBaseClasses()`, whose rule was
- * positional — `patterns[0]` won the base class and every later pattern's
- * `repositoryClass` / `serviceClass` was silently dropped. Two things changed
- * (ADR-041 §2/§3):
- *
- *   - the spine is the declared domain pattern that contributes an inheritable
- *     base, *wherever it sits in the list*, and two of them is a hard error
- *     rather than a silent drop;
- *   - a `kind: 'capability'` pattern is layered as a repository mixin and/or a
- *     set of service forwarders instead of being dropped.
- *
- * Throws on a composition error. Generation time is ADR-041 §4's authoritative
- * gate — `validatePatternComposition()` reports the same errors earlier and
- * more cheaply, but nothing forces a consumer to run it before `entity new`.
- *
- * Exported for unit-testing; consumers import `buildBackendLocals`.
- */
+/** A spine's comma-separated inherited-method lines, as single names. Exported for unit-testing. */
 export function splitMethodList(lines) {
   return (lines ?? []).flatMap((line) =>
     line.split(',').map((m) => m.trim()).filter(Boolean),
   );
 }
 
-export function resolvePatternComposition(entity) {
-  const names = declaredPatternNames(entity);
-  const composed = composePatterns(names, getPattern, { entity: entity.name });
-
-  if (composed.errors.length > 0) {
-    throw new Error(
-      `[codegen] pattern composition failed for '${entity.name}':\n  ` +
-      composed.errors.map((e) => e.message).join('\n  '),
-    );
-  }
-
-  const def = composed.spine;
-  if (!def) {
-    throw new Error(
-      `Pattern '${composed.spineName}' is not registered, and the library 'Base' ` +
-      `pattern is also missing. Did the patterns barrel fail to load?`,
-    );
-  }
-
-  return {
-    patternName: def.name,
-    repositoryBaseClass: def.repositoryClass,
-    serviceBaseClass: def.serviceClass,
-    repositoryBaseImport: def.repositoryImport,
-    serviceBaseImport: def.serviceImport,
-    repositoryInheritedMethods: def.repositoryInheritedMethods ?? [],
-    serviceInheritedMethods: def.serviceInheritedMethods ?? [],
-    capabilities: composed.capabilities,
-  };
-}
+// `resolvePatternComposition` lives in `src/patterns/resolve-composition.ts` — one function for hygen and the
+// CLI's derivation (ADR-046). Re-exported here for the callers that reach it through this module.
+export { resolvePatternComposition };
 
 // ============================================================================
 // Helper utilities
@@ -1247,26 +1199,6 @@ function zodChainForOutput(field) {
 // ============================================================================
 
 /**
- * Derive repository method name from a declarative query definition.
- * E.g., { by: ['user_id'] } → 'findByUserId'
- *       { by: ['email'], unique: true } → 'findByEmail'
- *       { by: ['opportunity_id'], select: ['email'] } → 'findEmailsByOpportunityId'
- */
-function deriveQueryMethodName(query) {
-  const byFields = Array.isArray(query.by) ? query.by : [];
-  const selectFields = Array.isArray(query.select) ? query.select : [];
-
-  const byPart = byFields.map((f) => pascalCase(f)).join('And');
-
-  if (selectFields.length > 0) {
-    const selectPart = selectFields.map((f) => pascalCase(f)).join('And') + 's';
-    return `find${selectPart}By${byPart}`;
-  }
-
-  return `findBy${byPart}`;
-}
-
-/**
  * Process declarative queries from YAML queries: block.
  * Produces typed query metadata for template generation.
  */
@@ -1302,7 +1234,8 @@ function processQueries(queriesBlock, processedFields, entityNamePascal) {
       orderDirection = parts[1] || 'asc';
     }
 
-    const methodName = deriveQueryMethodName(q);
+    // The finder's name is the derivation's (ADR-046, #711) — one rule, `src/derived/api/names.ts`.
+    const methodName = finderName({ by: byFields, select: selectFields });
 
     let returnType;
     if (isUnique) {
@@ -2474,7 +2407,7 @@ export function buildBackendLocals(definition, baseLocals) {
   //
   // Only collisions INVOLVING a capability are errors here — the `queries:` ×
   // FK-traversal overlap is pre-existing and resolved by the precedence rule
-  // documented in repository.ejs.t, not an undetected clash.
+  // derived in src/derived/api/entity.ts (ADR-046), not an undetected clash.
   const compositionCollisions = detectMethodCollisions([
     ...patternBase.capabilities
       .filter((cap) => (cap.forwarderMethods ?? []).length > 0)
@@ -2499,9 +2432,7 @@ export function buildBackendLocals(definition, baseLocals) {
     {
       // repository.ejs.t's FK-traversal methods, one per belongs_to.
       source: 'an FK-traversal method',
-      methods: belongsTo.map(
-        (rel) => `findBy${rel.camelField.charAt(0).toUpperCase()}${rel.camelField.slice(1)}`,
-      ),
+      methods: belongsTo.map((rel) => fkFinderName(rel.field)),
       capability: false,
     },
     // The two spine sides stay SEPARATE vocabularies so the error names the one
@@ -2526,6 +2457,34 @@ export function buildBackendLocals(definition, baseLocals) {
       compositionCollisions.map((e) => e.message).join('\n  '),
     );
   }
+
+  // ADR-046 — the generated API surface, derived once (`src/derived/api/`). Every
+  // method name the repository prints, and whether it is emitted at all, comes
+  // from here; the templates loop over it and choose a body by `kind`. Built
+  // from what this function already holds: the definition, the junction set,
+  // the resolved composition, the has_many targets that will exist, and the
+  // cross-entity lookup.
+  const apiSurface = deriveEntityApiSurface({
+    definition,
+    junctions: baseLocals.junctions ?? [],
+    composition: patternBase,
+    wiredTargets: hasMany.filter((r) => r.targetExists).map((r) => r.target),
+    entityLookup: (name) => (entityLookup ? entityLookup(name) : null),
+  });
+  // The TS text a `queries:` finder prints beside the derivation's names (PLAN
+  // §4.3), keyed by the DERIVED method name: per `by:` column its param type, the
+  // return type, and the `order:` the body sorts by. Type text, not names —
+  // slice 2 absorbs it.
+  const queryTypes = Object.fromEntries(
+    processedQueries.map((q) => [
+      q.methodName,
+      {
+        params: q.params.map((p) => ({ tsType: p.tsType })),
+        returnType: q.returnType,
+        order: q.hasOrder ? { property: q.orderBy, direction: q.orderDirection } : null,
+      },
+    ]),
+  );
 
   const backendLocals = {
     // NAME-2 — emitted file stems (kebab-case). The `*Name*` locals beside
@@ -2674,6 +2633,10 @@ export function buildBackendLocals(definition, baseLocals) {
     fieldFkImports,
     belongsToTableImports,
     tableConstraints,
+
+    // ADR-046: the derived API surface, and the finder type text keyed by it
+    apiSurface,
+    queryTypes,
 
     // Declarative queries
     processedQueries,

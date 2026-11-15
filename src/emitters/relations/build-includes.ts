@@ -26,7 +26,7 @@ import {
   apiIncludes,
   type EntityDefinition,
 } from '../../schema/entity-definition.schema';
-import { deriveQueryMethodName } from '../../schema/query-routes';
+import { finderName } from '../../derived/api/names';
 import type { RelationGraph } from './build-graph';
 import { levenshtein } from '../../utils/edit-distance';
 import { camelCase, type RelationEdge, type RelationsEmitContext } from './types';
@@ -79,7 +79,7 @@ export interface CompiledEntityIncludes {
 export function readRouteKeys(def: EntityDefinition): string[] {
   const finders = (def.queries ?? [])
     .filter((q): q is Extract<typeof q, { by: string[] }> => 'by' in q)
-    .map((q) => deriveQueryMethodName(q));
+    .map((q) => finderName(q));
   return ['find_by_id', 'list', ...finders];
 }
 

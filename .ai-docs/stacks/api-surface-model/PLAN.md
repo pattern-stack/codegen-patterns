@@ -1,6 +1,6 @@
 # PLAN — backend API-surface derivation (slice 1) + Studio API view
 
-**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · A0–A6 and B1 built · S1 and S2 signed off 2026-11-14 · A6 (#778) added to Phase A by Doug 2026-11-14
+**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · Phase A (A0–A6) merged 2026-11-14 (`main` @ `c8da953a`) · B1, B2 built · S1, S2, S3 signed off 2026-11-14 · A6 (#778) added to Phase A by Doug 2026-11-14
 **Basis:** `main` @ `c1ceeefd`. READ-1 merged 2026-11-12 (#859 and the ten PRs under it). Every `path:line`
 below was taken at the READ-1 tip `e9fe6f5f`; every cited file is byte-identical on `main` (checked one by one
 with `git diff --quiet e9fe6f5f c1ceeefd -- <file>`), so the line numbers hold.
@@ -395,7 +395,7 @@ every "is this emitted" test.
 
 | Template | Inline derivation today | Becomes |
 |---|---|---|
-| `repository.ejs.t` | FK-finder name set, the shadowing set, `_skipFkMethod` (`:10-30`); `_skipClpDq` (`:359`); FK name again (`:404`, `:415`); `processedQueries` loop (`:355-402`); inherited comment (`:472-475`) | one loop over the emitted `apiSurface.repository.methods`, a `switch (m.kind)` choosing the body partial; types from `queryTypes[m.name]` |
+| `repository.ejs.t` | FK-finder name set, the shadowing set, `_skipFkMethod` (`:10-30`); `_skipClpDq` (`:359`); FK name again (`:404`, `:415`); `processedQueries` loop (`:355-402`); inherited comment (`:472-475`) | one loop over the emitted `apiSurface.repository.methods`, a `switch (m.kind)` choosing the body partial; types from `queryTypes[m.name]`. *As built (B2):* an if/else chain on `m.kind` in the template, not body partials; the declarative-queries banner prints in the `count` branch (gated on `hasDeclarativeQueries`) and the FK banner on the first `fk_finder`, to keep bytes; `queryTypes` also carries each finder's raw `order` (the derivation normalises direction to asc/desc); the inherited comment still reads `repositoryInheritedMethods` (named expectation, #893). `resolvePatternComposition` moved to `src/patterns/resolve-composition.ts` (re-exported by `entity-locals.js`); `project.ts`'s restated copy is deleted (`patternComposition` stays as an 8-line projection a frozen test imports). |
 | `service.ejs.t` | query forwarders (`:127-142`); capability forwarders (`:155-163`); inline camel-casing and callee name (`:176-177`, `:196-197`, `:206-208`); fan-out names (`:235-264`); EAV blocks gated on locals (`:268`, `:300`) | one loop over `apiSurface.service.methods`; `delegatesTo.method` printed, never built |
 | `use-cases/declarative-queries.ejs.t` | `q.useCaseClassName`, `q.methodName` (`:19-34`) | `apiSurface.useCases` of kind `query` |
 | `controller.ejs.t` | `skip_if` on `apiEnabled` (`:3`); routes and operationIds literal; include wiring on `apiIncludeRoutes.includes(...)` (`:97`, `:126`, `:158`, `:173`) | `skip_if` on `apiSurface.http.enabled`; route facts read from `apiSurface.http.routes`; the Swagger text stays |
@@ -883,11 +883,11 @@ named.
 | Check | Expected |
 |---|---|
 | Frozen: `git diff --stat $B1..HEAD -- test/baseline test/junction/__snapshots__ test/render-golden test/api-surface-golden src/__tests__/derived src/__tests__/templates/no-name-derivation-in-templates.test.ts test/run-test.ts test/smoke/_consumer-errors.ts` | empty |
-| `grep -cE 'charAt\(0\)\.toUpperCase\(\)\|processedQueries\|_fkMethodNames\|_skipFkMethod\|_skipClpDq\|repositoryInheritedMethods' templates/entity/new/backend/repository.ejs.t` | `0` |
+| `grep -cE 'charAt\(0\)\.toUpperCase\(\)\|processedQueries\|_fkMethodNames\|_skipFkMethod\|_skipClpDq\|repositoryInheritedMethods' templates/entity/new/backend/repository.ejs.t` | `1` — the one `repositoryInheritedMethods` reference, pinned by the named expectation `src/__tests__/templates/inherited-comment-expectation.test.ts` (#893) to exactly one occurrence, on the `// Inherited from <Base>:` comment. *(Corrected 2026-11-14, owner-approved: the comment prints the pattern's declared lines verbatim; the derivation's `inherited` entries are split and omit emitted methods, so it cannot print byte-identically from `apiSurface` in Phase B. #893 moves it after Phase B.)* |
 | `test -e src/schema/query-routes.ts; echo $?` | `1` |
 | `grep -rn 'function deriveQueryMethodName' templates src` | no output |
 | `git diff --numstat $B1..HEAD -- src/__tests__/templates/no-name-derivation.allowlist.ts \| cut -f1` | `0` (no added line) |
-| `grep -c 'repository.ejs.t' src/__tests__/templates/no-name-derivation.allowlist.ts` | `0` |
+| `grep -c 'entity/new/backend/repository.ejs.t' src/__tests__/templates/no-name-derivation.allowlist.ts` | `0` *(Corrected 2026-11-14, owner-approved: the original `'repository.ejs.t'` also matched `templates/junction/new/repository.ejs.t`, #679's entry, which predates B2 — it could never have printed `0`.)* |
 | G8 `just test-post-publish` | exit 0 |
 | **Mutation — the template now reads the derivation.** In `finderName()` in `src/derived/api/names.ts`, change the prefix `findBy` to `findByX`; `git diff --stat` shows that file only, `1 insertion(+), 1 deletion(-)`. Then `bun test/run-test.ts generate && bun test/run-test.ts compare` | exit 1; output contains `❌ Content differs: packages/api/src/modules/contacts/contact.repository.ts` and `❌ Content differs: packages/api/src/modules/deals/deal.repository.ts` |
 
