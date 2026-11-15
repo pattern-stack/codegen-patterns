@@ -36,6 +36,7 @@ import '../../../../src/patterns/library/index.js';
 import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
 import {
   familyConstName,
+  familyHelperName,
   dtoFileStem,
   dtoSchemaNames,
   finderName,
@@ -2983,6 +2984,7 @@ export function buildBackendLocals(definition, baseLocals) {
     familyChild: family.child,
     // The constant names the repository and service share (`<EU>_BASE_KEYS`, `<EU>_CHILD_CREATE_PATH`, …): one derivation.
     familyConstName: (suffix) => familyConstName(entityName, suffix),
+    familyHelperName: (suffix) => familyHelperName(entityName, suffix),
     familyBase: family.base,
     matchFills,
     naturalKey,

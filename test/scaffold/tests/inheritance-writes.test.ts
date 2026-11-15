@@ -504,7 +504,7 @@ d('the base guards (RFC-0006 §4.1)', () => {
     const service = new CommunicationService(commRepo());
     const err: any = await asA(() => service.create(baseInput({ kind: 'meeting' }))).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(errors.KindRequiresChildError);
-    expect(err.createPath).toBe('POST /meetings');
+    expect(err.createPath).toBe('MeetingService.create');
     await expect(asA(() => service.upsertByNaturalKey(baseInput({ kind: 'email' })))).rejects.toBeInstanceOf(
       errors.KindRequiresChildError,
     );

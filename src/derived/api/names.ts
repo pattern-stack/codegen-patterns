@@ -275,6 +275,14 @@ export function familyConstName(entityName: string, suffix: string): string {
 	return `${entityName.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[^A-Za-z0-9]+/g, '_').toUpperCase()}_${suffix}`;
 }
 
+/**
+ * A generated module-level function of one entity, `<entity camel><Suffix>` (`communication` + `KindJoins` →
+ * `communicationKindJoins`). The one camelCase-prefix rule for the family helpers the repository declares.
+ */
+export function familyHelperName(entityName: string, suffix: string): string {
+	return `${camelCase(entityName)}${suffix}`;
+}
+
 // ----------------------------------------------------------------------------
 // Joined-table family reads and writes (RFC-0006 §3–§4, #875)
 // ----------------------------------------------------------------------------

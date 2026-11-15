@@ -35,10 +35,9 @@ const _decorator = (r) => {
 const _typedInclude = apiSurface.repository.typedInclude;
 const _includeRoutes = apiSurface.http.includeRoutes;
 const _allow = (r) => (r.includeRoute ? `${apiSurface.http.includesConst}.${r.includeRoute}` : 'undefined');
-const _kindGuarded = isInheritanceChild || familyBase !== null;
 _%>
 <% if (_list) { -%>
-import { BadRequestException, Controller<% if (_kindGuarded) { %>, ConflictException<% } %>, Get<% if (_create) { %>, Post<% } %><% if (_writes) { %>, Patch, Delete, Body<% } %>, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get<% if (_create) { %>, Post<% } %><% if (_writes) { %>, Patch, Delete, Body<% } %>, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiBearerAuth, <% if (_writes) { %>ApiBody, <% } %>ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { ZodValidationPipe } from '<%= zodValidationPipeImport %>';
 import type { Page } from '<%= paginationImport %>';
@@ -67,13 +66,6 @@ import type { <%= classNames.updateDto %> } from './dto/update-<%= entityFileSte
 import type { <%= classNames.entity %>Flat } from './<%= entityFileStem %>.repository';
 <% } else { -%>
 import type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
-<% } -%>
-<% if (_kindGuarded) { -%>
-import {
-  KindImmutableError,
-  KindMismatchError,
-  KindRequiresChildError,
-} from '<%= inheritanceImport %>';
 <% } -%>
 // REL-2 (#587): the HTTP include allowlist (charter I6). A client sends dot
 // PATHS; this controller looks each one up in a compile-time literal map and
@@ -248,28 +240,6 @@ export class <%= _list.controller %> {
 <% } %>
 <%_ const _W = isInheritanceChild ? `${classNames.entity}Flat` : classNames.entity; _%>
 <% if (_writes) { %>
-<%_ if (_kindGuarded) { _%>
-  /**
-   * RFC-0006 §4.1: the family's domain errors are HTTP answers, mapped HERE — the one place this layer already turns a
-   * domain error into a status (`resolveInclude`'s 400). Bodies match `ErrorResponseDto` (`statusCode`, `error`,
-   * `message`) plus a stable `code`. `KindImmutableError` and `KindRequiresChildError` are a request no state of the
-   * server could make valid (400; the second names the route to use); `KindMismatchError` depends on a row that already
-   * exists (409).
-   */
-  private kindError(err: unknown): unknown {
-    if (err instanceof KindImmutableError) {
-      return new BadRequestException({ statusCode: 400, error: 'Bad Request', code: 'kind_immutable', message: err.message });
-    }
-    if (err instanceof KindRequiresChildError) {
-      return new BadRequestException({ statusCode: 400, error: 'Bad Request', code: 'kind_requires_child', kind: err.kind, createPath: err.createPath, message: err.message });
-    }
-    if (err instanceof KindMismatchError) {
-      return new ConflictException({ statusCode: 409, error: 'Conflict', code: 'kind_mismatch', message: err.message });
-    }
-    return err;
-  }
-
-<%_ } _%>
 <%_ if (_create) { _%>
   @ApiOperation({ summary: 'Create <%= entityName %>', operationId: '<%= _create.operationId %>' })
   @ApiBody({ schema: { $ref: '#/components/schemas/<%= classNames.createDto %>' } })
@@ -280,15 +250,7 @@ export class <%= _list.controller %> {
   async <%= _create.handler %>(
     @Body(new ZodValidationPipe(<%= classNames.createSchema %>)) dto: <%= classNames.createDto %>,
   ): Promise<<%= _W %>> {
-<% if (_kindGuarded) { -%>
-    try {
-      return await this.createUseCase.execute(dto);
-    } catch (err: unknown) {
-      throw this.kindError(err);
-    }
-<% } else { -%>
     return this.createUseCase.execute(dto);
-<% } -%>
   }
 <% } %>
   @ApiOperation({ summary: 'Update <%= entityName %>', operationId: '<%= _update.operationId %>' })
@@ -303,16 +265,7 @@ export class <%= _list.controller %> {
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(<%= classNames.updateSchema %>)) dto: <%= classNames.updateDto %>,
   ): Promise<<%= _W %>> {
-<% if (_kindGuarded) { -%>
-    let entity: <%= _W %> | null;
-    try {
-      entity = await this.updateUseCase.execute(id, dto);
-    } catch (err: unknown) {
-      throw this.kindError(err);
-    }
-<% } else { -%>
     const entity = await this.updateUseCase.execute(id, dto);
-<% } -%>
     if (!entity) throw new NotFoundException(`<%= classNames.entity %> ${id} not found`);
     return entity;
   }

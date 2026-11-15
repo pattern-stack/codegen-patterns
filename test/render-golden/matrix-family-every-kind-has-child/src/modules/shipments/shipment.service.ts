@@ -20,8 +20,8 @@ import type { shipments, Shipment } from './shipment.entity';
 
 /** The kinds that have a child table, and the create path that writes both rows for each (`KindRequiresChildError`). */
 const SHIPMENT_CHILD_CREATE_PATH = {
-  air: 'POST /air_freights',
-  sea: 'POST /sea_freights',
+  air: 'AirFreightService.create',
+  sea: 'SeaFreightService.create',
 } as const;
 
 @Injectable()

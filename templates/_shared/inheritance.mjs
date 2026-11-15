@@ -21,7 +21,7 @@
 
 import { camelCase, emittedStem } from '../../src/config/file-naming.js';
 import { resolveChildTenancy, resolveTenancy } from '../../src/schema/tenancy.js';
-import { dtoFileStem, dtoSchemaNames, entityClassName, repositoryClassName, routePath } from '../../src/derived/api/names.js';
+import { dtoFileStem, dtoSchemaNames, entityClassName, FAMILY_METHOD, repositoryClassName, serviceClassName } from '../../src/derived/api/names.js';
 import { baseOnlyKinds, enumChoices, familyRelationKey, inheritanceChildrenOf, inheritsOf, matchPairsOf } from '../../src/schema/inheritance.js';
 import { entityModuleNaming, relativeModuleDir } from './entity-naming.mjs';
 
@@ -389,8 +389,10 @@ export function familyReads({ entityName, definition, lookup, ownNaming, modules
         plural: ref.plural,
         className: entityClassName(c.name),
         entityImportPath: ref.importPath,
-        // The create route a write through the base is told to use for this kind (KindRequiresChildError): the child's POST.
-        createPath: `POST ${routePath(ref.plural)}`,
+        // The create path a write through the base is told to use for this kind (KindRequiresChildError): the child's
+        // service `create`, a name the derived surface owns. A domain error, never an HTTP answer: over HTTP the DTO
+        // refuses the request first (RFC-0006 §4.1).
+        createPath: `${serviceClassName(c.name)}.${FAMILY_METHOD.create}`,
         // S5 — the child's own columns as an output schema (nested under its kind key in `<Base>OfKindSchema`).
         ownOutputSchema: dtoSchemaNames(c.name).ownOutputSchema,
         outputImportPath: `../${ref.dir}/dto/${dtoFileStem(c.name, 'output')}.dto`,

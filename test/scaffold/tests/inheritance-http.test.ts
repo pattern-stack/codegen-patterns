@@ -7,9 +7,9 @@
  * (the one `inheritance-scope-http.test.ts` uses). Rows are read back with raw SQL, bypassing every repository,
  * so what a route left in the tables is asserted, not what a read path chose to show.
  *
- * The error mapping is tested through the GENERATED controllers with stub use cases: no request body can reach
- * `KindImmutableError` / `KindRequiresChildError` once the DTOs refuse the key (that is the point of the flat DTOs),
- * so the only way to prove the mapping is to make the use case throw.
+ * `KindImmutableError` / `KindRequiresChildError` / `KindMismatchError` are DOMAIN errors only (Gate 2.5 D12): no
+ * request body can reach them once the DTOs refuse the key (that is the point of the flat DTOs), so the controller
+ * maps nothing. What a client sees is the zod issue that refuses the request; the real-route tests assert it.
  *
  * Gated behind SCAFFOLD_INTEGRATION=1 — see ./_skip-guard.ts.
  */
@@ -76,12 +76,16 @@ beforeAll(async () => {
       .CommunicationPartsModule,
     CommunicationNotesModule: (await import('@gen/modules/communication-notes/communication-notes.module'))
       .CommunicationNotesModule,
+    DocumentsModule: (await import('@gen/modules/documents/documents.module')).DocumentsModule,
+    ReportDocumentsModule: (await import('@gen/modules/report-documents/report-documents.module')).ReportDocumentsModule,
   };
   app = await mount([
     gen.MeetingsModule,
     gen.CommunicationsModule,
     gen.CommunicationPartsModule,
     gen.CommunicationNotesModule,
+    gen.DocumentsModule,
+    gen.ReportDocumentsModule,
   ]);
   request = supertest(app.getHttpServer());
 });
@@ -353,7 +357,11 @@ d('the base`s create takes only base-only kinds (§4.1, §5)', () => {
         .post('/communications')
         .set('x-tenant-id', TENANT_A)
         .send({ kind, occurredAt: at(8), source: 'chat', externalId: `x-${kind}` });
+      // D12: the answer is the zod issue that refuses the request — never a mapped domain error
       expect(res.status).toBe(400);
+      expect(res.body.message).toBe('Validation failed');
+      expect(res.body.code).toBeUndefined();
+      expect(res.body.issues).toEqual([expect.objectContaining({ path: 'kind', code: 'invalid_enum_value' })]);
     }
     expect(await rows(sql`SELECT id FROM communications`)).toEqual([]);
   });
@@ -381,81 +389,19 @@ d('the base`s create takes only base-only kinds (§4.1, §5)', () => {
   });
 });
 
-d('the family`s domain errors are HTTP answers', () => {
-  const stubbed = async (error: Error) => {
-    const { MeetingController } = await import('@gen/modules/meetings/meeting.controller');
-    const { CommunicationController } = await import('@gen/modules/communications/communication.controller');
-    const { FindMeetingByIdUseCase } = await import('@gen/modules/meetings/use-cases/find-meeting-by-id.use-case');
-    const { ListMeetingsUseCase } = await import('@gen/modules/meetings/use-cases/list-meetings.use-case');
-    const { CreateMeetingUseCase } = await import('@gen/modules/meetings/use-cases/create-meeting.use-case');
-    const { UpdateMeetingUseCase } = await import('@gen/modules/meetings/use-cases/update-meeting.use-case');
-    const { DeleteMeetingUseCase } = await import('@gen/modules/meetings/use-cases/delete-meeting.use-case');
-    const { FindCommunicationByIdUseCase } = await import('@gen/modules/communications/use-cases/find-communication-by-id.use-case');
-    const { ListCommunicationsUseCase } = await import('@gen/modules/communications/use-cases/list-communications.use-case');
-    const { CreateCommunicationUseCase } = await import('@gen/modules/communications/use-cases/create-communication.use-case');
-    const { UpdateCommunicationUseCase } = await import('@gen/modules/communications/use-cases/update-communication.use-case');
-    const { DeleteCommunicationUseCase } = await import('@gen/modules/communications/use-cases/delete-communication.use-case');
-    const throwing = { execute: async () => { throw error; } };
-    return mount(
-      [],
-      [
-        FindMeetingByIdUseCase, ListMeetingsUseCase, CreateMeetingUseCase, UpdateMeetingUseCase, DeleteMeetingUseCase,
-        FindCommunicationByIdUseCase, ListCommunicationsUseCase, CreateCommunicationUseCase,
-        UpdateCommunicationUseCase, DeleteCommunicationUseCase,
-      ].map((provide) => ({ provide, useValue: throwing })),
-      [MeetingController, CommunicationController],
-    );
-  };
-
-  // The whole body, not a subset: a regression that dropped `error`, `message`, `kind` or `createPath` must fail.
-  const bodyOf = (err: any, status: number, code: string) => ({
-    statusCode: status,
-    error: status === 400 ? 'Bad Request' : 'Conflict',
-    code,
-    ...(code === 'kind_requires_child' ? { kind: err.kind, createPath: err.createPath } : {}),
-    message: err.message,
+// D4 (Gate 2.5): the soft-delete family. `memo` is its one base-only kind, `report` has the child `report_document`.
+d('a base-only kind over HTTP on a soft-delete family', () => {
+  test('POST /documents with kind memo creates it', async () => {
+    const res = await request.post('/documents').set('x-tenant-id', TENANT_A).send({ kind: 'memo', title: 'note' }).expect(201);
+    expect(res.body).toMatchObject({ kind: 'memo', title: 'note', tenantId: TENANT_A });
+    expect(await rows(sql`SELECT kind, title FROM documents WHERE id = ${res.body.id}`)).toEqual([{ kind: 'memo', title: 'note' }]);
   });
 
-  const cases: Array<[string, () => Error, number, string]> = [
-    ['KindImmutableError', () => new errors.KindImmutableError('meeting'), 400, 'kind_immutable'],
-    ['KindRequiresChildError', () => new errors.KindRequiresChildError('communication', 'meeting', 'POST /meetings'), 400, 'kind_requires_child'],
-    ['KindMismatchError', () => new errors.KindMismatchError('meeting', 'meeting'), 409, 'kind_mismatch'],
-  ];
-
-  for (const [name, make, status, code] of cases) {
-    test(`${name} is a ${status} with code ${code}, on a child and on the base`, async () => {
-      const local = await stubbed(make());
-      try {
-        const http = supertest(local.getHttpServer());
-        const meeting = meetingBody();
-        const viaChild = await http.post('/meetings').send(meeting);
-        expect(viaChild.status).toBe(status);
-        expect(viaChild.body).toEqual(bodyOf(make(), status, code));
-        if (code === 'kind_requires_child') expect(viaChild.body.createPath).toBe('POST /meetings');
-        const patchChild = await http.patch(`/meetings/${NO_SUCH}`).send({ title: 'x' });
-        expect(patchChild.status).toBe(status);
-        expect(patchChild.body).toEqual(bodyOf(make(), status, code));
-        const viaBase = await http
-          .post('/communications')
-          .send({ kind: 'message', occurredAt: at(1), source: 's', externalId: 'e' });
-        expect(viaBase.status).toBe(status);
-        expect(viaBase.body).toEqual(bodyOf(make(), status, code));
-        const patchBase = await http.patch(`/communications/${NO_SUCH}`).send({ source: 'x' });
-        expect(patchBase.status).toBe(status);
-        expect(patchBase.body).toEqual(bodyOf(make(), status, code));
-      } finally {
-        await local.close();
-      }
-    });
-  }
-
-  test('an error the family does not own is not swallowed into a 4xx', async () => {
-    const local = await stubbed(new Error('boom'));
-    try {
-      const res = await supertest(local.getHttpServer()).post('/meetings').send(meetingBody());
-      expect(res.status).toBe(500);
-    } finally {
-      await local.close();
-    }
+  test('POST /documents with kind report is refused by the DTO, and writes nothing', async () => {
+    const res = await request.post('/documents').set('x-tenant-id', TENANT_A).send({ kind: 'report', title: 'q3' });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Validation failed');
+    expect(res.body.issues).toEqual([expect.objectContaining({ path: 'kind', code: 'invalid_enum_value' })]);
+    expect(await rows(sql`SELECT id FROM documents`)).toEqual([]);
   });
 });

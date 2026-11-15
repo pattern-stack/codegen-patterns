@@ -240,9 +240,11 @@ describe('HTTP', () => {
     const http = sectionOf(off, 'contact', 'http');
     expect(http.rows.map((r) => r.name)).toEqual(['GET /contacts', 'GET /contacts/:id']);
     expect(http.off?.text).toBe('Writes off — no POST, PATCH or DELETE route');
+    expect(http.off?.origin?.text).toBe('← generate.writes');
     expect(http.off?.origin?.yaml).toEqual({ doc: { kind: 'entity', name: 'contact' }, path: ['generate', 'writes'] });
     const useCases = sectionOf(off, 'contact', 'useCases');
     expect(useCases.off?.text).toBe('Writes off — no create, update or delete use case');
+    expect(useCases.off?.origin?.text).toBe('← generate.writes');
     // An entity that emits writes carries no such note.
     expect(sectionOf(DEMO, 'contact', 'useCases').off).toBeUndefined();
   });

@@ -8,6 +8,8 @@
  * Patterns (ids are stable; the test defines each):
  *   inline-camel-case    `.replace(/_([a-z])/g` — a hand-rolled snake → camel
  *   charat-upper-case    `.charAt(0).toUpperCase()` in an `.ejs.t` — a hand-rolled capitalisation
+ *   charat-lower-case    `.charAt(0).toLowerCase()` — a hand-rolled lower-first (#875 Gate 2.5 D5)
+ *   upper-case-replace   `.toUpperCase().replace(` — a hand-rolled SCREAMING_CASE or capitalisation (D5)
  *   string-built-finder  `` `findBy${ `` or `findBy<%` — a finder name assembled in place
  *   local-case-helper    a local `camelCase` / `pascalCase` definition
  */
@@ -15,7 +17,7 @@
 export interface AllowlistEntry {
 	/** Repo-relative template file. */
 	file: string;
-	pattern: 'inline-camel-case' | 'charat-upper-case' | 'string-built-finder' | 'local-case-helper';
+	pattern: 'inline-camel-case' | 'charat-upper-case' | 'charat-lower-case' | 'upper-case-replace' | 'string-built-finder' | 'local-case-helper';
 	/** Exact number of sites; asserted present and exact. */
 	count: number;
 	/** What removes it. */
