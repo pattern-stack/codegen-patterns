@@ -2385,7 +2385,6 @@ export function buildBackendLocals(definition, baseLocals) {
   }));
   const drizzleEntityImports = collectDrizzleImports([...processedFields, ...inheritanceColumnFields], belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraDrizzleImports);
 
-  // Output paths
   // ADR-046 — the generated API surface, derived once (`src/derived/api/`). Every
   // method name the repository prints, and whether it is emitted at all, comes
   // from here; the templates loop over it and choose a body by `kind`. Built
@@ -2398,9 +2397,11 @@ export function buildBackendLocals(definition, baseLocals) {
     composition: patternBase,
     wiredTargets: hasMany.filter((r) => r.targetExists).map((r) => r.target),
     entityLookup: (name) => (entityLookup ? entityLookup(name) : null),
-  });  // Whether writes are emitted is the derivation's answer (ADR-046): `generate.writes: false`, or a child (RFC-0006).
+  });
+  // Whether writes are emitted is the derivation's answer (ADR-046): `generate.writes: false`, or a child (RFC-0006).
   const hasUseCase = (kind) => apiSurface.useCases.some((u) => u.kind === kind);
 
+  // Output paths
   const outputPaths = {
     entity: `${ownNaming.entityFile}.ts`,
     repository: ownNaming.repositoryFile,
@@ -2679,7 +2680,6 @@ export function buildBackendLocals(definition, baseLocals) {
       compositionCollisions.map((e) => e.message).join('\n  '),
     );
   }
-
 
   // The TS text a `queries:` finder prints beside the derivation's names (PLAN
   // §4.3), keyed by the DERIVED method name: per `by:` column its param type, the

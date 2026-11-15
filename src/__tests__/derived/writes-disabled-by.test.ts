@@ -1,7 +1,7 @@
 /**
  * `writesDisabledBy` — the one owner of "does this entity emit create / update / delete" (RFC-0006 §13.2, ADR-046).
- * `entity-locals.js` reads the same function, so the use cases, routes and module providers cannot disagree with
- * the derived surface.
+ * `entity-locals.js` reads `apiSurface.useCases`, which is built from this function, so the use cases, routes and
+ * module providers cannot disagree with the derived surface.
  */
 import { describe, expect, it } from 'bun:test';
 
