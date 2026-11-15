@@ -80,9 +80,9 @@ export interface RelationEdge {
 	/**
 	 * `inherits:` (RFC-0006 §3.1): which end of a joined-table inheritance pair this
 	 * edge is — `'base'` on a child's edge to its base, `'child'` on a base's edge to
-	 * one of its children. Absent on every other edge. The backend reads it for the
-	 * `optional: false` exception; the frontend emitter reads it to inner-join the
-	 * child-to-base hop (S6).
+	 * one of its children. Absent on every other edge. Set at construction
+	 * (`build-graph.ts`); the backend's `optional: false` on a child's edge is fixed there, not read back from this
+	 * marker. The frontend emitter reads it to inner-join the child-to-base hop (S6).
 	 */
 	inherits?: 'base' | 'child';
 	/**

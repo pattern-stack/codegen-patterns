@@ -35,21 +35,25 @@ const _isAcross = (m) => _ACROSS.includes(m.kind);
 const _isRead = (m) => m.kind === 'count' || m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans';
 const _child = _methods.some((m) => m.kind === 'with_base') ? familyChild : null;
 const _base = _methods.some(_isAcross) ? familyBase : null;
+const _listName = _methods.find((x) => x.kind === 'list').name;
+const _findByIdName = _methods.find((x) => x.kind === 'find_by_id').name;
 const _EU = entityName.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
 const _eLower = E.charAt(0).toLowerCase() + E.slice(1);
 _%>
-<%# READ-1: `eq` / `inArray` are unconditional — `findById` / `findByIds` use them. %>
-import { eq, inArray<%= hasMultiFieldQuery ? ', and' : '' %><%= _needsOrderFns ? ', desc, asc' : '' %> } from 'drizzle-orm';
-<% if (eavValueTable) { -%>
-import { sql } from 'drizzle-orm';
-<% } -%>
-<%_ if (_base) { _%>
 <%_
-// The cross-kind reads' own operators — only those not already imported above (TS2300).
-const _familyOrm = ['and', 'notExists', 'or', 'sql'].filter((n) => !(n === 'and' && hasMultiFieldQuery) && !(n === 'sql' && eavValueTable));
+// ONE `drizzle-orm` import (a name twice is TS2300). READ-1: `eq` / `inArray` are unconditional — `findById` /
+// `findByIds` use them. The cross-kind reads add `and` / `notExists` / `or` / `sql`, the EAV value table `sql`.
+const _ormNames = [
+  'eq',
+  'inArray',
+  ...(hasMultiFieldQuery || _base ? ['and'] : []),
+  ...(_needsOrderFns ? ['desc', 'asc'] : []),
+  ...(_base ? ['notExists', 'or'] : []),
+  ...(eavValueTable || _base ? ['sql'] : []),
+];
 _%>
-import { <%- _familyOrm.join(', ') %> } from 'drizzle-orm';
-<%_ } _%>
+
+import { <%- _ormNames.join(', ') %> } from 'drizzle-orm';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient<% if (eavValueTable || hasIntegrationSurface) { %>, DrizzleTx<% } %> } from '<%= drizzleTypeImport %>';
 // REL-2 (#587): the generated relation graph. `Relations` binds the repository's
@@ -204,6 +208,9 @@ export interface <%= E %>FlatByKind {
 <%_ }) _%>
 }
 
+/** A row filter over this table — what the cross-kind reads hand `list`. */
+type <%= E %>RowFilter = RowFilter<typeof <%= entityNamePlural %>>;
+
 /** The relation key each child kind is read under, and the one `asKind` narrows by. */
 const <%= _EU %>_CHILD_KEY_BY_KIND = {
 <%_ _base.children.forEach((c) => { _%>
@@ -252,8 +259,8 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
 
 <% if (_child) { -%>
   // Behaviors of a joined-table child (RFC-0006 §2.3). The child declares none of the lifecycle behaviors
-  // (R5): its tenant column is a copy of the base's, pinned by a composite FK, and its row is in scope only
-  // while its base row is (`baseScope`).
+  // (R5): its tenant column is a copy of the base's, pinned by a composite FK<% if (_child.baseScope) { %>, and its row is in scope only
+  // while its base row is (`baseScope`)<% } %>.
 <% } else { -%>
   // Behaviors declared in YAML -> generated as config object
 <% } -%>
@@ -457,44 +464,28 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
   // The base row (RFC-0006 §3.2, #875) — a <%= entityName %> IS a kind of a <%= _child.relKey %>
   //
   // `findWithBase` is `findById` with the base joined in and its columns hoisted
-  // to the root: ONE statement (a primary-key lateral join), the same scope as
-  // every other read here, `columns` / `with` still applying to this table.
+  // to the root: it CALLS `findById` / `findByIds`, so ONE statement (a primary-key
+  // lateral join) and the one scope body — `columns` / `with` still apply to this table.
   // ═══════════════════════════════════════════════════════════════════════
 <%_ } _%>
 <%_ if (m.returns === 'one') { _%>
 
-  async <%= m.name %><W extends <%= E %>Include = <%= E %>NoInclude, C extends <%= E %>Columns | undefined = undefined>(
+  async <%= m.name %><W extends <%= E %>Include & { <%= _child.relKey %>?: never } = <%= E %>NoInclude, C extends <%= E %>Columns | undefined = undefined>(
     <%= _p[0] %>: string,
     <%= _p[1] %>?: ReadOptions<W, C>,
   ): Promise<<%= E %>Flat<W, C> | null> {
-    const row = await this.db.query.<%= entityNamePlural %>.findFirst({
-      where: { RAW: this.rootFilter((t) => eq(t.id, <%= _p[0] %>)) },
-      columns: this.checkColumns<C>(<%= _p[1] %>?.columns),
-      with: { ...<%= _p[1] %>?.with, <%= _child.relKey %>: true as const },
-    });
+    const row = await this.findById(<%= _p[0] %>, { ...<%= _p[1] %>, with: { ...<%= _p[1] %>?.with, <%= _child.relKey %>: true as const } } as never);
     return row ? (flattenBase(row as never, '<%= _child.relKey %>') as <%= E %>Flat<W, C>) : null;
   }
 <%_ } else { _%>
 
-  /** One statement for many ids, flat — `findByIds`' contract (no statement for `[]`, input order, absent when out of scope). */
-  async <%= m.name %><W extends <%= E %>Include = <%= E %>NoInclude, C extends <%= E %>Columns | undefined = undefined>(
+  /** One statement for many ids, flat — it IS `findByIds` (no statement for `[]`, input order, absent when out of scope), with the base joined in. */
+  async <%= m.name %><W extends <%= E %>Include & { <%= _child.relKey %>?: never } = <%= E %>NoInclude, C extends <%= E %>Columns | undefined = undefined>(
     <%= _p[0] %>: readonly string[],
     <%= _p[1] %>?: ReadOptions<W, C>,
   ): Promise<Array<<%= E %>Flat<W, C>>> {
-    const unique = this.uniqueIds(<%= _p[0] %>);
-    if (unique.length === 0) {
-      this.assertReadScope();
-      return [];
-    }
-    const mask = this.byIdsColumns(this.checkColumns<C>(<%= _p[1] %>?.columns));
-    const rows = await this.db.query.<%= entityNamePlural %>.findMany({
-      where: { RAW: this.rootFilter((t) => inArray(t.id, unique)) },
-      columns: mask.columns,
-      with: { ...<%= _p[1] %>?.with, <%= _child.relKey %>: true as const },
-    });
-    return this.inInputOrder(rows, unique, mask.stripId).map((row) =>
-      flattenBase(row as never, '<%= _child.relKey %>'),
-    ) as Array<<%= E %>Flat<W, C>>;
+    const rows = await this.findByIds(<%= _p[0] %>, { ...<%= _p[1] %>, with: { ...<%= _p[1] %>?.with, <%= _child.relKey %>: true as const } } as never);
+    return rows.map((row) => flattenBase(row as never, '<%= _child.relKey %>')) as Array<<%= E %>Flat<W, C>>;
   }
 <%_ } _%>
 <%_ } else if (_isAcross(m)) { _%>
@@ -519,26 +510,22 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
     <%= _p[0] %>?: ListOptions<typeof <%= entityNamePlural %>> & { kinds?: readonly <%= E %>Kind[] },
   ): Promise<<%= E %>OfKind[]> {
     const kinds = <%= _p[0] %>?.kinds;
-    const sort = <%= _p[0] %>?.sort;
-    const rows = await this.db.query.<%= entityNamePlural %>.findMany({
-      where: { RAW: this.rootFilter((t) =>
-        and(<%= _p[0] %>?.where?.(t), kinds === undefined ? undefined : inArray(t.<%= _base.discriminatorProp %>, [...kinds])),
-      ) },
-      with: <%= _eLower %>KindJoins(kinds),
-      orderBy: sort === undefined || sort.length === 0 ? undefined : (t) => this.orderByOn(t, sort) ?? [],
+    const where: <%= E %>RowFilter = (t) =>
+      and(<%= _p[0] %>?.where?.(t), kinds === undefined ? undefined : inArray(t.<%= _base.discriminatorProp %>, [...kinds]));
+    const rows = await this.<%= _listName %>({
+      where,
+      sort: <%= _p[0] %>?.sort,
       limit: <%= _p[0] %>?.limit,
       offset: <%= _p[0] %>?.offset,
-    });
+      with: <%= _eLower %>KindJoins(kinds),
+    } as never);
     return rows.map((row) => asKind<<%= E %>OfKind>(row, '<%= _base.discriminator %>', <%= _EU %>_CHILD_KEY_BY_KIND));
   }
 <%_ } else if (m.kind === 'kind_by_id') { _%>
 
   /** One row by id with its child, narrowed by kind. `null` when absent or out of scope. */
   async <%= m.name %>(<%= _p[0] %>: string): Promise<<%= E %>OfKind | null> {
-    const row = await this.db.query.<%= entityNamePlural %>.findFirst({
-      where: { RAW: this.rootFilter((t) => eq(t.id, <%= _p[0] %>)) },
-      with: <%= _eLower %>KindJoins(undefined),
-    });
+    const row = await this.<%= _findByIdName %>(<%= _p[0] %>, { with: <%= _eLower %>KindJoins(undefined) } as never);
     return row ? asKind<<%= E %>OfKind>(row, '<%= _base.discriminator %>', <%= _EU %>_CHILD_KEY_BY_KIND) : null;
   }
 <%_ } else if (m.kind === 'list_kind') { _%>
@@ -551,14 +538,15 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
     <%= _p[0] %>: K,
     <%= _p[1] %>?: ListOptions<typeof <%= entityNamePlural %>>,
   ): Promise<Array<<%= E %>FlatByKind[K]>> {
-    const sort = <%= _p[1] %>?.sort;
-    const rows = await this.db.query.<%= entityNamePlural %>.findMany({
-      where: { RAW: this.rootFilter((t) => and(eq(t.<%= _base.discriminatorProp %>, <%= _p[0] %>), <%= _p[1] %>?.where?.(t))) },
-      with: <%= _eLower %>KindJoins([<%= _p[0] %>]),
-      orderBy: sort === undefined || sort.length === 0 ? undefined : (t) => this.orderByOn(t, sort) ?? [],
+    const where: <%= E %>RowFilter = (t) =>
+      and(eq(t.<%= _base.discriminatorProp %>, <%= _p[0] %>), <%= _p[1] %>?.where?.(t));
+    const rows = await this.<%= _listName %>({
+      where,
+      sort: <%= _p[1] %>?.sort,
       limit: <%= _p[1] %>?.limit,
       offset: <%= _p[1] %>?.offset,
-    });
+      with: <%= _eLower %>KindJoins([<%= _p[0] %>]),
+    } as never);
     return rows.map((row) =>
       flattenBase(
         asKind<<%= E %>OfKind>(row, '<%= _base.discriminator %>', <%= _EU %>_CHILD_KEY_BY_KIND) as never,

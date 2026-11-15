@@ -13,7 +13,7 @@ import pluralize from 'pluralize';
 import type { EntityDefinition } from '../../schema/entity-definition.schema';
 import type { JunctionDefinition } from '../../schema/junction-definition.schema';
 import { foreignKeyColumnNullable } from '../../schema/field-nullability';
-import { inheritsOf } from '../../schema/inheritance';
+import { familyRelationKey, inheritsOf } from '../../schema/inheritance';
 import { resolveChildTenancy, resolveTenancy } from '../../schema/tenancy';
 import {
 	camelCase,
@@ -360,7 +360,7 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 		const base = registry.get(decl.base)!;
 		push(byTable, {
 			sourceTable: entity.plural,
-			key: camelCase(decl.base),
+			key: familyRelationKey(decl.base),
 			cardinality: 'one',
 			targetTable: base.plural,
 			from: { table: entity.plural, column: 'id' },
@@ -377,7 +377,7 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 		});
 		push(byTable, {
 			sourceTable: base.plural,
-			key: camelCase(entity.name),
+			key: familyRelationKey(entity.name),
 			cardinality: 'one',
 			targetTable: entity.plural,
 			from: { table: base.plural, column: 'id' },

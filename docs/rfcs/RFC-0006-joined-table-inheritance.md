@@ -480,7 +480,7 @@ meetings: {
 
 Each carries the usual `where: { RAW: (t) => hopScope(…) }` when the target declares a scope (`renderEdge`,
 `emit-manifest.ts:61`). The child-to-base edge is `optional: false`: the child's own scope already requires the base
-row to be in scope (§2.3), so the hop cannot drop it. That is an exception to `hopCanDropTarget`
+row to be in scope (§2.3), so the hop cannot drop it under the read guards (a hand-written `{ softDelete: false }` read of a child drops the base `EXISTS` at the root but not at the hop, so the hop can return `null` there; no generated read passes it). That is an exception to `hopCanDropTarget`
 (`build-graph.ts:141-142`). The edge carries an `inherits` marker so the builder, and the frontend emitter (§3.4),
 can tell.
 
@@ -839,7 +839,7 @@ discriminator: kind
 behaviors: [soft_delete]
 fields:
   tenant_id: { type: uuid, required: true }
-  kind:      { type: enum, choices_of: communication.kind, required: true }   # message stays base-only
+  kind:      { type: enum, choices_of: communication.kind, required: true }   # every kind has a child table (S3 added `message`)
   sequence:  { type: integer, required: true }
 relationships:
   communication:
@@ -900,8 +900,8 @@ and what v1 adds. A cross-kind list on the client is hand-written in v1.
 | Operation | Cost |
 |---|---|
 | Child read, table-shaped | 1 statement, 1 table. Plus a primary-key `EXISTS` on the base when the base has `soft_delete` or `user_tracking`. |
-| Child read with base, nested or flat | 1 statement, one primary-key lateral join. |
-| Cross-kind read | 1 statement, one primary-key lateral join per child kind requested. |
+| Child read with base, nested or flat | 1 statement, one primary-key lateral join. Plus the base `EXISTS` at the child root when the base has `soft_delete` or `user_tracking`. |
+| Cross-kind read | 1 statement, one primary-key lateral join per child kind requested. Plus the base `EXISTS` on every child hop when the base has `soft_delete` or `user_tracking`. |
 | Create | 2 inserts in 1 transaction. The base insert maintains 1 extra unique index (2 when tenant-scoped). |
 | Upsert | 2 statements in 1 transaction. |
 | `match:` | One derived column per matched column, one unique index on the target, and a scalar subquery on the parent's primary key inside the insert. |
@@ -1004,6 +1004,7 @@ The summary. §13 is the build plan, slice by slice.
 | 8 | Child find and list use cases return flat rows; controller output | `use-cases/find-by-id.ejs.t`, `list.ejs.t`, `controller.ejs.t` |
 | 9 | Frontend: inner-joined child-to-base hop; `<child>WithBase` query and hooks | `src/emitters/frontend/graph-model.ts`, `emit-graph.ts` |
 | 10 | Studio: one row in each vocabulary table | `tools/studio/src/inspector/relationship-kinds.ts`, `tools/studio/src/graph/edge-kinds.ts` |
+| 11 | The derived API surface (family reads, `hasTypedInclude`, the include gate); Studio's `Record<RepositoryKind, …>` | `src/derived/api/*`, `src/emitters/relations/build-includes.ts`, `tools/studio/src/inspector/surface-kinds.ts` |
 
 ## 11. Decisions and open questions
 
@@ -1095,7 +1096,7 @@ three. §13 of the RFC is the build plan.
       One tenant's upsert never touches another tenant's row with the same key.
 - [ ] **A8** With `soft_delete` on the base, a soft-deleted row's child is absent from child reads and from a hop
       into the child. With `tenant_scoped`, another tenant's child is absent at the root and at a hop.
-- [ ] **A9** `findAllKinds` is one statement (`.toSQL()` in `just test-unit`), returns the union, and throws
+- [ ] **A9** `findAllKinds` is one statement (recorded through a fake `pg` client in `just test-unit`, and counted on the generated repositories in `just test-integration`), returns the union, and throws
       `OrphanBaseError` on a base row with a missing child. `findOrphans` returns that row.
 - [ ] **A10** Child DTOs are flat; the child's HTTP routes return the flat shape; the base's create accepts only
       base-only kinds.
@@ -1137,10 +1138,10 @@ names or fields from any host application (this repository is public).
 | Entity | Role in the tests |
 |---|---|
 | `communication` | Base. `tenant_scoped` with a declared NOT NULL `tenant_id`, `timestamps`, `discriminator: kind` with `[meeting, email, message]`, natural key `(source, external_id)`. No `soft_delete`: the tenant-only scope path. |
-| `meeting`, `email` | Children. `message` stays a base-only kind. |
+| `meeting`, `email` | Children. `message` stays a base-only kind of `communication`. |
 | `email_thread`, `meeting_transcript` | Plain entities a child points at and is pointed at by. |
 | `communication_part` | Second base, **with `soft_delete`**: the `EXISTS` scope path. `kind` is `choices_of: communication.kind` with `match: { kind: kind }` to `communication` (§2.4 case 1), natural key `(communication_id, sequence)`. |
-| `transcript_communication_part`, `email_communication_part` | Its children. The second has a typed link to `email`. |
+| `transcript_communication_part`, `email_communication_part`, `message_communication_part` | Its children (`message_communication_part` is a fields-only child, kind `message`, added in S3). The second has a typed link to `email`. **`communication_part` therefore has no base-only kind**: A10's restricted base create is covered on `communication` (`message` is base-only there) only. |
 | `communication_participant_role`, `communication_participant` | `choices_of:` and two `match:` relationships on one column. |
 | `communication_note` | A `match:` whose every FK is nullable: the derived column is nullable and the entity carries a CHECK per FK, `<fk> IS NULL OR <derived> IS NOT NULL` (not NULL-together). |
 
@@ -1372,7 +1373,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   `runtime/base-classes/` is not validated by `bun run typecheck` alone (charter I9): run the smokes.
 - Adds: `.toSQL()` unit tests beside `src/__tests__/runtime/base-classes/read-api-sql.spec.ts`; scope tests in
   `test/scaffold/tests/` modelled on `relation-scope.test.ts`.
-- Gates: `just test-unit`, `just test-baseline`, `just test-smoke`, `just test-integration`.
+- Gates: `just test-unit`, `just test-baseline`, `just test-smoke`, `just test-integration`, `just test-studio`.
 - Closes: A8, A9, and the manifest half of A12.
 
 **S3 as built (2026-11-13).** What the build settled, beyond the plan above:
@@ -1389,8 +1390,10 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
 - **`softDelete` in `scopeAnd` / `scopeConfigFor` means "apply the lifecycle guards", and only that.** Every read passes
   `softDelete: true`; a by-id write passes nothing and still matches a soft-deleted row. What is applied comes from the
   declaration: the entity's own `soft_delete` (`behaviors.softDelete`) and, for a child, the base's (`baseScope.softDelete`),
-  both masked by the flag. So a hand-written `{ softDelete: false }` that wants deleted rows gets them on a child as on a table
-  (before this, reads passed `behaviors.softDelete`, which is `false` for a child, and the flag meant two things).
+  both masked by the flag. So a hand-written `{ softDelete: false }` that wants deleted rows gets them at a child's root as on a table
+  (before this, reads passed `behaviors.softDelete`, which is `false` for a child, and the flag meant two things). The limit: a
+  child-to-base HOP still applies the base's scope, so with a base `with` the edge can return `null` where its type says
+  non-null. No generated read passes the flag; only a subclass calling `scopeAnd(…, { softDelete: false })` could reach it.
   `user_tracking` applies always, as it does on a table.
 - **The child's scope is derived, not declared.** `entityScope(def, tenancyColumn, base?)` takes the base (definition and table
   export) for a child and **throws without it**: a child scoped without its base would read unscoped, an absent input read as
@@ -1431,17 +1434,31 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   `<Base>Kind` (= `<Base>['kind']`, so it also holds for a `choices_of:` discriminator), `<Base>FlatByKind` and the
   per-kind join are emitted into the base repository file; the services forward every method. A base with no child table
   (every kind base-only) gets none of it.
-- **`includes` follows the family.** `includes` (the entity's repository can name a `with`) is true when the entity declares
-  relationships **or** is a child **or** a base with children, decided after `familyReads` in `entity-locals.js`. So a child's
-  plain reads type `with: { communication: true }` and the base's `findById` / `findByIds` / `list` type
-  `with: { meeting: true, email: true }` (§3.3) by design, including for a fields-only child (`message_communication_part`,
-  which failed to compile with `Cannot find name '…Include'` when the family reads imported the type only under `includes`).
-  The controller and use cases change type-only; HTTP behaviour is unchanged (`?include=` is still a 400, the allowlist is S5's).
-  `test/baseline-type-assertions.ts` asserts the include typing, with a `@ts-expect-error` so it cannot go vacuous.
+- **The typed include follows the family.** Whether an entity's repository can name a `with` is `hasTypedInclude`
+  (`src/derived/api/entity.ts`), read by the templates as `apiSurface.repository.typedInclude`: true when the entity declares
+  a non-`through` relationship, or is a child, or is a base with children (a `cardinality: one` role is counted too, with no
+  manifest edge until CAP-2). So a child's plain reads type `with: { communication: true }` and the base's `findById` /
+  `findByIds` / `list` type `with: { meeting: true, email: true }` (§3.3) by design, including for a fields-only child
+  (`message_communication_part`, which failed to compile with `Cannot find name '…Include'` when the family reads imported the
+  type only under the include flag). Controller and use cases change type-only, **and S3 opens `api.includes` for family
+  members**: `build-includes.ts` accepts a block on a child and on a base that has children, so `GET /meetings/:id?include=communication`
+  resolves in S3. HTTP is unchanged only where no `api.includes` is declared, which is true of every fixture; S5's work
+  is the family's write side and the DTO surface, not the allowlist. `test/baseline-type-assertions.ts` asserts the include
+  typing, with a `@ts-expect-error` so it cannot go vacuous.
+- **The family reads are projections over the READ-1 reads.** `findWithBase` is `findById` and `findManyWithBase` is
+  `findByIds`, each with the base joined in and then `flattenBase`; `findAllKinds` / `listKind` are `list`, and `findKindById`
+  is `findById`, with the per-kind joins as `with`. The scope, the boundary check, the id handling and the `columns` mask
+  live in one body, so a change to a READ-1 read reaches the family reads. `findWithBase`'s `W` excludes the base key
+  (`W extends <E>Include & { communication?: never }`), because the read adds it. The relation key printed in a `with:` and
+  the key the manifest names are one function, `familyRelationKey` (`src/schema/inheritance.ts`): a name with a digit
+  segment (`call_2`) is `call2` on both sides.
+- **S3 also touched** `tools/studio/src/inspector/surface-kinds.ts` (and its test) and `runtime/base-classes/with-communication.ts`:
+  both forced, the first because `Record<RepositoryKind, …>` is exhaustive over the new derived kinds, the second because the
+  `softDelete` flag now has one meaning. `just test-studio` is therefore an S3 gate.
 - **One behaviour derivation in the templates.** `resolvedBehaviorNames(def)` in `entity-locals.js` serves the entity's own
   behaviors and its base's. The relations emitter keeps its own `behaviorNames` on purpose: it uses the throwing
   `requireImpliedBehaviors`, because a manifest that silently dropped an unregistered pattern's behavior would narrow a scope.
-- **Gates.** `src/__tests__/runtime/base-classes/inheritance-read-sql.spec.ts` pins the SQL (A9: one statement, `kinds` joins
+- **Gates.** `src/__tests__/runtime/base-classes/inheritance-read-sql.spec.ts` pins the SQL on a hand copy of the template's read shape (it is not the template's text: `findOrphans` inlines the orphan filter, `findWithBase` drops `columns` / `with`, and `findOne` / `findWithChild` are not generated methods; the one-statement check on generated code is `inheritance-reads.test.ts`, under `just test-integration`) (A9: one statement, `kinds` joins
   one child, `findOrphans`; A8: the `EXISTS` at a child root read and at a hop, none for the tenant-only family, none on a
   by-id write); `src/__tests__/emitters/relations/inherits-graph.test.ts` pins the two edges and the scope literal on the
   §13.1 family (the manifest half of A12); `test/scaffold/tests/inheritance-reads.test.ts` runs the union, the orphan,
@@ -1467,7 +1484,8 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   and by the include-allowlist gate in `build-includes.ts`, which replaces `declaresOwnRelation`. That last reader is a real
   change, in two ways: a child or a base with children that declares `api.includes` was refused as "no typed include" while its
   repository typed one, and so was an entity whose only edge is a `cardinality: one` role (the old rule read `relationships:`
-  alone; the template's merged-roles rule typed one). Both are accepted now; `build-includes.test.ts` pins each.
+  alone; the template's merged-roles rule typed one). Both now pass the gate; `build-includes.test.ts` pins each. The role-only
+  block passes the gate but every role path is still refused at path resolution (REL-1 emits no role edge until CAP-2).
   The templates read the methods off `apiSurface` (no flag local); the type names, table exports and import paths stay in `familyReads` (outside ADR-046 §4). Golden: `communication`,
   `email` and `meeting` gain the methods (and `communication`'s `typedInclude` flips to `true`, which the generated code
   already was — the derivation had not seen the family); new matrix case `matrix-discriminator-no-child`. No generated byte changes.

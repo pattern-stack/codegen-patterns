@@ -66,14 +66,14 @@ export class MeetingService extends WithAnalytics(
   }
 
   // RFC-0006 §3.2 — the base row, flat: the repository's `findWithBase` / `findManyWithBase`, forwarded.
-  findWithBase<W extends MeetingInclude = MeetingNoInclude, C extends MeetingColumns | undefined = undefined>(
+  findWithBase<W extends MeetingInclude & { communication?: never } = MeetingNoInclude, C extends MeetingColumns | undefined = undefined>(
     id: string,
     opts?: ReadOptions<W, C>,
   ): Promise<MeetingFlat<W, C> | null> {
     return this.repository.findWithBase<W, C>(id, opts);
   }
 
-  findManyWithBase<W extends MeetingInclude = MeetingNoInclude, C extends MeetingColumns | undefined = undefined>(
+  findManyWithBase<W extends MeetingInclude & { communication?: never } = MeetingNoInclude, C extends MeetingColumns | undefined = undefined>(
     ids: readonly string[],
     opts?: ReadOptions<W, C>,
   ): Promise<Array<MeetingFlat<W, C>>> {

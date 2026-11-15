@@ -29,7 +29,6 @@ import {
 // prompt.js via loadAppPatterns() against `codegen.config.yaml patterns:`
 // globs before this helper runs — we only read the registry here, through
 // `resolvePatternComposition`.
-import { inheritanceChildrenOf } from '../../../../src/schema/inheritance.js';
 import { detectMethodCollisions } from '../../../../src/patterns/compose.js';
 import { resolvePatternComposition } from '../../../../src/patterns/resolve-composition.js';
 import '../../../../src/patterns/library/index.js';
@@ -2090,7 +2089,9 @@ export function buildBackendLocals(definition, baseLocals) {
   });
   // The entities that `inherits:` this one — the derivation's input (`inheritanceChildren`): a base's cross-kind
   // reads and a family member's typed include both follow from it (`apiSurface.repository.methods` / `.typedInclude`).
-  const familyChildren = inheritanceChildrenOf(entityName, entityLookup?.definitions ? entityLookup.definitions() : []);
+  // From `familyReads` — the one enumeration of the set (it throws where a base cannot enumerate); a base with no
+  // `discriminator:` has no children (R1).
+  const familyChildren = (family.base?.children ?? []).map((c) => ({ name: c.name, as: c.as }));
   // The scope a child's repository declares: its tenant column (the base's, carried as a copy) with strict
   // enforcement, plus the base's lifecycle scope. A plain entity's is its own `tenantScoped`.
   const scopeTenantColumn = tenantScoped ? tenancy.prop : isChild && inheritedChild.tenant ? inheritedChild.tenant.prop : null;

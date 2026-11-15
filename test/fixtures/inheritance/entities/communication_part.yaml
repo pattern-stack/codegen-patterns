@@ -1,7 +1,7 @@
 # RFC-0006 §2.4 case 1, §7 — the second base, WITH soft_delete (the EXISTS scope path).
 # `kind` shares communication.kind's enum (choices_of:) and is matched against it:
 # a part of kind `meeting` sits only under a communication of kind `meeting`.
-# `message` stays a base-only kind.
+# Every kind has a child table (`message_communication_part` added in S3), so this base has no base-only kind.
 
 entity:
   name: communication_part

@@ -162,3 +162,94 @@ describe('inherits — the child`s scope (RFC-0006 §2.3)', () => {
 		expect(() => buildRelationGraph(partial)).toThrow(/inherits 'communication', which is not in the entity set/);
 	});
 });
+
+describe('the relation key of a family edge has one owner (digit segments)', () => {
+	// `comm_2` / `call_2`: the two camelCase primitives in the tree disagree on `_2` (`comm2` vs `comm_2`). The key a
+	// generated `with:` prints and the key the manifest names must be the same string.
+	const base = EntityDefinitionSchema.parse({
+		entity: { name: 'comm_2', plural: 'comm_2s' },
+		discriminator: 'kind',
+		fields: { kind: { type: 'enum', choices: ['call_2', 'other'], required: true } },
+	});
+	const child = EntityDefinitionSchema.parse({
+		entity: { name: 'call_2', plural: 'call_2s' },
+		inherits: 'comm_2',
+		fields: {},
+	});
+
+	it('the manifest and the printed repository keys agree', async () => {
+		const entry = (d: EntityDefinition): EntityRegistryEntry => ({
+			name: d.entity.name,
+			plural: d.entity.plural,
+			table: d.entity.plural,
+			className: d.entity.name,
+			classNamePlural: d.entity.plural,
+			camelName: d.entity.name,
+			pluralCamelName: d.entity.plural,
+			sync: null,
+		});
+		const ctx: RelationsEmitContext = {
+			entities: [entry(base), entry(child)],
+			definitions: new Map([base, child].map((d) => [d.entity.name, d])),
+			junctions: [],
+			tenancyColumn: 'tenant_id',
+		};
+		const graph = buildRelationGraph(ctx);
+		const keyOn = (table: string) => graph.tables.find((t) => t.table === table)!.edges.map((e) => e.key);
+		expect(keyOn('call_2s')).toEqual(['comm2']);
+		expect(keyOn('comm_2s')).toEqual(['call2']);
+
+		// @ts-ignore -- plain-ESM hygen helper, no types
+		const { familyReads } = await import('../../../../templates/_shared/inheritance.mjs');
+		// @ts-ignore
+		const { entityLookupFrom, entityModuleNaming } = await import('../../../../templates/_shared/entity-naming.mjs');
+		const lookup = entityLookupFrom([base.entity, child.entity], { definitions: [base, child] });
+		const run = (def: EntityDefinition) =>
+			familyReads({
+				entityName: def.entity.name,
+				definition: def,
+				lookup,
+				ownNaming: entityModuleNaming(def.entity, 'modules'),
+				modulesDir: 'modules',
+				baseBehaviors: [],
+			});
+		expect(run(child).child.relKey).toBe('comm2');
+		expect(run(base).base.children.map((c: { relKey: string }) => c.relKey)).toEqual(['call2']);
+	});
+});
+
+describe('inherits — a user_tracking base (RFC-0006 §2.3)', () => {
+	it("the child's baseScope carries userTracking: true, and the manifest renders it", () => {
+		const base = EntityDefinitionSchema.parse({
+			entity: { name: 'note_base', plural: 'note_bases' },
+			behaviors: ['user_tracking'],
+			discriminator: 'kind',
+			fields: { kind: { type: 'enum', choices: ['memo', 'other'], required: true } },
+		});
+		const child = EntityDefinitionSchema.parse({
+			entity: { name: 'memo', plural: 'memos' },
+			inherits: 'note_base',
+			fields: {},
+		});
+		const entry = (d: EntityDefinition): EntityRegistryEntry => ({
+			name: d.entity.name,
+			plural: d.entity.plural,
+			table: d.entity.plural,
+			className: d.entity.name,
+			classNamePlural: d.entity.plural,
+			camelName: d.entity.name,
+			pluralCamelName: d.entity.plural,
+			sync: null,
+		});
+		const ctx: RelationsEmitContext = {
+			entities: [entry(base), entry(child)],
+			definitions: new Map([base, child].map((d) => [d.entity.name, d])),
+			junctions: [],
+			tenancyColumn: 'tenant_id',
+		};
+		const graph = buildRelationGraph(ctx);
+		const scope = graph.entityScopes.find((s) => s.table === 'memos')?.scope;
+		expect(scope?.baseScope).toEqual({ table: 'note_bases', softDelete: false, userTracking: true });
+		expect(buildRelationsManifest(graph)).toContain('baseScope: { table: schema.note_bases, softDelete: false, userTracking: true }');
+	});
+});

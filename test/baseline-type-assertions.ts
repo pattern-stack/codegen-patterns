@@ -69,4 +69,7 @@ export async function familyIncludesType(
 	void base;
 	// @ts-expect-error — `nope` is not a relation of communications
 	await communicationRepo.list({ with: { nope: true } });
+	// `findWithBase` adds the base key itself, so a caller cannot also name it (a narrower spec would be dropped).
+	// @ts-expect-error — `communication` is the key `findWithBase` joins
+	await meetingRepo.findWithBase('x', { with: { communication: true } });
 }

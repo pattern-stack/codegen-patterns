@@ -164,7 +164,7 @@ _%>
 <%_ if (m.kind === 'with_base' && m.returns === 'one') { _%>
 
   // RFC-0006 §3.2 — the base row, flat: the repository's `findWithBase` / `findManyWithBase`, forwarded.
-  <%= m.name %><W extends <%= E %>Include = <%= E %>NoInclude, C extends <%= E %>Columns | undefined = undefined>(
+  <%= m.name %><W extends <%= E %>Include & { <%= familyChild.relKey %>?: never } = <%= E %>NoInclude, C extends <%= E %>Columns | undefined = undefined>(
     <%= _p[0] %>: string,
     <%= _p[1] %>?: ReadOptions<W, C>,
   ): Promise<<%= E %>Flat<W, C> | null> {
@@ -172,7 +172,7 @@ _%>
   }
 <%_ } else if (m.kind === 'with_base') { _%>
 
-  <%= m.name %><W extends <%= E %>Include = <%= E %>NoInclude, C extends <%= E %>Columns | undefined = undefined>(
+  <%= m.name %><W extends <%= E %>Include & { <%= familyChild.relKey %>?: never } = <%= E %>NoInclude, C extends <%= E %>Columns | undefined = undefined>(
     <%= _p[0] %>: readonly string[],
     <%= _p[1] %>?: ReadOptions<W, C>,
   ): Promise<Array<<%= E %>Flat<W, C>>> {

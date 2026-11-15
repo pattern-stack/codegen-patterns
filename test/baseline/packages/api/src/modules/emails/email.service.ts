@@ -66,14 +66,14 @@ export class EmailService extends WithAnalytics(
   }
 
   // RFC-0006 §3.2 — the base row, flat: the repository's `findWithBase` / `findManyWithBase`, forwarded.
-  findWithBase<W extends EmailInclude = EmailNoInclude, C extends EmailColumns | undefined = undefined>(
+  findWithBase<W extends EmailInclude & { communication?: never } = EmailNoInclude, C extends EmailColumns | undefined = undefined>(
     id: string,
     opts?: ReadOptions<W, C>,
   ): Promise<EmailFlat<W, C> | null> {
     return this.repository.findWithBase<W, C>(id, opts);
   }
 
-  findManyWithBase<W extends EmailInclude = EmailNoInclude, C extends EmailColumns | undefined = undefined>(
+  findManyWithBase<W extends EmailInclude & { communication?: never } = EmailNoInclude, C extends EmailColumns | undefined = undefined>(
     ids: readonly string[],
     opts?: ReadOptions<W, C>,
   ): Promise<Array<EmailFlat<W, C>>> {

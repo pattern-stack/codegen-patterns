@@ -152,6 +152,11 @@ function isFamilyReadKind(kind: RepositoryMethod['kind']): kind is 'with_base' |
  * child table, RFC-0006 §3.1) — edges its own YAML does not declare, so a family member has a typed include
  * whatever it writes under `relationships:`.
  *
+ * A fourth input is counted without an edge: a `cardinality: one` role (CAP-2 — a belongs_to) is in
+ * `mergedRelationships`, so the derivation and the gate agree, but REL-1 emits no manifest edge for it yet (the
+ * CAP-2 seam, `build-graph.ts`). A role-only `api.includes` passes the gate and every role path is then refused at
+ * path resolution (`names no relation at 'caller'`).
+ *
  * The ONE owner: `deriveEntityApiSurface` reads it for `typedInclude` and every read's `readOptions`, and the
  * include-allowlist gate (`build-includes.ts`) for "would this allowlist ever be reached".
  */

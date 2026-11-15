@@ -22,7 +22,7 @@
 import { camelCase, emittedStem } from '../../src/config/file-naming.js';
 import { resolveChildTenancy, resolveTenancy } from '../../src/schema/tenancy.js';
 import { entityClassName } from '../../src/derived/api/names.js';
-import { inheritanceChildrenOf, inheritsOf, matchPairsOf } from '../../src/schema/inheritance.js';
+import { familyRelationKey, inheritanceChildrenOf, inheritsOf, matchPairsOf } from '../../src/schema/inheritance.js';
 import { entityModuleNaming, relativeModuleDir } from './entity-naming.mjs';
 
 /**
@@ -323,7 +323,7 @@ export function familyReads({ entityName, definition, lookup, ownNaming, modules
     const softDelete = baseBehaviors.includes('soft_delete');
     const userTracking = baseBehaviors.includes('user_tracking');
     child = {
-      relKey: camelCase(declaration.base),
+      relKey: familyRelationKey(declaration.base),
       baseTable: ref.plural,
       baseImportPath: ref.importPath,
       baseScope: softDelete || userTracking ? { softDelete, userTracking } : null,
@@ -352,7 +352,7 @@ export function familyReads({ entityName, definition, lookup, ownNaming, modules
       return {
         as: c.as,
         name: c.name,
-        relKey: camelCase(c.name),
+        relKey: familyRelationKey(c.name),
         plural: ref.plural,
         className: entityClassName(c.name),
         entityImportPath: ref.importPath,

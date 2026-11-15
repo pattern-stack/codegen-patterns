@@ -826,6 +826,8 @@ refactor across three pipelines, not this PR's.
 `src/derived/api/names.ts` is the one rule; `emit-includes.ts` and the controller template (through
 `apiSurface.http.includesConst`) both read it, and the rest of `route-name-parity.test.ts` is deleted.
 
+**Revision (2026-11-15, RFC-0006 #875):** `hasTypedInclude(definition, inheritanceChildren)` replaces `declaresOwnRelation` (deleted). It also counts a child's base edge and a base's child edges, so an `api.includes` block on a family member passes the gate; `apiEnabled` is unchanged.
+
 ### Found #8 — two harness facts the scaffold needed for a generated controller
 
 Mounting a generated module in the scaffold's Nest app surfaced two gaps, both fixed here:

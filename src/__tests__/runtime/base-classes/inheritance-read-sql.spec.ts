@@ -1,8 +1,8 @@
 /**
  * RFC-0006 §3, §6 (#875, S3) — the family reads and the child's scope, as SQL.
  *
- * Written in EXACTLY the shape `templates/entity/new/backend/repository.ejs.t`
- * emits for a joined-table family, like `read-api-sql.spec.ts` does for the
+ * Written in the shape `templates/entity/new/backend/repository.ejs.t`
+ * emits for a joined-table family (a hand copy, NOT the template's text: see the RFC's S3 gates note), like `read-api-sql.spec.ts` does for the
  * READ-1 surface; the GENERATED repositories are driven against Postgres by
  * `test/scaffold/tests/inheritance-reads.test.ts`. This file pins, without
  * Docker, the SQL each read renders, through a fake `pg` client that records

@@ -162,7 +162,7 @@ describe('backend eav_value_table — repository emission', () => {
 
     expect(output).toContain('async upsertCurrentValues(');
     expect(output).toContain('tx?: DrizzleTx');
-    expect(output).toContain("import { sql } from 'drizzle-orm';");
+    expect(output).toContain("import { eq, inArray, sql } from 'drizzle-orm';");
     expect(output).toContain("import type { DrizzleClient, DrizzleTx } from '@shared/types/drizzle';");
     expect(output).toContain('onConflictDoUpdate');
     // REL-0: columns resolve through the base's `col()` (getColumns-backed),

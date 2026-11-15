@@ -32,6 +32,16 @@ export function inheritsOf(
 	return { base: raw.base, as: raw.as ?? def.entity.name };
 }
 
+/**
+ * The relation key of a family edge (RFC-0006 §3.1): the entity name camelCased, `[-_\s]` followed by a letter OR A
+ * DIGIT (`call_2` → `call2`, matching the relations manifest's own `camelCase`, `src/emitters/relations/types.ts`).
+ * The ONE owner — the manifest (`build-graph.ts`) names the edge with it and the generated repositories print the
+ * same key into `with:`, so the two cannot disagree. `src/config/file-naming.ts`'s `camelCase` would keep `call_2`.
+ */
+export function familyRelationKey(entityName: string): string {
+	return entityName.replace(/[-_\s]+([a-zA-Z0-9])/g, (_, c: string) => c.toUpperCase());
+}
+
 /** One child of a base, across an entity set: its name and the kind value it is `as`. */
 export interface InheritanceChild {
 	name: string;

@@ -1,8 +1,7 @@
 
 import { Injectable, Inject } from '@nestjs/common';
 
-import { eq, inArray } from 'drizzle-orm';
-import { sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE } from '@shared/constants/tokens';
 import type { DrizzleClient, DrizzleTx } from '@shared/types/drizzle';
 // REL-2 (#587): the generated relation graph. `Relations` binds the repository's
