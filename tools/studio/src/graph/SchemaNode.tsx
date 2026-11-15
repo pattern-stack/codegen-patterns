@@ -65,13 +65,26 @@ export const SchemaNode = memo(function SchemaNode({ data, selected }: NodeProps
             borderBottom: '1px solid var(--s-line)',
           }}
         >
-          <span style={{ color: accent, fontSize: 11 }}>{isJunction ? '◇' : '▣'}</span>
-          <span style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--t-primary)' }}>
+          <span style={{ flex: 'none', color: accent, fontSize: 11 }}>{isJunction ? '◇' : '▣'}</span>
+          {/* A long name truncates; the pattern badge beside it never clips. */}
+          <span
+            title={node.label}
+            style={{
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontWeight: 600,
+              fontSize: 12.5,
+              color: 'var(--t-primary)',
+            }}
+          >
             {node.label}
           </span>
           {node.group != null && (
             <span
               style={{
+                flex: 'none',
                 marginLeft: 'auto',
                 fontSize: 9.5,
                 padding: '1px 6px',
