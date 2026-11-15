@@ -26,6 +26,8 @@ import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
 import { printError, printInfo, printSuccess, printWarning } from '../ui/output.js';
 import { regenerateRelationsManifest } from '../shared/relations-generator.js';
+import { entitySetRejections } from '../shared/entity-render.js';
+import { printRejections, reportPreflightStop } from '../shared/run-rejections.js';
 import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
 import { reportRegenerationFailure } from '../shared/generated-file.js';
 import type { PaneOutput } from '../ui/pane.js';
@@ -183,6 +185,14 @@ export class RelationshipNewCommand extends Command {
 		} else {
 			printError('Missing YAML path. Pass a file or --all.');
 			return 2;
+		}
+
+		// Its post-steps (barrels, relations manifest) read the whole entity set:
+		// an entity YAML that fails the schema stops the run, named (#915).
+		const setRejections = entitySetRejections(ctx);
+		if (setRejections.length > 0) {
+			printRejections(setRejections);
+			return reportPreflightStop('relationship new', setRejections);
 		}
 
 		// Pre-flight: validate each YAML.

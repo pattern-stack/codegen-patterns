@@ -77,6 +77,25 @@ export interface EntityPreflight {
 	tsAliases: ReturnType<typeof resolveTsconfigAliases>;
 }
 
+/**
+ * Every entity YAML in the project's entities directory (plus `extraFiles`)
+ * that fails schema validation, as a run-level rejection carrying the entity
+ * file and each issue's path and message (#915). Shared by `entity new`,
+ * `junction new` (through the pre-flight) and `relationship new`: every
+ * command whose post-steps read the whole entity set.
+ */
+export function entitySetRejections(ctx: Context, extraFiles: string[] = []): RunRejection[] {
+	const layout = projectLayout(ctx.cwd, ctx.config);
+	const files = new Set([...listEntityYamls(layout.entities, layout.providers), ...extraFiles]);
+	const rejections: RunRejection[] = [];
+	for (const file of [...files].sort()) {
+		const result = loadEntityFromYaml(file);
+		if (result.success) continue;
+		rejections.push({ file, message: result.error, details: result.details });
+	}
+	return rejections;
+}
+
 /** Every check `entity new` runs before hygen, for `targets` (absolute YAML paths). */
 export async function preflightEntityTargets(
 	ctx: Context,
@@ -94,12 +113,18 @@ export async function preflightEntityTargets(
 	const validated: Array<{ file: string; name: string }> = [];
 	const invalid: Array<{ file: string; message: string; details?: string[] }> =
 		[];
+	// A YAML that fails the schema is a RUN-level rejection (#915), whichever
+	// file it is: the barrels, the relations manifest and every other whole-set
+	// post-step read the entity directory, so a set that silently lacks an
+	// entity would write a manifest and barrels over it and fail far away, in
+	// `tsc`, instead of here. The check covers the whole directory — a single
+	// target run, or a run that targets a different, valid entity, is no
+	// exception — plus any target outside it.
+	const setRejections = entitySetRejections(ctx, targets);
 	for (const file of targets) {
 		const result = loadEntityFromYaml(file);
 		if (result.success) {
 			validated.push({ file, name: result.definition.entity.name });
-		} else {
-			invalid.push({ file, message: result.error, details: result.details });
 		}
 	}
 
@@ -154,7 +179,7 @@ export async function preflightEntityTargets(
 	// Run-level rejections (JOBS-2): an input every entity's output depends
 	// on, so it is not one target's problem and `--continue-on-error` does not
 	// apply — the run stops before hygen whatever the flag says.
-	const runRejections: RunRejection[] = [];
+	const runRejections: RunRejection[] = [...setRejections];
 
 	// App patterns must be in THIS process's registry before the roles
 	// pre-flight: a role's target qualifies by declaring an `Actor`

@@ -348,12 +348,13 @@ describe('entity noun — new --dry-run', () => {
 		expect(result).toBe(2);
 	});
 
-	test('--all tolerates an invalid YAML alongside a valid one (default)', async () => {
+	test('--all stops on an invalid YAML alongside a valid one, by name (#915)', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
-		// Drop an invalid entity YAML (comments only, no `entity:` key) next to
-		// the valid contact fixture — mirrors the scaffold's example.yaml that
-		// originally triggered F12.
+		// A comments-only file (no `entity:` key) next to the valid contact fixture
+		// — the scaffold's placeholder shape that originally triggered F12. The
+		// whole-set post-steps would otherwise skip it silently, so it is a
+		// run-level rejection: nothing is planned.
 		fs.writeFileSync(
 			path.join(root, 'entities', 'example.yaml'),
 			'# this is a placeholder\n',
@@ -371,18 +372,13 @@ describe('entity noun — new --dry-run', () => {
 				root,
 			]),
 		);
-		// The valid entity is still planned; the rejected one fails the run, as it
-		// would a real run.
 		expect(result).toBe(1);
 		const parsed = JSON.parse(out);
 		expect(parsed.command).toBe('entity new');
-		expect(parsed.totals.planned).toBe(1);
-		expect(parsed.totals.invalid).toBe(1);
-		const names = (parsed.entities as Array<{ name: string }>).map((e) => e.name);
-		expect(names).toContain('contact');
-		expect(parsed.invalid).toHaveLength(1);
-		expect(parsed.invalid[0].name).toBe('example.yaml');
-		expect(parsed.invalid[0].message.length).toBeGreaterThan(0);
+		expect(parsed.stopped).toBe('pre-flight');
+		expect(parsed.failed).toHaveLength(1);
+		expect(parsed.failed[0].name).toBe('example.yaml');
+		expect(parsed.failed[0].message.length).toBeGreaterThan(0);
 	});
 
 	test('--all --no-continue-on-error restores fatal exit for invalid YAML', async () => {
