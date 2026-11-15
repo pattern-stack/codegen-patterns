@@ -93,11 +93,10 @@ export function lint(found: Map<string, Map<PatternId, number>>, allowlist: read
 /**
  * Sites that already exist on `origin/main`, outside #875's templates (Gate 2.5 D5 / D6). Not allowlisted — the
  * allowlist never grows — and not fixed here: each is a named single-purpose expectation, asserted present with its
- * exact count so it fails the moment the site is migrated, and must then be deleted. The issue is filed by the stack's
- * coordinator.
+ * exact count so it fails the moment the site is migrated, and must then be deleted. Tracked in #922.
  */
 const KNOWN_ON_MAIN: readonly { file: string; pattern: PatternId; count: number; issue: string }[] = [
-	{ file: 'templates/entity/new/backend/entity-locals.js', pattern: 'charat-lower-case', count: 1, issue: 'TBD (coordinator files it; line `configProperty:` in the capability locals)' },
+	{ file: 'templates/entity/new/backend/entity-locals.js', pattern: 'charat-lower-case', count: 1, issue: '#922' },
 ];
 
 describe('no name derivation in templates (ADR-046)', () => {
