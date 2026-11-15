@@ -600,9 +600,11 @@ Both rows are stamped with the same ambient tenant in the same transaction, so t
 
 **Guards on the base.**
 
-- `communicationService.create` refuses a `kind` that has a child table (`KindRequiresChildError`, naming the child's
-  create use case). Base-only kinds are created normally. The base's HTTP create DTO only accepts base-only kinds
-  (§5). If every kind has a child, the base gets no create use case.
+- The base **repository's** `create` and `upsertByNaturalKey` refuse a `kind` that has a child table
+  (`KindRequiresChildError`, naming the child's service method, e.g. `MeetingService.create`). The repository is the
+  one owner of both kind invariants (D16, §11.3). Base-only kinds are created normally. These are domain errors: the
+  base's HTTP create DTO only accepts base-only kinds (§5), so the DTO refuses the request first (D12). If every kind
+  has a child, the base gets no create use case.
 - `communicationRepo.update` refuses a `kind` key (`KindImmutableError`). The database refuses the same change for
   any row that has a child.
 - Updating base fields or deleting through the base is allowed for any kind. A delete through the base cascades.
