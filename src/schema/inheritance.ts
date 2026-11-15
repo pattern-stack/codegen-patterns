@@ -22,6 +22,18 @@ export interface InheritsDeclaration {
 	as: string;
 }
 
+/** The YAML path of a child's `inherits:` — the path every origin and relation id of it is spelled from. */
+export const INHERITS_PATH = ['inherits'] as const;
+
+/**
+ * The id of the `inherits` relation of a child — `<child>.inherits`, spelled as REL-1 spells an origin
+ * (`[doc.name, ...path].join('.')`) over {@link INHERITS_PATH}. The ONE spelling: the derivation lists the relation under
+ * it, REL-1's edge uses it as its origin, and the serialized graph hands it to Studio.
+ */
+export function inheritsRelationId(child: string): string {
+	return [child, ...INHERITS_PATH].join('.');
+}
+
 /** The parsed `inherits:` of an entity — `null` for a base or a plain entity. */
 export function inheritsOf(
 	def: Pick<EntityDefinition, 'inherits'> & { entity: { name: string } },

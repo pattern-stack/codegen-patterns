@@ -31,7 +31,7 @@ import type { RelationEdge, RelationsEmitContext } from '../../emitters/relation
 import type { PatternDeclaringEntity } from '../../patterns/compose.js';
 import { resolvePatternComposition } from '../../patterns/resolve-composition.js';
 import type { EntityDefinition } from '../../schema/entity-definition.schema.js';
-import { discriminatorKindsOf, inheritanceBaseOf, inheritanceChildrenOf, inheritsOf } from '../../schema/inheritance.js';
+import { discriminatorKindsOf, inheritanceBaseOf, inheritanceChildrenOf, inheritsOf, inheritsRelationId } from '../../schema/inheritance.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import { detectYamlType, loadRelationshipFromYaml } from '../../utils/yaml-loader.js';
 import {
@@ -168,15 +168,6 @@ export function deriveProjectApiSurface(ctx: ProjectApiContext): ProjectApiSurfa
 // ============================================================================
 // 2. Delegates
 // ============================================================================
-
-/**
- * The id of the `inherits` relation of a child — `<child>.inherits` — the one spelling of it: the derivation lists the
- * relation under it, a method names it as its origin, and the serialized graph hands it to Studio so the canvas line
- * and the edge panel look the same relation up (no second literal).
- */
-export function inheritsRelationId(child: string): string {
-	return `${child}.inherits`;
-}
 
 /** The declaration a method's origin names, as REL-1 spells an origin: `contact.relationships.account`. */
 function originId(origin: Origin): string | undefined {

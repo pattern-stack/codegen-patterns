@@ -48,7 +48,7 @@ const PROJECT_TENANCY_COLUMN: Record<string, string> = {
 	baseline: 'tenant_id',
 	scaffold: 'tenant_id',
 	smoke: 'organization_id', // run-smoke.ts sets it for the default scenario
-	frontend: 'organization_id', // its copies spell the column out, as the smoke's do
+	frontend: 'tenant_id', // run-smoke-frontend.ts changes only `generate.frontend` after `project init`
 };
 
 /** The frontend-smoke entities that declared `sync: electric` (stripped before comparing). */

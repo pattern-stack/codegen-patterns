@@ -45,6 +45,20 @@ export function resolveImpliedBehaviors(entity: PatternDeclaration): string[] {
 }
 
 /**
+ * The behaviors an entity HAS: those it declares (explicit first) plus those its pattern(s) imply, deduped. The ONE
+ * derivation of "resolved behaviours": the backend locals builder and the frontend emitter both call it, so a new
+ * behaviour source is added here once. (The relations manifest states the same rule with the throwing
+ * {@link requireImpliedBehaviors}, deliberately.)
+ */
+export function resolvedBehaviorNames(
+	declared: readonly (string | { name: string })[],
+	entity: PatternDeclaration,
+): string[] {
+	const explicit = declared.map((b) => (typeof b === 'string' ? b : b.name));
+	return [...explicit, ...resolveImpliedBehaviors(entity).filter((b) => !explicit.includes(b))];
+}
+
+/**
  * {@link resolveImpliedBehaviors}, but a declared pattern that is not in this
  * process's registry THROWS, naming the entity and the pattern. For a derivation
  * whose output is a security posture (the manifest's per-hop and root scope): an

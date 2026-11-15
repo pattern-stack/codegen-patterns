@@ -13,7 +13,7 @@
  *    only, a `sync: api` child gets none;
  *  - a base whose every kind has a child has no create route, so nothing emitted
  *    aims a mutation at it — pinned against the backend's own derivation
- *    (`familyReads`), not a copy of it.
+ *    (`buildBackendLocals(…).apiSurface.http.routes`), not a copy of it.
  *
  * The byte snapshot of the three family graph files is `test/frontend-graph-golden/inherits/`:
  *   UPDATE_GRAPH_GOLDEN=1 bun test src/__tests__/emitters/frontend/inherits-graph.test.ts
@@ -28,7 +28,7 @@ import { emittedNameViolations } from '../../../../test/_emitted-name-hygiene';
 import { buildBackendLocals } from '../../../../templates/entity/new/backend/entity-locals.js';
 import { withEntities } from '../../backend/_entity-lookup';
 import { deriveProjectApiSurface } from '../../../derived/api/project';
-import { projectSurface, writeRoutes } from '../../../emitters/frontend/emit-utils';
+import { flatChild, projectSurface, writeRoutes } from '../../../emitters/frontend/emit-utils';
 import { createEntityLookup } from '../../../../templates/_shared/entity-naming.mjs';
 import { buildClientGraph, emitFrontendSet, loadFrontendEmitContext } from '../../../emitters/frontend/index';
 import { buildRelationGraph } from '../../../emitters/relations/build-graph';
@@ -181,6 +181,8 @@ describe('a base with a child for every kind has no create route (S5)', () => {
 		// typed away, in all three places: the hooks, the api stub, the field capabilities
 		expect(read('entities/communication-part.ts')).toContain('createEntityHooks<CommunicationPart, never>');
 		expect(read('api/communication-part.ts')).toContain('create: (_data: never): Promise<CommunicationPart>');
+		// The reason for an all-kinds base is the derivation's `createDisabledBy`, with the kinds it names.
+		expect(read('api/communication-part.ts')).toContain('No `POST /communication_parts`: communication_part.discriminator (every kind has a child table:');
 		expect(read('fields/communication-part.ts')).toContain('create: false,');
 		expect(read('fields/communication.ts')).toContain('create: true,');
 	});
@@ -211,6 +213,11 @@ describe('an entity generated without writes has no mutation (S6 R2: the emitter
 		expect(api).not.toMatch(/'(POST|PATCH|DELETE)'/);
 		expect(api).toContain('create: (_data: never)');
 		expect(api).toContain('update: (_id: string, _data: never)');
+		// The reasons are the derivation's `writesDisabledBy`, not a family's: an entity with no child has no child to point at.
+		expect(api).toContain('No `POST /audit_entries`: audit_entry.generate.writes');
+		expect(api).toContain('No `DELETE /audit_entries/:id`: audit_entry.generate.writes');
+		expect(api).not.toContain('through its child');
+		expect(api).not.toContain('RFC-0006');
 		expect(read('entities/audit-entry.ts')).toContain('createEntityHooks<AuditEntry, never, never>');
 		for (const file of ['entities/audit-entry.ts', 'entities/index.ts']) {
 			expect(read(file)).not.toMatch(/use(Create|Update|Delete)AuditEntry\b/);
@@ -254,10 +261,18 @@ describe('an entity with `api: false` has no REST mutation (S6 R2 fixes: writeRo
 		const surface = projectSurface(c)!.entities.ledger_note!;
 		expect(surface.http.routes).toEqual([]);
 		expect(surface.useCases.some((u) => u.kind === 'create')).toBe(true); // the use cases exist; the routes do not
-		expect(writeRoutes(entity, c)).toEqual({ create: false, update: false, delete: false });
+		const routes = writeRoutes(entity, c);
+		expect([routes.create, routes.update, routes.delete]).toEqual([false, false, false]);
+		// The reason is the derivation's (`http.disabledBy`: `api: false`), not a family's and not "generated without writes".
+		expect(routes.why.create).toBe('ledger_note.api');
+		expect(routes.why.update).toBe('ledger_note.api');
 		const out = join(dir, 'out');
 		emitFrontendSet(c, out);
-		expect(readFileSync(join(out, 'api/ledger-note.ts'), 'utf-8')).not.toMatch(/'(POST|PATCH|DELETE)'/);
+		const api = readFileSync(join(out, 'api/ledger-note.ts'), 'utf-8');
+		expect(api).not.toMatch(/'(POST|PATCH|DELETE)'/);
+		expect(api).toContain('No `PATCH /ledger_notes/:id`: ledger_note.api');
+		expect(api).not.toContain('without writes');
+		expect(api).not.toContain('through its child');
 		expect(readFileSync(join(out, 'entities/ledger-note.ts'), 'utf-8')).not.toMatch(/useCreateLedgerNote\b/);
 	});
 });
@@ -279,5 +294,29 @@ describe('golden', () => {
 		for (const rel of SNAPSHOT_FILES) {
 			expect(read(rel), `mismatch in ${rel}`).toBe(readFileSync(join(SNAPSHOT_DIR, rel), 'utf-8'));
 		}
+	});
+});
+
+describe('writeRoutes and flatChild never answer for an entity they cannot resolve (Gate 2.5)', () => {
+	it('throws, naming the entity, when definitions exist but the surface has no entry for it', () => {
+		const ghost = { ...ctx.entities[0]!, name: 'ghost_entity' };
+		expect(() => writeRoutes(ghost, ctx)).toThrow(/ghost_entity/);
+	});
+
+	it('keeps the permissive answer only for a registry-only context (no definitions)', () => {
+		const bare = { ...ctx, definitions: undefined } as FrontendEmitContext;
+		const routes = writeRoutes(ctx.entities[0]!, bare);
+		expect([routes.create, routes.update, routes.delete]).toEqual([true, true, true]);
+	});
+
+	it('flatChild owns the child type names the api client, the hooks and the graph all print', () => {
+		const child = ctx.entities.find((e) => e.name === 'meeting')!;
+		const flat = flatChild(child, ctx)!;
+		expect(flat.withBaseType).toBe('MeetingWithBase');
+		expect(flat.flatInputType).toBe('MeetingFlatInput');
+		expect(read('api/meeting.ts')).toContain(`export type ${flat.withBaseType} =`);
+		expect(read('entities/meeting.ts')).toContain(flat.flatInputType);
+		expect(read('graph/meeting.ts')).toContain(`import type { ${flat.withBaseType} } from '../api/meeting'`);
+		expect(flatChild(ctx.entities.find((e) => e.name === 'communication')!, ctx)).toBeNull();
 	});
 });

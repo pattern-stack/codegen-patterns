@@ -46,7 +46,7 @@ import {
   relationMethodName,
 } from '../../../../src/derived/api/names.js';
 import { camelCase, emittedStem } from '../../../../src/config/file-naming.js';
-import { resolveImpliedBehaviors } from '../../../../src/patterns/implied-behaviors.js';
+import { resolvedBehaviorNames as resolveBehaviorNames } from '../../../../src/patterns/implied-behaviors.js';
 import {
   fieldColumnNullable,
   foreignKeyColumnNullable,
@@ -1581,8 +1581,7 @@ export function buildIntegrationSurface(patternName, processedFields, belongsTo,
  * narrow a scope, where a template call has registered its patterns already.
  */
 function resolvedBehaviorNames(def) {
-  const explicit = (def.behaviors ?? []).map((b) => (typeof b === 'string' ? b : b.name));
-  return [...explicit, ...resolveImpliedBehaviors(def.entity).filter((b) => !explicit.includes(b))];
+  return resolveBehaviorNames(def.behaviors ?? [], def.entity);
 }
 
 /**

@@ -44,16 +44,15 @@ export function buildEntityHooksFile(
 	const useCreate = routes.create ? `\tuseCreate: useCreate${className},\n` : '';
 	const useUpdate = routes.update ? `\tuseUpdate: useUpdate${className},\n` : '';
 	const useDelete = routes.delete ? `\tuseDelete: useDelete${className},\n` : '';
-	// Type arguments, trailing defaults dropped (`TCreate` / `TUpdate` default to `Partial<TEntity>`).
-	const typeArgList = [
-		className,
-		routes.create ? (flat ? `${className}FlatInput` : null) : 'never',
-		routes.update ? (flat ? `${className}FlatInput` : null) : 'never',
-	];
-	const filled = typeArgList.map((a, i) => a ?? (i === 0 ? className : `globalThis.Partial<${className}>`));
-	while (filled.length > 1 && typeArgList[filled.length - 1] === null) filled.pop();
-	const typeArgs = filled.join(', ');
-	const apiImport = flat ? `import { ${camelName}Api, type ${className}FlatInput } from '../api/${fileStem}';` : `import { ${camelName}Api } from '../api/${fileStem}';`;
+	// Type arguments, trailing defaults dropped (`TCreate` / `TUpdate` default to `Partial<TEntity>`): `never` for a
+	// mutation with no route, the flat input for a child's, else the default (omitted when nothing follows it).
+	const mutationArg = (exists: boolean): string | null => (exists ? (flat ? flat.flatInputType : null) : 'never');
+	const createArg = mutationArg(routes.create);
+	const updateArg = mutationArg(routes.update);
+	const defaulted = `globalThis.Partial<${className}>`;
+	const typeArgs = [className, ...(updateArg !== null ? [createArg ?? defaulted, updateArg] : createArg !== null ? [createArg] : [])].join(', ');
+
+	const apiImport = flat ? `import { ${camelName}Api, type ${flat.flatInputType} } from '../api/${fileStem}';` : `import { ${camelName}Api } from '../api/${fileStem}';`;
 
 	const body = `import { createEntityHooks } from '@pattern-stack/frontend-patterns';
 import { ${camelName}Collection } from '../collections/${fileStem}';

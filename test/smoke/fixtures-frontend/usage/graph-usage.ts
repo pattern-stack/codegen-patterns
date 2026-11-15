@@ -121,7 +121,7 @@ export function typeGate(id: string): unknown {
 	communicationPartApi.create({});
 
 	// ── S6 R2: an entity generated without writes has no mutation at all ──────
-	// `audit_entry` says `generate: { writes: false }`: the backend has no create / update / delete use case, so the
+	// `audit_entry` says `generate: { writes: false }`: the backend has no create / update / delete route, so the
 	// frontend reads that from the derived API surface and emits none — not a hook re-export, not a typed body.
 	const auditReads = [entityHooks.useAuditEntryList, entityHooks.useAuditEntry];
 	// @ts-expect-error no `useCreateAuditEntry`: writes are off

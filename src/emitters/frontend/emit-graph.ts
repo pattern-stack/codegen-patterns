@@ -50,7 +50,7 @@
 
 import { join } from 'node:path';
 import type { FrontendEmitContext } from './types';
-import { withBanner, writeFile } from './emit-utils';
+import { type FlatChild, flatChild, withBanner, writeFile } from './emit-utils';
 import { emittedStem } from '../../config/file-naming.js';
 import {
 	accessorNodes,
@@ -210,9 +210,11 @@ export class ReservedRelationAliasError extends Error {
 
 /**
  * A hop the generated query INNER-joins (RFC-0006 §3.4): a child's edge to its base.
- * A child's shape holds rows whose base left the base's shape or was soft-deleted, so
- * the child row must not exist on the client until its base does — which makes the
- * joined row never absent, and the result type says so (no `| undefined`).
+ * A child's shape can hold rows whose base is not (or no longer) in the client's base collection — the base left
+ * the base's shape — so the child row must not exist on the client until its base does, which makes the joined
+ * row never absent, and the result type says so (no `| undefined`). The join sees only what the base collection
+ * holds: a SOFT-DELETED base row is still synced (the collection reads the whole table), so it is hidden only if
+ * the consumer's shape proxy filters `deleted_at` (RFC-0006 §3.4).
  */
 const isInnerHop = (rel: ClientRelation): boolean => rel.inherits === 'base';
 
@@ -293,8 +295,18 @@ export function buildEntityGraphFile(
 		.map(([file, className]) => `import type { ${className} } from '${dbEntities}/${file}';`)
 		.join('\n');
 	// The flat type is the api client's (one owner); this file imports it to use and re-exports it below.
-	const withBaseTypeImport = entity.className && node.relations.some(isInnerHop)
-		? `import type { ${entity.className}WithBase } from '../api/${entity.fileStem}';\n`
+	// REL-1's edge marker (`isInnerHop`) and `flatChild` both say "this is a child"; they must agree, or this file would
+	// import a type the api client does not export.
+	const flat = flatChild(entity, ctx);
+	const hasBaseHop = node.relations.some(isInnerHop);
+	if (hasBaseHop && !flat) {
+		throw new Error(
+			`graph/${entity.name}: the relation graph marks '${entity.name}' as a child of its base, but the frontend ` +
+				'cannot resolve that base or its discriminator, so `<Child>WithBase` would not exist.',
+		);
+	}
+	const withBaseTypeImport = flat && hasBaseHop
+		? `import type { ${flat.withBaseType} } from '../api/${entity.fileStem}';\n`
 		: '';
 
 	// ── the nested `with` types, one per to-many branch ───────────────────────
@@ -465,7 +477,7 @@ function withOf(value: unknown): globalThis.Record<string, unknown> {
 `
 			: '';
 
-	const withBase = buildWithBaseHelper(node, naming);
+	const withBase = flat && hasBaseHop ? buildWithBaseHelper(node, naming, flat) : '';
 	// The one hop that is not left-joined (RFC-0006 §3.4) — said only where it applies.
 	const innerNote = ones.some(isInnerHop)
 		? ' — except a child\'s hop to its base, which is inner-joined and so is \`T\`'
@@ -580,14 +592,15 @@ ${assembleManys}
  * The `<Child>WithBase` helper of an `electric` child (RFC-0006 §3.4), or `''` for any
  * other entity: the flat type (the backend's `<Child>Flat`, on the client), the query
  * fragment (child ⋈ base on id — the caller adds where / orderBy / limit) and the two
- * hooks. The join is an INNER join, which is the point: a child whose base has left
- * the base's shape disappears from every list with no client code. A `sync: api` child
+ * hooks. The join is an INNER join, which is the point: a child whose base is absent
+ * from the client disappears from every list with no client code. A `sync: api` child
  * never reaches here (it has no accessor module) — its REST routes already return the
  * flat shape.
  */
 function buildWithBaseHelper(
 	node: ClientGraphNode,
 	naming: Map<string, TargetNaming>,
+	flat: FlatChild,
 ): string {
 	const entity = node.entity;
 	const baseRel = node.relations.find(isInnerHop);
@@ -595,9 +608,9 @@ function buildWithBaseHelper(
 	if (!entity || !baseRel || !base) return '';
 
 	const { className, camelName, classNamePlural, pluralCamelName } = entity;
-	const type = `${className}WithBase`;
+	const type = flat.withBaseType;
 	const fragment = `${pluralCamelName}WithBase`;
-	const flat = '{ ...r.base, ...r.row }';
+	const merged = '{ ...r.base, ...r.row }';
 	return `
 /**
  * The backend's \`${className}Flat\`, on the client. Owned by the api client (\`api/${entity.fileStem}.ts\`, which every
@@ -627,7 +640,7 @@ export function use${classNamePlural}WithBase(): {
 		${fragment}(q).select(({ row, base }) => ({ row, base })),
 	);
 	return {
-		data: (result.data ?? []).map((r): ${type} => (${flat})),
+		data: (result.data ?? []).map((r): ${type} => (${merged})),
 		isLoading: result.isLoading,
 		isError: result.isError,
 	};
@@ -650,7 +663,7 @@ export function use${className}WithBase(id: string | null | undefined): {
 	);
 	const first = result.data?.[0];
 	return {
-		data: first ? ((r): ${type} => (${flat}))(first) : undefined,
+		data: first ? ((r): ${type} => (${merged}))(first) : undefined,
 		isLoading: result.isLoading,
 		isError: result.isError,
 	};

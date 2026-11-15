@@ -4,7 +4,7 @@
  * Used by the CLI `codegen project graph` command to produce JSON
  * that the schema-graph-viewer can consume via its SchemaAdapter.
  */
-import { inheritsRelationId } from '../derived/api/project.js';
+import { inheritsRelationId } from '../schema/inheritance.js';
 import type {
   DomainGraph,
   ParsedEntity,

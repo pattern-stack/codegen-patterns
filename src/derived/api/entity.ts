@@ -15,7 +15,7 @@
 
 import { entityModuleNaming } from '../../config/module-tree.js';
 import { junctionName } from '../../config/junction-naming.js';
-import { baseOnlyKinds, inheritsOf, naturalKeyIndexOf, type InheritanceBase, type InheritanceChild } from '../../schema/inheritance.js';
+import { baseOnlyKinds, INHERITS_PATH, inheritsOf, naturalKeyIndexOf, type InheritanceBase, type InheritanceChild } from '../../schema/inheritance.js';
 import { deriveRoleRelationships, type RoleDefinition } from '../../roles/derive.js';
 import {
 	controllerClassName,
@@ -421,7 +421,7 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 
 	// ── The family reads (RFC-0006 §3, #875) ────────────────────────────────
 	const family = familyReadSurface(definition, input.inheritanceChildren);
-	const inheritsOrigin = fromYaml(['inherits']);
+	const inheritsOrigin = fromYaml([...INHERITS_PATH]);
 	// A base's cross-kind reads are caused by its `discriminator:`; the children that make them exist are named.
 	const discriminatorOrigin: Origin = {
 		from: 'yaml',

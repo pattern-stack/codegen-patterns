@@ -147,14 +147,15 @@ export function buildStoreIndexFile(ctx: FrontendEmitContext): string {
 	// An entity with no create (or update) route has `TCreate` (`TUpdate`) `= never` (RFC-0006 §4.1), which `createStore`'s
 	// `EntityHooks<any, any, any>` does not accept (mutation variance). The store never calls create, so the
 	// one boundary cast is here, named, and only for those entities.
+	const fullWrites = new Map(entities.map((e) => [e.name, writeRoutes(e, ctx).create && writeRoutes(e, ctx).update]));
 	const entityEntries = entities
 		.map((e) =>
-			writeRoutes(e, ctx).create && writeRoutes(e, ctx).update
+			fullWrites.get(e.name)
 				? `\t\t${e.plural}: ${e.camelName}Hooks,`
 				: `\t\t${e.plural}: ${e.camelName}Hooks as unknown as EntityHooks<any, any, any>,`,
 		)
 		.join('\n');
-	const needsHooksType = entities.some((e) => !(writeRoutes(e, ctx).create && writeRoutes(e, ctx).update));
+	const needsHooksType = entities.some((e) => !fullWrites.get(e.name));
 	const collectionEntries = entities
 		.map((e) => `\t\t${e.plural}: ${e.camelName}Collection,`)
 		.join('\n');

@@ -145,36 +145,39 @@ export function buildEntityApiFile(
 	const flat = flatChild(entity, ctx);
 	// A child speaks the FLAT contract (RFC-0006 §5): reads return the base's columns and its own, and a write
 	// takes them too (no `kind`: the route is the kind). The row type `<Class>` is the table, which is neither.
-	const readType = flat ? `${className}WithBase` : className;
-	const inputType = flat ? `${className}FlatInput` : `globalThis.Partial<${className}>`;
+	const readType = flat ? flat.withBaseType : className;
+	const inputType = flat ? flat.flatInputType : `globalThis.Partial<${className}>`;
 	const flatTypes = flat
 		? `
 /** The backend's \`${className}Flat\`, on the client: the base's columns and the child's own (RFC-0006 §3.4). */
-export type ${className}WithBase = globalThis.Omit<${flat.base.className}, '${flat.discriminatorProp}'> & ${className};
+export type ${flat.withBaseType} = globalThis.Omit<${flat.base.className}, '${flat.discriminatorProp}'> & ${className};
 
 /** A flat create / update body: the base's fields and the child's, without the discriminator (the route is the kind). */
-export type ${className}FlatInput = globalThis.Partial<globalThis.Omit<${className}WithBase, 'id' | '${flat.discriminatorProp}'>>;
+export type ${flat.flatInputType} = globalThis.Partial<globalThis.Omit<${flat.withBaseType}, 'id' | '${flat.discriminatorProp}'>>;
 `
 		: '';
 	const baseImport = flat
 		? `import type { ${flat.base.className} } from '${config.dbEntitiesImport}/${flat.base.name}';\n`
 		: '';
-	// A base whose every kind has a child has no `POST /<plural>` (RFC-0006 §4.1): `create` takes `never`, so
-	// nothing can call it, and it issues no request. (`createEntityHooks` types `api.create` as required.)
+	// A mutation with no route (RFC-0006 §4.1 for a base whose every kind has a child; `generate: { writes: false }`;
+	// `api: false`) takes `never`, so nothing can call it, and it issues no request. It is still on the object because
+	// `EntityApi` requires the key. The reason is the derivation's (`writeRoutes().why`), never this file's guess.
 	const routes = writeRoutes(entity, ctx);
+	const missing = (verb: string, route: string, why: string | undefined): string => {
+		const reason = why ?? 'not generated';
+		return `\t/** No \`${verb} ${route}\`: ${reason.replace(/\*\//g, '* /')}. */\n`;
+	};
+	const reject = (key: string, why: string | undefined): string =>
+		`Promise.reject(new globalThis.Error(${JSON.stringify(`${name} has no ${key} route: ${why ?? 'not generated'}`)}))`;
 	const createMethod = routes.create
 		? `\tcreate: (data: ${inputType}): Promise<${readType}> =>\n\t\trequest<${readType}>('POST', '/${plural}', data),\n\n`
-		: `\t/** No \`POST /${plural}\`: every kind of ${name} is created through its child (RFC-0006 §4.1). */\n\tcreate: (_data: never): Promise<${className}> =>\n\t\tPromise.reject(new globalThis.Error('${name} has no create route: create a row of any kind through its child')),\n\n`;
-
-	// A write the backend does not generate (`generate: { writes: false }`) has no route either: `update` takes `never`
-	// and `delete` is never called by a hook the entity re-exports; both are still on the object because
-	// `EntityApi` requires them (RFC-0006 S6 R2).
+		: `${missing('POST', `/${plural}`, routes.why.create)}\tcreate: (_data: never): Promise<${className}> =>\n\t\t${reject('create', routes.why.create)},\n\n`;
 	const updateMethod = routes.update
 		? `\tupdate: (id: string, data: ${inputType}): Promise<${readType}> =>\n\t\trequest<${readType}>('PATCH', \`/${plural}/\${id}\`, data),\n\n`
-		: `\t/** No \`PATCH /${plural}/:id\`: ${name} is generated without writes. */\n\tupdate: (_id: string, _data: never): Promise<${className}> =>\n\t\tPromise.reject(new globalThis.Error('${name} has no update route')),\n\n`;
+		: `${missing('PATCH', `/${plural}/:id`, routes.why.update)}\tupdate: (_id: string, _data: never): Promise<${className}> =>\n\t\t${reject('update', routes.why.update)},\n\n`;
 	const deleteMethod = routes.delete
 		? `\tdelete: (id: string): Promise<void> =>\n\t\trequest<void>('DELETE', \`/${plural}/\${id}\`),\n`
-		: `\t/** No \`DELETE /${plural}/:id\`: ${name} is generated without writes. */\n\tdelete: (_id: never): Promise<void> =>\n\t\tPromise.reject(new globalThis.Error('${name} has no delete route')),\n`;
+		: `${missing('DELETE', `/${plural}/:id`, routes.why.delete)}\tdelete: (_id: never): Promise<void> =>\n\t\t${reject('delete', routes.why.delete)},\n`;
 
 	const body = `import { MAX_PAGE_SIZE, type ListQuery, type Page, request, toListQueryString } from './client';
 import type { ${className} } from '${config.dbEntitiesImport}/${name}';

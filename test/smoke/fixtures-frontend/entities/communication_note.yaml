@@ -1,4 +1,4 @@
-# RFC-0006 (#875) fixture family — frontend-smoke copy. Same as test/fixtures/inheritance/entities/communication_note.yaml, except `sync: electric` (the client graph joins collections, so every entity on a hop must sync the same way, FE-REL §4.4) and tenant_scoped naming its column where the smoke copies do. Compared by src/__tests__/fixtures/inheritance-fixtures-agree.test.ts.
+# RFC-0006 (#875) fixture family — frontend-smoke copy. Same as test/fixtures/inheritance/entities/communication_note.yaml, except `sync: electric` (the client graph joins collections, so every entity on a hop must sync the same way, FE-REL §4.4) and tenant_scoped spelling its column out (`tenant_id`, which this harness's `project init` gives, so it resolves to the source set's). Compared by src/__tests__/fixtures/inheritance-fixtures-agree.test.ts.
 # RFC-0006 §2.4 — a match: whose every FK is nullable, two of them sharing one derived column: the column is
 # nullable too, so each FK carries an internal CHECK that a SET FK has its derived column (MATCH SIMPLE skips a
 # composite FK that has a NULL in any column). One FK may be set while the other is NULL.

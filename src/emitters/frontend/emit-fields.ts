@@ -321,7 +321,7 @@ export function buildEntityFieldsFile(
 	// Capabilities: write gated on repository|trpc exposure (default-on).
 	const expose = parsed?.expose ?? ['repository', 'rest', 'trpc'];
 	const canWrite = expose.includes('repository') || expose.includes('trpc');
-	// What the backend generates (its derived use cases) narrows what `expose` allows: a base whose every kind has a
+	// What the backend generates (its derived HTTP routes) narrows what `expose` allows: a base whose every kind has a
 	// child has no create route (RFC-0006 §4.1), an entity generated without writes has none of the three.
 	const routes = writeRoutes(entity, ctx);
 	const canCreate = canWrite && routes.create;

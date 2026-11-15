@@ -18,7 +18,7 @@ import { emittedStem } from '../../config/file-naming.js';
 import type { EntityRegistryEntry, FrontendEmitContext } from './types';
 import { resolveSyncMode, sortEntities } from './types';
 import { timestampBehaviorNames } from '../../behaviors/index.js';
-import { resolveImpliedBehaviors } from '../../patterns/implied-behaviors.js';
+import { resolvedBehaviorNames } from '../../patterns/implied-behaviors.js';
 import { withBanner, writeFile } from './emit-utils';
 import type { ClientGraph, JunctionCollectionEntry } from './graph-model';
 
@@ -42,7 +42,7 @@ const DATE_PARSER_TYPES: ReadonlySet<string> = new Set(['timestamptz', 'timestam
 /**
  * Whether this entity's own table has a date-family column: a `date` / `datetime` field, or a behavior that adds
  * one (`timestampBehaviorNames()`: `timestamps`, `soft_delete`) — DECLARED or IMPLIED by a pattern, the backend's
- * own rule (`resolvedBehaviorNames`: declared + `resolveImpliedBehaviors`).
+ * own rule (`resolvedBehaviorNames` in `src/patterns/implied-behaviors.ts`: declared + pattern-implied).
  *
  * `electricCollectionOptions` types `parser` against the row type: a parser that
  * returns a `Date` is a type error on a row with no `Date` in it (`ParseFunction<never>`),
@@ -54,10 +54,7 @@ const DATE_PARSER_TYPES: ReadonlySet<string> = new Set(['timestamptz', 'timestam
 function rowCarriesDates(entity: EntityRegistryEntry, ctx: FrontendEmitContext): boolean {
 	const parsed = ctx.parsed.get(entity.name);
 	if (!parsed) return true;
-	const behaviors = [
-		...parsed.behaviors,
-		...resolveImpliedBehaviors({ pattern: parsed.pattern, patterns: parsed.patterns }),
-	];
+	const behaviors = resolvedBehaviorNames(parsed.behaviors, { pattern: parsed.pattern, patterns: parsed.patterns });
 	if (timestampBehaviorNames().some((b) => behaviors.includes(b))) return true;
 	return [...parsed.fields.values()].some((f) => f.type === 'date' || f.type === 'datetime');
 }
