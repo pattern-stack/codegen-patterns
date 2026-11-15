@@ -26,7 +26,7 @@ import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
 import { printError, printInfo, printSuccess, printWarning } from '../ui/output.js';
 import { regenerateRelationsManifest } from '../shared/relations-generator.js';
-import { entitySetRejections } from '../shared/entity-render.js';
+import { definitionSetRejections } from '../shared/entity-render.js';
 import { printRejections, reportPreflightStop } from '../shared/run-rejections.js';
 import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
 import { reportRegenerationFailure } from '../shared/generated-file.js';
@@ -187,31 +187,18 @@ export class RelationshipNewCommand extends Command {
 			return 2;
 		}
 
-		// Its post-steps (barrels, relations manifest) read the whole entity set:
-		// an entity YAML that fails the schema stops the run, named (#915).
-		const setRejections = entitySetRejections(ctx);
-		if (setRejections.length > 0) {
-			printRejections(setRejections);
-			return reportPreflightStop('relationship new', setRejections);
+		// Its post-steps (barrels, relations manifest) read every entity,
+		// relationship and junction definition: a file that fails validation —
+		// a target or not — stops the run in every mode, named (#915).
+		const rejections = definitionSetRejections(ctx, { relationships: targets });
+		if (rejections.length > 0) {
+			printRejections(rejections);
+			return reportPreflightStop('relationship new', rejections);
 		}
-
-		// Pre-flight: validate each YAML.
 		const validated: Array<{ file: string; name: string }> = [];
-		const invalid: Array<{ file: string; message: string }> = [];
 		for (const file of targets) {
 			const result = loadRelationshipFromYaml(file);
-			if (result.success) {
-				validated.push({ file, name: result.definition.relationship.name });
-			} else {
-				invalid.push({ file, message: result.error });
-			}
-		}
-
-		if (invalid.length > 0) {
-			for (const i of invalid) {
-				printError(`${path.basename(i.file)} — ${i.message}`);
-			}
-			if (!isJsonMode()) return 1;
+			if (result.success) validated.push({ file, name: result.definition.relationship.name });
 		}
 
 		// Git safety
@@ -232,7 +219,7 @@ export class RelationshipNewCommand extends Command {
 					command: 'relationship new',
 					dryRun: true,
 					relationships: validated.map((v) => ({ name: v.name, file: v.file })),
-					totals: { planned: validated.length, invalid: invalid.length },
+					totals: { planned: validated.length },
 				});
 			} else {
 				printInfo(`Dry run — ${validated.length} relationships would be generated:`);
@@ -240,14 +227,12 @@ export class RelationshipNewCommand extends Command {
 					console.log(`  ${theme.muted(icons.arrow)} ${v.name}  ${theme.muted(v.file)}`);
 				}
 			}
-			return invalid.length > 0 ? 1 : 0;
+			return 0;
 		}
 
 		// Invoke Hygen for each validated target.
 		const succeeded: string[] = [];
-		const failed: Array<{ name: string; file: string; message: string }> = [
-			...invalid.map((i) => ({ name: path.basename(i.file), file: i.file, message: i.message })),
-		];
+		const failed: Array<{ name: string; file: string; message: string }> = [];
 		for (const v of validated) {
 			if (!isJsonMode()) {
 				printInfo(`generating ${v.name}`);
@@ -327,7 +312,7 @@ export class RelationshipNewCommand extends Command {
 				},
 			});
 		} else {
-			const total = validated.length + invalid.length;
+			const total = validated.length;
 			console.log('');
 			if (failed.length === 0) {
 				printSuccess(`${total} relationships · ${succeeded.length} succeeded`);

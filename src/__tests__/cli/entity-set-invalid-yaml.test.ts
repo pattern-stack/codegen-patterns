@@ -1,5 +1,5 @@
 /**
- * #915 — an entity YAML that fails the schema is a run-level rejection, named,
+ * #915 — an entity, relationship or junction YAML that fails validation is a run-level rejection, named,
  * whichever command runs and whichever target it names. The whole-set
  * post-steps (barrels, relations manifest, scope union, events) read the
  * entity directory and used to skip an invalid entity without a word, writing a
@@ -30,14 +30,16 @@ const USER = 'entity:\n  name: user\n  plural: users\nfields:\n  email:\n    typ
 // `config:` at the YAML root instead of inside `entity:` — fails the schema.
 const BAD = 'entity:\n  name: bad\n  plural: bads\nconfig:\n  x: 1\nfields:\n  title:\n    type: string\n';
 
-function mkProject(): string {
+type Broken = 'entity' | 'junction' | 'relationship';
+
+function mkProject(broken: Broken = 'entity'): string {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'set-invalid-'));
 	tempDirs.push(root);
 	fs.writeFileSync(path.join(root, 'codegen.config.yaml'), 'paths:\n  entities: entities\n');
 	fs.mkdirSync(path.join(root, 'entities'));
 	fs.writeFileSync(path.join(root, 'entities', 'note.yaml'), NOTE);
 	fs.writeFileSync(path.join(root, 'entities', 'user.yaml'), USER);
-	fs.writeFileSync(path.join(root, 'entities', 'bad.yaml'), BAD);
+	if (broken === 'entity') fs.writeFileSync(path.join(root, 'entities', 'bad.yaml'), BAD);
 	fs.mkdirSync(path.join(root, 'junctions'));
 	fs.writeFileSync(
 		path.join(root, 'junctions', 'note_user.yaml'),
@@ -48,6 +50,13 @@ function mkProject(): string {
 		path.join(root, 'relationships', 'note_user_rel.yaml'),
 		'relationship:\n  name: note_user_rel\n  from: note\n  to: user\n',
 	);
+	// A definition that fails its own schema, beside the valid ones.
+	if (broken === 'junction') {
+		fs.writeFileSync(path.join(root, 'junctions', 'broken_junction.yaml'), 'pattern: Junction\nbetween: [note]\n');
+	}
+	if (broken === 'relationship') {
+		fs.writeFileSync(path.join(root, 'relationships', 'broken_rel.yaml'), 'relationship:\n  name: broken_rel\n  from: note\n');
+	}
 	return root;
 }
 
@@ -95,7 +104,7 @@ function expectNamesBad(out: string): void {
 	expect(out).toContain("'config'");
 }
 
-describe('an invalid entity YAML is a named run-level rejection (#915)', () => {
+describe('an invalid definition YAML (entity, relationship, junction) is a named run-level rejection (#915)', () => {
 	test('entity new --all', async () => {
 		const root = mkProject();
 		const { code, out } = await run(['entity', 'new', '--all', '--force', '--cwd', root]);
@@ -104,12 +113,18 @@ describe('an invalid entity YAML is a named run-level rejection (#915)', () => {
 		expectNothingWritten(root);
 	});
 
-	test('entity new <the invalid file>', async () => {
+	test('entity new <the invalid file> — one named rejection, stopped at pre-flight', async () => {
 		const root = mkProject();
 		const file = path.join(root, 'entities', 'bad.yaml');
-		const { code, out } = await run(['entity', 'new', file, '--force', '--cwd', root]);
+		const { code, out } = await run(['entity', 'new', file, '--force', '--json', '--cwd', root]);
 		expect(code).toBe(1);
-		expectNamesBad(out);
+		const payload = JSON.parse(out);
+		// One rejection, run-level: the file named once, at pre-flight, no hygen.
+		expect(payload.stopped).toBe('pre-flight');
+		expect(payload.failed).toHaveLength(1);
+		expect(payload.failed[0].name).toBe('bad.yaml');
+		expect(payload.failed[0].file).toBe(file);
+		expect(payload.failed[0].details.join('\n')).toContain("'config'");
 		expectNothingWritten(root);
 	});
 
@@ -149,6 +164,42 @@ describe('an invalid entity YAML is a named run-level rejection (#915)', () => {
 		const { code, out } = await run(['relationship', 'new', file, '--force', '--cwd', root]);
 		expect(code).toBe(1);
 		expectNamesBad(out);
+		expectNothingWritten(root);
+	});
+
+	const brokenCases: Array<[Broken, string, string]> = [
+		['junction', 'broken_junction.yaml', 'junctions'],
+		['relationship', 'broken_rel.yaml', 'relationships'],
+	];
+	for (const [broken, name, dir] of brokenCases) {
+		const targets: Array<[string, string]> = [
+			['entity new --all', ''],
+			['entity new <valid entity>', path.join('entities', 'note.yaml')],
+			['junction new <valid junction>', path.join('junctions', 'note_user.yaml')],
+			['relationship new <valid relationship>', path.join('relationships', 'note_user_rel.yaml')],
+		];
+		for (const [label, rel] of targets) {
+			test(`an invalid ${broken} YAML beside valid ones stops \`${label}\`, named`, async () => {
+				const root = mkProject(broken);
+				const noun = label.split(' ')[0]!;
+				const argv = rel === '' ? [noun, 'new', '--all'] : [noun, 'new', path.join(root, rel)];
+				const { code, out } = await run([...argv, '--force', '--json', '--cwd', root]);
+				expect(code).toBe(1);
+				const payload = JSON.parse(out);
+				expect(payload.stopped).toBe('pre-flight');
+				expect(payload.failed.map((f: { name: string }) => f.name)).toEqual([name]);
+				expect(payload.failed[0].file).toBe(path.join(root, dir, name));
+				expectNothingWritten(root);
+			});
+		}
+	}
+
+	test('relationship new --json stops on its own invalid target (no fall-through)', async () => {
+		const root = mkProject('relationship');
+		const file = path.join(root, 'relationships', 'broken_rel.yaml');
+		const { code, out } = await run(['relationship', 'new', file, '--force', '--json', '--cwd', root]);
+		expect(code).toBe(1);
+		expect(JSON.parse(out).stopped).toBe('pre-flight');
 		expectNothingWritten(root);
 	});
 });

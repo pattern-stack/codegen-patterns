@@ -13,8 +13,14 @@
  */
 
 import fs from 'node:fs';
+import path from 'node:path';
 
-import { loadEntityFromYaml, loadEntitiesFromYaml } from '../../utils/yaml-loader.js';
+import {
+	detectYamlType,
+	loadEntityFromYaml,
+	loadEntitiesFromYaml,
+	loadRelationshipFromYaml,
+} from '../../utils/yaml-loader.js';
 import { junctionsDirFor } from '../../config/junctions-dir.js';
 import { junctionSetIssues, loadJunctionSet } from '../../parser/load-junctions.js';
 import { validateRolesForGeneration } from '../../roles/validate-roles.js';
@@ -78,20 +84,51 @@ export interface EntityPreflight {
 }
 
 /**
- * Every entity YAML in the project's entities directory (plus `extraFiles`)
- * that fails schema validation, as a run-level rejection carrying the entity
- * file and each issue's path and message (#915). Shared by `entity new`,
- * `junction new` (through the pre-flight) and `relationship new`: every
- * command whose post-steps read the whole entity set.
+ * Every definition file a whole-set step reads — entity YAMLs, relationship
+ * YAMLs, junction YAMLs — that fails validation, as a run-level rejection
+ * carrying the file and each issue's path and message (#915). One rule: the
+ * barrels, relations manifest, scope union and event codegen read these
+ * directories whole, and a step that silently skipped a definition would write
+ * its output over a set missing it and fail far away, in `tsc`. Shared by
+ * `entity new`, `junction new` (through the pre-flight) and `relationship new`.
+ *
+ * `extra` names target files that may sit outside their directory; they are
+ * validated too.
  */
-export function entitySetRejections(ctx: Context, extraFiles: string[] = []): RunRejection[] {
+export function definitionSetRejections(
+	ctx: Context,
+	extra: { entities?: string[]; relationships?: string[] } = {},
+): RunRejection[] {
 	const layout = projectLayout(ctx.cwd, ctx.config);
-	const files = new Set([...listEntityYamls(layout.entities, layout.providers), ...extraFiles]);
 	const rejections: RunRejection[] = [];
-	for (const file of [...files].sort()) {
+
+	const entityFiles = new Set([
+		...listEntityYamls(layout.entities, layout.providers),
+		...(extra.entities ?? []),
+	]);
+	for (const file of [...entityFiles].sort()) {
 		const result = loadEntityFromYaml(file);
 		if (result.success) continue;
 		rejections.push({ file, message: result.error, details: result.details });
+	}
+
+	// A relationship file is one the barrels would read (`relationship:` key) or
+	// one that does not even parse; a file of another kind is not its business.
+	const relationshipsDir = path.resolve(ctx.cwd, 'relationships');
+	const relationshipFiles = new Set([
+		...(fs.existsSync(relationshipsDir) ? findYamlFiles(relationshipsDir) : []),
+		...(extra.relationships ?? []),
+	]);
+	for (const file of [...relationshipFiles].sort()) {
+		const result = loadRelationshipFromYaml(file);
+		if (result.success) continue;
+		const named = (extra.relationships ?? []).includes(file) || detectYamlType(file) === 'relationship';
+		if (!named && !result.error.startsWith('Invalid YAML')) continue;
+		rejections.push({ file, message: result.error, details: result.details });
+	}
+
+	for (const issue of loadJunctionSet(junctionsDirFor(ctx.cwd)).issues) {
+		rejections.push({ file: issue.file, message: issue.message, details: issue.details });
 	}
 	return rejections;
 }
@@ -120,7 +157,7 @@ export async function preflightEntityTargets(
 	// `tsc`, instead of here. The check covers the whole directory — a single
 	// target run, or a run that targets a different, valid entity, is no
 	// exception — plus any target outside it.
-	const setRejections = entitySetRejections(ctx, targets);
+	const setRejections = definitionSetRejections(ctx, { entities: targets });
 	for (const file of targets) {
 		const result = loadEntityFromYaml(file);
 		if (result.success) {
@@ -247,8 +284,13 @@ export async function preflightEntityTargets(
 	// entity with no YAML, is a run-level rejection (the #666 posture) — never
 	// skipped, which would silently drop its fan-out.
 	const junctionSet = loadJunctionSet(junctionsDirFor(ctx.cwd));
+	// A junction file that fails to load is already in `setRejections`; only the
+	// cross-entity issues are new here.
+	const reportedFiles = new Set(setRejections.map((r) => r.file));
 	runRejections.push(
-		...junctionSetIssues(junctionSet, new Set(allEntitiesForEmits.map((e) => e.name))),
+		...junctionSetIssues(junctionSet, new Set(allEntitiesForEmits.map((e) => e.name))).filter(
+			(i) => !reportedFiles.has(i.file),
+		),
 	);
 
 	// RFC-0006 (#875): joined-table inheritance. A family is an input to the

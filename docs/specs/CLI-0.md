@@ -38,10 +38,12 @@ Three defects in the generator's own plumbing, found by CAP-1, NAME-0 and NAME-1
   stop the run whatever `--continue-on-error` says; the flag decides nothing for them (`docs/specs/JOBS-2.md`).
   *Revision 2026-09-18 (CLI-1, #666):* a provider YAML with a blocking issue is a third run-level rejection
   (`docs/specs/CLI-1.md`).
-  *Revision (#915):* an entity YAML that fails the schema is run-level too — for every file in the entities directory, not
-  only the targets (`entitySetRejections`, `src/cli/shared/entity-render.ts`; `relationship new` calls it as well). The
-  barrels, relations manifest and scope union read the whole directory, so a set missing an entity would be written
-  silently over it. `--continue-on-error` still decides `emits:` / `roles:` rejections.
+  *Revision (#915):* a definition file that fails validation is run-level too — entity, relationship and junction
+  YAMLs alike, every file in the directory and not only the targets (`definitionSetRejections`,
+  `src/cli/shared/entity-render.ts`; `entity new` through its pre-flight, `junction new` through the parents'
+  pre-flight, `relationship new` directly). The barrels, relations manifest and scope union read these directories whole,
+  so a set missing a definition would be written silently over it. `relationship new --json` no longer falls through
+  its own invalid targets. `--continue-on-error` still decides `emits:` / `roles:` rejections.
 - An entity whose `emits:` fails the cross-check is now rejected like a bad role, with the message
   `emits: validation failed` and one detail per error. It is not generated and counts as failed. Before, the default mode generated it anyway, and `prompt.js` emitted a TODO-only payload mapping for the
   unknown event. The EVT-7 comment already said "reported and skipped by default".
