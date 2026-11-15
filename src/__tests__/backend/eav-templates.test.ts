@@ -303,7 +303,7 @@ describe('backend eav templates — module rendering', () => {
     expect(output).toContain(
       "import { ListOpportunitiesWithFieldsUseCase } from './use-cases/list-opportunities-with-fields.use-case';",
     );
-    expect(output).toContain('FieldValuesModule,');
+    expect(output).toContain('forwardRef(() => FieldValuesModule),');
     expect(output).toContain('FindOpportunityByIdWithFieldsUseCase,');
     expect(output).toContain('ListOpportunitiesWithFieldsUseCase,');
   });
@@ -370,7 +370,7 @@ describe('backend eav templates — field-value entity named from its YAML (#647
     expect(output).toContain(
       "import { CustomFieldValuesModule } from '../../eav/custom-field-values/custom-field-values.module';",
     );
-    expect(output).toContain('CustomFieldValuesModule,');
+    expect(output).toContain('forwardRef(() => CustomFieldValuesModule),');
     expect(output).not.toContain('field-values/field-values.module');
   });
 

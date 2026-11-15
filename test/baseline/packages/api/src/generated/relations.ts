@@ -12,6 +12,7 @@ import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';
 import { hopScope, scopedRoot, tableScope, UNSCOPED, type ScopeConfig } from '@shared/base-classes/scope-filters';
 import * as schema from './schema';
 
+export const CATALOG_ENTRIES_SCOPE = tableScope(schema.catalog_entries, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: true, userTracking: true, enforcement: 'strict' });
 export const COMMUNICATIONS_SCOPE = tableScope(schema.communications, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: false, userTracking: false, enforcement: 'strict' });
 export const CONTACTS_SCOPE = tableScope(schema.contacts, { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' });
 export const DEALS_SCOPE = tableScope(schema.deals, { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' });
@@ -26,6 +27,7 @@ export const MEETINGS_SCOPE = tableScope(schema.meetings, { tenantScoped: true, 
  */
 export const SCOPES = {
 	accounts: tableScope(schema.accounts, UNSCOPED),
+	catalog_entries: CATALOG_ENTRIES_SCOPE,
 	communications: COMMUNICATIONS_SCOPE,
 	contacts: CONTACTS_SCOPE,
 	deal_states: tableScope(schema.deal_states, UNSCOPED),
@@ -44,6 +46,7 @@ export const SCOPES = {
 /** The ROOT scope of one table, typed to it: AND it into a hand-written `db.query.<table>` root `where`. */
 export const rootScope = {
 	accounts: (owner: string) => scopedRoot(SCOPES.accounts, owner),
+	catalog_entries: (owner: string) => scopedRoot(SCOPES.catalog_entries, owner),
 	communications: (owner: string) => scopedRoot(SCOPES.communications, owner),
 	contacts: (owner: string) => scopedRoot(SCOPES.contacts, owner),
 	deal_states: (owner: string) => scopedRoot(SCOPES.deal_states, owner),

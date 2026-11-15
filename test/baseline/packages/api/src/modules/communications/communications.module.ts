@@ -20,7 +20,6 @@ import { DeleteCommunicationUseCase } from './use-cases/delete-communication.use
   imports: [
     DatabaseModule,
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
   ],
   controllers: [CommunicationController],
   providers: [

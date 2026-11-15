@@ -205,31 +205,99 @@
 				}
 			},
 			{
-				"name": "exists",
-				"kind": "inherited",
-				"emitted": false,
-				"params": [],
-				"returns": "forwarded",
+				"name": "update",
+				"kind": "kind_guard",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
 				"readOptions": "none",
 				"origin": {
-					"from": "pattern",
-					"pattern": "Activity"
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"discriminator"
+						]
+					}
 				}
 			},
 			{
 				"name": "create",
-				"kind": "inherited",
-				"emitted": false,
-				"params": [],
-				"returns": "forwarded",
+				"kind": "create_guard",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					},
+					{
+						"name": "via"
+					}
+				],
+				"returns": "one",
 				"readOptions": "none",
 				"origin": {
-					"from": "pattern",
-					"pattern": "Activity"
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"discriminator"
+						]
+					}
 				}
 			},
 			{
-				"name": "update",
+				"name": "upsertByNaturalKey",
+				"kind": "upsert_own",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					},
+					{
+						"name": "via"
+					}
+				],
+				"returns": "one",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"unique_indexes",
+							0,
+							"natural_key"
+						]
+					}
+				}
+			},
+			{
+				"name": "exists",
 				"kind": "inherited",
 				"emitted": false,
 				"params": [],
@@ -529,6 +597,39 @@
 							"discriminator"
 						],
 						"note": "kinds with a child table: email, meeting"
+					}
+				}
+			},
+			{
+				"name": "upsertByNaturalKey",
+				"kind": "upsert_own",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "communication",
+					"layer": "repository",
+					"method": "upsertByNaturalKey"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"unique_indexes",
+							0,
+							"natural_key"
+						]
 					}
 				}
 			},

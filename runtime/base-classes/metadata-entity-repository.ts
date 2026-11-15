@@ -60,8 +60,10 @@ export abstract class MetadataEntityRepository<
       );
     }
 
+    // `deriveColumns` fills a `match:` column in the same statement (RFC-0006 §2.4). `set` is the first row's
+    // data, so the derived value is in it already.
     const data = inputs.map((input) =>
-      this.withTimestamps(input as Record<string, unknown>, 'create'),
+      this.deriveColumns(this.withTimestamps(input as Record<string, unknown>, 'create'), 'create'),
     );
 
     const rows = await this.runner(tx)

@@ -22,7 +22,6 @@ import { DeleteWorkspaceUseCase } from './use-cases/delete-workspace.use-case';
     DatabaseModule,
     forwardRef(() => WorkspaceMembersModule),
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
   ],
   controllers: [WorkspaceController],
   providers: [

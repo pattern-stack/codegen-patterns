@@ -92,7 +92,8 @@ export abstract class IntegratedEntityRepository<
       const copyThrough: Record<string, unknown> = {};
       for (const col of cfg.writeColumns) copyThrough[col] = w[col];
 
-      const values: Record<string, unknown> = this.stampTenant({
+      // `deriveColumns`: a `match:` column is a copy of a parent's column, filled in this statement (RFC-0006 §2.4).
+      const values: Record<string, unknown> = this.deriveColumns(this.stampTenant({
         externalId: w['externalId'],
         provider,
         ...copyThrough,
@@ -102,20 +103,22 @@ export abstract class IntegratedEntityRepository<
         // the SESSION zone's wall time, while a JS Date is written as UTC. It is
         // not in `set`, so a conflicting row keeps its original value.
         ...(this.behaviors.timestamps ? { createdAt: now, updatedAt: now } : {}),
-      });
+      }), 'create');
 
       // `set` excludes the identity (externalId/provider) AND the tenant column,
       // which is never in `writeColumns` — a conflicting row's owning tenant is
       // never rewritten. Resolved FKs are only written when non-null this run — never
       // clobber a previously resolved parent with null on a later run that
       // dropped the ref.
-      const set: Record<string, unknown> = {
+      const written: Record<string, unknown> = {
         ...copyThrough,
         ...(this.behaviors.timestamps ? { updatedAt: now } : {}),
       };
       for (const fk of cfg.fkResolvers) {
-        if (resolvedFks[fk.column] !== null) set[fk.column] = resolvedFks[fk.column];
+        if (resolvedFks[fk.column] !== null) written[fk.column] = resolvedFks[fk.column];
       }
+      // A foreign key this run resolved re-derives the `match:` column that follows it (and only then).
+      const set = this.deriveColumns(written, 'update');
       // Belt-and-braces (#715): whatever a hand-written config lists, the
       // upsert `set` never carries the tenant column.
       if (this.behaviors.tenantScoped) delete set[this.tenantColumn];

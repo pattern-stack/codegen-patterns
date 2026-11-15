@@ -1,8 +1,8 @@
 
-import { Inject, Module, type OnModuleInit } from '@nestjs/common';
+import { Inject, Module, forwardRef, type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
-import { ContactRepository } from '../contacts/contact.repository';
+import { ContactsModule } from '../contacts/contacts.module';
 
 import { MeetingRepository } from './meeting.repository';
 import { MeetingService } from './meeting.service';
@@ -20,15 +20,13 @@ import { DeleteMeetingUseCase } from './use-cases/delete-meeting.use-case';
 @Module({
   imports: [
     DatabaseModule,
+    forwardRef(() => ContactsModule),
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
-    // ContactsModule,
   ],
   controllers: [MeetingController],
   providers: [
     MeetingRepository,
     MeetingService,
-    ContactRepository,
     FindMeetingByIdUseCase,
     ListMeetingsUseCase,
     CreateMeetingUseCase,

@@ -15,7 +15,7 @@
 
 import { entityModuleNaming } from '../../config/module-tree.js';
 import { junctionName } from '../../config/junction-naming.js';
-import { inheritsOf, type InheritanceChild } from '../../schema/inheritance.js';
+import { inheritsOf, naturalKeyIndexOf, type InheritanceBase, type InheritanceChild } from '../../schema/inheritance.js';
 import { deriveRoleRelationships, type RoleDefinition } from '../../roles/derive.js';
 import {
 	controllerClassName,
@@ -97,6 +97,8 @@ export interface EntityDefinitionInput {
 	inherits?: string | { base: string; as?: string };
 	/** The base's kind column (RFC-0006 §1.1). */
 	discriminator?: string;
+	/** `unique_indexes:` — `natural_key: true` on one entry names the `upsertByNaturalKey` conflict target (§4.2). */
+	unique_indexes?: readonly { natural_key?: boolean }[] | null;
 	eav?: boolean;
 	eav_value_table?: boolean;
 }
@@ -105,8 +107,10 @@ export interface EntityDefinitionInput {
  * The YAML declaration that turns the write side off — create / update / delete use cases, their routes and
  * their module providers — or `null` when writes are emitted (RFC-0006 §13.2, #875).
  *
- * Two causes, `generate.writes: false` and a child's `inherits:` (a child's inherited `create` would insert a row
- * with no `id`: its key is the base row's, and the pair write lands in S4). The ONE owner of this decision —
+ * Two causes, `generate.writes: false` and a child's `inherits:` (the child's use cases would take the flat
+ * input, whose DTOs are S5's; until then the pair write is the repository's and the service's, not a use case's, and S5 deletes
+ * this branch).
+ * The ONE owner of this decision —
  * `deriveEntityApiSurface` reads it for the use cases and routes, and the templates read those — so a third
  * cause is one edit here.
  */
@@ -186,6 +190,51 @@ export function familyReadSurface(
 	};
 }
 
+/**
+ * The write half of the family surface (RFC-0006 §4, #875 S4) and the natural-key upsert — which methods exist, and
+ * which declaration causes each:
+ *
+ * - `pairWrite` — a child (`inherits:`): `create` / `update` / `delete` in its repository and `create` / `update` in
+ *   its service override the inherited ones, because the inherited `create` would insert a row with no base row.
+ * - `upsert` — `upsertByNaturalKey`. `'own'`: the entity declares `natural_key: true` on a `unique_indexes` entry.
+ *   `'through_base'`: a child whose base declares one (R11: a child declares none of its own). A child whose base
+ *   declares none has no upsert — there is no base conflict target to write through.
+ * - `kindGuardUpdate` — any base (`discriminator:`): its repository's `update` refuses a `kind` key, whether or not a
+ *   kind has a child table (the discriminator is immutable either way).
+ * - `kindGuardCreate` — a base with at least one child table: its repository's `create` and `upsertByNaturalKey` refuse a
+ *   kind that has one (`KindRequiresChildError`). The repository is the one owner, beside `KindImmutableError`; the service
+ *   forwards and keeps no copy (D16).
+ *
+ * The ONE owner: its readers are `deriveEntityApiSurface` (the methods) and `family-reads.test.ts`; the templates
+ * read the methods, not this. `inheritanceBase` is required, not defaulted: an absent base would read as "no upsert through it" and
+ * silently drop a child's.
+ */
+export function familyWriteSurface(
+	definition: EntityDefinitionInput,
+	inheritanceChildren: readonly InheritanceChild[],
+	inheritanceBase: InheritanceBase | null,
+): {
+	pairWrite: boolean;
+	upsert: 'own' | 'through_base' | null;
+	kindGuardUpdate: boolean;
+	kindGuardCreate: boolean;
+} {
+	const isChild = inheritsOf(definition) !== null;
+	let upsert: 'own' | 'through_base' | null = null;
+	if (isChild) {
+		if (inheritanceBase !== null && inheritanceBase.naturalKeyIndex >= 0) upsert = 'through_base';
+	} else if (naturalKeyIndexOf(definition) >= 0) {
+		upsert = 'own';
+	}
+	const hasDiscriminator = typeof definition.discriminator === 'string';
+	return {
+		pairWrite: isChild,
+		upsert,
+		kindGuardUpdate: hasDiscriminator,
+		kindGuardCreate: hasDiscriminator && inheritanceChildren.length > 0,
+	};
+}
+
 /** A junction YAML (`pattern: Junction`). */
 export interface JunctionInput {
 	between: readonly string[];
@@ -220,6 +269,8 @@ export interface EntityApiInput {
 	 * defaulted: an absent list would read as "no family" and silently drop a base's cross-kind reads.
 	 */
 	inheritanceChildren: readonly InheritanceChild[];
+	/** The base this entity inherits, with whether that base declares a natural key — `null` for a non-child. */
+	inheritanceBase: InheritanceBase | null;
 	/** Another entity's `entity:` block, by name (NAME-0) — `null` when it has no YAML. */
 	entityLookup: (name: string) => EntityBlockInput | null;
 }
@@ -382,6 +433,63 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 		);
 	}
 
+	// ── The write half (RFC-0006 §4, #875 S4) ───────────────────────────────
+	const writeFamily = familyWriteSurface(definition, input.inheritanceChildren, input.inheritanceBase);
+	const naturalKeyOrigin = (): Origin => {
+		if (writeFamily.upsert === 'through_base' && input.inheritanceBase !== null) {
+			return {
+				from: 'yaml',
+				at: {
+					doc: { kind: 'entity', name: input.inheritanceBase.name },
+					path: ['unique_indexes', input.inheritanceBase.naturalKeyIndex, 'natural_key'],
+					note: `${input.inheritanceBase.name}'s natural key, through ${entityName}'s inherits`,
+				},
+			};
+		}
+		return fromYaml(['unique_indexes', naturalKeyIndexOf(definition), 'natural_key']);
+	};
+	if (writeFamily.pairWrite) {
+		repository.push(
+			{ name: FAMILY_METHOD.create, kind: 'pair_create', emitted: true, params: [{ name: 'input' }, { name: 'tx' }], returns: 'one', readOptions: 'none', origin: inheritsOrigin },
+			{ name: FAMILY_METHOD.update, kind: 'pair_update', emitted: true, params: [{ name: 'id' }, { name: 'patch' }, { name: 'tx' }], returns: 'one', readOptions: 'none', origin: inheritsOrigin },
+			{ name: FAMILY_METHOD.delete, kind: 'pair_delete', emitted: true, params: [{ name: 'id' }, { name: 'tx' }], returns: 'none', readOptions: 'none', origin: inheritsOrigin },
+		);
+	}
+	if (writeFamily.kindGuardUpdate) {
+		repository.push({
+			name: FAMILY_METHOD.update,
+			kind: 'kind_guard',
+			emitted: true,
+			params: [{ name: 'id' }, { name: 'input' }, { name: 'tx' }],
+			returns: 'one',
+			readOptions: 'none',
+			origin: fromYaml(['discriminator']),
+		});
+	}
+	if (writeFamily.kindGuardCreate) {
+		// `create` itself is BaseRepository's — the guard overrides it, and a child's own pair write passes `via`.
+		repository.push({
+			name: FAMILY_METHOD.create,
+			kind: 'create_guard',
+			emitted: true,
+			params: [{ name: 'input' }, { name: 'tx' }, { name: 'via' }],
+			returns: 'one',
+			readOptions: 'none',
+			origin: fromYaml(['discriminator']),
+		});
+	}
+	if (writeFamily.upsert !== null) {
+		repository.push({
+			name: FAMILY_METHOD.upsertByNaturalKey,
+			kind: writeFamily.upsert === 'own' ? 'upsert_own' : 'upsert_through_base',
+			emitted: true,
+			params: writeFamily.upsert === 'own' && writeFamily.kindGuardCreate ? [{ name: 'input' }, { name: 'tx' }, { name: 'via' }] : [{ name: 'input' }, { name: 'tx' }],
+			returns: 'one',
+			readOptions: 'none',
+			origin: naturalKeyOrigin(),
+		});
+	}
+
 	for (const f of finders) {
 		if (finderLosesToFk(f)) continue;
 		const shadows = belongsTo.filter((b) => fkFinderName(b.foreignKey) === f.name).map((b) => ref(b.path));
@@ -485,6 +593,26 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 			returns: m.returns,
 			delegatesTo: repoRef(entityName, m.name),
 			origin: m.origin,
+		});
+	}
+
+	// The write half, forwarded: a child's pair write, the upsert. A base's create guard is the repository's.
+	if (writeFamily.pairWrite) {
+		service.push(
+			{ name: FAMILY_METHOD.create, kind: 'pair_create', emitted: true, params: [{ name: 'input' }, { name: 'tx' }], returns: 'one', delegatesTo: repoRef(entityName, FAMILY_METHOD.create), origin: inheritsOrigin },
+			{ name: FAMILY_METHOD.update, kind: 'pair_update', emitted: true, params: [{ name: 'id' }, { name: 'patch' }, { name: 'tx' }], returns: 'one', delegatesTo: repoRef(entityName, FAMILY_METHOD.update), origin: inheritsOrigin },
+			{ name: FAMILY_METHOD.delete, kind: 'pair_delete', emitted: true, params: [{ name: 'id' }, { name: 'tx' }], returns: 'none', delegatesTo: repoRef(entityName, FAMILY_METHOD.delete), origin: inheritsOrigin },
+		);
+	}
+	if (writeFamily.upsert !== null) {
+		service.push({
+			name: FAMILY_METHOD.upsertByNaturalKey,
+			kind: writeFamily.upsert === 'own' ? 'upsert_own' : 'upsert_through_base',
+			emitted: true,
+			params: [{ name: 'input' }, { name: 'tx' }],
+			returns: 'one',
+			delegatesTo: repoRef(entityName, FAMILY_METHOD.upsertByNaturalKey),
+			origin: naturalKeyOrigin(),
 		});
 	}
 

@@ -437,8 +437,9 @@ export abstract class BaseRepository<
    * the tenant column is stamped from the ambient tenant when tenantScoped=true.
    */
   async create(input: Partial<TEntity>, tx?: DrizzleTx): Promise<TEntity> {
-    const data = this.stampTenant(
-      this.withTimestamps(input as Record<string, unknown>, 'create'),
+    const data = this.deriveColumns(
+      this.stampTenant(this.withTimestamps(input as Record<string, unknown>, 'create')),
+      'create',
     );
     const rows = await this.runner(tx)
       .insert(this.tableRef)
@@ -456,8 +457,9 @@ export abstract class BaseRepository<
    */
   async update(id: string, input: Partial<TEntity>, tx?: DrizzleTx): Promise<TEntity> {
     this.assertTenantWritable('update');
-    const data = this.guardTenantOnUpdate(
-      this.withTimestamps(input as Record<string, unknown>, 'update'),
+    const data = this.deriveColumns(
+      this.guardTenantOnUpdate(this.withTimestamps(input as Record<string, unknown>, 'update')),
+      'update',
     );
     const rows = await this.runner(tx)
       .update(this.tableRef)
@@ -1000,6 +1002,25 @@ export abstract class BaseRepository<
    */
   protected assertReadScope(): void {
     this.scopeAnd(undefined, { softDelete: true });
+  }
+
+  /**
+   * Fill the columns the database DERIVES from a parent row, in the same
+   * statement as the write (RFC-0006 §2.4): a `match:` column is a copy of one
+   * of the parent's columns, never client input. The identity here; a generated
+   * repository whose entity has such a column overrides it and returns the data
+   * with each derived column set to a scalar subquery on the parent's primary key.
+   *
+   * Runs after the tenant stamp / timestamps (create) or the tenant guard
+   * (update), so it sees the final payload. `mode` is 'update' for an `update()`:
+   * the override re-derives a column only when the payload changes a foreign key
+   * it is derived from, and refuses a payload that names the column itself.
+   */
+  protected deriveColumns(
+    data: Record<string, unknown>,
+    _mode: 'create' | 'update',
+  ): Record<string, unknown> {
+    return data;
   }
 
   /**

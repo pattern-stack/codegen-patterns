@@ -128,43 +128,121 @@
 				}
 			},
 			{
-				"name": "exists",
-				"kind": "inherited",
-				"emitted": false,
-				"params": [],
-				"returns": "forwarded",
-				"readOptions": "none",
-				"origin": {
-					"from": "pattern",
-					"pattern": "Base"
-				}
-			},
-			{
 				"name": "create",
-				"kind": "inherited",
-				"emitted": false,
-				"params": [],
-				"returns": "forwarded",
+				"kind": "pair_create",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
 				"readOptions": "none",
 				"origin": {
-					"from": "pattern",
-					"pattern": "Base"
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "meeting"
+						},
+						"path": [
+							"inherits"
+						]
+					}
 				}
 			},
 			{
 				"name": "update",
-				"kind": "inherited",
-				"emitted": false,
-				"params": [],
-				"returns": "forwarded",
+				"kind": "pair_update",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "patch"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
 				"readOptions": "none",
 				"origin": {
-					"from": "pattern",
-					"pattern": "Base"
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "meeting"
+						},
+						"path": [
+							"inherits"
+						]
+					}
 				}
 			},
 			{
 				"name": "delete",
+				"kind": "pair_delete",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "none",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "meeting"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "upsertByNaturalKey",
+				"kind": "upsert_through_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"unique_indexes",
+							0,
+							"natural_key"
+						],
+						"note": "communication's natural key, through meeting's inherits"
+					}
+				}
+			},
+			{
+				"name": "exists",
 				"kind": "inherited",
 				"emitted": false,
 				"params": [],
@@ -319,6 +397,136 @@
 				}
 			},
 			{
+				"name": "create",
+				"kind": "pair_create",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "create"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "meeting"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "update",
+				"kind": "pair_update",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "patch"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "update"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "meeting"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "delete",
+				"kind": "pair_delete",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "none",
+				"delegatesTo": {
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "delete"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "meeting"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "upsertByNaturalKey",
+				"kind": "upsert_through_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "upsertByNaturalKey"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"unique_indexes",
+							0,
+							"natural_key"
+						],
+						"note": "communication's natural key, through meeting's inherits"
+					}
+				}
+			},
+			{
 				"name": "transcripts",
 				"kind": "relation_many",
 				"emitted": true,
@@ -363,39 +571,6 @@
 			},
 			{
 				"name": "exists",
-				"kind": "inherited",
-				"emitted": false,
-				"params": [],
-				"returns": "forwarded",
-				"origin": {
-					"from": "pattern",
-					"pattern": "Base"
-				}
-			},
-			{
-				"name": "create",
-				"kind": "inherited",
-				"emitted": false,
-				"params": [],
-				"returns": "forwarded",
-				"origin": {
-					"from": "pattern",
-					"pattern": "Base"
-				}
-			},
-			{
-				"name": "update",
-				"kind": "inherited",
-				"emitted": false,
-				"params": [],
-				"returns": "forwarded",
-				"origin": {
-					"from": "pattern",
-					"pattern": "Base"
-				}
-			},
-			{
-				"name": "delete",
 				"kind": "inherited",
 				"emitted": false,
 				"params": [],

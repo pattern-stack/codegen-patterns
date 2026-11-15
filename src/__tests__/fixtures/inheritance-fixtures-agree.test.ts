@@ -89,4 +89,14 @@ describe('the RFC-0006 fixture family agrees across harness directories', () => 
 			}
 		});
 	}
+
+	// Entities that are not in the family but are shared by two harnesses, by name (an explicit list: unrelated baseline
+	// and scaffold entities differ legitimately, so this is not a sweep over every name found in two places).
+	for (const name of ['catalog_entry']) {
+		it(`${name} is identical in the baseline and the scaffold`, () => {
+			const copies = byEntity.get(name)!;
+			expect([...copies.keys()].sort()).toEqual(['baseline', 'scaffold']);
+			expect(copies.get('scaffold')).toEqual(copies.get('baseline'));
+		});
+	}
 });

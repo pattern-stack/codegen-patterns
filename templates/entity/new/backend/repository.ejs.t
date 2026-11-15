@@ -33,29 +33,62 @@ const _withLine = _typedInclude ? '\n      with: opts?.with,' : '';
 const _ACROSS = ['all_kinds', 'kind_by_id', 'list_kind', 'count_kind'];
 const _isAcross = (m) => _ACROSS.includes(m.kind);
 const _isRead = (m) => m.kind === 'count' || m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans';
+// The write kinds (S4) close the same run: the `queries:` banner comes after the last of them.
+const _PAIR = ['pair_create', 'pair_update', 'pair_delete'];
+const _isPair = (m) => _PAIR.includes(m.kind);
+const _isWrite = (m) => _isPair(m) || m.kind === 'kind_guard' || m.kind === 'create_guard' || m.kind === 'upsert_own' || m.kind === 'upsert_through_base';
 const _child = _methods.some((m) => m.kind === 'with_base') ? familyChild : null;
 const _base = _methods.some(_isAcross) ? familyBase : null;
 const _listName = _methods.find((x) => x.kind === 'list').name;
 const _findByIdName = _methods.find((x) => x.kind === 'find_by_id').name;
-const _EU = entityName.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+const _C = familyConstName;
 const _eLower = E.charAt(0).toLowerCase() + E.slice(1);
-_%>
-<%_
-// ONE `drizzle-orm` import (a name twice is TS2300). READ-1: `eq` / `inArray` are unconditional — `findById` /
-// `findByIds` use them. The cross-kind reads add `and` / `notExists` / `or` / `sql`, the EAV value table `sql`.
-const _ormNames = [
-  'eq',
-  'inArray',
-  ...(hasMultiFieldQuery || _base ? ['and'] : []),
+// RFC-0006 (#875) S4 — the write half. Which writes exist is the derivation's call (`pair_create` / `pair_update` / `pair_delete` /
+// `kind_guard` / `upsert_own` / `upsert_through_base` entries): a child writes both rows, a base refuses to change a row's kind, an entity with a natural key
+// upserts. `matchFills`: columns this table derives from a parent row; `naturalKey`: the conflict target.
+const _derived = matchFills.length > 0;
+// The derived-column hook prints right after the last read, before the first write.
+const _lastRead = _methods.reduce((last, m, k) => (_isRead(m) ? k : last), -1);
+if (_derived && _lastRead < 0) throw new Error(`[codegen] '${entityName}': a table with \`match:\` columns and no read method`);
+const _pairWrite = _methods.some(_isPair);
+// A child's upsert goes through its base's natural key; an entity's own is its declared index — the derivation says which.
+const _upsert = _methods.some((m) => m.kind === 'upsert_own');
+const _childUpsert = _methods.some((m) => m.kind === 'upsert_through_base');
+// A base refuses a `kind` change even when every kind is base-only (no child table).
+const _baseWrites = _methods.some((m) => m.kind === 'kind_guard');
+// A base with a child table refuses a write that names a kind owned by a child (the one owner of `KindRequiresChildError`, D16).
+const _createGuard = _methods.some((m) => m.kind === 'create_guard');
+const _discProp = familyBase ? familyBase.discriminatorProp : null;
+const _upsertGuarded = _upsert && (_discProp !== null || hasUserTracking);
+// Every drizzle-orm name this file imports, in ONE set printed as ONE import (a second import of a name is TS2300).
+const _orm = [...new Set([
+  'eq', 'inArray',
+  ...(hasMultiFieldQuery || _base || _upsertGuarded ? ['and'] : []),
   ...(_needsOrderFns ? ['desc', 'asc'] : []),
   ...(_base ? ['notExists', 'or'] : []),
-  ...(eavValueTable || _base ? ['sql'] : []),
-];
+  ...(eavValueTable || _base || _childUpsert || _upsert ? ['sql'] : []),
+  ...(_child || _upsert ? ['getTableColumns'] : []),
+])];
+// The runtime helpers the write half calls, merged with the read half's into ONE import.
+const _inhValues = [...new Set([
+  ...(_pairWrite ? ['flattenBase', 'inTransaction', 'KindImmutableError', 'KindMismatchError', 'PAIR_WRITE', 'splitByOwner'] : []),
+  ...(_childUpsert ? ['PAIR_WRITE', 'upsertSet'] : []),
+  ...(_createGuard ? ['assertBaseOnlyKind'] : []),
+  ...(_base ? ['asKind', 'flattenBase'] : []),
+  ...(_baseWrites ? ['KindImmutableError'] : []),
+  ...(_upsert ? ['upsertSet', ...(_discProp ? ['KindMismatchError'] : []), ...(hasUserTracking ? ['OutOfScopeWriteError'] : [])] : []),
+  ...(_derived ? ['fillDerivedColumns'] : []),
+])].sort((a, b) => a.localeCompare(b, 'en'));
+const _inhTypes = [...(_child || _base ? ['Flattened'] : []), ...(_createGuard ? ['PairWrite'] : []), ...(_derived ? ['DerivedColumn'] : [])].sort();
+const _needsTx = eavValueTable || hasIntegrationSurface || _child || _baseWrites || _createGuard || _upsert;
+// Parent tables a derived column is read from, not already imported by the entity / family blocks.
+const _tableAlready = new Set([entityNamePlural, ...(_child ? [_child.baseTable] : []), ...(_base ? _base.children.map((c) => c.plural) : [])]);
+const _parentImports = [...new Map(matchFills.flatMap((f) => f.sources).filter((x) => !_tableAlready.has(x.parentTable)).map((x) => [x.parentTable, x])).values()];
 _%>
-
-import { <%- _ormNames.join(', ') %> } from 'drizzle-orm';
+<%# READ-1: `eq` / `inArray` are unconditional — `findById` / `findByIds` use them. %>
+import { <%- _orm.join(', ') %> } from 'drizzle-orm';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
-import type { DrizzleClient<% if (eavValueTable || hasIntegrationSurface) { %>, DrizzleTx<% } %> } from '<%= drizzleTypeImport %>';
+import type { DrizzleClient<% if (_needsTx) { %>, DrizzleTx<% } %> } from '<%= drizzleTypeImport %>';
 // REL-2 (#587): the generated relation graph. `Relations` binds the repository's
 // third type parameter; `IncludeOf`/`ResultOf` are what make a `with` include
 // typed. Generated code reaching a generated manifest — the runtime package never
@@ -73,19 +106,20 @@ import { <%= cap.mixin %> } from '<%= cap.importPath %>';
 import type { IntegrationUpsertConfig } from '<%= integrationUpsertConfigImport %>';
 <% } -%>
 import type { <% if (hasTimestamps || hasSoftDelete || hasUserTracking || scopeTenantScoped || _child?.baseScope) { %>BehaviorConfig, <% } %>ListOptions, ReadOptions, RowFilter } from '<%= baseRepositoryImport %>';
-<% if (_child) { -%>
-import { flattenBase, type Flattened } from '<%= inheritanceImport %>';
-<% } -%>
-<% if (_base) { -%>
-import { asKind, type Flattened, flattenBase } from '<%= inheritanceImport %>';
+<% if (_inhValues.length > 0) { -%>
+import { <%- [..._inhValues, ..._inhTypes.map((t) => `type ${t}`)].join(', ') %> } from '<%= inheritanceImport %>';
 <% } -%>
 <% if (eavEnabled) { -%>
 import { FieldValueService } from '<%= eavFieldValueImportDir %>/<%= eavFieldValueStem %>.service';
 <% } -%>
 import { <%= entityNamePlural %>, type <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
-<%_ if (_child?.baseScope) { _%>
-import { <%= _child.baseTable %> } from '<%= _child.baseImportPath %>';
+<%_ if (_child) { _%>
+import { <%= _child.baseTable %>, type <%= _child.baseClass %> } from '<%= _child.baseImportPath %>';
+import { <%= _child.baseRepositoryClass %> } from '<%= _child.baseRepositoryImportPath %>';
 <%_ } _%>
+<%_ _parentImports.forEach((imp) => { _%>
+import { <%= imp.parentTable %> } from '<%= imp.parentImportPath %>';
+<%_ }) _%>
 <%_ if (_base) { _%>
 <%_ _base.children.forEach((c) => { _%>
 import { <%= c.plural %>, type <%= c.className %> } from '<%= c.entityImportPath %>';
@@ -187,7 +221,27 @@ export type <%= classNames.entity %>ApiResult = <%= classNames.entity %> &
 export type <%= E %>Flat<
   TWith extends <%= E %>Include = <%= E %>NoInclude,
   TColumns extends <%= E %>Columns | undefined = undefined,
-> = Flattened<<%= E %>Result<TWith & { <%= _child.relKey %>: true }, TColumns>, '<%= _child.relKey %>'>;
+> = Flattened<
+  <%= E %>Result<
+    // The default include is `Record<string, never>`: its index signature would make the base key `never` and the whole
+    // flat row `never`. Keep the keys the caller named, drop the signature.
+    { [K in keyof TWith as string extends K ? never : K]: TWith[K] } & { <%= _child.relKey %>: true },
+    TColumns
+  >,
+  '<%= _child.relKey %>'
+>;
+
+/**
+ * The flat input of a <%= entityName %> write (RFC-0006 §4.1): the base's columns and this table's, at one level.
+ * `<%= _child.discriminatorProp %>` is fixed by the child ('<%= _child.as %>') and is not an input. An update takes the same shape, every key optional.
+ */
+export type <%= E %>Create = globalThis.Partial<globalThis.Omit<<%= _child.baseClass %>, '<%= _child.discriminatorProp %>'>> &
+  globalThis.Partial<globalThis.Omit<<%= E %>, '<%= _child.discriminatorProp %>'>>;
+export type <%= E %>Update = <%= E %>Create;
+
+/** The base table's column keys: what a flat input is split by (`splitByOwner`). */
+const <%= _C('BASE') %> = <%= _child.baseTable %>;
+export const <%= _C('BASE_KEYS') %>: globalThis.ReadonlySet<string> = new Set(Object.keys(getTableColumns(<%= _C('BASE') %>)));
 
 <%_ } _%>
 <%_ if (_base) { _%>
@@ -212,7 +266,7 @@ export interface <%= E %>FlatByKind {
 type <%= E %>RowFilter = RowFilter<typeof <%= entityNamePlural %>>;
 
 /** The relation key each child kind is read under, and the one `asKind` narrows by. */
-const <%= _EU %>_CHILD_KEY_BY_KIND = {
+const <%= _C('CHILD_KEY_BY_KIND') %> = {
 <%_ _base.children.forEach((c) => { _%>
   <%= c.as %>: '<%= c.relKey %>',
 <%_ }) _%>
@@ -245,6 +299,57 @@ function <%= _eLower %>OrphanFilter(dbClient: DrizzleClient<Relations>, rootRow:
 <%_ }) _%>
   );
 }
+
+<%_ } _%>
+<%_ if (_createGuard) { _%>
+/** The kinds that have a child table, and the create path that writes both rows for each (`KindRequiresChildError`). */
+const <%= _C('CHILD_CREATE_PATH') %> = {
+<%_ familyBase.children.forEach((c) => { _%>
+  <%= c.as %>: '<%= c.createPath %>',
+<%_ }) _%>
+} as const;
+
+<%_ } _%>
+<%_ if (_derived) { _%>
+/**
+ * The columns this table derives from a parent row, each with the parents it is read from (RFC-0006 §2.4): filled
+ * by a scalar subquery on the parent's primary key, in the same statement as the write.
+ */
+const <%= _C('DERIVED') %>: readonly DerivedColumn[] = [
+<%_ matchFills.forEach((f) => { _%>
+  {
+    key: '<%= f.key %>',
+    sources: [
+<%_ f.sources.forEach((src) => { _%>
+      { fkKey: '<%= src.fkKey %>', fkColumn: <%= entityNamePlural %>.<%= src.fkKey %>, parentTable: <%= src.parentTable %>, parentId: <%= src.parentTable %>.id, parentValue: <%= src.parentTable %>.<%= src.parentProp %> },
+<%_ }) _%>
+    ],
+  },
+<%_ }) _%>
+];
+
+<%_ } _%>
+<%_ if (_upsert) { _%>
+/** The conflict target of `upsertByNaturalKey`: the declared `natural_key`, tenant-prefixed as its unique index is. */
+const <%= _C('NATURAL_KEY') %> = [<%- naturalKey.props.map((p) => `'${p}'`).join(', ') %>] as const;
+
+/** What an upsert's `DO UPDATE` never rewrites: the key, the kind, the tenant, the natural key's columns, `createdAt`. */
+const <%= _C('UPSERT_NEVER') %>: globalThis.ReadonlySet<string> = new Set([
+  'id',
+<%_ if (_discProp) { _%>
+  '<%= _discProp %>',
+<%_ } _%>
+<%_ if (scopeTenantScoped) { _%>
+  '<%= scopeTenantColumn %>',
+<%_ } _%>
+<%_ if (hasUserTracking) { _%>
+  'userId',
+<%_ } _%>
+<%_ naturalKey.props.filter((p) => p !== scopeTenantColumn && p !== _discProp).forEach((p) => { _%>
+  '<%= p %>',
+<%_ }) _%>
+  'createdAt',
+]);
 
 <%_ } _%>
 @Injectable()
@@ -348,7 +453,15 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
     await this.fieldValues.upsertFieldsTransactional('<%= entityName %>', entityId, userId, fields, db);
   }
 <%_ } else { -%>
+<%_ if (_child) { _%>
+  constructor(
+    @Inject(DRIZZLE) db: DrizzleClient<Relations>,
+    // The pair write goes through the base's OWN repository, so its tenant stamp and timestamps apply (RFC-0006 §4.1).
+    private readonly baseRepo: <%= _child.baseRepositoryClass %>,
+  ) {
+<%_ } else { _%>
   constructor(@Inject(DRIZZLE) db: DrizzleClient<Relations>) {
+<%_ } _%>
     super(db);
     // Every read runs on db.query.<%= entityNamePlural %> — fail HERE, naming the cause,
     // if the injected client was built without the relations manifest.
@@ -519,14 +632,14 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
       offset: <%= _p[0] %>?.offset,
       with: <%= _eLower %>KindJoins(kinds),
     } as never);
-    return rows.map((row) => asKind<<%= E %>OfKind>(row, '<%= _base.discriminator %>', <%= _EU %>_CHILD_KEY_BY_KIND));
+    return rows.map((row) => asKind<<%= E %>OfKind>(row, '<%= _base.discriminator %>', <%= _C('CHILD_KEY_BY_KIND') %>));
   }
 <%_ } else if (m.kind === 'kind_by_id') { _%>
 
   /** One row by id with its child, narrowed by kind. `null` when absent or out of scope. */
   async <%= m.name %>(<%= _p[0] %>: string): Promise<<%= E %>OfKind | null> {
     const row = await this.<%= _findByIdName %>(<%= _p[0] %>, { with: <%= _eLower %>KindJoins(undefined) } as never);
-    return row ? asKind<<%= E %>OfKind>(row, '<%= _base.discriminator %>', <%= _EU %>_CHILD_KEY_BY_KIND) : null;
+    return row ? asKind<<%= E %>OfKind>(row, '<%= _base.discriminator %>', <%= _C('CHILD_KEY_BY_KIND') %>) : null;
   }
 <%_ } else if (m.kind === 'list_kind') { _%>
 
@@ -549,8 +662,8 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
     } as never);
     return rows.map((row) =>
       flattenBase(
-        asKind<<%= E %>OfKind>(row, '<%= _base.discriminator %>', <%= _EU %>_CHILD_KEY_BY_KIND) as never,
-        <%= _EU %>_CHILD_KEY_BY_KIND[<%= _p[0] %>],
+        asKind<<%= E %>OfKind>(row, '<%= _base.discriminator %>', <%= _C('CHILD_KEY_BY_KIND') %>) as never,
+        <%= _C('CHILD_KEY_BY_KIND') %>[<%= _p[0] %>],
       ),
     ) as unknown as Array<<%= E %>FlatByKind[K]>;
   }
@@ -579,6 +692,243 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
     return rows as <%= E %>[];
   }
 <%_ } _%>
+<%_ } else if (m.kind === 'pair_create') { _%>
+<%_ const _p = m.params.map((x) => x.name); _%>
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // The pair write (RFC-0006 §4.1, #875)
+  //
+  // A <%= entityName %> is two rows sharing one id: the base's and this table's. `create`, `update` and `delete`
+  // OVERRIDE the inherited ones, on purpose — the inherited `create` would insert a row here with no
+  // base row. The base half goes through the base's own repository (its tenant stamp, timestamps and
+  // soft-delete apply), both halves in ONE transaction: the caller's when a `tx` is passed, else one opened here.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /** The kind this child writes is fixed ('<%= _child.as %>'); an input that names another is refused. */
+  private assertOwnKind(baseSlice: globalThis.Record<string, unknown>): void {
+    const named = baseSlice['<%= _child.discriminatorProp %>'];
+    if (named !== undefined && named !== '<%= _child.as %>') {
+      throw new KindMismatchError('<%= entityName %>', '<%= _child.as %>', `the input names kind '${String(named)}'`);
+    }
+  }
+
+  /** Both rows, in one transaction; a failing child insert rolls the base row back. */
+  override async <%= m.name %>(<%= _p[0] %>: <%= E %>Create, <%= _p[1] %>?: DrizzleTx): Promise<<%= E %>Flat> {
+    const { base, own } = splitByOwner(<%= _p[0] %>, <%= _C('BASE_KEYS') %>);
+    this.assertOwnKind(base);
+    return inTransaction(this.db, <%= _p[1] %>, async (txClient) => {
+      const baseRow = await this.baseRepo.create({ ...base, <%= _child.discriminatorProp %>: '<%= _child.as %>' }, txClient, PAIR_WRITE);
+      const [childRow] = await this.runner(txClient)
+        .insert(this.table)
+        .values(this.childValues({ ...own, id: baseRow.id<% if (childTenantProp) { %>, <%= childTenantProp %>: baseRow.<%= childTenantProp %><% } %> }))
+        .returning();
+      return this.flat(childRow, baseRow);
+    });
+  }
+
+  /** A write's values for this table, with its derived `match:` columns filled (typed as the table's insert). */
+  private childValues(values: globalThis.Record<string, unknown>): typeof this.table.$inferInsert {
+    return this.deriveColumns(values, 'create') as typeof this.table.$inferInsert;
+  }
+
+  /** The flat row of a written pair: the one owner of flattening is `flattenBase`. */
+  private flat(childRow: <%= E %> | undefined, baseRow: <%= _child.baseClass %>): <%= E %>Flat {
+    return flattenBase({ ...childRow, <%= _child.relKey %>: baseRow } as <%= E %> & { <%= _child.relKey %>: <%= _child.baseClass %> }, '<%= _child.relKey %>') as <%= E %>Flat;
+  }
+
+<%_ } else if (m.kind === 'pair_update') { _%>
+<%_ const _p = m.params.map((x) => x.name); _%>
+  /**
+   * Update across both tables. A `<%= _child.discriminatorProp %>` key throws `KindImmutableError`. The child row is
+   * found first (scoped), so a row of another kind is never touched through this repository; then the base is
+   * updated — its guards (tenant, a derived column) run BEFORE anything of this table's is written, so a guard error
+   * a caller swallows in its own transaction leaves nothing half written; then this table's row.
+   * The base update runs whenever it has something to write<%= _child.baseTimestamps ? ' — always, because it bumps updated_at' : '' %>.
+   * Returns `undefined` (as `BaseRepository.update` does) when no such row is in scope.
+   */
+  override async <%= m.name %>(<%= _p[0] %>: string, <%= _p[1] %>: <%= E %>Update, <%= _p[2] %>?: DrizzleTx): Promise<<%= E %>Flat> {
+    if ((<%= _p[1] %> as globalThis.Record<string, unknown>)['<%= _child.discriminatorProp %>'] !== undefined) {
+      throw new KindImmutableError('<%= entityName %>');
+    }
+    this.assertTenantWritable('update');
+    const { base, own } = splitByOwner(<%= _p[1] %>, <%= _C('BASE_KEYS') %>);
+    return inTransaction(this.db, <%= _p[2] %>, async (txClient) => {
+      const [existing] = await this.runner(txClient)
+        .select()
+        .from(this.table)
+        .where(this.scopeAnd(eq(this.col('id'), <%= _p[0] %>)));
+      if (existing === undefined) return undefined as unknown as <%= E %>Flat;
+<% if (_child.baseTimestamps) { -%>
+      const baseRow = await this.baseRepo.update(<%= _p[0] %>, base, txClient);
+<% } else { -%>
+      const baseRow =
+        Object.keys(base).length > 0
+          ? await this.baseRepo.update(<%= _p[0] %>, base, txClient)
+          : (await this.runner(txClient).select().from(<%= _C('BASE') %>).where(eq(<%= _C('BASE') %>.id, <%= _p[0] %>)))[0];
+<% } -%>
+      if (Object.keys(own).length === 0) return this.flat(existing, baseRow as <%= _child.baseClass %>);
+      const [childRow] = await this.runner(txClient)
+        .update(this.table)
+        .set(this.deriveColumns(own, 'update'))
+        .where(this.scopeAnd(eq(this.col('id'), <%= _p[0] %>)))
+        .returning();
+      return this.flat(childRow, baseRow as <%= _child.baseClass %>);
+    });
+  }
+
+<%_ } else if (m.kind === 'pair_delete') { _%>
+<%_ const _p = m.params.map((x) => x.name); _%>
+  /**
+   * Delete the pair by deleting the base row (RFC-0006 §4.1): hard — the FK cascade removes this row; soft — the
+   * base's `deleted_at` is set and this row leaves scope through the `EXISTS`. A no-op for an id that is not
+   * a <%= entityName %> in scope, so a row of another kind is never deleted through this repository.
+   */
+  override async <%= m.name %>(<%= _p[0] %>: string, <%= _p[1] %>?: DrizzleTx): Promise<void> {
+    return inTransaction(this.db, <%= _p[1] %>, async (txClient) => {
+      const own = await this.runner(txClient)
+        .select({ id: this.col('id') })
+        .from(this.tableRef)
+        .where(this.scopeAnd(eq(this.col('id'), <%= _p[0] %>)));
+      if (own[0] === undefined) return;
+      await this.baseRepo.delete(<%= _p[0] %>, txClient);
+    });
+  }
+
+<%_ } else if (m.kind === 'kind_guard') { _%>
+<%_ const _p = m.params.map((x) => x.name); _%>
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Writes through the base (RFC-0006 §4.1, #875)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /** Refuses a `<%= familyBase.discriminatorProp %>` key: a row does not change kind. The database refuses it for any row with a child. */
+  override async <%= m.name %>(<%= _p[0] %>: string, <%= _p[1] %>: globalThis.Partial<<%= E %>>, <%= _p[2] %>?: DrizzleTx): Promise<<%= E %>> {
+    if (<%= _p[1] %>.<%= familyBase.discriminatorProp %> !== undefined) throw new KindImmutableError('<%= entityName %>');
+    return super.update(<%= _p[0] %>, <%= _p[1] %>, <%= _p[2] %>);
+  }
+<%_ } else if (m.kind === 'create_guard') { _%>
+<%_ const _p = m.params.map((x) => x.name); _%>
+
+  /** A kind with a child table is created through the child (`KindRequiresChildError`); a base-only kind is created here. */
+  override async <%= m.name %>(<%= _p[0] %>: globalThis.Partial<<%= E %>>, <%= _p[1] %>?: DrizzleTx, <%= _p[2] %>?: PairWrite): Promise<<%= E %>> {
+    assertBaseOnlyKind('<%= entityName %>', <%= _p[0] %>.<%= familyBase.discriminatorProp %>, <%= _C('CHILD_CREATE_PATH') %>, <%= _p[2] %>);
+    return super.create(<%= _p[0] %>, <%= _p[1] %>);
+  }
+<%_ } else if (m.kind === 'upsert_through_base') { _%>
+<%_ const _p = m.params.map((x) => x.name); _%>
+  /**
+   * Upsert the pair on the base's natural key (RFC-0006 §4.2): the base row on its declared key, then this row on
+   * `id`, in one transaction. `SET` carries the columns the input carries (a key left out is left alone, an
+   * explicit `null` clears) and never the key, the kind, the tenant or `created_at`. A natural key that exists
+   * under another kind throws `KindMismatchError`, and writes nothing.
+   *
+   * `created` is THIS table's: whether the <%= entityName %> row was inserted. `baseCreated` is the base's. They differ
+   * when a base row exists with no child row (an orphan): the upsert repairs it, and that is a created <%= entityName %>
+   * under an updated <%= _child.baseName %>.
+   */
+  async <%= m.name %>(
+    <%= _p[0] %>: <%= E %>Create,
+    <%= _p[1] %>?: DrizzleTx,
+  ): Promise<{ row: <%= E %>Flat; created: boolean; baseCreated: boolean }> {
+    const { base, own } = splitByOwner(<%= _p[0] %>, <%= _C('BASE_KEYS') %>);
+    this.assertOwnKind(base);
+    return inTransaction(this.db, <%= _p[1] %>, async (txClient) => {
+      const { row: baseRow, created: baseCreated } = await this.baseRepo.upsertByNaturalKey(
+        { ...base, <%= _child.discriminatorProp %>: '<%= _child.as %>' },
+        txClient,
+        PAIR_WRITE,
+      );
+      const set = this.deriveColumns(upsertSet(own, new Set<string>()), 'update');
+      const [written] = await this.runner(txClient)
+        .insert(this.table)
+        .values(this.childValues({ ...own, id: baseRow.id<% if (childTenantProp) { %>, <%= childTenantProp %>: baseRow.<%= childTenantProp %><% } %> }))
+        .onConflictDoUpdate({
+          target: this.col('id'),
+          // Nothing of the child's own to set: a no-op update, so RETURNING still yields the row.
+          set: Object.keys(set).length > 0 ? set : { id: sql`${this.col('id')}` },
+        })
+        .returning({ ...getTableColumns(this.table), upsertCreated: sql<boolean>`(xmax = 0)` });
+      const { upsertCreated, ...childRow } = written as globalThis.NonNullable<typeof written>;
+      return { row: this.flat(childRow as <%= E %>, baseRow), created: upsertCreated, baseCreated };
+    });
+  }
+<%_ } else if (m.kind === 'upsert_own') { _%>
+<%_ const _p = m.params.map((x) => x.name); _%>
+
+  /**
+   * One statement, `INSERT … ON CONFLICT (<%= naturalKey.props.join(', ') %>) DO UPDATE` (RFC-0006 §4.2): the natural key
+   * is the declared `natural_key` index, tenant-prefixed, so one tenant's upsert never touches another's row.
+   * `SET` carries the columns the input carries plus `updated_at` — never the key, the kind, the tenant, the natural
+   * key's columns or `created_at`; a key left out is left alone, an explicit `null` clears. A soft-deleted match is
+   * updated and stays deleted. `created` is true when the row was inserted (`xmax = 0`).
+<%_ if (_discProp) { _%>
+   * A row with this key under ANOTHER kind is not updated: the conflict's `WHERE` fails, nothing is written, and
+   * `KindMismatchError` is thrown — whether or not the caller owns the transaction.
+<%_ } _%>
+<%_ if (hasUserTracking) { _%>
+   * The user axis scopes the write like every other (charter I3): the conflict's `WHERE` carries the ambient user
+   * predicate, so a caller never overwrites another user's row, and the user column is never SET. A row that exists
+   * but is out of scope throws `OutOfScopeWriteError`.
+<%_ } _%>
+   */
+  async <%= m.name %>(
+    <%= _p[0] %>: globalThis.Partial<<%= E %>>,
+    <%= _p[1] %>?: DrizzleTx,
+<%_ if (_createGuard) { _%>
+    <%= _p[2] %>?: PairWrite,
+<%_ } _%>
+  ): Promise<{ row: <%= E %>; created: boolean }> {
+<%_ if (_createGuard) { _%>
+    assertBaseOnlyKind('<%= entityName %>', <%= _p[0] %>.<%= _discProp %>, <%= _C('CHILD_CREATE_PATH') %>, <%= _p[2] %>);
+<%_ } _%>
+    const carried = <%= _p[0] %> as globalThis.Record<string, unknown>;
+    const values = this.deriveColumns(this.stampTenant(this.withTimestamps(carried, 'create')), 'create');
+    const set = this.deriveColumns(this.withTimestamps(upsertSet(carried, <%= _C('UPSERT_NEVER') %>), 'update'), 'update');
+<%_ if (_upsertGuarded) { _%>
+    const conflictWhere = and(
+<%_ if (_discProp) { _%>
+      eq(this.col('<%= _discProp %>'), sql`excluded.${sql.identifier(this.col('<%= _discProp %>').name)}`),
+<%_ } _%>
+<%_ if (hasUserTracking) { _%>
+      this.scopePredicate(),
+<%_ } _%>
+    );
+<%_ } _%>
+    const rows = await this.runner(<%= _p[1] %>)
+      .insert(this.tableRef)
+      .values(values)
+      .onConflictDoUpdate({
+        target: <%= _C('NATURAL_KEY') %>.map((key) => this.col(key)),
+        set: Object.keys(set).length > 0 ? set : { id: sql`${this.col('id')}` },
+<%_ if (_upsertGuarded) { _%>
+        setWhere: conflictWhere,
+<%_ } _%>
+      })
+      .returning({ ...getTableColumns(this.tableRef), upsertCreated: sql<boolean>`(xmax = 0)` });
+    const [written] = rows;
+<%_ if (_upsertGuarded) { _%>
+    if (written === undefined) {
+<%_ if (_discProp && hasUserTracking) { _%>
+      // The conflict's WHERE refused the update — the kind or the user axis. ONE read of the conflicting row says which.
+      const [existing] = await this.runner(<%= _p[1] %>)
+        .select({ kind: this.col('<%= _discProp %>') })
+        .from(this.tableRef)
+        .where(and(...<%= _C('NATURAL_KEY') %>.map((key) => eq(this.col(key), values[key]))));
+      if (existing !== undefined && existing['kind'] !== values['<%= _discProp %>']) {
+        throw new KindMismatchError('<%= entityName %>', String(values['<%= _discProp %>']));
+      }
+      throw new OutOfScopeWriteError('<%= entityName %>');
+<%_ } else if (_discProp) { _%>
+      // The conflict's WHERE refused the update: the row exists under another kind.
+      throw new KindMismatchError('<%= entityName %>', String(values['<%= _discProp %>']));
+<%_ } else { _%>
+      throw new OutOfScopeWriteError('<%= entityName %>');
+<%_ } _%>
+    }
+<%_ } _%>
+    const { upsertCreated, ...row } = written as globalThis.NonNullable<typeof written>;
+    return { row: row as unknown as <%= E %>, created: upsertCreated };
+  }
 <%_ } else if (m.kind === 'finder' || m.kind === 'finder_projection') { _%>
 <%_
 // The `by:` columns are the parameters that bind a field; their TS types come
@@ -699,7 +1049,26 @@ _%>
 <%_ } _%>
 <%_ /* The section banner prints once the core and family reads end — whenever the YAML declares a by-column
       finder, even one that lost its name to an FK finder below. */ _%>
-<%_ if (_isRead(m) && !(i + 1 < _methods.length && _isRead(_methods[i + 1]))) { _%>
+<%_ if (i === _lastRead) { _%>
+<%_ if (_derived) { _%>
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Derived `match:` columns (RFC-0006 §2.4)
+  //
+  // <%- matchFills.map((f) => `\`${f.key}\``).join(', ') %> <%= matchFills.length > 1 ? 'are' : 'is' %> a copy of a column of a parent row, never client input: every insert and update
+  // fills it with a scalar subquery on the parent's primary key, in the same statement. A missing parent
+  // derives NULL, which the column's NOT NULL (or the match CHECK) refuses (SQLSTATE 23502).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  protected override deriveColumns(
+    data: globalThis.Record<string, unknown>,
+    mode: 'create' | 'update',
+  ): globalThis.Record<string, unknown> {
+    return fillDerivedColumns('<%= entityName %>', data, mode, <%= _C('DERIVED') %>);
+  }
+<%_ } _%>
+<%_ } _%>
+<%_ if ((_isRead(m) || _isWrite(m)) && !(i + 1 < _methods.length && (_isRead(_methods[i + 1]) || _isWrite(_methods[i + 1])))) { _%>
 <% if (hasDeclarativeQueries) { -%>
 
   // ═══════════════════════════════════════════════════════════════════════

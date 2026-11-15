@@ -13,11 +13,21 @@ import { <%= classNames.repository %> } from './<%= entityFileStem %>.repository
 // the same generics, the same options, the same result.
 const E = classNames.entity;
 const _typedInclude = apiSurface.repository.typedInclude;
-// RFC-0006 (#875) S3 — which family reads exist is the derivation's call (`with_base` / cross-kind entries).
-const _child = apiSurface.service.methods.some((m) => m.kind === 'with_base');
+// RFC-0006 (#875) S3 — which family reads exist is the derivation's call (`with_base` / cross-kind entries); the
+// facts the bodies print (the base edge, the kind column, the children) come from `familyChild` / `familyBase`.
 const _ACROSS = ['all_kinds', 'kind_by_id', 'list_kind', 'count_kind'];
 const _isAcross = (m) => _ACROSS.includes(m.kind);
-const _base = apiSurface.service.methods.some(_isAcross);
+const _child = apiSurface.service.methods.some((m) => m.kind === 'with_base') ? familyChild : null;
+const _base = apiSurface.service.methods.some(_isAcross) ? familyBase : null;
+// RFC-0006 (#875) S4 — the write half, likewise the derivation's call (`pair_create` / `pair_update` / `pair_delete` / `upsert_own` / `upsert_through_base`): a
+// child writes both rows (its flat input types, the pair events); a base refuses a kind that has a child table; an
+// entity with a natural key forwards its upsert and emits its events.
+const _C = familyConstName;
+const _isWrite = (m) => m.kind === 'pair_create' || m.kind === 'pair_update' || m.kind === 'pair_delete' || m.kind === 'upsert_own' || m.kind === 'upsert_through_base';
+const _pairWrite = apiSurface.service.methods.some((m) => m.kind === 'pair_create' || m.kind === 'pair_update' || m.kind === 'pair_delete');
+const _upsert = apiSurface.service.methods.some((m) => m.kind === 'upsert_own');
+const _childUpsert = apiSurface.service.methods.some((m) => m.kind === 'upsert_through_base');
+const _writes = _pairWrite || _upsert || _childUpsert;
 const _readGenerics = _typedInclude
   ? `<W extends ${E}Include = ${E}NoInclude, C extends ${E}Columns | undefined = undefined>`
   : `<C extends ${E}Columns | undefined = undefined>`;
@@ -28,7 +38,9 @@ _%>
 import type {
   <%= E %>Columns,
 <% if (_child) { -%>
+  <%= E %>Create,
   <%= E %>Flat,
+  <%= E %>Update,
 <% } -%>
 <% if (_base) { -%>
   <%= E %>FlatByKind,
@@ -41,6 +53,12 @@ import type {
   <%= E %>NoInclude,
   <%= E %>Result,
 } from './<%= entityFileStem %>.repository';
+<% if (_child) { -%>
+import { <%= _C('BASE_KEYS') %> } from './<%= entityFileStem %>.repository';
+<% } -%>
+<% if (_writes && !eavValueTable) { -%>
+import type { DrizzleTx } from '<%= drizzleTypeImport %>';
+<% } -%>
 import type { ListOptions, ReadOptions<%= _base ? ', RowFilter' : '' %> } from '<%= baseRepositoryImport %>';
 import type { <%= entityNamePlural %>, <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 <% if (eavEnabled) { -%>
@@ -72,6 +90,12 @@ export class <%= classNames.service %> extends WithAnalytics(
   <%= serviceBaseClass %><<%= classNames.repository %>, <%= classNames.entity %>>,
 ) {
   protected override readonly entityName = '<%= entityName %>';
+<%_ if (_child) { _%>
+
+  // RFC-0006 §5, A11 — a child write is announced under the base's name too, with the base's slice of the row.
+  protected override readonly baseEntityName = '<%= _child.baseName %>';
+  protected override readonly baseSliceKeys = <%= _C('BASE_KEYS') %>;
+<%_ } _%>
 
   /** Injected by NestJS when EventsModule is registered. */
   @Optional() @Inject(EVENT_BUS)
@@ -123,7 +147,7 @@ const _group = (m) =>
   m.kind.startsWith('junction_') ? 'junction'
   : m.kind === 'relation_one' || m.kind === 'relation_many' ? 'relation'
   : m.kind === 'eav_read' || m.kind === 'eav_write' ? 'eav'
-  : m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans' ? 'read'
+  : m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans' || _isWrite(m) ? 'read'
   : m.kind;
 _%>
 <%_ _methods.forEach((m, i) => { _%>
@@ -214,6 +238,68 @@ _%>
   }
 <%_ } _%>
 <%_ } _%>
+<%_ } else if (m.kind === 'pair_create') { _%>
+<%_ const _p = m.params.map((x) => x.name); _%>
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // The pair write (RFC-0006 §4.1) — the repository's, wrapped in BaseService's events
+  //
+  // The repository's `create` / `update` take the FLAT input (the base's columns and this table's) and return the
+  // FLAT row; `BaseService`'s are typed on the table row alone, so these narrow them to what actually flows.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  override <%= m.name %>(<%= _p[0] %>: <%= E %>Create, <%= _p[1] %>?: DrizzleTx): Promise<<%= E %>Flat> {
+    return super.create(<%= _p[0] %> as globalThis.Partial<<%= E %>>, <%= _p[1] %>) as Promise<<%= E %>Flat>;
+  }
+
+<%_ } else if (m.kind === 'pair_update') { _%>
+<%_ const _p = m.params.map((x) => x.name); _%>
+  /** Not a <%= entityName %> in scope: nothing is written (the repository's update is a no-op) and nothing is emitted — `BaseService` would snapshot `undefined`. */
+  override async <%= m.name %>(<%= _p[0] %>: string, <%= _p[1] %>: <%= E %>Update, <%= _p[2] %>?: DrizzleTx): Promise<<%= E %>Flat> {
+    if ((await this.repository.findWithBase(<%= _p[0] %>)) === null) return undefined as unknown as <%= E %>Flat;
+    return super.update(<%= _p[0] %>, <%= _p[1] %> as globalThis.Partial<<%= E %>>, <%= _p[2] %>) as Promise<<%= E %>Flat>;
+  }
+
+  /** The pre-update read is the FLAT row: against the table's own columns every base field would look changed. */
+  protected override readBeforeUpdate(id: string): Promise<<%= E %> | null> {
+    return this.repository.findWithBase(id);
+  }
+
+<%_ } else if (m.kind === 'pair_delete') { _%>
+<%_ const _p = m.params.map((x) => x.name); _%>
+  /**
+   * The repository's delete is a no-op for an id that is not a <%= entityName %> (a row of another kind is never deleted
+   * through this service), so `BaseService`'s events fire only when there was a row of this kind to delete — a
+   * `<%= _child ? _child.baseName : 'base' %>.deleted` for a row that still exists would drop it from every subscriber.
+   */
+  override async <%= m.name %>(<%= _p[0] %>: string, <%= _p[1] %>?: unknown): Promise<void> {
+    if ((await this.repository.findWithBase(<%= _p[0] %>)) === null) return;
+    return super.delete(<%= _p[0] %>, <%= _p[1] %>);
+  }
+
+<%_ } else if (m.kind === 'upsert_through_base') { _%>
+<%_ const _p = m.params.map((x) => x.name); _%>
+  /** Base on its natural key, then this table on `id`, one transaction; emits `created` / `updated` under both names. */
+  async <%= m.name %>(
+    <%= _p[0] %>: <%= E %>Create,
+    <%= _p[1] %>?: DrizzleTx,
+  ): Promise<{ row: <%= E %>Flat; created: boolean; baseCreated: boolean }> {
+    const result = await this.repository.upsertByNaturalKey(<%= _p[0] %>, <%= _p[1] %>);
+    this.emitUpserted(result.row, result.created, result.baseCreated);
+    return result;
+  }
+<%_ } else if (m.kind === 'upsert_own') { _%>
+<%_ const _p = m.params.map((x) => x.name); _%>
+
+  // RFC-0006 §4.2 — `natural_key: true`: one statement, `INSERT … ON CONFLICT … DO UPDATE`.
+  async <%= m.name %>(
+    <%= _p[0] %>: globalThis.Partial<<%= E %>>,
+    <%= _p[1] %>?: DrizzleTx,
+  ): Promise<{ row: <%= E %>; created: boolean }> {
+    const result = await this.repository.upsertByNaturalKey(<%= _p[0] %>, <%= _p[1] %>);
+    this.emitUpserted(result.row, result.created, result.created);
+    return result;
+  }
 <%_ } else if (m.kind === 'finder') { _%>
 <%_ if (_first) { _%>
   // ═══════════════════════════════════════════════════════════════════════

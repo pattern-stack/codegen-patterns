@@ -13,6 +13,7 @@ import type {
   CommunicationNoInclude,
   CommunicationResult,
 } from './communication.repository';
+import type { DrizzleTx } from '@shared/types/drizzle';
 import type { ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
 import type { communications, Communication } from './communication.entity';
 
@@ -88,6 +89,16 @@ export class CommunicationService extends WithAnalytics(
 
   findOrphans(opts?: { limit?: number }): Promise<Communication[]> {
     return this.repository.findOrphans(opts);
+  }
+
+  // RFC-0006 §4.2 — `natural_key: true`: one statement, `INSERT … ON CONFLICT … DO UPDATE`.
+  async upsertByNaturalKey(
+    input: globalThis.Partial<Communication>,
+    tx?: DrizzleTx,
+  ): Promise<{ row: Communication; created: boolean }> {
+    const result = await this.repository.upsertByNaturalKey(input, tx);
+    this.emitUpserted(result.row, result.created, result.created);
+    return result;
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

@@ -78,6 +78,36 @@
 						}
 					},
 					{
+						"name": "update",
+						"kind": "kind_guard",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "input"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "one",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "notice"
+								},
+								"path": [
+									"discriminator"
+								]
+							}
+						}
+					},
+					{
 						"name": "exists",
 						"kind": "inherited",
 						"emitted": false,
@@ -91,18 +121,6 @@
 					},
 					{
 						"name": "create",
-						"kind": "inherited",
-						"emitted": false,
-						"params": [],
-						"returns": "forwarded",
-						"readOptions": "none",
-						"origin": {
-							"from": "pattern",
-							"pattern": "Base"
-						}
-					},
-					{
-						"name": "update",
 						"kind": "inherited",
 						"emitted": false,
 						"params": [],

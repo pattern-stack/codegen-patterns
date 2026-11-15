@@ -20,7 +20,6 @@ import { DeleteFieldDefinitionUseCase } from './use-cases/delete-field-definitio
   imports: [
     DatabaseModule,
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
   ],
   controllers: [FieldDefinitionController],
   providers: [

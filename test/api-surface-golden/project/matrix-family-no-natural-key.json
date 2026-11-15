@@ -1,0 +1,8 @@
+{
+	"case": "matrix-family-no-natural-key",
+	"covers": "a joined-table family whose base has no `natural_key:` — the pair write and the kind guards, and no upsert",
+	"relations": [],
+	"unmodelled": [],
+	"warnings": [],
+	"includes": {}
+}

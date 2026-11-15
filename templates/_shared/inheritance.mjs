@@ -21,7 +21,7 @@
 
 import { camelCase, emittedStem } from '../../src/config/file-naming.js';
 import { resolveChildTenancy, resolveTenancy } from '../../src/schema/tenancy.js';
-import { entityClassName } from '../../src/derived/api/names.js';
+import { entityClassName, FAMILY_METHOD, repositoryClassName, serviceClassName } from '../../src/derived/api/names.js';
 import { familyRelationKey, inheritanceChildrenOf, inheritsOf, matchPairsOf } from '../../src/schema/inheritance.js';
 import { entityModuleNaming, relativeModuleDir } from './entity-naming.mjs';
 
@@ -59,6 +59,11 @@ function moduleRef(lookup, fromNaming, modulesDir, name, why) {
   const dir = relativeModuleDir(fromNaming.moduleDir, naming.moduleDir);
   return {
     plural: naming.plural,
+    // The target's module folder as seen from the importing file, and its file stem: the writes (S4) import
+    // its repository and its module as well as its entity file.
+    dir,
+    stem: emittedStem(name),
+    pluralStem: emittedStem(naming.plural),
     importPath: `${dir}/${emittedStem(name)}.entity`,
     // The owner's enum LEAF module (imports only pg-core): an enum is called at module top level, so it is never
     // imported from the entity file, which sits in a cycle with its children and referrers.
@@ -308,10 +313,13 @@ export function matchColumns({ entityName, relationships, lookup, existing, null
  *
  * @returns {{
  *   child: null | { relKey: string, baseTable: string, baseImportPath: string,
- *                   baseScope: null | { softDelete: boolean, userTracking: boolean } },
+ *                   baseScope: null | { softDelete: boolean, userTracking: boolean },
+ *                   as: string, baseName: string, baseClass: string, baseRepositoryClass: string,
+ *                   baseRepositoryImportPath: string, baseModuleDir: string,
+ *                   discriminatorProp: string, baseTimestamps: boolean },
  *   base: null | { discriminator: string, discriminatorProp: string, kinds: string[],
  *                  children: Array<{ as: string, name: string, relKey: string, plural: string,
- *                                    className: string, entityImportPath: string }> },
+ *                                    className: string, entityImportPath: string, createPath: string }> },
  * }}
  */
 export function familyReads({ entityName, definition, lookup, ownNaming, modulesDir, baseBehaviors }) {
@@ -322,11 +330,23 @@ export function familyReads({ entityName, definition, lookup, ownNaming, modules
     const ref = moduleRef(lookup, ownNaming, modulesDir, declaration.base, why);
     const softDelete = baseBehaviors.includes('soft_delete');
     const userTracking = baseBehaviors.includes('user_tracking');
+    const baseDef = requireDefinition(lookup, declaration.base, why);
+    const baseClass = entityClassName(declaration.base);
     child = {
       relKey: familyRelationKey(declaration.base),
       baseTable: ref.plural,
       baseImportPath: ref.importPath,
       baseScope: softDelete || userTracking ? { softDelete, userTracking } : null,
+      // S4 — the pair write: the kind this child writes, and the base's repository and module (the child's
+      // repository injects the base repository; its module imports the base's module).
+      as: declaration.as,
+      baseName: declaration.base,
+      baseClass,
+      discriminatorProp: camelCase(baseDef.discriminator),
+      baseRepositoryClass: repositoryClassName(declaration.base),
+      baseRepositoryImportPath: `${ref.dir}/${ref.stem}.repository`,
+      baseModuleDir: ref.dir,
+      baseTimestamps: baseBehaviors.includes('timestamps'),
     };
   }
 
@@ -356,6 +376,8 @@ export function familyReads({ entityName, definition, lookup, ownNaming, modules
         plural: ref.plural,
         className: entityClassName(c.name),
         entityImportPath: ref.importPath,
+        // The create path a write through the base is told to use for this kind (KindRequiresChildError).
+        createPath: `${serviceClassName(c.name)}.${FAMILY_METHOD.create}`,
       };
     });
     base = {

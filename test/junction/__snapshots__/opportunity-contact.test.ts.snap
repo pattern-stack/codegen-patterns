@@ -505,6 +505,8 @@ import type { ListOptions, ReadOptions } from '@shared/base-classes/base-reposit
 import type { contacts, Contact } from './contact.entity';
 import { AccountRepository } from '../accounts/account.repository';
 import type { Account } from '../accounts/account.entity';
+import { AccountContactService, AccountContactLinkInput } from '../account-contacts/account-contact.service';
+import type { AccountContact } from '../account-contacts/account-contact.entity';
 import { OpportunityContactService, OpportunityContactLinkInput } from '../opportunity-contacts/opportunity-contact.service';
 import type { OpportunityContact } from '../opportunity-contacts/opportunity-contact.entity';
 import type { Opportunity } from '../opportunities/opportunity.entity';
@@ -585,6 +587,41 @@ export class ContactService extends WithAnalytics(
   // Delegates to each junction's service; the same association is mirrored
   // on the other parent.
   // ═══════════════════════════════════════════════════════════════════════
+
+  // account_contact — right side, fan-out to Account
+  @Inject(forwardRef(() => AccountContactService))
+  private readonly accountContactService!: AccountContactService;
+
+  async addToAccount(
+    contactId: string,
+    accountId: string,
+    link?: AccountContactLinkInput,
+  ): Promise<AccountContact> {
+    return this.accountContactService.attach(accountId, contactId, link);
+  }
+
+  async removeFromAccount(
+    contactId: string,
+    accountId: string,
+  ): Promise<void> {
+    return this.accountContactService.detach(accountId, contactId);
+  }
+
+  async accountsList(
+    contactId: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<Array<{ entity: Account; link: AccountContact }>> {
+    return this.accountContactService.listAssoc('right', contactId, opts) as Promise<
+      Array<{ entity: Account; link: AccountContact }>
+    >;
+  }
+
+  async accountsSetPrimary(
+    contactId: string,
+    accountId: string,
+  ): Promise<void> {
+    return this.accountContactService.setPrimary(accountId, contactId);
+  }
 
   // opportunity_contact — right side, fan-out to Opportunity
   @Inject(forwardRef(() => OpportunityContactService))

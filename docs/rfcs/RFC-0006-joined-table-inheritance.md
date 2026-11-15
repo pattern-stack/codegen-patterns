@@ -2,8 +2,8 @@
 
 **Status:** Draft, revision 3 — Doug's answers of 2026-11-13 are recorded in §11, including OQ-11 (the part-kind
 rule is a composite FK on the part's own discriminator; the user-facing `checks:` key leaves this build). S1
-(schema and validation), S2 (the DDL) and S3 (relations, scope and reads) are built; nothing else is. §13.2 S1, S2 and
-S3 say what each build settled.
+(schema and validation), S2 (the DDL), S3 (relations, scope and reads) and S4 (pair writes and the upsert) are built;
+nothing else is. §13.2 S1 to S4 say what each build settled.
 **Issue:** #875
 **Date:** 2026-11-12, revised 2026-11-13
 **Owner:** Doug
@@ -357,7 +357,8 @@ What it emits:
   re-renders the target.
 - **The value is never client input.** The column is absent from the create and update DTOs. The generated insert fills it with a scalar subquery in the same statement
   (`(SELECT kind FROM communications WHERE id = $1)`), and an update that changes the FK re-derives it. A missing
-  parent then fails as NOT NULL, which the repository maps to the same error as an FK violation.
+  parent then derives NULL and fails the column's NOT NULL (SQLSTATE `23502`), or the match CHECK. The repository does
+  not translate driver errors anywhere, so this surfaces as the driver's error, as an FK violation (`23503`) does.
 
 | # | Rule |
 |---|---|
@@ -614,8 +615,8 @@ get pair semantics through the methods they already call.
 | Operation | What runs | Statements |
 |---|---|---|
 | `create(input, tx?)` | Split `input` by owner. `baseRepo.create({ …baseFields, kind: 'meeting' }, tx)`, then insert the child with `id = base.id`. Opens a transaction when no `tx` is passed. | 2 inserts, 1 transaction |
-| `update(id, patch, tx?)` | A `kind` key throws `KindImmutableError`. Split the patch. `baseRepo.update` always runs (it bumps `updated_at`); the child update runs when the patch has child keys. | 1 or 2 updates, 1 transaction |
-| `delete(id, tx?)` | `baseRepo.delete(id, tx)`. Hard delete: the FK cascade removes the child. Soft delete: the base's `deleted_at` is set and the child leaves scope through the `EXISTS` (§2.3). | 1 |
+| `update(id, patch, tx?)` | A `kind` key throws `KindImmutableError`. Split the patch. The child row is found first (scoped); then `baseRepo.update` runs whenever it has something to write (always when the base has `timestamps`: it bumps `updated_at`), then the child update when the patch has child keys. | 1 or 2 updates, 1 transaction |
+| `delete(id, tx?)` | A scoped child `SELECT` (an id that is not a child in scope is a no-op), then `baseRepo.delete(id, tx)`, in one transaction. Hard delete: the FK cascade removes the child. Soft delete: the base's `deleted_at` is set and the child leaves scope through the `EXISTS` (§2.3). | 2 statements (child `SELECT`, base delete), 1 transaction (`BEGIN` / `COMMIT` when no `tx` is passed) |
 
 Why the base write goes through the base **repository** and not a raw insert: `stampTenant` and `withTimestamps`
 apply with the base's own behaviors (`base-repository.ts:433-435`). The child repository gets the base repository
@@ -652,21 +653,21 @@ model row on `(source, external_id)`. That write spans both tables, whether or n
 | Step | Statement |
 |---|---|
 | 1. Base | `INSERT INTO communications (…) VALUES (…) ON CONFLICT (tenant_id, source, external_id) DO UPDATE SET … RETURNING *, (xmax = 0) AS created` |
-| 2. Guard | If the returned `kind` is not the child's, throw `KindMismatchError`. The transaction rolls back. |
-| 3. Child | `INSERT INTO meetings (id, tenant_id, …) VALUES (…) ON CONFLICT (id) DO UPDATE SET … RETURNING *` |
+| 2. Guard | The base statement's conflict carries `WHERE <table>.kind = excluded.kind`: a row under another kind is not updated and returns no row, and the repository throws `KindMismatchError`. Nothing was written, so it holds in a caller-owned transaction too (as built, S4). |
+| 3. Child | `INSERT INTO meetings (id, tenant_id, …) VALUES (…) ON CONFLICT (id) DO UPDATE SET … RETURNING *, (xmax = 0) AS created` |
 
-Two statements, one transaction, opened when no `tx` is passed. The result is `{ row: MeetingFlat, created }`.
+Two statements, one transaction, opened when no `tx` is passed. The result is `{ row: MeetingFlat, created, baseCreated }` (as built, S4): `created` is the child insert's, `baseCreated` the base's. They differ when the base row exists with no child row (an orphan): the upsert repairs it, which is a created `meeting` under an updated `communication`, and the service names each event from its own flag.
 
 - **What `SET` carries:** the columns the input carries, plus `updated_at`. Never `id`, `kind`, the tenant column,
   the natural-key columns or `created_at`. A key absent from the input is left alone, and an explicit `null` clears.
-- **Tenant.** Both rows go through `stampTenant`. The conflict target is tenant-prefixed because the index is
+- **Tenant.** The base row goes through `stampTenant`; the child row copies the base row's tenant. The conflict target is tenant-prefixed because the index is
   (`cols = tenantScoped ? [tenant, ...fields]`, `entity-locals.js:1026-1110`), so one tenant's upsert cannot touch
   another's row.
 - **Kind.** An existing row with that natural key and another kind is an error, not an update. The kind FK would
   refuse the child insert anyway. The guard names the cause.
 - **A soft-deleted match** is updated and stays deleted. Reviving a row is the caller's decision (OQ-14).
 - **`match:` columns** are filled as in `create` (§2.4).
-- **Events.** The service emits `created` or `updated` from the `created` flag, under both names (§5). No per-field
+- **Events.** The service emits `created` or `updated` under both names (§5): the child's from `created`, the base's from `baseCreated`. No per-field
   change events, because there is no pre-read.
 - **On the base**, the base repository's `upsertByNaturalKey` refuses a kind that has a child table, as its `create`
   does (`KindRequiresChildError`; the repository owns both kind invariants, D16). Base-only kinds upsert through it.
@@ -747,6 +748,10 @@ allowlisted on the child, because it is already in the body.
 
 An upsert emits `created` or `updated` under both names, without per-field change events (§4.2).
 
+As built (S4): a child's `update` also emits the per-field change events of the **base's own** fields under the base's
+name, so a subscriber to every kind's field changes sees `occurredAt` change whichever kind it was. The child's own
+name carries every changed field of the flat row.
+
 Typed events (`emits:`, EVT-7) are unchanged: the use case publishes inside its transaction, and payload expressions
 see the flat entity.
 
@@ -777,8 +782,7 @@ export class OrphanBaseError extends Error {}
 export function inTransaction<T>(db: DrizzleClient, tx: DrizzleTx | undefined, fn: (tx: DrizzleTx) => Promise<T>): Promise<T>;
 ```
 
-`ScopeConfig` gains the optional base scope (§2.3) in `scope-filters.ts`. `BaseService` gains `baseEntityName` and
-the overridable pre-update read (§5).
+`ScopeConfig` gains the optional base scope (§2.3) in `scope-filters.ts`. `BaseService` gains `baseEntityName`, `baseSliceKeys`, the overridable pre-update read (§5) and `emitUpserted`; `BaseRepository` gains the `deriveColumns` hook. The write helpers in `inheritance.ts` are `splitByOwner`, `inTransaction`, `upsertSet`, `assertBaseOnlyKind`, `fillDerivedColumns`, the errors `KindImmutableError` / `KindMismatchError` / `KindRequiresChildError` / `MatchColumnImmutableError` / `OutOfScopeWriteError`, and the types `DerivedColumn` / `ParentSource`.
 
 **Generated on the child repository** (`repository.ejs.t`):
 
@@ -791,7 +795,7 @@ override update(id: string, patch: MeetingUpdate, tx?: DrizzleTx): Promise<Meeti
 override delete(id: string, tx?: DrizzleTx): Promise<void>;
 
 /** Base on its natural key, then child on id. One transaction (§4.2). */
-upsertByNaturalKey(input: MeetingCreate, tx?: DrizzleTx): Promise<{ row: MeetingFlat; created: boolean }>;
+upsertByNaturalKey(input: MeetingCreate, tx?: DrizzleTx): Promise<{ row: MeetingFlat; created: boolean; baseCreated: boolean }>;
 
 /** findById with the base included, flattened. `with` and `columns` still apply to the child. */
 findWithBase<W extends MeetingInclude = MeetingNoInclude, C extends MeetingColumns | undefined = undefined>(id: string, opts?: ReadOptions<W, C>): Promise<MeetingFlat<W, C> | null>;
@@ -804,7 +808,7 @@ export type MeetingFlat<W extends MeetingInclude = MeetingNoInclude, C extends M
 The brief's `createWithBase` and `updateAcross` are the overrides of `create` and `update`, on purpose. A separately
 named method would leave the inherited `create` in place, writing a child row with no base. Overriding removes the
 wrong path. Whether the widened parameter and return types satisfy `IBaseRepository` (`base-service.ts:39-56`) under
-a consumer tsconfig has to be measured, not assumed (charter I9).
+a consumer tsconfig has to be measured, not assumed (charter I9). **Measured in S4, after fixing `<Child>Flat` (it was `never`): they do** — see §13.2 S4 as built.
 
 **Generated on the base repository:**
 
@@ -821,7 +825,7 @@ countKind(kind: CommunicationKind, where?: RowFilter<typeof communications>): Pr
 findOrphans(opts?: { limit?: number }): Promise<Communication[]>;
 
 /** One statement, ON CONFLICT on the natural key. Emitted when the entity declares one. */
-upsertByNaturalKey(input: CommunicationCreate, tx?: DrizzleTx): Promise<{ row: Communication; created: boolean }>;
+upsertByNaturalKey(input: Partial<Communication>, tx?: DrizzleTx): Promise<{ row: Communication; created: boolean }>;
 
 /** Overrides BaseRepository.update. Throws KindImmutableError on a `kind` key. */
 override update(id: string, input: Partial<Communication>, tx?: DrizzleTx): Promise<Communication>;
@@ -905,8 +909,8 @@ and what v1 adds. A cross-kind list on the client is hand-written in v1.
 | Create | 2 inserts in 1 transaction. The base insert maintains 1 extra unique index (2 when tenant-scoped). |
 | Upsert | 2 statements in 1 transaction. |
 | `match:` | One derived column per matched column, one unique index on the target, and a scalar subquery on the parent's primary key inside the insert. |
-| Update | 1 or 2 updates in 1 transaction, plus the pre-read events already do. |
-| Delete | 1 statement. |
+| Update | A scoped child `SELECT`, then 1 or 2 updates, in 1 transaction (`BEGIN` / `COMMIT` when no `tx` is passed), plus the pre-read events already do. |
+| Delete | A scoped child `SELECT`, then 1 delete, in 1 transaction. |
 | Storage | Per child row: `kind` (4 bytes) and the tenant column (16 bytes). Per base: 1 or 2 extra unique indexes. |
 
 **Not enforced by the database:** completeness (§2.2). An orphan base row is prevented by the generated write path
@@ -1253,6 +1257,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   derivation's first consumer is S2. The rebase onto the ADR-046 `main` only reconciled `ParsedRelationship.onDelete`
   (main added it; S1 carries `nullable` and `match` beside it) and `ParsedEntity.uniqueIndexes` beside S1's
   `inherits` / `discriminator` / `naturalKey`.
+- **Service `delete` (Gate 2.5).** A child service's `update` and `delete` decide by a pre-read, the same way. `update` (`pair_update`) returns `undefined` without writing or emitting when the id is not a row of this kind (`BaseService.update` would otherwise snapshot `undefined`); `delete` is the `pair_delete` kind: it pre-reads the flat row (`findWithBase`, scoped) and returns without emitting when the id is not a row of this kind, because the repository's delete is a no-op there and `BaseService.delete` would otherwise publish `communication.deleted` for a base row that still exists.
 - **ADR-046 Phase B (phase R2).** Rebased onto `main` with Phase B (#888–#898): no conflicts, nothing to print — S1 has no
   template, no `entity-locals.js` change and no flag local, so there is nothing to move onto `apiSurface`; the
   allowlist did not grow and generated output (`test-baseline`) is byte-identical.
@@ -1333,8 +1338,9 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   `{ entity: block }`), and `matchReferrers` throws when no lookup is supplied instead of answering "no referrers".
 - **Imports.** A table is imported from its entity file and an enum from its owner's `.enums` leaf; the two are never
   one statement, and an enum is never imported from an entity file (§2.1).
-- **No writes for a child.** The derivation lists no write use case for any child: no create, update or delete use case,
-  route or provider. Its repository still inherits `create`. S4 re-enables writes.
+- **No writes for a child.** The derivation lists no write use case for any child (`writesDisabledBy`): no create, update or delete use case,
+  route or provider. S4 overrides `create` / `update` / `delete` in the child's repository and `create` / `update` in
+  its service (the pair write); the write use cases and routes stay off until S5, whose flat DTOs they need.
 - **ADR-046 (phase R).** The existence decision above is derived once: `writesDisabledBy(definition)` in
   `src/derived/api/entity.ts` returns the YAML path that turned the write side off — `['inherits']` for a child,
   `['generate', 'writes']` for the existing opt-out — or `null`. `deriveEntityApiSurface` reads it for the create /
@@ -1345,7 +1351,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   (columns, constraints, enums file) is outside ADR-046's scope (§4: SQL and file paths are not derived). Golden:
   `email`, `meeting`, `communication`, `email_thread`, `meeting_transcript` (the baseline's new entities); the
   `matrix-writes-false` case gains `writesDisabledBy` (the same field, its other cause). Studio's API tab shows both
-  as "Writes off", credited to the declaration. S4 deletes the `inherits` branch of `writesDisabledBy`.
+  as "Writes off", credited to the declaration. S5 deletes the `inherits` branch of `writesDisabledBy` (S4 keeps it: no use case or route yet).
 - **ADR-046 Phase B (phase R2).** Rebased onto Phase B (#888–#898): one conflict (`package.json`'s published file
   list); the S2 behaviour sat in code Phase B left alone. Render goldens: five matrix entity files re-blessed for
   S2's `(t)` → `(tCols)`. Generated bytes are otherwise unchanged from phase R.
@@ -1509,15 +1515,170 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   fill for `match:` columns); `module.ejs.t` (`:62` imports, so a child's module can inject the base repository);
   `service.ejs.t`; `runtime/base-classes/base-service.ts` (`:141-199`: `baseEntityName`, the overridable
   pre-update read, upsert events); `inheritance.ts` (`splitByOwner`, `inTransaction`, `KindMismatchError`,
-  `KindImmutableError`, `KindRequiresChildError`); the write use-case templates, re-enabled for children.
-- Must not touch: the read surface from S3, `integrated-entity-repository.ts`.
+  `KindImmutableError`, `KindRequiresChildError`). The write use-case templates stay off for children until S5 (see S4 as built).
+- Must not touch: the read surface from S3, `integrated-entity-repository.ts`. **Two exceptions, ratified at Gate 2.5 (D7, §11.3):** `deriveColumns` is called from `IntegratedEntityRepository.integrationUpsertOne` and `MetadataEntityRepository.upsertMany` (a `match:` column could never be written through them otherwise), and S3's `<Child>Flat` alias is fixed (it was `never`) — see the "`match:` fill on the two runtime inserts" and "`<Child>Flat` was `never`" as-built bullets.
 - First task: measure whether the widened `create` / `update` signatures satisfy `IBaseRepository`
   (`base-service.ts:39-56`) under the smoke's consumer tsconfig. If they do not, the fallback is to keep the
   inherited signatures and add the flat-typed methods under their own names, with the inherited ones throwing on a
   child. Record the result in this RFC.
 - Adds: `test/scaffold/tests/inheritance-writes.test.ts`.
-- Gates: `just test-unit`, `just test-baseline`, `just test-smoke`, `just test-integration`.
+- Gates: `just test-unit`, `just test-baseline`, `just test-smoke`, `just test-integration`, and `just test-smoke-capability` and `just test-smoke-subsystems` (the `BaseService` change reaches them).
 - Closes: A6, A7, A11, and the rest of A5 (the insert fills the matched column).
+
+**S4 as built (2026-11-14).** What the build settled, beyond the plan above:
+
+- **`<Child>Flat` was `never`, and the first measurement was vacuous.** The S3 alias built the flat row from
+  `TWith & { communication: true }`, and the default include `MeetingNoInclude` is `Record<string, never>`: its index
+  signature made `communication` `never`, so `MeetingFlat` (every default-generics use) was `never` — assignable to
+  everything, so "the override satisfies `IBaseRepository`" was true of a `Promise<never>`, and `(await
+  repo.create(…)).title` was TS2339. Fixed at the alias: the include's index signature is stripped
+  (`{ [K in keyof TWith as string extends K ? never : K]: TWith[K] } & { communication: true }`); what other reads type is
+  unchanged. `test/baseline-type-assertions.ts` now asserts `MeetingFlat` is not `never`, carries `title` / `occurredAt` /
+  `kind: 'meeting'`, and reads real fields off child `create`, `update`, `upsertByNaturalKey(…).row`, `findWithBase` and
+  `findManyWithBase` and the service's forwards, with a `@ts-expect-error` on a key neither table has; it went red on the old
+  alias (TS2344 on the two `never` assertions, TS2339 on the field reads) and green on the fix.
+- **The `IBaseRepository` measurement, redone with a real type.** `override create(input: <Child>Create, tx?):
+  Promise<<Child>Flat>` and `override update(...)` **do satisfy** `IBaseRepository` and `BaseRepository`'s own
+  signatures under the smoke's consumer tsconfig (`bunx tsc --noEmit --skipLibCheck` over a project scaffolded by `just
+  test-smoke`, a `bun init` tsconfig, strict): `MeetingRepository` and `MeetingService extends
+  BaseService<MeetingRepository, Meeting>` compile with the fixed `MeetingFlat`. Methods compare bivariantly,
+  `<Child>Create` and `Partial<Meeting>` are mutually assignable, and `<Child>Flat` (kind `'meeting'` intersected with the
+  base's kind union) assigns to `Meeting`. The check can fail (an override returning `Promise<string>` is TS2416 on the
+  override and TS2344 on the service). So the fallback (inherited signatures, flat methods under their own names, the
+  inherited ones throwing) is **not** taken.
+- **Casts.** The generated child pair write has three `as unknown as` and a handful of single casts, each at a seam the type
+  system cannot see across; this lists the cross-seam casts, not every `as` (the others are local: `flat()` builds the
+  row it flattens, `childValues()` types the insert, `update` reads the patch as a record). Repository: `undefined as unknown as
+  <Child>Flat` (`update` returning `undefined` for an absent row, as `BaseRepository.update` does), `as <Base>` on the base
+  row where it may come from a plain select, `written as NonNullable<…>` / `childRow as <Child>` on a `RETURNING … , (xmax = 0)`
+  row, and `flattenBase(…) as <Child>Flat` (the generic `Flattened` over the concrete row). Service: `input as
+  Partial<<Child>>` twice (the flat input into `BaseService`'s table-typed parameter) and a checked `as
+  Promise<<Child>Flat>` twice. Base repository: `row as unknown as <Base>` (the same `RETURNING` row). Runtime: one
+  `as unknown as DrizzleTx` in `inTransaction` (a transaction handle is not a `NodePgDatabase`). The insert is on the concrete
+  table (`this.table`), the flat row is built by `flattenBase` (S3's, the one owner), and `readBeforeUpdate` returns
+  `findWithBase` uncast.
+- **`<Child>Create` / `<Child>Update`.** The flat input: `Partial<Omit<Base, kind>> & Partial<Omit<Child, kind>>`. The
+  write takes Partials like `BaseRepository.create` does; required-ness is the DTO's (S5) and the database's. An input
+  that names another kind throws `KindMismatchError`.
+- **Pair write.** The child repository injects the base repository (`private readonly baseRepo`); the base is written
+  through it, so `stampTenant`, `withTimestamps` and the base's own `deriveColumns` apply with the base's behaviors.
+  `create` copies `id` and the tenant column from the returned base row. `update` selects the **child** row first
+  (scoped), then updates the base, then the child's own columns, so a row of another kind is
+  never touched through a child repository (`update` returns `undefined`, as `BaseRepository.update` does, and `delete` is
+  a no-op); the base update runs always when the base has `timestamps` (it bumps `updated_at`), else only when the patch
+  has base keys. `delete` is `baseRepo.delete`, after the same child check. `inTransaction` is `tx ? fn(tx) : db.transaction(fn)`.
+- **The upsert is one `INSERT … ON CONFLICT` per table.** Emitted for **every entity that declares `natural_key: true`**,
+  not only a family: a base (and a plain entity) gets `upsertByNaturalKey` returning `{ row, created }`; a child's
+  does the base's, then `INSERT INTO <child> … ON CONFLICT (id) DO UPDATE`, in one `inTransaction`. The conflict target
+  is the declared columns, tenant-prefixed as the unique index is. A base with a discriminator adds `WHERE kind =
+  excluded.kind` to the conflict (a `KindMismatchError` writes nothing, in a caller-owned transaction too); `RETURNING *,
+  (xmax = 0)` gives `created`. When the input carries nothing to `SET` the update is a no-op (`SET id = id`), so
+  `RETURNING` still yields the row. The SQL is pinned in `inheritance-writes.test.ts` (`the emitted SQL`).
+- **`match:` fill is a hook, not a copy of `create`.** `BaseRepository.create` / `update` call a new protected
+  `deriveColumns(data, mode)` (identity) after the tenant stamp / guard. A generated repository whose entity has a derived
+  column overrides it with `fillDerivedColumns` (`inheritance.ts`) over a module-level `DerivedColumn[]` built from the
+  relationships: `(select <parent col> from <parent> where <parent>.id = $fk)` in the same statement; several
+  relationships matching one column are `coalesce`d in declaration order (so `communication_note` with only its role set
+  still derives the column). `create` always derives (a caller's value is ignored); `update` re-derives when a
+  foreign key it follows is in the payload (the others are read from the row) and throws `MatchColumnImmutableError`
+  (M4) for the column named without one. The child's own insert and update go through the same hook. The discriminator
+  case (`communication_part.kind`) derives nothing.
+- **A missing parent is the driver's error**, not a mapped one (§2.4 said "mapped"): `23502` when no parent resolves,
+  `23503` when one does and another is missing. No repository translates driver errors.
+- **`match:` fill on the two runtime inserts.** `IntegratedEntityRepository.integrationUpsertOne` and
+  `MetadataEntityRepository.upsertMany` (with a `conflictTarget`) build their own `INSERT`s, and S1 accepts `match:` on both
+  patterns, so without the fill a derived column could never be written through them. Both now call `deriveColumns`: the
+  integration upsert on its INSERT values (`'create'`) and on its conflict SET (`'update'`, so a resolved foreign key
+  re-derives the column that follows it); `upsertMany` on each row (its SET is the first row's data, which already carries the
+  derived value). Each has a unit test that fails without the call. This is not S7's.
+- **Base guards (both kind invariants live in the repository — D16, §11.3).** The base repository's `update` throws
+  `KindImmutableError` for a `kind` key, for any base with a discriminator (also when every kind is base-only). The base
+  **repository**'s `create` and `upsertByNaturalKey` throw `KindRequiresChildError` (`assertBaseOnlyKind`, naming
+  `<Child>Service.create`) for a kind that has a child table: the repository is the one owner of the pair write, so the
+  rule sits beside `KindImmutableError`, and a direct repository call is refused too. The child's own pair write passes
+  the base's guard by passing the `PAIR_WRITE` mark as a trailing `via` argument (`create(input, tx?, via?)`,
+  `upsertByNaturalKey(input, tx?, via?)`); a call without it is a write through the base. The base **service** keeps no
+  copy: it forwards, and has no `create` override (the earlier service `kind_guard` entry is deleted). Tested through the
+  repository directly (`the base REPOSITORY refuses it on a direct call`; red with the guard disabled).
+- **Ratified at Gate 2.5 (D9, D10; §11.3 has the decisions).** D9: a composing module imports the home modules of the
+  repositories it composes, every one through `forwardRef` (the bullet below). D10: the natural-key fixture assertion
+  changed from "alone changes no emitted byte" to "only the repository and the service differ" (the bullet "A fixture-test
+  premise ended"), at the same strength. D4: `test/scaffold/tests/inheritance-writes.test.ts` covers a base-only kind on
+  a soft-delete family on S3's scaffold-only `document` family (create through the base repository and service, a child
+  kind refused, soft delete of the base-only row). `document` declares no `natural_key`, so the upsert of a base-only
+  kind is covered on `communication` (`a base-only kind creates and upserts normally`), not there.
+- **Events.** `BaseService` gains `baseEntityName`, `baseSliceKeys` (the base table's column keys, from the
+  repository's exported `<CHILD>_BASE_KEYS`), `readBeforeUpdate` (the child reads `findWithBase`) and `emitUpserted`;
+  the generated child service wires them and narrows `create` / `update` to the flat types.
+- **Module wiring: the home module owns its closure.** A child's repository injects its base's, so a module that composes
+  another entity's repository (a `belongs_to` / `has_many` target) no longer provides it locally and repeats its
+  dependencies: it imports that entity's **home module**, which exports the repository (ADR-002), with `forwardRef(() => …)` on **every** such import (Gate 2.5: the first attempt computed the cycles, but an ES-module cycle also closes through a junction's module and the EAV block's import, which that graph did not hold, and Nest then refuses to boot; `forwardRef` on an import outside a cycle changes nothing at runtime, so the graph, `moduleGraphEdges`, was deleted). A child's module
+  imports its base's the same way — as the FIRST entry of `repositoryDepModules`, deduped by entity (a child that also
+  relates to its own base imports that module once). One owner, `entity-locals.js`; the template prints only a comment for
+  the inherited entry. The smoke's Nest DI boot caught the first attempt, a base repository provided locally in
+  `MeetingTranscriptsModule`; that second path was deleted. This changes every composing module's emitted file.
+- **Sequencing: routes and use cases stay off.** A child still has no create / update / delete use case or route
+  (`generateWrites` is false for it): the flat create / update DTOs are S5's, and a child-shaped DTO cannot carry the
+  base fields the pair write needs. S4's writes are reachable through the repository and the service; S5 turns the use
+  cases on. The base's own use cases are generated as before: its create DTO still accepts every kind until S5, so a
+  base `POST` with a child kind reaches `KindRequiresChildError` from the repository (an unmapped 500 until S5) and an update
+  body carrying `kind` reaches `KindImmutableError`.
+- **Child update order.** The child row is selected (scoped), the base is updated, then the child's own columns are
+  updated, so the base's guards (the tenant guard, M4 on a base-derived column) run before anything of this table's is written:
+  a guard error a caller swallows in its own transaction leaves nothing half written.
+- **The upsert and the user axis (charter I3).** A `user_tracking` base or plain entity carries the ambient user predicate
+  in the conflict's `WHERE` and never SETs the user column, so one user cannot overwrite another's row in the same tenant. When
+  the conflict returns no row, ONE read of the conflicting row classifies it: another kind is `KindMismatchError`, the same
+  kind is `OutOfScopeWriteError` (new: a scoped `update()` matches no row and returns `undefined`, which an upsert's
+  `{ row, created }` cannot express, so there was no existing error to reuse).
+- **Orphan repair reports the child's `created`.** A child upsert returns `{ row, created, baseCreated }`: `created` is the
+  child insert's (`xmax = 0` on that statement), `baseCreated` the base's. Repairing a base row that has no child is a created
+  child under an updated base, and `BaseService.emitUpserted(row, created, baseCreated)` names each event from its own flag.
+- **`upsertByNaturalKey` exists on every `natural_key` entity**, family or not, with OQ-14's semantics (a soft-deleted match is
+  updated and stays deleted) and the user-axis guard above. For S6's #780 comment (A16): the single-row upsert landed in
+  this build; the batch form and the update policies stay in #780. A plain entity carries it (`catalog_entry`, tenant-scoped,
+  soft-deletable, user-tracked, in the baseline and scaffold sets) so the no-discriminator path is a gate.
+- **A fixture-test premise ended.** `natural_key: alone changes no emitted byte` (S2) held while no emitter read the
+  key; it now asserts the repository and the service are the only files that differ.
+- **Tests.** `src/__tests__/runtime/base-classes/inheritance-writes.spec.ts` (the pure parts, the derived-column SQL, the
+  events under both names) and `test/scaffold/tests/inheritance-writes.test.ts` (A5's fill, A6, A7, A11, the base guards
+  and the emitted SQL, against Postgres through the generated repositories and services). A15: with the transaction
+  removed from the child `create`, `a failing child insert rolls the base row back` went red; restored.
+- **ADR-046 (phase R).** The write half is derived once in `src/derived/api/`. Kinds (extending S3's, no second table):
+  repository `pair_create` / `pair_update` / `pair_delete` and service `pair_create` / `pair_update` / `pair_delete` (a child's writes —
+  origin the child's `inherits:`; the service entries `delegatesTo` the repository's), `upsert_own` / `upsert_through_base`
+  (`upsertByNaturalKey`, on the entity's own natural key or its base's — the derivation says which) `kind_guard` (a base's repository `update`) and `create_guard` (a base-with-children's repository `create`, taking the trailing `via`; an `upsert_own` on such a base takes it too) — both repository-only, origin the base's `discriminator:`; there is no service entry (D16). The names are
+  `FAMILY_METHOD` (`create`, `update`, `delete`, `upsertByNaturalKey` join the read names). An override takes the place of the
+  pattern's `inherited` entry of the same name — the surface lists it once, as `emitted: true`. Existence:
+  `familyWriteSurface(definition, children, base)` returns `pairWrite` (a child), `upsert` (`'own'` — the entity's
+  `unique_indexes` entry with `natural_key: true`; `'through_base'` — a child whose **base** declares one; else `null`),
+  `kindGuardUpdate` (any `discriminator:`) and `kindGuardCreate` (a discriminator with at least one child table: its repository's `create` / `upsertByNaturalKey`). The upsert's
+  origin is the marker itself: `unique_indexes[i].natural_key` on the entity, or on the base's document for a child (its
+  `note` reads "<base>'s natural key, through <child>'s inherits"). `naturalKeyIndexOf` and `inheritanceBaseOf` (`src/schema/inheritance.ts`) are the
+  one reader of the marker (the dead `ParsedEntity.naturalKey` is deleted; the R11 validator is the legitimate second reader); `entity-locals.js` reads it for the conflict target (`naturalKey`) only (the write flags have two readers: the derivation and `family-reads.test.ts`);
+  `deriveEntityApiSurface` takes `inheritanceBase` as a required input, and the templates read the entries (phase R2). **One decision this made that S4 had not:** a child of a base with **no**
+  `natural_key:` emitted an `upsertByNaturalKey` calling a base method that does not exist (a TS error in the generated
+  file); it now has none — new matrix case `matrix-family-no-natural-key`, and a `parcel` / `crate` family in
+  `test/smoke/fixtures/` (smoke-only) so the shape is compiled by `tsc`, not only existence-checked. No byte of the baseline, scaffold or smoke
+  output changes (every baseline base declares a key). `moduleClassName(plural)` in `names.ts` is the one owner of a module's class name (the base module a child imports, a composed module, the entity's own). Not derived, on purpose: `readBeforeUpdate` and `baseEntityName` /
+  `baseSliceKeys` (`protected` wiring, not API), and the module imports of the home module / `forwardRef` (wiring, not a name
+  or an existence — ADR-046 slice 1). `writesDisabledBy`'s `inherits` branch stays until S5. Golden: `communication`,
+  `email`, `meeting` (the overrides replace `inherited`), `matrix-discriminator-no-child` (the base `update` guard), new
+  `catalog_entry` (S4's fixture) and `matrix-family-no-natural-key`; Studio's API tab lists the repository kinds and the service kinds
+  (`surface-kinds.ts`, `surface-view.test.ts`).
+- **ADR-046 Phase B (phase R2).** Rebased onto S3's Phase-B tip (the five slice commits applied as one 3-way merge, the
+  stack lands squash-merged): conflicts in `entity.ts`, `entity-locals.js`, both templates, the studio kind table and
+  this RFC. The write kinds print in Phase B's loops by `m.kind` only, one kind per body (S3's `across_kinds` split): repository
+  `pair_create` / `pair_update` / `pair_delete`, `kind_guard`, `create_guard`, `upsert_own` / `upsert_through_base`; service
+  `pair_create` / `pair_update` / `pair_delete`, `upsert_own` / `upsert_through_base` (the derivation says whose natural
+  key — no template infers it from `with_base`). Signatures print `m.name` and `m.params[i].name`. Deleted: the
+  `familyPairWrite` / `familyUpsert` / `familyKindGuardUpdate` / `familyKindGuardCreate` locals. The derived-column (`match:`) hook is not a
+  method, so it prints after the last read. The write entries sit right after the family reads (before the finders,
+  and in the service before the finders and relations), which is where the bytes were: the baseline is byte-identical to
+  phase R. Render goldens: 29 of the 30 `*.module.ts` in the matrix are re-blessed (`matrix-self-fk/categories.module.ts` is correctly unchanged) (S4's home-module imports replace the composed
+  repositories as providers — Phase B kept the module's wiring in locals, so there was nothing to reconcile: the imports
+  still come from `repositoryDepModules`), `matrix-discriminator-no-child` gains the base `update` guard,
+  and `matrix-family-no-natural-key` is new. The allowlist did not grow.
 
 **S5 — DTOs, use cases, controllers.**
 

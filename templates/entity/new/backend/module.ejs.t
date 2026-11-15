@@ -21,12 +21,12 @@ _%>
  * root AppModule (global) so these tokens resolve at runtime.
  */
 <% } -%>
-import { Inject, Module,<% if (junctionFanOut.length > 0) { %> forwardRef,<% } %> type OnModuleInit } from '@nestjs/common';
+import { Inject, Module,<% if (junctionFanOut.length > 0 || repositoryDepModules.length > 0 || _eav || eavValueTable) { %> forwardRef,<% } %> type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '<%= openApiImport %>';
 import { DatabaseModule } from '@shared/database/database.module';
-<%_ /* #632: one import per composed repository (belongs_to + has_many targets, deduped) */ _%>
-<%_ repositoryDeps.forEach(dep => { _%>
-import { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.fileStem %>.repository';
+<%_ /* ADR-002: the home module of each composed entity (belongs_to + has_many targets, deduped) exports its repository */ _%>
+<%_ repositoryDepModules.forEach(dep => { _%>
+import { <%= dep.moduleClass %> } from '<%= dep.importPath %>';
 <%_ }) _%>
 <%_ /* JUNC-0 — the module of each junction this entity is mirrored onto */ _%>
 <%_ junctionFanOut.forEach(fan => { _%>
@@ -72,30 +72,28 @@ import { <%= classNames.searchController %> } from './<%= entityFileStem %>-sear
 @Module({
   imports: [
     DatabaseModule,
+<%_ repositoryDepModules.forEach(dep => { _%>
+<%_ if (dep.inherits) { _%>
+    // A <%= entityName %> is a kind of <%= dep.entity %>: its repository injects the base's, which that module exports.
+<%_ } _%>
+    forwardRef(() => <%= dep.moduleClass %>),
+<%_ }) _%>
 <%_ /* JUNC-0 — forwardRef breaks the parent ↔ junction module cycle (the junction module imports this one for its repository) */ _%>
 <%_ junctionFanOut.forEach(fan => { _%>
     forwardRef(() => <%= fan.junction.moduleClass %>),
 <%_ }) _%>
 <% if (_eav) { -%>
-    <%= eavFieldValueModulePascal %>Module,
+    forwardRef(() => <%= eavFieldValueModulePascal %>Module),
 <% } -%>
 <% if (eavValueTable) { -%>
-    <%= eavDefinitionPluralPascal %>Module,
+    forwardRef(() => <%= eavDefinitionPluralPascal %>Module),
 <% } -%>
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
-<%_ belongsTo.forEach(rel => { _%>
-    // <%= rel.relatedEntityPascal %>sModule,
-<%_ }) _%>
   ],
   controllers: [<% if (_api) { %><%= classNames.controller %><% if (_searchRoute) { %>, <%= classNames.searchController %><% } %><% } %>],
   providers: [
     <%= classNames.repository %>,
     <%= classNames.service %>,
-<%_ /* CGP-358b / #632: register each composed repository once (needed for service DI) */ _%>
-<%_ repositoryDeps.forEach(dep => { _%>
-    <%= dep.repositoryClass %>,
-<%_ }) _%>
     <%= classNames.findByIdUseCase %>,
     <%= classNames.listUseCase %>,
 <% if (_eav) { -%>

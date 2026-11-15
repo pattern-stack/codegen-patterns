@@ -43,6 +43,11 @@ export function serviceClassName(entityName: string): string {
 	return `${pascalCase(entityName)}Service`;
 }
 
+/** A module's class: the table export's plural, PascalCased — `deal_states` → `DealStatesModule`. */
+export function moduleClassName(plural: string): string {
+	return `${pascalCase(plural)}Module`;
+}
+
 export function controllerClassName(entityName: string): string {
 	return `${pascalCase(entityName)}Controller`;
 }
@@ -228,11 +233,19 @@ export function includesConstName(plural: string): string {
 	return `${plural.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase()}_API_INCLUDES`;
 }
 
+/**
+ * A generated module-level constant of one entity, `<ENTITY>_<SUFFIX>` (`meeting` + `BASE_KEYS` → `MEETING_BASE_KEYS`).
+ * The one SCREAMING_CASE rule, shared with `includesConstName`: a camelCase boundary is a word break.
+ */
+export function familyConstName(entityName: string, suffix: string): string {
+	return `${entityName.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[^A-Za-z0-9]+/g, '_').toUpperCase()}_${suffix}`;
+}
+
 // ----------------------------------------------------------------------------
-// Joined-table family reads (RFC-0006 §3, #875)
+// Joined-table family reads and writes (RFC-0006 §3–§4, #875)
 // ----------------------------------------------------------------------------
 
-/** The method names a family member's repository and service carry. Fixed: no YAML spelling changes them. */
+/** The method names a family member's (or a `natural_key` entity's) repository and service carry. Fixed: no YAML spelling changes them. */
 export const FAMILY_METHOD = {
 	/** A child: the entity with its base row's columns hoisted to the root. */
 	findWithBase: 'findWithBase',
@@ -243,4 +256,10 @@ export const FAMILY_METHOD = {
 	listKind: 'listKind',
 	countKind: 'countKind',
 	findOrphans: 'findOrphans',
+	/** A child's pair write: these override the base class's, in the generated class body. */
+	create: 'create',
+	update: 'update',
+	delete: 'delete',
+	/** `natural_key: true`: the entity's own, or a child's through its base's. */
+	upsertByNaturalKey: 'upsertByNaturalKey',
 } as const;

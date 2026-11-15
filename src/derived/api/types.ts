@@ -79,6 +79,20 @@ export interface RepositoryMethod {
 		| 'count_kind'
 		/** A base's `findOrphans` — a kind with a child table but no child row. */
 		| 'orphans'
+		/** A child's `create` — both rows in one transaction (`inherits:`, RFC-0006 §4.1). */
+		| 'pair_create'
+		/** A child's `update` — patch split across the two rows, one transaction. */
+		| 'pair_update'
+		/** A child's `delete` — both rows, one transaction. */
+		| 'pair_delete'
+		/** `upsertByNaturalKey` on `natural_key: true` of the entity's own index (§4.2). */
+		| 'upsert_own'
+		/** `upsertByNaturalKey` through the base's natural key, by way of `inherits:` (§4.2). */
+		| 'upsert_through_base'
+		/** A base's `update`, which refuses a `kind` change (`discriminator:`, §4.1). */
+		| 'kind_guard'
+		/** A base's `create`, which refuses a kind that has a child table (`KindRequiresChildError`, §4.1). */
+		| 'create_guard'
 		| 'inherited';
 	/** `false`: the method lives on the base class or a capability mixin, not in the generated class body. */
 	emitted: boolean;
@@ -115,6 +129,16 @@ export interface ServiceMethod {
 		| 'count_kind'
 		/** The repository's `findOrphans`, forwarded. */
 		| 'orphans'
+		/** A child's `create`, narrowed to its flat input and wrapped in `BaseService`'s events. */
+		| 'pair_create'
+		/** A child's `update`, likewise. */
+		| 'pair_update'
+		/** A child's `delete`: a no-op, emitting nothing, for an id that is not a row of this kind. */
+		| 'pair_delete'
+		/** `upsertByNaturalKey` on the entity's own natural key, forwarded; emits the pair's events. */
+		| 'upsert_own'
+		/** `upsertByNaturalKey` through the base's natural key, forwarded; emits the pair's events. */
+		| 'upsert_through_base'
 		| 'inherited';
 	emitted: boolean;
 	params: Param[];
@@ -162,7 +186,7 @@ export interface EntityApiSurface {
 	useCases: UseCase[];
 	/**
 	 * The declaration that turned the write side off: no `create` / `update` / `delete` use case, route or
-	 * provider. `generate.writes: false`, or a child's `inherits:` (RFC-0006, until S4's pair write). Absent when
+	 * provider. `generate.writes: false`, or a child's `inherits:` (RFC-0006, until S5's flat DTOs). Absent when
 	 * the entity emits writes.
 	 */
 	writesDisabledBy?: YamlRef;

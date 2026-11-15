@@ -1,9 +1,9 @@
 
-import { Inject, Module, type OnModuleInit } from '@nestjs/common';
+import { Inject, Module, forwardRef, type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
-import { AccountRepository } from '../accounts/account.repository';
-import { UserRepository } from '../users/user.repository';
+import { AccountsModule } from '../accounts/accounts.module';
+import { UsersModule } from '../users/users.module';
 
 import { TicketRepository } from './ticket.repository';
 import { TicketService } from './ticket.service';
@@ -22,17 +22,14 @@ import { declarativeQueryClasses } from './use-cases/declarative-queries';
 @Module({
   imports: [
     DatabaseModule,
+    forwardRef(() => AccountsModule),
+    forwardRef(() => UsersModule),
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
-    // AccountsModule,
-    // UsersModule,
   ],
   controllers: [TicketController],
   providers: [
     TicketRepository,
     TicketService,
-    AccountRepository,
-    UserRepository,
     FindTicketByIdUseCase,
     ListTicketsUseCase,
     CreateTicketUseCase,

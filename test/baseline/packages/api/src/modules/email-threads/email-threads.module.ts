@@ -20,7 +20,6 @@ import { DeleteEmailThreadUseCase } from './use-cases/delete-email-thread.use-ca
   imports: [
     DatabaseModule,
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
   ],
   controllers: [EmailThreadController],
   providers: [

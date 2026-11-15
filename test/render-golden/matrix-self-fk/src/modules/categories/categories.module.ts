@@ -20,8 +20,6 @@ import { DeleteCategoryUseCase } from './use-cases/delete-category.use-case';
   imports: [
     DatabaseModule,
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
-    // CategorysModule,
   ],
   controllers: [CategoryController],
   providers: [

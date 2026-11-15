@@ -22,7 +22,6 @@ import { DeleteSkillUseCase } from './use-cases/delete-skill.use-case';
     DatabaseModule,
     forwardRef(() => MemberSkillsModule),
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
   ],
   controllers: [SkillController],
   providers: [

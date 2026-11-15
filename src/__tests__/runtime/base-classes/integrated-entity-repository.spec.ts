@@ -464,3 +464,34 @@ describe('IntegratedEntityRepository — tenantColumn (#791)', () => {
     expect('organizationId' in conflict.set).toBe(false);
   });
 });
+
+// ============================================================================
+// `match:` — a derived column is filled on the integration upsert too (RFC-0006 §2.4, #875 S4 review)
+// ============================================================================
+
+describe('IntegratedEntityRepository.integrationUpsertOne — derived match: columns', () => {
+  class DerivingRepository extends AccountRepository {
+    readonly modes: string[] = [];
+    protected override deriveColumns(data: Record<string, unknown>, mode: 'create' | 'update'): Record<string, unknown> {
+      this.modes.push(mode);
+      return { ...data, derivedKind: `derived-on-${mode}` };
+    }
+  }
+
+  it('runs the INSERT values and the conflict SET through deriveColumns', async () => {
+    const m = makeMock();
+    m.enqueue([row()]);
+    const repo = new DerivingRepository(m.db);
+
+    await repo.integrationUpsertOne(
+      { externalId: 'ext-1', userId: 'user-1', name: 'Acme', domain: null },
+      'hubspot',
+    );
+
+    expect(repo.modes).toEqual(['create', 'update']);
+    const values = m.capture.values[0] as Record<string, unknown>;
+    expect(values.derivedKind).toBe('derived-on-create');
+    const conflict = m.capture.conflict[0] as { set: Record<string, unknown> };
+    expect(conflict.set.derivedKind).toBe('derived-on-update');
+  });
+});

@@ -2,6 +2,7 @@
 // Run `codegen entity new --all` to refresh.
 
 import { AccountsModule } from '../modules/accounts/accounts.module';
+import { CatalogEntriesModule } from '../modules/catalog-entries/catalog-entries.module';
 import { CommunicationsModule } from '../modules/communications/communications.module';
 import { ContactsModule } from '../modules/contacts/contacts.module';
 import { DealsModule } from '../modules/deals/deals.module';
@@ -18,6 +19,7 @@ import { UsersModule } from '../modules/users/users.module';
 
 export const GENERATED_MODULES = [
 	AccountsModule,
+	CatalogEntriesModule,
 	CommunicationsModule,
 	ContactsModule,
 	DealsModule,

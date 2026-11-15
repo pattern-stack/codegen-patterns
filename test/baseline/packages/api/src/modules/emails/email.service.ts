@@ -6,11 +6,15 @@ import { BaseService } from '@shared/base-classes/base-service';
 import { EmailRepository } from './email.repository';
 import type {
   EmailColumns,
+  EmailCreate,
   EmailFlat,
+  EmailUpdate,
   EmailInclude,
   EmailNoInclude,
   EmailResult,
 } from './email.repository';
+import { EMAIL_BASE_KEYS } from './email.repository';
+import type { DrizzleTx } from '@shared/types/drizzle';
 import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
 import type { emails, Email } from './email.entity';
 import { EmailThreadRepository } from '../email-threads/email-thread.repository';
@@ -21,6 +25,10 @@ export class EmailService extends WithAnalytics(
   BaseService<EmailRepository, Email>,
 ) {
   protected override readonly entityName = 'email';
+
+  // RFC-0006 §5, A11 — a child write is announced under the base's name too, with the base's slice of the row.
+  protected override readonly baseEntityName = 'communication';
+  protected override readonly baseSliceKeys = EMAIL_BASE_KEYS;
 
   /** Injected by NestJS when EventsModule is registered. */
   @Optional() @Inject(EVENT_BUS)
@@ -78,6 +86,48 @@ export class EmailService extends WithAnalytics(
     opts?: ReadOptions<W, C>,
   ): Promise<Array<EmailFlat<W, C>>> {
     return this.repository.findManyWithBase<W, C>(ids, opts);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // The pair write (RFC-0006 §4.1) — the repository's, wrapped in BaseService's events
+  //
+  // The repository's `create` / `update` take the FLAT input (the base's columns and this table's) and return the
+  // FLAT row; `BaseService`'s are typed on the table row alone, so these narrow them to what actually flows.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  override create(input: EmailCreate, tx?: DrizzleTx): Promise<EmailFlat> {
+    return super.create(input as globalThis.Partial<Email>, tx) as Promise<EmailFlat>;
+  }
+
+  /** Not a email in scope: nothing is written (the repository's update is a no-op) and nothing is emitted — `BaseService` would snapshot `undefined`. */
+  override async update(id: string, patch: EmailUpdate, tx?: DrizzleTx): Promise<EmailFlat> {
+    if ((await this.repository.findWithBase(id)) === null) return undefined as unknown as EmailFlat;
+    return super.update(id, patch as globalThis.Partial<Email>, tx) as Promise<EmailFlat>;
+  }
+
+  /** The pre-update read is the FLAT row: against the table's own columns every base field would look changed. */
+  protected override readBeforeUpdate(id: string): Promise<Email | null> {
+    return this.repository.findWithBase(id);
+  }
+
+  /**
+   * The repository's delete is a no-op for an id that is not a email (a row of another kind is never deleted
+   * through this service), so `BaseService`'s events fire only when there was a row of this kind to delete — a
+   * `communication.deleted` for a row that still exists would drop it from every subscriber.
+   */
+  override async delete(id: string, tx?: unknown): Promise<void> {
+    if ((await this.repository.findWithBase(id)) === null) return;
+    return super.delete(id, tx);
+  }
+
+  /** Base on its natural key, then this table on `id`, one transaction; emits `created` / `updated` under both names. */
+  async upsertByNaturalKey(
+    input: EmailCreate,
+    tx?: DrizzleTx,
+  ): Promise<{ row: EmailFlat; created: boolean; baseCreated: boolean }> {
+    const result = await this.repository.upsertByNaturalKey(input, tx);
+    this.emitUpserted(result.row, result.created, result.baseCreated);
+    return result;
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

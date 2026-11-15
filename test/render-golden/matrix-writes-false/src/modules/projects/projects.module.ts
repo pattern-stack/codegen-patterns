@@ -1,9 +1,9 @@
 
-import { Inject, Module, type OnModuleInit } from '@nestjs/common';
+import { Inject, Module, forwardRef, type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
-import { AccountRepository } from '../accounts/account.repository';
-import { TaskRepository } from '../tasks/task.repository';
+import { AccountsModule } from '../accounts/accounts.module';
+import { TasksModule } from '../tasks/tasks.module';
 
 import { ProjectRepository } from './project.repository';
 import { ProjectService } from './project.service';
@@ -21,16 +21,14 @@ import { DeleteProjectUseCase } from './use-cases/delete-project.use-case';
 @Module({
   imports: [
     DatabaseModule,
+    forwardRef(() => AccountsModule),
+    forwardRef(() => TasksModule),
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
-    // AccountsModule,
   ],
   controllers: [ProjectController],
   providers: [
     ProjectRepository,
     ProjectService,
-    AccountRepository,
-    TaskRepository,
     FindProjectByIdUseCase,
     ListProjectsUseCase,
     CreateProjectUseCase,
