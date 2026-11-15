@@ -94,7 +94,7 @@ export type AirFreightUpdate = AirFreightCreate;
 
 /** The base table's column keys: what a flat input is split by (`splitByOwner`). */
 const AIR_FREIGHT_BASE = shipments;
-export const AIR_FREIGHT_BASE_KEYS: globalThis.ReadonlySet<string> = new Set(Object.keys(getTableColumns(AIR_FREIGHT_BASE)));
+export const AIR_FREIGHT_BASE_KEYS: globalThis.ReadonlySet<string> = new globalThis.Set(globalThis.Object.keys(getTableColumns(AIR_FREIGHT_BASE)));
 
 @Injectable()
 export class AirFreightRepository extends BaseRepository<AirFreight, typeof air_freights, Relations> {
@@ -259,7 +259,7 @@ export class AirFreightRepository extends BaseRepository<AirFreight, typeof air_
   private assertOwnKind(baseSlice: globalThis.Record<string, unknown>): void {
     const named = baseSlice['kind'];
     if (named !== undefined && named !== 'air') {
-      throw new KindMismatchError('air_freight', 'air', `the input names kind '${String(named)}'`);
+      throw new KindMismatchError('air_freight', 'air', `the input names kind '${globalThis.String(named)}'`);
     }
   }
 
@@ -308,10 +308,10 @@ export class AirFreightRepository extends BaseRepository<AirFreight, typeof air_
         .where(this.scopeAnd(eq(this.col('id'), id)));
       if (existing === undefined) return undefined as unknown as AirFreightFlat;
       const baseRow =
-        Object.keys(base).length > 0
+        globalThis.Object.keys(base).length > 0
           ? await this.baseRepo.update(id, base, txClient)
           : (await this.runner(txClient).select().from(AIR_FREIGHT_BASE).where(eq(AIR_FREIGHT_BASE.id, id)))[0];
-      if (Object.keys(own).length === 0) return this.flat(existing, baseRow as Shipment);
+      if (globalThis.Object.keys(own).length === 0) return this.flat(existing, baseRow as Shipment);
       const [childRow] = await this.runner(txClient)
         .update(this.table)
         .set(this.deriveColumns(own, 'update'))

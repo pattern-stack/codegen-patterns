@@ -153,7 +153,7 @@ export function useContactGraph<const I extends ContactInclude>(
 						)
 						.select(({ row, account, primaryNote }) => ({ row, account, primaryNote }))
 				: undefined,
-		[id, Boolean(inc.opportunities)],
+		[id, globalThis.Boolean(inc.opportunities)],
 	);
 
 	// `opportunityContacts` — one live query, disabled unless it was included.
@@ -165,7 +165,7 @@ export function useContactGraph<const I extends ContactInclude>(
 						.where(({ row }) => eq(row.contactId, id))
 						.select(({ row }) => ({ row }))
 				: undefined,
-		[id, Boolean(inc.opportunityContacts)],
+		[id, globalThis.Boolean(inc.opportunityContacts)],
 	);
 
 	// `people` — one live query, disabled unless it was included.
@@ -180,7 +180,7 @@ export function useContactGraph<const I extends ContactInclude>(
 						)
 						.select(({ row, contact }) => ({ row, contact }))
 				: undefined,
-		[id, Boolean(inc.people)],
+		[id, globalThis.Boolean(inc.people)],
 	);
 
 	const isLoading = root.isLoading || opportunitiesBranch.isLoading || opportunityContactsBranch.isLoading || peopleBranch.isLoading;

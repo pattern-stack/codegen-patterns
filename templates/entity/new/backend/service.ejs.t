@@ -482,10 +482,10 @@ _%>
     <%= _fields %>: globalThis.Record<string, unknown>,
     <%= _tx %>?: DrizzleTx,
   ): Promise<void> {
-    if (!<%= _fields %> || Object.keys(<%= _fields %>).length === 0) return;
+    if (!<%= _fields %> || globalThis.Object.keys(<%= _fields %>).length === 0) return;
     const allDefs = await this.<%= eavDefinitionRepoProperty %>.list();
     const defs = allDefs.filter((d) => (d as any).entityType === <%= _type %>);
-    const defIdByKey = new Map(defs.map((d) => [d.key, d.id]));
+    const defIdByKey = new globalThis.Map(defs.map((d) => [d.key, d.id]));
     const rows = toEavRows(<%= _eid %>, <%= _type %>, <%= _uid %>, <%= _fields %>, defIdByKey);
     if (rows.length === 0) return;
     await this.repository.<%= m.delegatesTo.method %>(rows as Array<globalThis.Partial<<%= classNames.entity %>>>, <%= _tx %>);
@@ -544,7 +544,7 @@ _%>
       this.<%= eavDefinitionRepoProperty %>.list(),
     ]);
     const defs = allDefs.filter((d) => (d as any).entityType === <%= _type %>);
-    const defsById = new Map(defs.map((d) => [d.id, { key: d.key }]));
+    const defsById = new globalThis.Map(defs.map((d) => [d.id, { key: d.key }]));
     return mergeEavRows(rows as any, defsById);
   }
 <%_ } _%>

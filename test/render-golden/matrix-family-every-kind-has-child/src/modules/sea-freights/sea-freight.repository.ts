@@ -94,7 +94,7 @@ export type SeaFreightUpdate = SeaFreightCreate;
 
 /** The base table's column keys: what a flat input is split by (`splitByOwner`). */
 const SEA_FREIGHT_BASE = shipments;
-export const SEA_FREIGHT_BASE_KEYS: globalThis.ReadonlySet<string> = new Set(Object.keys(getTableColumns(SEA_FREIGHT_BASE)));
+export const SEA_FREIGHT_BASE_KEYS: globalThis.ReadonlySet<string> = new globalThis.Set(globalThis.Object.keys(getTableColumns(SEA_FREIGHT_BASE)));
 
 @Injectable()
 export class SeaFreightRepository extends BaseRepository<SeaFreight, typeof sea_freights, Relations> {
@@ -259,7 +259,7 @@ export class SeaFreightRepository extends BaseRepository<SeaFreight, typeof sea_
   private assertOwnKind(baseSlice: globalThis.Record<string, unknown>): void {
     const named = baseSlice['kind'];
     if (named !== undefined && named !== 'sea') {
-      throw new KindMismatchError('sea_freight', 'sea', `the input names kind '${String(named)}'`);
+      throw new KindMismatchError('sea_freight', 'sea', `the input names kind '${globalThis.String(named)}'`);
     }
   }
 
@@ -308,10 +308,10 @@ export class SeaFreightRepository extends BaseRepository<SeaFreight, typeof sea_
         .where(this.scopeAnd(eq(this.col('id'), id)));
       if (existing === undefined) return undefined as unknown as SeaFreightFlat;
       const baseRow =
-        Object.keys(base).length > 0
+        globalThis.Object.keys(base).length > 0
           ? await this.baseRepo.update(id, base, txClient)
           : (await this.runner(txClient).select().from(SEA_FREIGHT_BASE).where(eq(SEA_FREIGHT_BASE.id, id)))[0];
-      if (Object.keys(own).length === 0) return this.flat(existing, baseRow as Shipment);
+      if (globalThis.Object.keys(own).length === 0) return this.flat(existing, baseRow as Shipment);
       const [childRow] = await this.runner(txClient)
         .update(this.table)
         .set(this.deriveColumns(own, 'update'))

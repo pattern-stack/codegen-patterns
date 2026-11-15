@@ -13,6 +13,7 @@ import ejs from 'ejs';
 import promptModule from '../../../templates/relationship/new/prompt.js';
 import { buildBackendLocals } from '../../../templates/entity/new/backend/entity-locals.js';
 import { emittedNameViolations, libGlobalTypeNames } from '../../../test/_emitted-name-hygiene';
+import { emitFixture } from '../../../test/integration-emit/_emit';
 import { withEntities } from '../backend/_entity-lookup';
 import { deriveRoleRelationships } from '../../roles/derive.js';
 
@@ -61,6 +62,23 @@ describe('emitted-name hygiene helper', () => {
 		expect(emittedNameViolations(entityFile("export const f = () => new globalThis.Error('x');"), { values: true })).toEqual([]);
 		expect(emittedNameViolations(entityFile('export const f = () => new Date();'), { values: true })).toEqual([]);
 	});
+	it('flags X(…), X.member and instanceof X on a lib global read as a value', () => {
+		const src =
+			"export const a = (x: unknown) => String(x);\n" +
+			"export const b = (o: object) => Object.keys(o);\n" +
+			"export const c = (e: unknown) => e instanceof Error;\n" +
+			"export const d = () => { throw new Error('x'); };\n" +
+			"export const e = (xs: unknown[]) => xs.some(Boolean);";
+		const v = emittedNameViolations(entityFile(src), { values: true });
+		expect(v.map((x) => `${x.line}:${x.name}`)).toEqual(['2:String', '3:Object', '4:Error', '5:Error', '6:Boolean']);
+		const ok =
+			"export const a = (x: unknown) => globalThis.String(x);\n" +
+			"export const b = (o: object) => globalThis.Object.keys(o);\n" +
+			"export const c = (e: unknown) => e instanceof globalThis.Error;\n" +
+			"export const d = () => Promise.all([Array.from([]), Date.now()]);\n" +
+			"export const e = (xs: unknown[]) => xs.some(globalThis.Boolean);";
+		expect(emittedNameViolations(entityFile(ok), { values: true })).toEqual([]);
+	});
 	it('ignores a file with no entity import', () => {
 		expect(emittedNameViolations([{ path: 'b.ts', text: 'export type X = Record<string, never>;' }])).toEqual([]);
 	});
@@ -89,7 +107,9 @@ describe('emitted-name hygiene helper', () => {
 
 describe('committed trees obey the rule', () => {
 	it.each([
-		['test/baseline/packages/api/src', /\.ts$/, false],
+		// The whole emitted backend is held to the value-position rule too, no directory scope.
+			['test/baseline/packages/api/src', /\.ts$/, true],
+			['test/render-golden', /\.ts$/, true],
 		// D15: the whole emitted frontend tree is held to the value-position rule, no directory scope within it.
 		['test/frontend-golden/snapshot', /\.ts$/, true],
 		['test/frontend-graph-golden/snapshot', /\.ts$/, true],
@@ -97,6 +117,28 @@ describe('committed trees obey the rule', () => {
 		const files = walk(path.join(ROOT, dir), ext);
 		expect(files.length).toBeGreaterThan(5);
 		expect(fmt(emittedNameViolations(files, { values }))).toEqual([]);
+	});
+});
+
+// Every other place the backend's output is committed or snapshotted is held to the same value-position rule.
+describe('the other emitted-backend snapshots obey the value-position rule', () => {
+	it('the integration-emit tree (package mode)', () => {
+		const root = emitFixture('package').integrationsRoot;
+		const files = walk(root, /\.ts$/).map((f) => ({ path: f.path.replace(/^.*src\/integrations\//, 'integrations/'), text: f.text }));
+		expect(files.length).toBeGreaterThan(5);
+		expect(fmt(emittedNameViolations(files, { values: true }))).toEqual([]);
+	});
+
+	it.each(['opportunity-contact', 'opportunity-sales-activity'])('the %s junction snapshots', (name) => {
+		const snap = fs.readFileSync(path.join(ROOT, `test/junction/__snapshots__/${name}.test.ts.snap`), 'utf8');
+		const exportsObj: Record<string, string> = {};
+		new Function('exports', snap)(exportsObj);
+		const files = Object.entries(exportsObj).map(([key, v]) => ({
+			path: `${name}/${key.replace(/[^a-z0-9.-]+/gi, '_')}.ts`,
+			text: v.replace(/^\n"/, '').replace(/"\n$/, '').replace(/\\(["\\])/g, '$1'),
+		}));
+		expect(files.length).toBeGreaterThan(3);
+		expect(fmt(emittedNameViolations(files, { values: true }))).toEqual([]);
 	});
 });
 
@@ -195,7 +237,7 @@ const MATRIX: [string, Record<string, unknown>, Record<string, unknown>][] = [
 describe('branch matrix', () => {
 	it.each(MATRIX)('%s', (_name, def, extra) => {
 		const files = renderAll(def, extra);
-		expect(fmt(emittedNameViolations(files))).toEqual([]);
+		expect(fmt(emittedNameViolations(files, { values: true }))).toEqual([]);
 	});
 });
 

@@ -94,7 +94,7 @@ export type EmailUpdate = EmailCreate;
 
 /** The base table's column keys: what a flat input is split by (`splitByOwner`). */
 const EMAIL_BASE = communications;
-export const EMAIL_BASE_KEYS: globalThis.ReadonlySet<string> = new Set(Object.keys(getTableColumns(EMAIL_BASE)));
+export const EMAIL_BASE_KEYS: globalThis.ReadonlySet<string> = new globalThis.Set(globalThis.Object.keys(getTableColumns(EMAIL_BASE)));
 
 @Injectable()
 export class EmailRepository extends BaseRepository<Email, typeof emails, Relations> {
@@ -279,7 +279,7 @@ export class EmailRepository extends BaseRepository<Email, typeof emails, Relati
   private assertOwnKind(baseSlice: globalThis.Record<string, unknown>): void {
     const named = baseSlice['kind'];
     if (named !== undefined && named !== 'email') {
-      throw new KindMismatchError('email', 'email', `the input names kind '${String(named)}'`);
+      throw new KindMismatchError('email', 'email', `the input names kind '${globalThis.String(named)}'`);
     }
   }
 
@@ -328,7 +328,7 @@ export class EmailRepository extends BaseRepository<Email, typeof emails, Relati
         .where(this.scopeAnd(eq(this.col('id'), id)));
       if (existing === undefined) return undefined as unknown as EmailFlat;
       const baseRow = await this.baseRepo.update(id, base, txClient);
-      if (Object.keys(own).length === 0) return this.flat(existing, baseRow as Communication);
+      if (globalThis.Object.keys(own).length === 0) return this.flat(existing, baseRow as Communication);
       const [childRow] = await this.runner(txClient)
         .update(this.table)
         .set(this.deriveColumns(own, 'update'))
@@ -376,14 +376,14 @@ export class EmailRepository extends BaseRepository<Email, typeof emails, Relati
         txClient,
         PAIR_WRITE,
       );
-      const set = this.deriveColumns(upsertSet(own, new Set<string>()), 'update');
+      const set = this.deriveColumns(upsertSet(own, new globalThis.Set<string>()), 'update');
       const [written] = await this.runner(txClient)
         .insert(this.table)
         .values(this.childValues({ ...own, id: baseRow.id, tenantId: baseRow.tenantId }))
         .onConflictDoUpdate({
           target: this.col('id'),
           // Nothing of the child's own to set: a no-op update, so RETURNING still yields the row.
-          set: Object.keys(set).length > 0 ? set : { id: sql`${this.col('id')}` },
+          set: globalThis.Object.keys(set).length > 0 ? set : { id: sql`${this.col('id')}` },
         })
         .returning({ ...getTableColumns(this.table), upsertCreated: sql<boolean>`(xmax = 0)` });
       const { upsertCreated, ...childRow } = written as globalThis.NonNullable<typeof written>;

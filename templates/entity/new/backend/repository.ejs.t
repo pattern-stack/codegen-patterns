@@ -251,7 +251,7 @@ export type <%= E %>Update = <%= E %>Create;
 
 /** The base table's column keys: what a flat input is split by (`splitByOwner`). */
 const <%= _C('BASE') %> = <%= _child.baseTable %>;
-export const <%= _C('BASE_KEYS') %>: globalThis.ReadonlySet<string> = new Set(Object.keys(getTableColumns(<%= _C('BASE') %>)));
+export const <%= _C('BASE_KEYS') %>: globalThis.ReadonlySet<string> = new globalThis.Set(globalThis.Object.keys(getTableColumns(<%= _C('BASE') %>)));
 
 <%_ } _%>
 <%_ if (_base) { _%>
@@ -344,7 +344,7 @@ const <%= _C('DERIVED') %>: readonly DerivedColumn[] = [
 const <%= _C('NATURAL_KEY') %> = [<%- naturalKey.props.map((p) => `'${p}'`).join(', ') %>] as const;
 
 /** What an upsert's `DO UPDATE` never rewrites: the key, the kind, the tenant, the natural key's columns, `createdAt`. */
-const <%= _C('UPSERT_NEVER') %>: globalThis.ReadonlySet<string> = new Set([
+const <%= _C('UPSERT_NEVER') %>: globalThis.ReadonlySet<string> = new globalThis.Set([
   'id',
 <%_ if (_discProp) { _%>
   '<%= _discProp %>',
@@ -747,7 +747,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
   private assertOwnKind(baseSlice: globalThis.Record<string, unknown>): void {
     const named = baseSlice['<%= _child.discriminatorProp %>'];
     if (named !== undefined && named !== '<%= _child.as %>') {
-      throw new KindMismatchError('<%= entityName %>', '<%= _child.as %>', `the input names kind '${String(named)}'`);
+      throw new KindMismatchError('<%= entityName %>', '<%= _child.as %>', `the input names kind '${globalThis.String(named)}'`);
     }
   }
 
@@ -801,11 +801,11 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
       const baseRow = await this.baseRepo.update(<%= _p[0] %>, base, txClient);
 <% } else { -%>
       const baseRow =
-        Object.keys(base).length > 0
+        globalThis.Object.keys(base).length > 0
           ? await this.baseRepo.update(<%= _p[0] %>, base, txClient)
           : (await this.runner(txClient).select().from(<%= _C('BASE') %>).where(eq(<%= _C('BASE') %>.id, <%= _p[0] %>)))[0];
 <% } -%>
-      if (Object.keys(own).length === 0) return this.flat(existing, baseRow as <%= _child.baseClass %>);
+      if (globalThis.Object.keys(own).length === 0) return this.flat(existing, baseRow as <%= _child.baseClass %>);
       const [childRow] = await this.runner(txClient)
         .update(this.table)
         .set(this.deriveColumns(own, 'update'))
@@ -877,14 +877,14 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
         txClient,
         PAIR_WRITE,
       );
-      const set = this.deriveColumns(upsertSet(own, new Set<string>()), 'update');
+      const set = this.deriveColumns(upsertSet(own, new globalThis.Set<string>()), 'update');
       const [written] = await this.runner(txClient)
         .insert(this.table)
         .values(this.childValues({ ...own, id: baseRow.id<% if (childTenantProp) { %>, <%= childTenantProp %>: baseRow.<%= childTenantProp %><% } %> }))
         .onConflictDoUpdate({
           target: this.col('id'),
           // Nothing of the child's own to set: a no-op update, so RETURNING still yields the row.
-          set: Object.keys(set).length > 0 ? set : { id: sql`${this.col('id')}` },
+          set: globalThis.Object.keys(set).length > 0 ? set : { id: sql`${this.col('id')}` },
         })
         .returning({ ...getTableColumns(this.table), upsertCreated: sql<boolean>`(xmax = 0)` });
       const { upsertCreated, ...childRow } = written as globalThis.NonNullable<typeof written>;
@@ -938,7 +938,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
       .values(values)
       .onConflictDoUpdate({
         target: <%= _C('NATURAL_KEY') %>.map((key) => this.col(key)),
-        set: Object.keys(set).length > 0 ? set : { id: sql`${this.col('id')}` },
+        set: globalThis.Object.keys(set).length > 0 ? set : { id: sql`${this.col('id')}` },
 <%_ if (_upsertGuarded) { _%>
         setWhere: conflictWhere,
 <%_ } _%>
@@ -954,12 +954,12 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
         .from(this.tableRef)
         .where(and(...<%= _C('NATURAL_KEY') %>.map((key) => eq(this.col(key), values[key]))));
       if (existing !== undefined && existing['kind'] !== values['<%= _discProp %>']) {
-        throw new KindMismatchError('<%= entityName %>', String(values['<%= _discProp %>']));
+        throw new KindMismatchError('<%= entityName %>', globalThis.String(values['<%= _discProp %>']));
       }
       throw new OutOfScopeWriteError('<%= entityName %>');
 <%_ } else if (_discProp) { _%>
       // The conflict's WHERE refused the update: the row exists under another kind.
-      throw new KindMismatchError('<%= entityName %>', String(values['<%= _discProp %>']));
+      throw new KindMismatchError('<%= entityName %>', globalThis.String(values['<%= _discProp %>']));
 <%_ } else { _%>
       throw new OutOfScopeWriteError('<%= entityName %>');
 <%_ } _%>

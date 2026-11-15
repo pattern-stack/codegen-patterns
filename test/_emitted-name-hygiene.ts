@@ -3,8 +3,10 @@
  * not be breakable by an entity name or plural that validation accepts.
  *
  *  rule 1 — a file in which an entity type can be in scope never names a lib
- *           global type unqualified, except the reserved ones
- *           (RESERVED_ENTITY_TYPE_NAMES: Promise, Array, Date).
+ *           global unqualified — as a type, and (`values: true`, held for the whole
+ *           emitted backend and frontend) in value position: `new X()`, `X(…)`,
+ *           `X.member`, `x instanceof X`, `throw new X(…)` — except the reserved
+ *           ones (RESERVED_ENTITY_TYPE_NAMES: Promise, Array, Date).
  *  rule 2 — a function that reads a table export by its identifier declares no
  *           binding a plural could equal (all-lowercase snake_case).
  *
@@ -131,11 +133,18 @@ function rule1(path: string, sf: ts.SourceFile, out: HygieneViolation[], values:
   const visit = (n: ts.Node) => {
     if (ts.isTypeReferenceNode(n)) check(n.typeName);
     else if (ts.isExpressionWithTypeArguments(n) && ts.isHeritageClause(n.parent)) check(n.expression);
-    // Value position, opted into with `values: true` — D15: on for the WHOLE emitted frontend tree (no directory scope).
-    // The backend's templates still `new Set` / `new Map` bare in places; they do not opt in (their own issue).
+    // Value position, opted into with `values: true` — on for the WHOLE emitted frontend AND backend trees (no directory scope).
     // (`new Error(…)`): an entity `error` imports a *type* named `Error`, and a type-only import used
     // as a value is TS1361 — so a lib global read as a value needs `globalThis.` just as a type reference does.
     else if (values && ts.isNewExpression(n)) check(n.expression);
+    // `X(…)` (String(x), Number(x)), `X.method(…)` / `X.member` (Object.keys, JSON.stringify, Array.from-style on
+    // other globals) and `x instanceof X`: the same TS1361 / shadowing hazard.
+    else if (values && ts.isCallExpression(n)) {
+      check(n.expression);
+      for (const a of n.arguments) check(a); // `.some(Boolean)`, `.map(String)`
+    }
+    else if (values && ts.isPropertyAccessExpression(n)) check(n.expression);
+    else if (values && ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword) check(n.right);
     ts.forEachChild(n, visit);
   };
   visit(sf);

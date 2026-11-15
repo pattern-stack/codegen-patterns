@@ -65,7 +65,7 @@ export type CatalogEntryApiResult = CatalogEntry &
 const CATALOG_ENTRY_NATURAL_KEY = ['tenantId', 'sku'] as const;
 
 /** What an upsert's `DO UPDATE` never rewrites: the key, the kind, the tenant, the natural key's columns, `createdAt`. */
-const CATALOG_ENTRY_UPSERT_NEVER: globalThis.ReadonlySet<string> = new Set([
+const CATALOG_ENTRY_UPSERT_NEVER: globalThis.ReadonlySet<string> = new globalThis.Set([
   'id',
   'tenantId',
   'userId',
@@ -217,7 +217,7 @@ export class CatalogEntryRepository extends BaseRepository<CatalogEntry, typeof 
       .values(values)
       .onConflictDoUpdate({
         target: CATALOG_ENTRY_NATURAL_KEY.map((key) => this.col(key)),
-        set: Object.keys(set).length > 0 ? set : { id: sql`${this.col('id')}` },
+        set: globalThis.Object.keys(set).length > 0 ? set : { id: sql`${this.col('id')}` },
         setWhere: conflictWhere,
       })
       .returning({ ...getTableColumns(this.tableRef), upsertCreated: sql<boolean>`(xmax = 0)` });

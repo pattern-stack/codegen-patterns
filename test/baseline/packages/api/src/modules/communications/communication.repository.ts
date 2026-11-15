@@ -128,7 +128,7 @@ const COMMUNICATION_CHILD_CREATE_PATH = {
 const COMMUNICATION_NATURAL_KEY = ['tenantId', 'source', 'externalId'] as const;
 
 /** What an upsert's `DO UPDATE` never rewrites: the key, the kind, the tenant, the natural key's columns, `createdAt`. */
-const COMMUNICATION_UPSERT_NEVER: globalThis.ReadonlySet<string> = new Set([
+const COMMUNICATION_UPSERT_NEVER: globalThis.ReadonlySet<string> = new globalThis.Set([
   'id',
   'kind',
   'tenantId',
@@ -390,14 +390,14 @@ export class CommunicationRepository extends ActivityEntityRepository<Communicat
       .values(values)
       .onConflictDoUpdate({
         target: COMMUNICATION_NATURAL_KEY.map((key) => this.col(key)),
-        set: Object.keys(set).length > 0 ? set : { id: sql`${this.col('id')}` },
+        set: globalThis.Object.keys(set).length > 0 ? set : { id: sql`${this.col('id')}` },
         setWhere: conflictWhere,
       })
       .returning({ ...getTableColumns(this.tableRef), upsertCreated: sql<boolean>`(xmax = 0)` });
     const [written] = rows;
     if (written === undefined) {
       // The conflict's WHERE refused the update: the row exists under another kind.
-      throw new KindMismatchError('communication', String(values['kind']));
+      throw new KindMismatchError('communication', globalThis.String(values['kind']));
     }
     const { upsertCreated, ...row } = written as globalThis.NonNullable<typeof written>;
     return { row: row as unknown as Communication, created: upsertCreated };

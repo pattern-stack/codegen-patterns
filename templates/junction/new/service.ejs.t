@@ -132,7 +132,7 @@ export class <%= classNames.service %> extends WithAnalytics(
       const links = await this.repository.findBy<%= leftEntityPascal %>Id(anchorId, opts);
       const targetIds = links.map((l) => (l as any).<%= rightColumnCamel %> as string);
       const targets = await this.<%= rightEntityCamel %>Repo.findByIds(targetIds);
-      const byId = new Map(targets.map((t) => [(t as any).id, t]));
+      const byId = new globalThis.Map(targets.map((t) => [(t as any).id, t]));
       return links.map((link) => ({
         entity: byId.get((link as any).<%= rightColumnCamel %>)! as <%= rightEntityPascal %>,
         link,
@@ -141,7 +141,7 @@ export class <%= classNames.service %> extends WithAnalytics(
       const links = await this.repository.findBy<%= rightEntityPascal %>Id(anchorId, opts);
       const targetIds = links.map((l) => (l as any).<%= leftColumnCamel %> as string);
       const targets = await this.<%= leftEntityCamel %>Repo.findByIds(targetIds);
-      const byId = new Map(targets.map((t) => [(t as any).id, t]));
+      const byId = new globalThis.Map(targets.map((t) => [(t as any).id, t]));
       return links.map((link) => ({
         entity: byId.get((link as any).<%= leftColumnCamel %>)! as <%= leftEntityPascal %>,
         link,

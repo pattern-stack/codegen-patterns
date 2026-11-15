@@ -306,7 +306,7 @@ export class OpportunitySalesActivityService extends WithAnalytics(
       const links = await this.repository.findByOpportunityId(anchorId, opts);
       const targetIds = links.map((l) => (l as any).salesActivityId as string);
       const targets = await this.salesActivityRepo.findByIds(targetIds);
-      const byId = new Map(targets.map((t) => [(t as any).id, t]));
+      const byId = new globalThis.Map(targets.map((t) => [(t as any).id, t]));
       return links.map((link) => ({
         entity: byId.get((link as any).salesActivityId)! as SalesActivity,
         link,
@@ -315,7 +315,7 @@ export class OpportunitySalesActivityService extends WithAnalytics(
       const links = await this.repository.findBySalesActivityId(anchorId, opts);
       const targetIds = links.map((l) => (l as any).opportunityId as string);
       const targets = await this.opportunityRepo.findByIds(targetIds);
-      const byId = new Map(targets.map((t) => [(t as any).id, t]));
+      const byId = new globalThis.Map(targets.map((t) => [(t as any).id, t]));
       return links.map((link) => ({
         entity: byId.get((link as any).opportunityId)! as Opportunity,
         link,

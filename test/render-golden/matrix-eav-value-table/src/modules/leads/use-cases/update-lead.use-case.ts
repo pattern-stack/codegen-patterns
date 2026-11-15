@@ -31,7 +31,7 @@ export class UpdateLeadUseCase {
       const { fields, ...core } = dto;
       const entity = await this.service.update(id, core as UpdateLeadDto, tx);
       if (!entity) return null;
-      if (fields && Object.keys(fields).length > 0) {
+      if (fields && globalThis.Object.keys(fields).length > 0) {
         await this.fields.upsertFieldsTransactional(
           'lead',
           entity.id,
