@@ -491,6 +491,19 @@ function assertUniqueIndexShapes(tmpDir: string): void {
 }
 
 /**
+ * RFC-0006 §4.2 (#875 S4): a family whose base declares no `natural_key:` (parcel / crate). Neither class has an
+ * `upsertByNaturalKey` — the child had one that called a base method that does not exist — and the child still
+ * writes the pair. `tsc` over the generated tree proves the shape compiles; this proves what was emitted.
+ */
+function assertFamilyWithoutNaturalKey(tmpDir: string): void {
+	const reads = (rel: string) => fs.readFileSync(path.join(tmpDir, 'src', rel), 'utf8');
+	for (const file of ['parcels/parcel.repository.ts', 'parcels/parcel.service.ts', 'crates/crate.repository.ts', 'crates/crate.service.ts']) {
+		assertNotContains(reads(`modules/${file}`), /upsertByNaturalKey/, `${file} has no upsert (the base declares no natural key)`);
+	}
+	assertContains(reads('modules/crates/crate.repository.ts'), /override async create\(/, 'crate repository overrides create (the pair write)');
+}
+
+/**
  * #791 — a configurable tenancy column, through the real CLI. The project
  * default is `organization_id` (step 4.6); org_task.yaml declares that field, so
  * `tenant_scoped: true` ADOPTS it; tenant_note.yaml overrides back to
@@ -942,6 +955,7 @@ async function main(): Promise<number> {
 			assertUniqueIndexShapes(tmpDir);
 			log('unique_indexes shapes OK');
 			assertTenancyColumnEmission(tmpDir);
+			assertFamilyWithoutNaturalKey(tmpDir);
 			log('tenancy column emission OK (#791)');
 		}
 

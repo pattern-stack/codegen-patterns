@@ -2,7 +2,8 @@
 import { Inject, Module, type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
-import { EmailThreadRepository } from '../email-threads/email-thread.repository';
+import { CommunicationsModule } from '../communications/communications.module';
+import { EmailThreadsModule } from '../email-threads/email-threads.module';
 
 import { EmailRepository } from './email.repository';
 import { EmailService } from './email.service';
@@ -17,15 +18,15 @@ import { ListEmailsUseCase } from './use-cases/list-emails.use-case';
 @Module({
   imports: [
     DatabaseModule,
+    // A email is a kind of communication: its repository injects the base's, which that module exports.
+    CommunicationsModule,
+    EmailThreadsModule,
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
-    // EmailThreadsModule,
   ],
   controllers: [EmailController],
   providers: [
     EmailRepository,
     EmailService,
-    EmailThreadRepository,
     FindEmailByIdUseCase,
     ListEmailsUseCase,
   ],

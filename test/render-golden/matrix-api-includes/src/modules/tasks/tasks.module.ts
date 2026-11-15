@@ -1,8 +1,8 @@
 
-import { Inject, Module, type OnModuleInit } from '@nestjs/common';
+import { Inject, Module, forwardRef, type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
-import { ProjectRepository } from '../projects/project.repository';
+import { ProjectsModule } from '../projects/projects.module';
 
 import { TaskRepository } from './task.repository';
 import { TaskService } from './task.service';
@@ -20,15 +20,13 @@ import { TaskSearchController } from './task-search.controller';
 @Module({
   imports: [
     DatabaseModule,
+    forwardRef(() => ProjectsModule),
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
-    // ProjectsModule,
   ],
   controllers: [TaskController, TaskSearchController],
   providers: [
     TaskRepository,
     TaskService,
-    ProjectRepository,
     FindTaskByIdUseCase,
     ListTasksUseCase,
     ...declarativeQueryClasses,

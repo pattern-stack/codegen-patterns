@@ -13,11 +13,24 @@ import { <%= classNames.repository %> } from './<%= entityFileStem %>.repository
 // the same generics, the same options, the same result.
 const E = classNames.entity;
 const _typedInclude = apiSurface.repository.typedInclude;
-// RFC-0006 (#875) S3 — which family reads exist is the derivation's call (`with_base` / cross-kind entries).
-const _child = apiSurface.service.methods.some((m) => m.kind === 'with_base');
+// RFC-0006 (#875) S3 — which family reads exist is the derivation's call (`with_base` / cross-kind entries); the
+// facts the bodies print (the base edge, the kind column, the children) come from `familyChild` / `familyBase`.
 const _ACROSS = ['all_kinds', 'kind_by_id', 'list_kind', 'count_kind'];
 const _isAcross = (m) => _ACROSS.includes(m.kind);
-const _base = apiSurface.service.methods.some(_isAcross);
+const _child = apiSurface.service.methods.some((m) => m.kind === 'with_base') ? familyChild : null;
+const _base = apiSurface.service.methods.some(_isAcross) ? familyBase : null;
+// RFC-0006 (#875) S4 — the write half, likewise the derivation's call (`pair_write` / `kind_guard` / `upsert`): a
+// child writes both rows (its flat input types, the pair events); a base refuses a kind that has a child table; an
+// entity with a natural key forwards its upsert and emits its events.
+const _EU = entityName.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+const _discProp = familyBase ? familyBase.discriminatorProp : null;
+const _isWrite = (m) => m.kind === 'pair_write' || m.kind === 'kind_guard' || m.kind === 'upsert';
+const _pairWrite = apiSurface.service.methods.some((m) => m.kind === 'pair_write');
+const _hasUpsert = apiSurface.service.methods.some((m) => m.kind === 'upsert');
+const _upsert = _hasUpsert && !_child;
+const _childUpsert = _hasUpsert && _child !== null;
+const _guardCreate = apiSurface.service.methods.some((m) => m.kind === 'kind_guard');
+const _writes = _pairWrite || _upsert || _childUpsert || _guardCreate;
 const _readGenerics = _typedInclude
   ? `<W extends ${E}Include = ${E}NoInclude, C extends ${E}Columns | undefined = undefined>`
   : `<C extends ${E}Columns | undefined = undefined>`;
@@ -28,7 +41,9 @@ _%>
 import type {
   <%= E %>Columns,
 <% if (_child) { -%>
+  <%= E %>Create,
   <%= E %>Flat,
+  <%= E %>Update,
 <% } -%>
 <% if (_base) { -%>
   <%= E %>FlatByKind,
@@ -41,6 +56,15 @@ import type {
   <%= E %>NoInclude,
   <%= E %>Result,
 } from './<%= entityFileStem %>.repository';
+<% if (_child) { -%>
+import { <%= _EU %>_BASE_KEYS } from './<%= entityFileStem %>.repository';
+<% } -%>
+<% if (_guardCreate) { -%>
+import { assertBaseOnlyKind } from '<%= inheritanceImport %>';
+<% } -%>
+<% if (_writes && !eavValueTable) { -%>
+import type { DrizzleTx } from '<%= drizzleTypeImport %>';
+<% } -%>
 import type { ListOptions, ReadOptions<%= _base ? ', RowFilter' : '' %> } from '<%= baseRepositoryImport %>';
 import type { <%= entityNamePlural %>, <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 <% if (eavEnabled) { -%>
@@ -66,12 +90,27 @@ import type { <%= fan.junction.entityClass %> } from '<%= fan.junctionEntityImpo
 import type { <%= fan.counterpartyPascal %> } from '<%= fan.counterpartyEntityImport %>';
 <%_ } _%>
 <%_ }) _%>
+<%_ if (_base) { _%>
+
+/** The kinds that have a child table, and the create path that writes both rows for each (`KindRequiresChildError`). */
+const <%= _EU %>_CHILD_CREATE_PATH = {
+<%_ _base.children.forEach((c) => { _%>
+  <%= c.as %>: '<%= c.createPath %>',
+<%_ }) _%>
+} as const;
+<%_ } _%>
 
 @Injectable()
 export class <%= classNames.service %> extends WithAnalytics(
   <%= serviceBaseClass %><<%= classNames.repository %>, <%= classNames.entity %>>,
 ) {
   protected override readonly entityName = '<%= entityName %>';
+<%_ if (_child) { _%>
+
+  // RFC-0006 §5, A11 — a child write is announced under the base's name too, with the base's slice of the row.
+  protected override readonly baseEntityName = '<%= _child.baseName %>';
+  protected override readonly baseSliceKeys = <%= _EU %>_BASE_KEYS;
+<%_ } _%>
 
   /** Injected by NestJS when EventsModule is registered. */
   @Optional() @Inject(EVENT_BUS)
@@ -123,7 +162,7 @@ const _group = (m) =>
   m.kind.startsWith('junction_') ? 'junction'
   : m.kind === 'relation_one' || m.kind === 'relation_many' ? 'relation'
   : m.kind === 'eav_read' || m.kind === 'eav_write' ? 'eav'
-  : m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans' ? 'read'
+  : m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans' || _isWrite(m) ? 'read'
   : m.kind;
 _%>
 <%_ _methods.forEach((m, i) => { _%>
@@ -214,6 +253,66 @@ _%>
   }
 <%_ } _%>
 <%_ } _%>
+<%_ } else if (m.kind === 'pair_write') { _%>
+<%_ if (m.name === 'create') { _%>
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // The pair write (RFC-0006 §4.1) — the repository's, wrapped in BaseService's events
+  //
+  // The repository's `create` / `update` take the FLAT input (the base's columns and this table's) and return the
+  // FLAT row; `BaseService`'s are typed on the table row alone, so these narrow them to what actually flows.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  override create(input: <%= E %>Create, tx?: DrizzleTx): Promise<<%= E %>Flat> {
+    return super.create(input as globalThis.Partial<<%= E %>>, tx) as Promise<<%= E %>Flat>;
+  }
+
+<%_ } else { _%>
+  override update(id: string, patch: <%= E %>Update, tx?: DrizzleTx): Promise<<%= E %>Flat> {
+    return super.update(id, patch as globalThis.Partial<<%= E %>>, tx) as Promise<<%= E %>Flat>;
+  }
+
+  /** The pre-update read is the FLAT row: against the table's own columns every base field would look changed. */
+  protected override readBeforeUpdate(id: string): Promise<<%= E %> | null> {
+    return this.repository.findWithBase(id);
+  }
+
+<%_ } _%>
+<%_ } else if (m.kind === 'kind_guard') { _%>
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Writes through the base (RFC-0006 §4.1)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /** A kind with a child table is created through the child (`KindRequiresChildError`); a base-only kind is created here. */
+  override async create(input: globalThis.Partial<<%= E %>>, tx?: unknown): Promise<<%= E %>> {
+    assertBaseOnlyKind('<%= entityName %>', input.<%= _discProp %>, <%= _EU %>_CHILD_CREATE_PATH);
+    return super.create(input, tx);
+  }
+<%_ } else if (m.kind === 'upsert' && _child) { _%>
+  /** Base on its natural key, then this table on `id`, one transaction; emits `created` / `updated` under both names. */
+  async upsertByNaturalKey(
+    input: <%= E %>Create,
+    tx?: DrizzleTx,
+  ): Promise<{ row: <%= E %>Flat; created: boolean; baseCreated: boolean }> {
+    const result = await this.repository.upsertByNaturalKey(input, tx);
+    this.emitUpserted(result.row, result.created, result.baseCreated);
+    return result;
+  }
+<%_ } else if (m.kind === 'upsert') { _%>
+
+  // RFC-0006 §4.2 — `natural_key: true`: one statement, `INSERT … ON CONFLICT … DO UPDATE`.
+  async upsertByNaturalKey(
+    input: globalThis.Partial<<%= E %>>,
+    tx?: DrizzleTx,
+  ): Promise<{ row: <%= E %>; created: boolean }> {
+<%_ if (_guardCreate) { _%>
+    assertBaseOnlyKind('<%= entityName %>', input.<%= _discProp %>, <%= _EU %>_CHILD_CREATE_PATH);
+<%_ } _%>
+    const result = await this.repository.upsertByNaturalKey(input, tx);
+    this.emitUpserted(result.row, result.created);
+    return result;
+  }
 <%_ } else if (m.kind === 'finder') { _%>
 <%_ if (_first) { _%>
   // ═══════════════════════════════════════════════════════════════════════

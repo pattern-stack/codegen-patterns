@@ -57,6 +57,8 @@ export * from '@gen/modules/communication-notes/communication-note.entity';
 // Gate 2.5 D4: a scaffold-only soft-delete family with a base-only kind (`memo`).
 export * from '@gen/modules/documents/document.entity';
 export * from '@gen/modules/report-documents/report-document.entity';
+// #780 (#875 S4): a plain `natural_key` entity — the single-row upsert, tenant-scoped, soft-deletable, user-tracked.
+export * from '@gen/modules/catalog-entries/catalog-entry.entity';
 
 // Subsystem schemas come from `@shared/*` — i.e. `runtime/subsystems/*`, the
 // real source — NOT from a vendored copy generated into the repo root. One

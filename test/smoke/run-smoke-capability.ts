@@ -29,7 +29,7 @@
  *      and a `context:`-nested one (`crew`) — belongs_to, has_many, junction
  *      endpoint, relationship endpoint — addresses it by its own YAML's
  *      naming; that `person`, which both belongs_to and has_many `crew`,
- *      composes one `CrewRepository` (#632); and that the `crew` ↔ `person`
+ *      composes one `CrewRepository` (#632) through the one `CrewsModule` import; and that the `crew` ↔ `person`
  *      FK cycle compiles (#631).
  *   6. `tsc --noEmit` — FAIL on any diagnostic located in the generated project.
  *   7. Two NEGATIVE gates through the CLI: two spine bases, and a capability
@@ -491,13 +491,14 @@ function assertTargetNaming(tmpDir: string): void {
 	expectImport('crew-assignments/crew-assignment.entity.ts', "import { crews } from '../org/crews/crew.entity';");
 
 	// #632 — `person` belongs_to AND has_many `crew`: one repository, once.
-	const countLines = (file: string, line: string): number =>
-		(reads(file).match(new RegExp(`^${escapeRe(line)}$`, 'gm')) ?? []).length;
+	// A literal line compare: `escapeRe` does not escape parentheses, which `forwardRef(() => …)` has.
+	const countLines = (file: string, line: string): number => reads(file).split('\n').filter((l) => l === line).length;
 	for (const [file, line] of [
 		['persons/person.service.ts', "import { CrewRepository } from '../org/crews/crew.repository';"],
 		['persons/person.service.ts', '    private readonly crewRepo: CrewRepository,'],
-		['persons/persons.module.ts', "import { CrewRepository } from '../org/crews/crew.repository';"],
-		['persons/persons.module.ts', '    CrewRepository,'],
+		// ADR-002: the module imports the target's HOME module once; `person` ↔ `crew` is a real module cycle, so it is a forwardRef.
+		['persons/persons.module.ts', "import { CrewsModule } from '../org/crews/crews.module';"],
+		['persons/persons.module.ts', '    forwardRef(() => CrewsModule),'],
 	] as const) {
 		const n = countLines(file, line);
 		if (n !== 1) throw new Error(`${file}: expected exactly one \`${line.trim()}\` (#632), found ${n}`);

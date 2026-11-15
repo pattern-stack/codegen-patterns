@@ -67,6 +67,21 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
   protected entityName?: string;
 
   /**
+   * A joined-table child's base entity name (RFC-0006 §5, A11): `communication` for
+   * a `meeting` service. A child write emits `<entityName>.<event>` with the flat
+   * snapshot AND `<baseEntityName>.<event>` with the base's slice of it, so a
+   * subscriber to every kind of the base gets one stream. Unset on every other
+   * service; a delete through the BASE service emits the base name only.
+   */
+  protected baseEntityName?: string;
+
+  /**
+   * The base table's column keys — what the base's slice of a child's flat
+   * snapshot is cut by (see {@link baseEntityName}). Set with it.
+   */
+  protected baseSliceKeys?: ReadonlySet<string>;
+
+  /**
    * Event bus for lifecycle/change event emission.
    * Injected via @Inject(EVENT_BUS) @Optional() on generated services.
    * If undefined (no events subsystem installed), emission is silently skipped.
@@ -136,7 +151,8 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
 
   /**
    * Insert a new entity.
-   * Emits a LIFECYCLE 'created' event with entity snapshot.
+   * Emits a LIFECYCLE 'created' event with entity snapshot — under the base's
+   * name as well, with the base's slice, for a joined-table child.
    */
   async create(input: Partial<TEntity>, tx?: unknown): Promise<TEntity> {
     const result = await this.repository.create(input, tx);
@@ -144,22 +160,35 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
     if (this._shouldEmit()) {
       const snap = entitySnapshot(result as Record<string, unknown>);
       const id = (result as Record<string, unknown>).id as string;
-      const event = buildLifecycleEvent(this.entityName!, 'created', id, snap);
-      void emitSafely(this.eventBus, [event]);
+      void emitSafely(this.eventBus, [
+        buildLifecycleEvent(this.entityName!, 'created', id, snap),
+        ...this._baseLifecycle('created', id, snap),
+      ]);
     }
 
     return result;
   }
 
   /**
+   * The row an update diffs against — read before the write. A joined-table
+   * child overrides it to read the FLAT row: against the child's own columns,
+   * every base field would look changed.
+   */
+  protected readBeforeUpdate(id: string): Promise<TEntity | null> {
+    return this.repository.findById(id);
+  }
+
+  /**
    * Update an existing entity by id.
    * Emits a LIFECYCLE 'updated' event + CHANGE events for each modified field.
+   * A joined-table child also emits the base's lifecycle event (base slice) and
+   * the CHANGE events of the base's own fields under the base's name.
    */
   async update(id: string, input: Partial<TEntity>, tx?: unknown): Promise<TEntity> {
     // Snapshot before for change diffing
     let before: Record<string, unknown> | undefined;
     if (this._shouldEmit()) {
-      const existing = await this.repository.findById(id);
+      const existing = await this.readBeforeUpdate(id);
       if (existing) {
         before = entitySnapshot(existing as Record<string, unknown>);
       }
@@ -171,12 +200,19 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
       const after = entitySnapshot(result as Record<string, unknown>);
       const events = [
         buildLifecycleEvent(this.entityName!, 'updated', id, after),
+        ...this._baseLifecycle('updated', id, after),
       ];
       // Append per-field CHANGE events
       if (before) {
         const changes = diffSnapshots(before, after);
         if (changes.length > 0) {
           events.push(...buildChangeEvents(this.entityName!, id, changes));
+          const baseChanges = this.baseSliceKeys
+            ? changes.filter((c) => this.baseSliceKeys!.has(c.field))
+            : [];
+          if (this.baseEntityName && baseChanges.length > 0) {
+            events.push(...buildChangeEvents(this.baseEntityName, id, baseChanges));
+          }
         }
       }
       void emitSafely(this.eventBus, events);
@@ -187,15 +223,53 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
 
   /**
    * Delete an entity by id.
-   * Emits a LIFECYCLE 'deleted' event.
+   * Emits a LIFECYCLE 'deleted' event — a joined-table child's under the base's
+   * name too (its delete removes the base row).
    */
   async delete(id: string, tx?: unknown): Promise<void> {
     await this.repository.delete(id, tx);
 
     if (this._shouldEmit()) {
-      const event = buildLifecycleEvent(this.entityName!, 'deleted', id);
-      void emitSafely(this.eventBus, [event]);
+      void emitSafely(this.eventBus, [
+        buildLifecycleEvent(this.entityName!, 'deleted', id),
+        ...this._baseLifecycle('deleted', id),
+      ]);
     }
+  }
+
+  /**
+   * Emit the lifecycle event of an `upsertByNaturalKey`: 'created' or 'updated'
+   * from the repository's `created` flag, under both names for a joined-table
+   * child (RFC-0006 §4.2). The child's name follows the child row's `created`, the
+   * base's follows the base row's (`baseCreated`): repairing an orphan base row is a
+   * created child under an updated base. No per-field CHANGE events: an upsert
+   * reads no row before it writes.
+   */
+  protected emitUpserted(row: object, created: boolean, baseCreated: boolean = created): void {
+    if (!this._shouldEmit()) return;
+    const record = row as Record<string, unknown>;
+    const id = record.id as string;
+    const snap = entitySnapshot(record);
+    const action = created ? 'created' : 'updated';
+    const baseAction = baseCreated ? 'created' : 'updated';
+    void emitSafely(this.eventBus, [
+      buildLifecycleEvent(this.entityName!, action, id, snap),
+      ...this._baseLifecycle(baseAction, id, snap),
+    ]);
+  }
+
+  /** The base's copy of a child's lifecycle event, its payload cut to the base's columns. */
+  private _baseLifecycle(
+    action: 'created' | 'updated' | 'deleted',
+    id: string,
+    snap?: Record<string, unknown>,
+  ) {
+    if (!this.baseEntityName) return [];
+    const slice =
+      snap && this.baseSliceKeys
+        ? Object.fromEntries(Object.entries(snap).filter(([key]) => this.baseSliceKeys!.has(key)))
+        : undefined;
+    return [buildLifecycleEvent(this.baseEntityName, action, id, slice)];
   }
 
   /** Check whether lifecycle event emission is active. */

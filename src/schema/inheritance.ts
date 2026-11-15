@@ -66,6 +66,37 @@ export function inheritanceChildrenOf(
 }
 
 /**
+ * The index, in `unique_indexes`, of the entry marked `natural_key: true` (R11: at most one) — `-1` when none.
+ * The ONE reader of the marker: the generated `upsertByNaturalKey`'s conflict target and the derived API surface's
+ * "does this entity upsert, and caused by which declaration" both read it (RFC-0006 §4.2, ADR-046).
+ */
+export function naturalKeyIndexOf(def: { unique_indexes?: readonly { natural_key?: boolean }[] | null }): number {
+	return (def.unique_indexes ?? []).findIndex((entry) => entry.natural_key === true);
+}
+
+/** The base a child inherits, and whether that base declares a natural key (`naturalKeyIndex`, `-1` when none). */
+export interface InheritanceBase {
+	name: string;
+	naturalKeyIndex: number;
+}
+
+/**
+ * A child's base across the whole set — `null` for an entity that does not `inherits:`, or whose base has no
+ * definition in the set (the validator refuses that; a lookup-less caller gets "unknown", not a fabricated base).
+ */
+export function inheritanceBaseOf(
+	def: Pick<EntityDefinition, 'inherits'> & { entity: { name: string } },
+	definitions: Iterable<{ entity: { name: string }; unique_indexes?: readonly { natural_key?: boolean }[] | null }>,
+): InheritanceBase | null {
+	const d = inheritsOf(def);
+	if (d === null) return null;
+	for (const candidate of definitions) {
+		if (candidate.entity.name === d.base) return { name: d.base, naturalKeyIndex: naturalKeyIndexOf(candidate) };
+	}
+	return null;
+}
+
+/**
  * `match:` as `[local column, target column]` pairs — the ONE normaliser of the
  * two spellings (the object form, and the `[col]` shorthand for `{ col: col }`).
  * Every reader — the schema, the parsed model (`load-entities.ts`), the

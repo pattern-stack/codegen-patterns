@@ -205,6 +205,65 @@
 				}
 			},
 			{
+				"name": "update",
+				"kind": "kind_guard",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"discriminator"
+						]
+					}
+				}
+			},
+			{
+				"name": "upsertByNaturalKey",
+				"kind": "upsert",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"unique_indexes",
+							0,
+							"natural_key"
+						]
+					}
+				}
+			},
+			{
 				"name": "exists",
 				"kind": "inherited",
 				"emitted": false,
@@ -218,18 +277,6 @@
 			},
 			{
 				"name": "create",
-				"kind": "inherited",
-				"emitted": false,
-				"params": [],
-				"returns": "forwarded",
-				"readOptions": "none",
-				"origin": {
-					"from": "pattern",
-					"pattern": "Activity"
-				}
-			},
-			{
-				"name": "update",
 				"kind": "inherited",
 				"emitted": false,
 				"params": [],
@@ -533,6 +580,65 @@
 				}
 			},
 			{
+				"name": "create",
+				"kind": "kind_guard",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"discriminator"
+						]
+					}
+				}
+			},
+			{
+				"name": "upsertByNaturalKey",
+				"kind": "upsert",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "communication",
+					"layer": "repository",
+					"method": "upsertByNaturalKey"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "communication"
+						},
+						"path": [
+							"unique_indexes",
+							0,
+							"natural_key"
+						]
+					}
+				}
+			},
+			{
 				"name": "count",
 				"kind": "inherited",
 				"emitted": false,
@@ -545,17 +651,6 @@
 			},
 			{
 				"name": "exists",
-				"kind": "inherited",
-				"emitted": false,
-				"params": [],
-				"returns": "forwarded",
-				"origin": {
-					"from": "pattern",
-					"pattern": "Activity"
-				}
-			},
-			{
-				"name": "create",
 				"kind": "inherited",
 				"emitted": false,
 				"params": [],

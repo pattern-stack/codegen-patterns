@@ -2,7 +2,7 @@
 import { Inject, Module, type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
-import { AccountRepository } from '../accounts/account.repository';
+import { AccountsModule } from '../accounts/accounts.module';
 
 import { SyncCursorRepository } from './sync-cursor.repository';
 import { SyncCursorService } from './sync-cursor.service';
@@ -19,15 +19,13 @@ import { DeleteSyncCursorUseCase } from './use-cases/delete-sync-cursor.use-case
 @Module({
   imports: [
     DatabaseModule,
+    AccountsModule,
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
-    // AccountsModule,
   ],
   controllers: [],
   providers: [
     SyncCursorRepository,
     SyncCursorService,
-    AccountRepository,
     FindSyncCursorByIdUseCase,
     ListSyncCursorsUseCase,
     CreateSyncCursorUseCase,

@@ -5,9 +5,10 @@
  */
 import { describe, expect, it } from 'bun:test';
 
-import { familyReadSurface, hasTypedInclude } from '../../derived/api/entity';
-import { inheritanceChildrenOf } from '../../schema/inheritance';
+import { familyReadSurface, familyWriteSurface, hasTypedInclude } from '../../derived/api/entity';
+import { inheritanceBaseOf, inheritanceChildrenOf, naturalKeyIndexOf } from '../../schema/inheritance';
 import { baselineSet, deriveSet } from './_inputs';
+import { RENDER_MATRIX } from './_render-matrix';
 
 const plain = { entity: { name: 'thing' } };
 
@@ -106,4 +107,50 @@ describe('a base with no entity lookup', () => {
     const base = { ...withEntities(), entityLookup: hidden };
     expect(() => buildBackendLocals(raw, base)).toThrow(/a `match:` referrer scan for 'notice' needs an entity lookup/);
   });
+});
+
+describe('familyWriteSurface (RFC-0006 §4, #875 S4)', () => {
+	const set = baselineSet();
+	const byName = (n: string) => set.entities.find((d) => d.entity.name === n)!;
+	const surfaceOf = (n: string) =>
+		familyWriteSurface(byName(n), inheritanceChildrenOf(n, set.entities), inheritanceBaseOf(byName(n), set.entities));
+
+	it('a child pair-writes and upserts through its base\'s natural key', () => {
+		expect(surfaceOf('email')).toEqual({ pairWrite: true, upsert: 'through_base', kindGuardUpdate: false, kindGuardCreate: false });
+	});
+
+	it('a base with child tables upserts on its own key and guards both writes', () => {
+		expect(surfaceOf('communication')).toEqual({ pairWrite: false, upsert: 'own', kindGuardUpdate: true, kindGuardCreate: true });
+	});
+
+	it('a plain natural_key entity upserts and guards nothing', () => {
+		expect(surfaceOf('catalog_entry')).toEqual({ pairWrite: false, upsert: 'own', kindGuardUpdate: false, kindGuardCreate: false });
+	});
+
+	it('a child whose base declares no natural key has no upsert to write through', () => {
+		const matrix = RENDER_MATRIX.find((m) => m.id === 'matrix-family-no-natural-key')!;
+		const crate = matrix.entities.find((d) => d.entity.name === 'crate')!;
+		expect(naturalKeyIndexOf(matrix.entities.find((d) => d.entity.name === 'parcel')!)).toBe(-1);
+		expect(familyWriteSurface(crate, [], inheritanceBaseOf(crate, matrix.entities))).toEqual({
+			pairWrite: true,
+			upsert: null,
+			kindGuardUpdate: false,
+			kindGuardCreate: false,
+		});
+	});
+
+	it('the upsert is caused by the natural_key marker: the base\'s own index for a child', () => {
+		const surfaces = deriveSet(set);
+		const own = surfaces.get('communication')!.repository.methods.find((m) => m.name === 'upsertByNaturalKey')!;
+		const idx = naturalKeyIndexOf(byName('communication'));
+		expect(own.origin).toMatchObject({ from: 'yaml', at: { doc: { name: 'communication' }, path: ['unique_indexes', idx, 'natural_key'] } });
+		const child = surfaces.get('email')!.repository.methods.find((m) => m.name === 'upsertByNaturalKey')!;
+		expect(child.origin).toMatchObject({ from: 'yaml', at: { doc: { name: 'communication' }, path: ['unique_indexes', idx, 'natural_key'] } });
+		// The override replaces the pattern's 'inherited' entry rather than listing the name twice.
+		for (const layer of ['repository', 'service'] as const) {
+			const names = surfaces.get('email')![layer].methods.map((m) => m.name);
+			expect(names.filter((n) => n === 'create')).toHaveLength(1);
+		}
+		expect(surfaces.get('email')!.repository.methods.find((m) => m.name === 'create')?.kind).toBe('pair_write');
+	});
 });

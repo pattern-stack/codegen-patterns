@@ -22,7 +22,6 @@ import { DeleteMemberUseCase } from './use-cases/delete-member.use-case';
     DatabaseModule,
     forwardRef(() => MemberSkillsModule),
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
   ],
   controllers: [MemberController],
   providers: [

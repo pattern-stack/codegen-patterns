@@ -1,0 +1,448 @@
+{
+	"entity": "catalog_entry",
+	"plural": "catalog_entries",
+	"className": "CatalogEntry",
+	"repository": {
+		"className": "CatalogEntryRepository",
+		"baseClass": "BaseRepository",
+		"typedInclude": false,
+		"methods": [
+			{
+				"name": "findById",
+				"kind": "find_by_id",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"readOptions": "columns",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findByIds",
+				"kind": "find_by_ids",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "list",
+				"kind": "list",
+				"emitted": true,
+				"params": [
+					{
+						"name": "query"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "count",
+				"kind": "count",
+				"emitted": true,
+				"params": [
+					{
+						"name": "where"
+					}
+				],
+				"returns": "count",
+				"readOptions": "none",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "upsertByNaturalKey",
+				"kind": "upsert",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "catalog_entry"
+						},
+						"path": [
+							"unique_indexes",
+							0,
+							"natural_key"
+						]
+					}
+				}
+			},
+			{
+				"name": "exists",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "create",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "update",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "delete",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "upsertMany",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			}
+		]
+	},
+	"service": {
+		"className": "CatalogEntryService",
+		"baseClass": "BaseService",
+		"methods": [
+			{
+				"name": "findById",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "catalog_entry",
+					"layer": "repository",
+					"method": "findById"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findByIds",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "catalog_entry",
+					"layer": "repository",
+					"method": "findByIds"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "list",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "listOptions"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "catalog_entry",
+					"layer": "repository",
+					"method": "list"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "upsertByNaturalKey",
+				"kind": "upsert",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "catalog_entry",
+					"layer": "repository",
+					"method": "upsertByNaturalKey"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "catalog_entry"
+						},
+						"path": [
+							"unique_indexes",
+							0,
+							"natural_key"
+						]
+					}
+				}
+			},
+			{
+				"name": "count",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "exists",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "create",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "update",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "delete",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			}
+		]
+	},
+	"useCases": [
+		{
+			"className": "FindCatalogEntryByIdUseCase",
+			"kind": "find_by_id",
+			"calls": {
+				"entity": "catalog_entry",
+				"layer": "service",
+				"method": "findById"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "ListCatalogEntriesUseCase",
+			"kind": "list",
+			"calls": {
+				"entity": "catalog_entry",
+				"layer": "service",
+				"method": "list"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "CreateCatalogEntryUseCase",
+			"kind": "create",
+			"calls": {
+				"entity": "catalog_entry",
+				"layer": "service",
+				"method": "create"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "UpdateCatalogEntryUseCase",
+			"kind": "update",
+			"calls": {
+				"entity": "catalog_entry",
+				"layer": "service",
+				"method": "update"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "DeleteCatalogEntryUseCase",
+			"kind": "delete",
+			"calls": {
+				"entity": "catalog_entry",
+				"layer": "service",
+				"method": "delete"
+			},
+			"origin": {
+				"from": "base"
+			}
+		}
+	],
+	"http": {
+		"enabled": true,
+		"routes": [
+			{
+				"verb": "GET",
+				"path": "/catalog_entries",
+				"controller": "CatalogEntryController",
+				"handler": "getAll",
+				"operationId": "listCatalogEntrys",
+				"useCase": "ListCatalogEntriesUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "GET",
+				"path": "/catalog_entries/:id",
+				"controller": "CatalogEntryController",
+				"handler": "getById",
+				"operationId": "findCatalogEntryById",
+				"useCase": "FindCatalogEntryByIdUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "POST",
+				"path": "/catalog_entries",
+				"controller": "CatalogEntryController",
+				"handler": "create",
+				"operationId": "createCatalogEntry",
+				"useCase": "CreateCatalogEntryUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "PATCH",
+				"path": "/catalog_entries/:id",
+				"controller": "CatalogEntryController",
+				"handler": "update",
+				"operationId": "updateCatalogEntry",
+				"useCase": "UpdateCatalogEntryUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "DELETE",
+				"path": "/catalog_entries/:id",
+				"controller": "CatalogEntryController",
+				"handler": "remove",
+				"operationId": "deleteCatalogEntry",
+				"useCase": "DeleteCatalogEntryUseCase",
+				"origin": {
+					"from": "base"
+				}
+			}
+		],
+		"includeRoutes": [],
+		"includesConst": "CATALOG_ENTRIES_API_INCLUDES"
+	}
+}

@@ -21,7 +21,7 @@ import {
 	type JunctionInput,
 } from '../../derived/api/entity';
 import type { EntityApiSurface } from '../../derived/api/types';
-import { inheritanceChildrenOf } from '../../schema/inheritance';
+import { inheritanceBaseOf, inheritanceChildrenOf } from '../../schema/inheritance';
 import { validateEntityDefinition } from '../../schema/entity-definition.schema';
 import { validateJunctionDefinition } from '../../schema/junction-definition.schema';
 
@@ -48,6 +48,7 @@ export function deriveSet(set: DefinitionSet, wiredTargets?: Iterable<string>): 
 				composition: resolvePatternComposition(definition.entity),
 				wiredTargets: wired,
 				inheritanceChildren: inheritanceChildrenOf(definition.entity.name, set.entities),
+				inheritanceBase: inheritanceBaseOf(definition, set.entities),
 				entityLookup,
 			}),
 		);

@@ -20,7 +20,6 @@ import { DeleteTenantUseCase } from './use-cases/delete-tenant.use-case';
   imports: [
     DatabaseModule,
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
   ],
   controllers: [TenantController],
   providers: [

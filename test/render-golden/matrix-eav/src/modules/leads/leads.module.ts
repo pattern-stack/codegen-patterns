@@ -24,7 +24,6 @@ import { DeleteLeadUseCase } from './use-cases/delete-lead.use-case';
     DatabaseModule,
     FieldValuesModule,
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
   ],
   controllers: [LeadController],
   providers: [

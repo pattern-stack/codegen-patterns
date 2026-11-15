@@ -359,7 +359,7 @@ describe('the family generates (S2: the DDL)', () => {
 	});
 });
 
-describe('natural_key: alone changes no emitted byte', () => {
+describe('natural_key: emits the upsert and nothing else (S4)', () => {
 	const entity = (naturalKey: boolean) =>
 		[
 			'entity:',
@@ -374,7 +374,7 @@ describe('natural_key: alone changes no emitted byte', () => {
 			'',
 		].join('\n');
 
-	it('the whole generated module is byte-identical with and without it', () => {
+	it('only the repository and the service differ with and without it: the one-statement upsert, no DDL', () => {
 		const withKey = project('inh-nk-on', { 'item.yaml': entity(true) });
 		const without = project('inh-nk-off', { 'item.yaml': entity(false) });
 		expect(run(withKey, ['entity', 'new', '--all', '--force']).status).toBe(0);
@@ -394,6 +394,13 @@ describe('natural_key: alone changes no emitted byte', () => {
 		const a = files(withKey);
 		const b = files(without);
 		expect(Object.keys(a).length).toBeGreaterThan(5);
-		expect(a).toEqual(b);
+		// The key is the unique index it already was (S2): the table, the DTOs and every other file are unchanged.
+		// What it adds is `upsertByNaturalKey` (RFC-0006 §4.2), on the repository and forwarded by the service.
+		const differing = Object.keys({ ...a, ...b }).filter((k) => a[k] !== b[k]).sort();
+		expect(differing).toEqual(['src/modules/items/item.repository.ts', 'src/modules/items/item.service.ts']);
+		const repository = a['src/modules/items/item.repository.ts']!;
+		expect(repository).toContain('async upsertByNaturalKey(');
+		expect(repository).toContain("const ITEM_NATURAL_KEY = ['source', 'externalId'] as const;");
+		expect(b['src/modules/items/item.repository.ts']).not.toContain('upsertByNaturalKey');
 	});
 });

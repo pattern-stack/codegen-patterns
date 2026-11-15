@@ -1,0 +1,39 @@
+# RFC-0006 (#875) S4 — a PLAIN entity (no family) that declares `natural_key: true`: the single-row
+# `upsertByNaturalKey`, with no discriminator. Tenant-scoped and soft-deletable, so the upsert's OQ-14 semantics
+# (a soft-deleted match is updated and stays deleted) run; user-tracked, so the upsert's user-axis guard runs
+# (one user never overwrites another's row). Keep field-identical with test/fixtures/entities/catalog_entry.yaml
+# (src/__tests__/fixtures/inheritance-fixtures-agree.test.ts).
+
+entity:
+  name: catalog_entry
+  plural: catalog_entries
+  pattern: Base
+
+tenant_scoped: true
+
+behaviors:
+  - timestamps
+  - soft_delete
+  - user_tracking
+
+fields:
+  tenant_id:
+    type: uuid
+    required: true
+  user_id:
+    type: uuid
+    required: true
+  sku:
+    type: string
+    required: true
+    max_length: 64
+  title:
+    type: string
+    required: true
+  price_cents:
+    type: integer
+    nullable: true
+
+unique_indexes:
+  - fields: [sku]
+    natural_key: true

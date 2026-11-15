@@ -284,6 +284,37 @@ describe('HTTP', () => {
     }
   });
 
+  test('a child writes both rows and upserts through its base\'s natural key (#875 S4)', () => {
+    // The derivation's own shape (test/api-surface-golden/snapshot/email.json): the pair write is caused by `inherits:`,
+    // the upsert by the BASE's `unique_indexes` entry — a YAML path in another document.
+    const family = structuredClone(DEMO);
+    const contact = family.entities.contact!;
+    const inherits = { from: 'yaml' as const, at: { doc: { kind: 'entity' as const, name: 'contact' }, path: ['inherits'] } };
+    const naturalKey = {
+      from: 'yaml' as const,
+      at: {
+        doc: { kind: 'entity' as const, name: 'party' },
+        path: ['unique_indexes', 0, 'natural_key'],
+        note: "party's natural key, through contact's inherits",
+      },
+    };
+    contact.repository.methods.push(
+      { name: 'create', kind: 'pair_write', emitted: true, params: [{ name: 'input' }, { name: 'tx' }], returns: 'one', readOptions: 'none', origin: inherits },
+      { name: 'upsertByNaturalKey', kind: 'upsert', emitted: true, params: [{ name: 'input' }, { name: 'tx' }], returns: 'one', readOptions: 'none', origin: naturalKey },
+    );
+    contact.service.methods.push(
+      { name: 'upsertByNaturalKey', kind: 'upsert', emitted: true, params: [{ name: 'input' }, { name: 'tx' }], returns: 'one', origin: naturalKey },
+    );
+    const repo = sectionOf(family, 'contact', 'repository');
+    expect(row(repo, 'create').kindLabel).toBe('pair write');
+    expect(row(repo, 'create').origin?.text).toBe('← inherits');
+    expect(row(repo, 'upsertByNaturalKey').kindLabel).toBe('upsert');
+    expect(row(repo, 'upsertByNaturalKey').origin?.text).toBe(
+      "← unique_indexes[0].natural_key (party's natural key, through contact's inherits)",
+    );
+    expect(row(sectionOf(family, 'contact', 'service'), 'upsertByNaturalKey').kindLabel).toBe('upsert');
+  });
+
   test('a route that resolves ?include= says against which allowlist', () => {
     const http = sectionOf(VARIANTS, 'account', 'http');
     expect(row(http, 'GET /accounts/:id').flags).toEqual(['operationId findAccountById', '?include= find_by_id']);

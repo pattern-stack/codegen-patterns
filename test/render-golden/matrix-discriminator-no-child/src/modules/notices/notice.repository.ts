@@ -3,7 +3,7 @@ import { Injectable, Inject } from '@nestjs/common';
 
 import { eq, inArray } from 'drizzle-orm';
 import { DRIZZLE } from '@shared/constants/tokens';
-import type { DrizzleClient } from '@shared/types/drizzle';
+import type { DrizzleClient, DrizzleTx } from '@shared/types/drizzle';
 // REL-2 (#587): the generated relation graph. `Relations` binds the repository's
 // third type parameter; `IncludeOf`/`ResultOf` are what make a `with` include
 // typed. Generated code reaching a generated manifest — the runtime package never
@@ -11,6 +11,7 @@ import type { DrizzleClient } from '@shared/types/drizzle';
 import type { ColumnsOf, IncludeOf, Relations, ResultOf } from '../../generated/relations';
 import { BaseRepository } from '@shared/base-classes/base-repository';
 import type { ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
+import { KindImmutableError } from '@shared/base-classes/inheritance';
 import { notices, type Notice } from './notice.entity';
 
 /**
@@ -158,6 +159,16 @@ export class NoticeRepository extends BaseRepository<Notice, typeof notices, Rel
    */
   override async count(where?: RowFilter<typeof notices>): Promise<number> {
     return super.count(where);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Writes through the base (RFC-0006 §4.1, #875)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /** Refuses a `kind` key: a row does not change kind. The database refuses it for any row with a child. */
+  override async update(id: string, input: globalThis.Partial<Notice>, tx?: DrizzleTx): Promise<Notice> {
+    if (input.kind !== undefined) throw new KindImmutableError('notice');
+    return super.update(id, input, tx);
   }
 
   // Inherited from BaseRepository:

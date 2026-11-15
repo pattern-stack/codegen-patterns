@@ -16,7 +16,8 @@ import type { AccountOutputDto } from '@gen/modules/accounts/dto/account-output.
 import type { Communication } from '@gen/modules/communications/communication.entity';
 import type { CommunicationRepository } from '@gen/modules/communications/communication.repository';
 import type { Meeting } from '@gen/modules/meetings/meeting.entity';
-import type { MeetingRepository } from '@gen/modules/meetings/meeting.repository';
+import type { MeetingFlat, MeetingRepository } from '@gen/modules/meetings/meeting.repository';
+import type { MeetingService } from '@gen/modules/meetings/meeting.service';
 import type { Contact } from '@gen/modules/contacts/contact.entity';
 import type { ContactOutputDto } from '@gen/modules/contacts/dto/contact-output.dto';
 import type { DealState } from '@gen/modules/deal-states/deal-state.entity';
@@ -72,4 +73,47 @@ export async function familyIncludesType(
 	// `findWithBase` adds the base key itself, so a caller cannot also name it (a narrower spec would be dropped).
 	// @ts-expect-error — `communication` is the key `findWithBase` joins
 	await meetingRepo.findWithBase('x', { with: { communication: true } });
+}
+
+type IsNever<T> = [T] extends [never] ? true : false;
+
+/**
+ * RFC-0006 §3.2, §4 (#875 S3/S4) — `<Child>Flat` with its default generics is a real row type. The default include
+ * is `Record<string, never>`, and `TWith & { communication: true }` over that index signature made `communication`
+ * `never`, so the whole flat row was `never` and every field read off a pair write was TS2339 (review of S4).
+ * Each read below is a real assignment off the flat row; a `never` row would also satisfy them all, so the first
+ * assertion is the one that holds the rest honest.
+ */
+export type MeetingFlatIsNotNever = Assert<Equal<IsNever<MeetingFlat>, false>>;
+export type MeetingFlatCarriesBothTables = Assert<
+	Equal<[MeetingFlat['title'], MeetingFlat['occurredAt'], MeetingFlat['kind']], [string, Date, 'meeting']>
+>;
+
+export async function familyFlatRowsType(meetingRepo: MeetingRepository, meetingService: MeetingService): Promise<void> {
+	const input = { title: 't', startsAt: new Date(), occurredAt: new Date(), source: 's', externalId: 'e' };
+	const created = await meetingRepo.create(input);
+	const updated = await meetingRepo.update('x', { title: 'u' });
+	const upserted = (await meetingRepo.upsertByNaturalKey(input)).row;
+	const found = await meetingRepo.findWithBase('x');
+	const many = await meetingRepo.findManyWithBase(['x']);
+	const viaService = [
+		await meetingService.create(input),
+		await meetingService.update('x', { title: 'u' }),
+		(await meetingService.upsertByNaturalKey(input)).row,
+		await meetingService.findWithBase('x'),
+		...(await meetingService.findManyWithBase(['x'])),
+	];
+	const rows = [created, updated, upserted, found, ...many, ...viaService];
+	for (const row of rows) {
+		const title: string | undefined = row?.title;
+		const occurredAt: Date | undefined = row?.occurredAt;
+		const kind: 'meeting' | undefined = row?.kind;
+		void title;
+		void occurredAt;
+		void kind;
+	}
+	const created2: boolean = (await meetingRepo.upsertByNaturalKey(input)).created;
+	void created2;
+	// @ts-expect-error — `nope` is on neither table
+	void created.nope;
 }

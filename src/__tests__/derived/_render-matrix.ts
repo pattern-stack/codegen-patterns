@@ -194,6 +194,21 @@ const notice = def({
 	},
 });
 
+// ── A family whose base declares no natural key (RFC-0006 §4.2): its child has no upsert to write through ──
+const parcel = def({
+	entity: { name: 'parcel', plural: 'parcels' },
+	discriminator: 'kind',
+	fields: {
+		kind: { type: 'enum', choices: ['crate', 'loose'], required: true },
+		weight: { type: 'integer', required: true },
+	},
+});
+const crate = def({
+	entity: { name: 'crate', plural: 'crates' },
+	inherits: 'parcel',
+	fields: { label: { type: 'string', required: true } },
+});
+
 export const RENDER_MATRIX: readonly MatrixCase[] = [
 	{
 		id: 'matrix-eav',
@@ -254,6 +269,13 @@ export const RENDER_MATRIX: readonly MatrixCase[] = [
 		covers: 'a `discriminator:` base with no child table: no cross-kind reads, no typed include',
 		subjects: ['notice'],
 		entities: [notice],
+		junctions: [],
+	},
+	{
+		id: 'matrix-family-no-natural-key',
+		covers: 'a joined-table family whose base has no `natural_key:` — the pair write and the kind guards, and no upsert',
+		subjects: ['parcel', 'crate'],
+		entities: [parcel, crate],
 		junctions: [],
 	},
 	{

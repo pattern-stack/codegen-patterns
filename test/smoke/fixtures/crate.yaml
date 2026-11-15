@@ -1,0 +1,12 @@
+# RFC-0006 (#875) S4 — the child of `parcel`, a base with no natural key. See parcel.yaml.
+
+entity:
+  name: crate
+  plural: crates
+
+inherits: parcel
+
+fields:
+  label:
+    type: string
+    required: true

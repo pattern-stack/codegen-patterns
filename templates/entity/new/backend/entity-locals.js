@@ -29,6 +29,7 @@ import {
 // prompt.js via loadAppPatterns() against `codegen.config.yaml patterns:`
 // globs before this helper runs — we only read the registry here, through
 // `resolvePatternComposition`.
+import { inheritanceBaseOf, inheritsOf, naturalKeyIndexOf } from '../../../../src/schema/inheritance.js';
 import { detectMethodCollisions } from '../../../../src/patterns/compose.js';
 import { resolvePatternComposition } from '../../../../src/patterns/resolve-composition.js';
 import '../../../../src/patterns/library/index.js';
@@ -36,6 +37,7 @@ import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
 import {
   finderName,
   fkFinderName,
+  moduleClassName,
   pascalCase,
   relationMethodName,
 } from '../../../../src/derived/api/names.js';
@@ -805,6 +807,35 @@ function processBelongsTo(relationships, naming, fields = {}) {
   }
 
   return result;
+}
+
+/**
+ * The module graph, from the entity set: entity -> the entities whose module it imports (a `belongs_to` or `has_many`
+ * target, or the base it inherits). A superset of what one render composes (a `has_many` onto an entity outside the run
+ * is not wired), which is safe: `forwardRef` on a non-cycle changes nothing at runtime.
+ */
+function moduleGraphEdges(entityLookup) {
+  const edges = new Map();
+  // A lookup built from `entity:` blocks alone (no YAML documents: a unit test of one entity) cannot say what any other
+  // entity relates to, so it has no cycles to report. The CLI's lookup always carries the documents.
+  let documents = [];
+  try {
+    documents = entityLookup?.definitions ? entityLookup.definitions() : [];
+  } catch {
+    documents = [];
+  }
+  for (const def of documents) {
+    const targets = new Set();
+    for (const rel of Object.values(def.relationships ?? {})) {
+      if ((rel?.type === 'belongs_to' || rel?.type === 'has_many') && rel.target !== def.entity.name && entityLookup(rel.target)) {
+        targets.add(rel.target);
+      }
+    }
+    const declaration = inheritsOf(def);
+    if (declaration !== null) targets.add(declaration.base);
+    edges.set(def.entity.name, targets);
+  }
+  return edges;
 }
 
 /**
@@ -1931,6 +1962,31 @@ export function buildBackendLocals(definition, baseLocals) {
     hasMany.filter((r) => r.targetExists),
   );
 
+  // The other entities' MODULES this module imports (ADR-002): a service that composes another entity's repository
+  // gets it from that entity's home module, which exports it — the only place the repository's own dependencies are
+  // wired (a joined-table child's repository injects its base's, an EAV repository its field-value service). A
+  // module that provided the repository itself would have to repeat that closure. `forwardRef` only where the
+  // module graph really cycles (this entity is reachable from the dependency).
+  const moduleDependents = moduleGraphEdges(entityLookup);
+  const reaches = (from, to, seen = new Set()) => {
+    if (from === to) return true;
+    if (seen.has(from)) return false;
+    seen.add(from);
+    return [...(moduleDependents.get(from) ?? [])].some((next) => reaches(next, to, seen));
+  };
+  const repositoryDepModules = repositoryDeps
+    // The EAV definition's module is imported by the EAV block of the module template.
+    .filter((dep) => !(eavValueTable && dep.entity === eavDefinitionEntity))
+    .map((dep) => {
+      const depNaming = entityModuleNaming(entityLookup(dep.entity), modulesDir);
+      return {
+        entity: dep.entity,
+        moduleClass: moduleClassName(depNaming.plural),
+        importPath: `${dep.importDir}/${emittedStem(depNaming.plural)}.module`,
+        forwardRef: reaches(dep.entity, entityName),
+      };
+    });
+
   // JUNC-0 (#678): every junction naming this entity in `between:` is mirrored
   // onto its service + module here, from the junction YAML set — the parent's
   // own templates render the fan-out; nothing injects into them. A counterparty
@@ -2092,6 +2148,9 @@ export function buildBackendLocals(definition, baseLocals) {
   // From `familyReads` — the one enumeration of the set (it throws where a base cannot enumerate); a base with no
   // `discriminator:` has no children (R1).
   const familyChildren = (family.base?.children ?? []).map((c) => ({ name: c.name, as: c.as }));
+  // The write half's input (S4): a child's base — the natural-key upsert it writes through. The derivation
+  // (`apiSurface.repository.methods` / `.service.methods`) decides which writes exist; nothing here does.
+  const inheritanceBase = inheritanceBaseOf(definition, entityLookup?.definitions ? entityLookup.definitions() : []);
   // The scope a child's repository declares: its tenant column (the base's, carried as a copy) with strict
   // enforcement, plus the base's lifecycle scope. A plain entity's is its own `tenantScoped`.
   const scopeTenantColumn = tenantScoped ? tenancy.prop : isChild && inheritedChild.tenant ? inheritedChild.tenant.prop : null;
@@ -2179,6 +2238,30 @@ export function buildBackendLocals(definition, baseLocals) {
     ],
     { entityName, tableName: entityTableName, tenancy, tableColumns },
   );
+
+  // RFC-0006 §2.4 (S4): the columns this table DERIVES from a parent row, and the parents each is read from — in
+  // relationship declaration order, the first that resolves wins. The generated repository fills them in the same
+  // statement as the write (`fillDerivedColumns`). M2's discriminator exception derives nothing, so it has no entry.
+  const matchFills = matchDerivedColumns.map((dc) => ({
+    key: dc.prop,
+    column: dc.column,
+    sources: matched.fks.flatMap((fk) => {
+      const pair = fk.pairs.find(([local]) => local === dc.column);
+      const rel = pair && belongsTo.find((r) => r.relName === fk.relName);
+      return rel
+        ? [{ fkKey: rel.camelField, parentTable: rel.relatedTable, parentImportPath: rel.importPath, parentProp: camelCase(pair[1]) }]
+        : [];
+    }),
+  }));
+
+  // `natural_key: true` (R11): the conflict target of `upsertByNaturalKey` — the declared columns, tenant-prefixed
+  // exactly as the unique index is. A child declares none (R11); its upsert uses its base's.
+  const naturalKeyIndex = naturalKeyIndexOf(definition);
+  const naturalKeyEntry =
+    naturalKeyIndex < 0 ? null : uniqueIndexExpressions.find((u) => u.source === `unique_indexes[${naturalKeyIndex}]`);
+  const naturalKey = naturalKeyEntry
+    ? { props: naturalKeyEntry.columns.map((c) => tableColumns.find((tc) => tc.column === c).prop) }
+    : null;
 
   // belongs_to FK columns that declared `index: true` on their underlying
   // field. The FK column lives in belongsTo (not processedFields), so
@@ -2434,6 +2517,7 @@ export function buildBackendLocals(definition, baseLocals) {
     composition: patternBase,
     wiredTargets: hasMany.filter((r) => r.targetExists).map((r) => r.target),
     inheritanceChildren: familyChildren,
+    inheritanceBase,
     entityLookup: (name) => (entityLookup ? entityLookup(name) : null),
   });
   // Whether writes are emitted is the derivation's answer (ADR-046): `generate.writes: false`, or a child (RFC-0006).
@@ -2514,7 +2598,7 @@ export function buildBackendLocals(definition, baseLocals) {
     repository: `${entityNamePascal}Repository`,
     service: `${entityNamePascal}Service`,
     controller: `${entityNamePascal}Controller`,
-    module: `${entityNamePluralPascal}Module`,
+    module: moduleClassName(entityNamePlural),
     findByIdUseCase: `Find${entityNamePascal}ByIdUseCase`,
     searchUseCase: `Search${entityNamePluralPascal}UseCase`,
     searchController: `${entityNamePascal}SearchController`,
@@ -2905,6 +2989,10 @@ export function buildBackendLocals(definition, baseLocals) {
     // `.service.methods` (the derivation), not a flag here; the base-edge and kind-union text is keyed below.
     familyChild: family.child,
     familyBase: family.base,
+    matchFills,
+    naturalKey,
+    // The child's tenant column (a copy of the base row's, written by the pair write), or null.
+    childTenantProp: isChild && inheritedChild.tenant ? inheritedChild.tenant.prop : null,
     scopeTenantScoped,
     scopeTenantColumn,
 
@@ -2922,6 +3010,7 @@ export function buildBackendLocals(definition, baseLocals) {
 
     // #632: every other entity's repository the service composes, once each
     repositoryDeps: repositoryDeps,
+    repositoryDepModules,
     // JUNC-0 (#678): the junction fan-out this entity's service + module carry
     junctionFanOut: junctionFanOut,
     // The EAV definition repository is imported + injected by its own block

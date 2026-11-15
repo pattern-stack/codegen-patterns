@@ -56,6 +56,7 @@ let endCountingPool: any;
 let TranscriptCommunicationPartRepository: any;
 let DocumentRepository: any;
 let ReportDocumentRepository: any;
+let CommunicationPartRepository: any;
 
 beforeAll(async () => {
   if (!SHOULD_RUN_SCAFFOLD) return;
@@ -79,6 +80,7 @@ beforeAll(async () => {
   endCountingPool = () => pool.end();
   ({ CommunicationRepository } = await import('@gen/modules/communications/communication.repository'));
   ({ MeetingRepository } = await import('@gen/modules/meetings/meeting.repository'));
+  ({ CommunicationPartRepository } = await import('@gen/modules/communication-parts/communication-part.repository'));
   ({ TranscriptCommunicationPartRepository } = await import(
     '@gen/modules/transcript-communication-parts/transcript-communication-part.repository'
   ));
@@ -96,6 +98,11 @@ afterAll(async () => {
   await endCountingPool?.();
   await closeDb();
 });
+
+// A child's repository injects its base's (RFC-0006 §4.1).
+const newMeetingRepository = (db: any) => new MeetingRepository(db, new CommunicationRepository(db));
+const newTranscriptPartRepository = (db: any) =>
+  new TranscriptCommunicationPartRepository(db, new CommunicationPartRepository(db));
 
 const asTenant = <T>(tenantId: string, fn: () => Promise<T>): Promise<T> =>
   withRequester({ userId: USER, organizationId: null, tenantId }, fn);
@@ -190,7 +197,7 @@ d('A9 — findAllKinds returns the union', () => {
 
   test('the child reads flat, with its base joined in', async () => {
     await seedCommunications();
-    const repo = new MeetingRepository(getTestDb());
+    const repo = newMeetingRepository(getTestDb());
     await asA(async () => {
       const flat = await repo.findWithBase(ids.meetingA);
       expect(flat?.title).toBe('standup');
@@ -227,7 +234,7 @@ d('A9 — findAllKinds returns the union', () => {
 d('A8 — tenant: another tenant`s child is absent at the root and at a hop', () => {
   test('at the root, through the generated repository', async () => {
     await seedCommunications();
-    const repo = new MeetingRepository(getTestDb());
+    const repo = newMeetingRepository(getTestDb());
     await asA(async () => {
       expect((await repo.list()).map((m: any) => m.id)).toEqual([ids.meetingA]);
       expect(await repo.findById(ids.meetingB)).toBeNull();
@@ -262,14 +269,14 @@ d('A8 — tenant: another tenant`s child is absent at the root and at a hop', ()
 
   test('strict: a read with no ambient tenant throws, never reading the union of every tenant', async () => {
     await seedCommunications();
-    await expect(new MeetingRepository(getTestDb()).list()).rejects.toThrow();
+    await expect(newMeetingRepository(getTestDb()).list()).rejects.toThrow();
   });
 });
 
 d('A8 — soft_delete on the base: a child whose base is deleted is absent', () => {
   test('at the root, through the generated repository', async () => {
     await seedParts();
-    const repo = new TranscriptCommunicationPartRepository(getTestDb());
+    const repo = newTranscriptPartRepository(getTestDb());
     await asA(async () => {
       expect((await repo.list()).map((p: any) => p.id)).toEqual([ids.partLive]);
       expect(await repo.findById(ids.partLive)).not.toBeNull();
@@ -295,7 +302,7 @@ d('A8 — soft_delete on the base: a child whose base is deleted is absent', () 
 
   test('the base is the guard: restoring it brings the child back', async () => {
     await seedParts();
-    const repo = new TranscriptCommunicationPartRepository(getTestDb());
+    const repo = newTranscriptPartRepository(getTestDb());
     await run(sql`UPDATE communication_parts SET deleted_at = NULL WHERE id = ${ids.partDeleted}`);
     await asA(async () => {
       expect((await repo.list()).map((p: any) => p.id).sort()).toEqual([ids.partLive, ids.partDeleted].sort());
@@ -387,7 +394,7 @@ async function statementsOf(fn: () => Promise<unknown>): Promise<number> {
 d('A9 — each generated family read is ONE statement (charter I4), measured on the generated code', () => {
   test('control: the counter sees more than one when more than one is issued', async () => {
     await seedCommunications();
-    const repo = new MeetingRepository(countingDb);
+    const repo = newMeetingRepository(countingDb);
     const n = await statementsOf(() => asA(async () => {
       await repo.list();
       await repo.list();
@@ -409,7 +416,7 @@ d('A9 — each generated family read is ONE statement (charter I4), measured on 
 
   test('findWithBase and findManyWithBase', async () => {
     await seedCommunications();
-    const repo = new MeetingRepository(countingDb);
+    const repo = newMeetingRepository(countingDb);
     const one = (fn: () => Promise<unknown>) => statementsOf(() => asA(fn));
     expect(await one(() => repo.findWithBase(ids.meetingA))).toBe(1);
     expect(await one(() => repo.findManyWithBase([ids.meetingA, ids.meetingB]))).toBe(1);

@@ -2,8 +2,8 @@
 import { Inject, Module, type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
-import { UserRepository } from '../users/user.repository';
-import { AccountRepository } from '../accounts/account.repository';
+import { UsersModule } from '../users/users.module';
+import { AccountsModule } from '../accounts/accounts.module';
 
 import { DealRepository } from './deal.repository';
 import { DealService } from './deal.service';
@@ -24,18 +24,14 @@ import { DealSearchController } from './deal-search.controller';
 @Module({
   imports: [
     DatabaseModule,
+    UsersModule,
+    AccountsModule,
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
-    // UsersModule,
-    // UsersModule,
-    // AccountsModule,
   ],
   controllers: [DealController, DealSearchController],
   providers: [
     DealRepository,
     DealService,
-    UserRepository,
-    AccountRepository,
     FindDealByIdUseCase,
     ListDealsUseCase,
     CreateDealUseCase,

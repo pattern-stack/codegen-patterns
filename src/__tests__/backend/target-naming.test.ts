@@ -102,7 +102,8 @@ describe('belongs_to', () => {
 		expect(service).toContain("import type { Crew } from '../org/crews/crew.entity';");
 
 		const module = render('module.ejs.t', locals);
-		expect(module).toContain("import { CrewRepository } from '../org/crews/crew.repository';");
+		// ADR-002: the module imports the target's HOME module (which exports its repository), not the repository.
+		expect(module).toContain("import { CrewsModule } from '../org/crews/crews.module';");
 	});
 
 	it('a target with no entity YAML is a generation error naming it', () => {
@@ -148,9 +149,7 @@ describe('has_many', () => {
 		fs.writeFileSync(path.join(root, 'modules', 'persons', 'person.entity.ts'), '');
 		const after = roster(root, rels);
 		expect(after.hasMany[0].targetExists).toBe(true);
-		expect(render('module.ejs.t', after)).toContain(
-			"import { PersonRepository } from '../../persons/person.repository';",
-		);
+		expect(render('module.ejs.t', after)).toContain("import { PersonsModule } from '../../persons/persons.module';");
 	});
 
 	it('a multi-word target is found at its KEBAB stem, the file its own emission writes', () => {
@@ -183,9 +182,7 @@ describe('has_many', () => {
 			'async members(crewId: string, opts?: { limit?: number }): Promise<Person[]> {',
 		);
 		expect(service).toContain("import { PersonRepository } from '../../persons/person.repository';");
-		expect(render('module.ejs.t', locals)).toContain(
-			"import { PersonRepository } from '../../persons/person.repository';",
-		);
+		expect(render('module.ejs.t', locals)).toContain("import { PersonsModule } from '../../persons/persons.module';");
 	});
 
 	it('a single-entity render keeps the file check (#815)', () => {
@@ -316,8 +313,8 @@ describe('a service that composes the same target twice (#632)', () => {
 	it('the module imports and provides it once', () => {
 		const module = render('module.ejs.t', both());
 		const count = (needle: string) => module.split(needle).length - 1;
-		expect(count("import { CrewRepository } from '../org/crews/crew.repository';")).toBe(1);
-		expect(count('    CrewRepository,\n')).toBe(1);
+		expect(count("import { CrewsModule } from '../org/crews/crews.module';")).toBe(1);
+		expect(count('    CrewsModule,\n')).toBe(1);
 	});
 
 	it('an EAV definition entity also reached by a belongs_to is imported and injected once', () => {

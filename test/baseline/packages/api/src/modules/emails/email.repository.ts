@@ -2,8 +2,9 @@
 import { Injectable, Inject } from '@nestjs/common';
 
 import { eq, inArray } from 'drizzle-orm';
+import { getTableColumns, sql } from 'drizzle-orm';
 import { DRIZZLE } from '@shared/constants/tokens';
-import type { DrizzleClient } from '@shared/types/drizzle';
+import type { DrizzleClient, DrizzleTx } from '@shared/types/drizzle';
 // REL-2 (#587): the generated relation graph. `Relations` binds the repository's
 // third type parameter; `IncludeOf`/`ResultOf` are what make a `with` include
 // typed. Generated code reaching a generated manifest — the runtime package never
@@ -11,8 +12,10 @@ import type { DrizzleClient } from '@shared/types/drizzle';
 import type { ColumnsOf, IncludeOf, Relations, ResultOf } from '../../generated/relations';
 import { BaseRepository } from '@shared/base-classes/base-repository';
 import type { BehaviorConfig, ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
-import { flattenBase, type Flattened } from '@shared/base-classes/inheritance';
+import { flattenBase, inTransaction, KindImmutableError, KindMismatchError, splitByOwner, upsertSet, type Flattened } from '@shared/base-classes/inheritance';
 import { emails, type Email } from './email.entity';
+import { communications, type Communication } from '../communications/communication.entity';
+import { CommunicationRepository } from '../communications/communication.repository';
 
 /**
  * The root column mask a email read may take — `{ id?: boolean; … }`
@@ -69,7 +72,27 @@ export type EmailApiResult = Email &
 export type EmailFlat<
   TWith extends EmailInclude = EmailNoInclude,
   TColumns extends EmailColumns | undefined = undefined,
-> = Flattened<EmailResult<TWith & { communication: true }, TColumns>, 'communication'>;
+> = Flattened<
+  EmailResult<
+    // The default include is `Record<string, never>`: its index signature would make the base key `never` and the whole
+    // flat row `never`. Keep the keys the caller named, drop the signature.
+    { [K in keyof TWith as string extends K ? never : K]: TWith[K] } & { communication: true },
+    TColumns
+  >,
+  'communication'
+>;
+
+/**
+ * The flat input of a email write (RFC-0006 §4.1): the base's columns and this table's, at one level.
+ * `kind` is fixed by the child ('email') and is not an input. An update takes the same shape, every key optional.
+ */
+export type EmailCreate = globalThis.Partial<globalThis.Omit<Communication, 'kind'>> &
+  globalThis.Partial<globalThis.Omit<Email, 'kind'>>;
+export type EmailUpdate = EmailCreate;
+
+/** The base table's column keys: what a flat input is split by (`splitByOwner`). */
+const EMAIL_BASE = communications;
+export const EMAIL_BASE_KEYS: globalThis.ReadonlySet<string> = new Set(Object.keys(getTableColumns(EMAIL_BASE)));
 
 @Injectable()
 export class EmailRepository extends BaseRepository<Email, typeof emails, Relations> {
@@ -95,7 +118,11 @@ export class EmailRepository extends BaseRepository<Email, typeof emails, Relati
   // ambient context, and a missing boundary is a missing boundary.
   protected override readonly scopeEnforcement = 'strict' as const;
 
-  constructor(@Inject(DRIZZLE) db: DrizzleClient<Relations>) {
+  constructor(
+    @Inject(DRIZZLE) db: DrizzleClient<Relations>,
+    // The pair write goes through the base's OWN repository, so its tenant stamp and timestamps apply (RFC-0006 §4.1).
+    private readonly baseRepo: CommunicationRepository,
+  ) {
     super(db);
     // Every read runs on db.query.emails — fail HERE, naming the cause,
     // if the injected client was built without the relations manifest.
@@ -218,6 +245,130 @@ export class EmailRepository extends BaseRepository<Email, typeof emails, Relati
   ): Promise<Array<EmailFlat<W, C>>> {
     const rows = await this.findByIds(ids, { ...opts, with: { ...opts?.with, communication: true as const } } as never);
     return rows.map((row) => flattenBase(row as never, 'communication')) as Array<EmailFlat<W, C>>;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // The pair write (RFC-0006 §4.1, #875)
+  //
+  // A email is two rows sharing one id: the base's and this table's. `create`, `update` and `delete`
+  // OVERRIDE the inherited ones, on purpose — the inherited `create` would insert a row here with no
+  // base row. The base half goes through the base's own repository (its tenant stamp, timestamps and
+  // soft-delete apply), both halves in ONE transaction: the caller's when a `tx` is passed, else one opened here.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /** The kind this child writes is fixed ('email'); an input that names another is refused. */
+  private assertOwnKind(baseSlice: globalThis.Record<string, unknown>): void {
+    const named = baseSlice['kind'];
+    if (named !== undefined && named !== 'email') {
+      throw new KindMismatchError('email', 'email', `the input names kind '${String(named)}'`);
+    }
+  }
+
+  /** Both rows, in one transaction; a failing child insert rolls the base row back. */
+  override async create(input: EmailCreate, tx?: DrizzleTx): Promise<EmailFlat> {
+    const { base, own } = splitByOwner(input, EMAIL_BASE_KEYS);
+    this.assertOwnKind(base);
+    return inTransaction(this.db, tx, async (txClient) => {
+      const baseRow = await this.baseRepo.create({ ...base, kind: 'email' }, txClient);
+      const [childRow] = await this.runner(txClient)
+        .insert(this.table)
+        .values(this.childValues({ ...own, id: baseRow.id, tenantId: baseRow.tenantId }))
+        .returning();
+      return this.flat(childRow, baseRow);
+    });
+  }
+
+  /** A write's values for this table, with its derived `match:` columns filled (typed as the table's insert). */
+  private childValues(values: globalThis.Record<string, unknown>): typeof this.table.$inferInsert {
+    return this.deriveColumns(values, 'create') as typeof this.table.$inferInsert;
+  }
+
+  /** The flat row of a written pair: the one owner of flattening is `flattenBase`. */
+  private flat(childRow: Email | undefined, baseRow: Communication): EmailFlat {
+    return flattenBase({ ...childRow, communication: baseRow } as Email & { communication: Communication }, 'communication') as EmailFlat;
+  }
+
+  /**
+   * Update across both tables. A `kind` key throws `KindImmutableError`. The child row is
+   * found first (scoped), so a row of another kind is never touched through this repository; then the base is
+   * updated — its guards (tenant, a derived column) run BEFORE anything of this table's is written, so a guard error
+   * a caller swallows in its own transaction leaves nothing half written; then this table's row.
+   * The base update runs whenever it has something to write — always, because it bumps updated_at.
+   * Returns `undefined` (as `BaseRepository.update` does) when no such row is in scope.
+   */
+  override async update(id: string, patch: EmailUpdate, tx?: DrizzleTx): Promise<EmailFlat> {
+    if ((patch as globalThis.Record<string, unknown>)['kind'] !== undefined) {
+      throw new KindImmutableError('email');
+    }
+    this.assertTenantWritable('update');
+    const { base, own } = splitByOwner(patch, EMAIL_BASE_KEYS);
+    return inTransaction(this.db, tx, async (txClient) => {
+      const [existing] = await this.runner(txClient)
+        .select()
+        .from(this.table)
+        .where(this.scopeAnd(eq(this.col('id'), id)));
+      if (existing === undefined) return undefined as unknown as EmailFlat;
+      const baseRow = await this.baseRepo.update(id, base, txClient);
+      if (Object.keys(own).length === 0) return this.flat(existing, baseRow as Communication);
+      const [childRow] = await this.runner(txClient)
+        .update(this.table)
+        .set(this.deriveColumns(own, 'update'))
+        .where(this.scopeAnd(eq(this.col('id'), id)))
+        .returning();
+      return this.flat(childRow, baseRow as Communication);
+    });
+  }
+
+  /**
+   * Delete the pair by deleting the base row (RFC-0006 §4.1): hard — the FK cascade removes this row; soft — the
+   * base's `deleted_at` is set and this row leaves scope through the `EXISTS`. A no-op for an id that is not
+   * a email in scope, so a row of another kind is never deleted through this repository.
+   */
+  override async delete(id: string, tx?: DrizzleTx): Promise<void> {
+    return inTransaction(this.db, tx, async (txClient) => {
+      const own = await this.runner(txClient)
+        .select({ id: this.col('id') })
+        .from(this.tableRef)
+        .where(this.scopeAnd(eq(this.col('id'), id)));
+      if (own[0] === undefined) return;
+      await this.baseRepo.delete(id, txClient);
+    });
+  }
+
+  /**
+   * Upsert the pair on the base's natural key (RFC-0006 §4.2): the base row on its declared key, then this row on
+   * `id`, in one transaction. `SET` carries the columns the input carries (a key left out is left alone, an
+   * explicit `null` clears) and never the key, the kind, the tenant or `created_at`. A natural key that exists
+   * under another kind throws `KindMismatchError`, and writes nothing.
+   *
+   * `created` is THIS table's: whether the email row was inserted. `baseCreated` is the base's. They differ
+   * when a base row exists with no child row (an orphan): the upsert repairs it, and that is a created email
+   * under an updated communication.
+   */
+  async upsertByNaturalKey(
+    input: EmailCreate,
+    tx?: DrizzleTx,
+  ): Promise<{ row: EmailFlat; created: boolean; baseCreated: boolean }> {
+    const { base, own } = splitByOwner(input, EMAIL_BASE_KEYS);
+    this.assertOwnKind(base);
+    return inTransaction(this.db, tx, async (txClient) => {
+      const { row: baseRow, created: baseCreated } = await this.baseRepo.upsertByNaturalKey(
+        { ...base, kind: 'email' },
+        txClient,
+      );
+      const set = this.deriveColumns(upsertSet(own), 'update');
+      const [written] = await this.runner(txClient)
+        .insert(this.table)
+        .values(this.childValues({ ...own, id: baseRow.id, tenantId: baseRow.tenantId }))
+        .onConflictDoUpdate({
+          target: this.col('id'),
+          // Nothing of the child's own to set: a no-op update, so RETURNING still yields the row.
+          set: Object.keys(set).length > 0 ? set : { id: sql`${this.col('id')}` },
+        })
+        .returning({ ...getTableColumns(this.table), upsertCreated: sql<boolean>`(xmax = 0)` });
+      const { upsertCreated, ...childRow } = written as globalThis.NonNullable<typeof written>;
+      return { row: this.flat(childRow as Email, baseRow), created: upsertCreated, baseCreated };
+    });
   }
 
   // ═══════════════════════════════════════════════════════════════════════

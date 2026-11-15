@@ -1,0 +1,19 @@
+# RFC-0006 (#875) S4 — a family whose base declares NO `natural_key:`. Smoke-only (the whole-family fixture set has no such
+# base). The child must generate with no `upsertByNaturalKey` (there is no base conflict target to write through), and
+# the generated tree must still typecheck: the shape is compiled, not only existence-checked
+# (src/derived/api/family-reads.test.ts holds the derivation; run-smoke.ts asserts the file).
+
+entity:
+  name: parcel
+  plural: parcels
+
+discriminator: kind
+
+fields:
+  kind:
+    type: enum
+    choices: [crate, loose]
+    required: true
+  weight:
+    type: integer
+    required: true

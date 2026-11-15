@@ -6,11 +6,15 @@ import { BaseService } from '@shared/base-classes/base-service';
 import { MeetingRepository } from './meeting.repository';
 import type {
   MeetingColumns,
+  MeetingCreate,
   MeetingFlat,
+  MeetingUpdate,
   MeetingInclude,
   MeetingNoInclude,
   MeetingResult,
 } from './meeting.repository';
+import { MEETING_BASE_KEYS } from './meeting.repository';
+import type { DrizzleTx } from '@shared/types/drizzle';
 import type { ListOptions, ReadOptions } from '@shared/base-classes/base-repository';
 import type { meetings, Meeting } from './meeting.entity';
 import { MeetingTranscriptRepository } from '../meeting-transcripts/meeting-transcript.repository';
@@ -21,6 +25,10 @@ export class MeetingService extends WithAnalytics(
   BaseService<MeetingRepository, Meeting>,
 ) {
   protected override readonly entityName = 'meeting';
+
+  // RFC-0006 §5, A11 — a child write is announced under the base's name too, with the base's slice of the row.
+  protected override readonly baseEntityName = 'communication';
+  protected override readonly baseSliceKeys = MEETING_BASE_KEYS;
 
   /** Injected by NestJS when EventsModule is registered. */
   @Optional() @Inject(EVENT_BUS)
@@ -78,6 +86,36 @@ export class MeetingService extends WithAnalytics(
     opts?: ReadOptions<W, C>,
   ): Promise<Array<MeetingFlat<W, C>>> {
     return this.repository.findManyWithBase<W, C>(ids, opts);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // The pair write (RFC-0006 §4.1) — the repository's, wrapped in BaseService's events
+  //
+  // The repository's `create` / `update` take the FLAT input (the base's columns and this table's) and return the
+  // FLAT row; `BaseService`'s are typed on the table row alone, so these narrow them to what actually flows.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  override create(input: MeetingCreate, tx?: DrizzleTx): Promise<MeetingFlat> {
+    return super.create(input as globalThis.Partial<Meeting>, tx) as Promise<MeetingFlat>;
+  }
+
+  override update(id: string, patch: MeetingUpdate, tx?: DrizzleTx): Promise<MeetingFlat> {
+    return super.update(id, patch as globalThis.Partial<Meeting>, tx) as Promise<MeetingFlat>;
+  }
+
+  /** The pre-update read is the FLAT row: against the table's own columns every base field would look changed. */
+  protected override readBeforeUpdate(id: string): Promise<Meeting | null> {
+    return this.repository.findWithBase(id);
+  }
+
+  /** Base on its natural key, then this table on `id`, one transaction; emits `created` / `updated` under both names. */
+  async upsertByNaturalKey(
+    input: MeetingCreate,
+    tx?: DrizzleTx,
+  ): Promise<{ row: MeetingFlat; created: boolean; baseCreated: boolean }> {
+    const result = await this.repository.upsertByNaturalKey(input, tx);
+    this.emitUpserted(result.row, result.created, result.baseCreated);
+    return result;
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

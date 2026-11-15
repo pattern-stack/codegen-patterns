@@ -70,7 +70,11 @@ function promptLocals(set: DefinitionSet): Record<string, unknown> {
 		deleteEventType: null,
 		...PROJECT_CONFIG_LOCALS,
 		modulesDir: RENDER_MODULES_DIR,
-		entityLookup: entityLookupFrom(set.entities.map((d) => d.entity)),
+		// The documents too: a family member reads its base's discriminator and natural key across the set.
+		entityLookup: entityLookupFrom(
+			set.entities.map((d) => d.entity),
+			{ definitions: set.entities },
+		),
 		junctions: set.junctions,
 		renderSet: set.entities.map((d) => d.entity.name),
 	};

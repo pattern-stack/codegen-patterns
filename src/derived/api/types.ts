@@ -79,6 +79,12 @@ export interface RepositoryMethod {
 		| 'count_kind'
 		/** A base's `findOrphans` — a kind with a child table but no child row. */
 		| 'orphans'
+		/** A child's `create` / `update` / `delete` — both rows in one transaction (`inherits:`, RFC-0006 §4.1). */
+		| 'pair_write'
+		/** `upsertByNaturalKey` — `natural_key: true` on the entity's own index, or on its base's through `inherits:` (§4.2). */
+		| 'upsert'
+		/** A base's `update`, which refuses a `kind` change (`discriminator:`, §4.1). */
+		| 'kind_guard'
 		| 'inherited';
 	/** `false`: the method lives on the base class or a capability mixin, not in the generated class body. */
 	emitted: boolean;
@@ -115,6 +121,12 @@ export interface ServiceMethod {
 		| 'count_kind'
 		/** The repository's `findOrphans`, forwarded. */
 		| 'orphans'
+		/** A child's `create` / `update`, narrowed to its flat input and wrapped in `BaseService`'s events. */
+		| 'pair_write'
+		/** `upsertByNaturalKey`, forwarded; emits the pair's events. */
+		| 'upsert'
+		/** A base's `create`, which refuses a kind that has a child table (`KindRequiresChildError`). */
+		| 'kind_guard'
 		| 'inherited';
 	emitted: boolean;
 	params: Param[];
@@ -162,7 +174,7 @@ export interface EntityApiSurface {
 	useCases: UseCase[];
 	/**
 	 * The declaration that turned the write side off: no `create` / `update` / `delete` use case, route or
-	 * provider. `generate.writes: false`, or a child's `inherits:` (RFC-0006, until S4's pair write). Absent when
+	 * provider. `generate.writes: false`, or a child's `inherits:` (RFC-0006, until S5's flat DTOs). Absent when
 	 * the entity emits writes.
 	 */
 	writesDisabledBy?: YamlRef;

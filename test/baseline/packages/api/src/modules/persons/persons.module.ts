@@ -20,7 +20,6 @@ import { DeletePersonUseCase } from './use-cases/delete-person.use-case';
   imports: [
     DatabaseModule,
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
-    // Cross-domain modules from relationships:
   ],
   controllers: [PersonController],
   providers: [

@@ -2,6 +2,7 @@
 // Run `codegen entity new --all` to refresh.
 
 export * from '../modules/accounts/account.entity';
+export * from '../modules/catalog-entries/catalog-entry.entity';
 export * from '../modules/communications/communication.entity';
 export * from '../modules/contacts/contact.entity';
 export * from '../modules/deals/deal.entity';

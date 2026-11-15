@@ -85,7 +85,10 @@ export const REPOSITORY_KINDS: Record<RepositoryKind, KindDescriptor> = {
   list_kind: { label: 'list kind', section: 'repository', order: 11 },
   count_kind: { label: 'count kind', section: 'repository', order: 12 },
   orphans: { label: 'orphans', section: 'repository', order: 13 },
-  inherited: { label: 'inherited', section: 'repository', order: 14 },
+  pair_write: { label: 'pair write', section: 'repository', order: 14 },
+  upsert: { label: 'upsert', section: 'repository', order: 15 },
+  kind_guard: { label: 'kind guard', section: 'repository', order: 16 },
+  inherited: { label: 'inherited', section: 'repository', order: 17 },
 };
 
 export const SERVICE_KINDS: Record<ServiceKind, KindDescriptor> = {
@@ -106,7 +109,10 @@ export const SERVICE_KINDS: Record<ServiceKind, KindDescriptor> = {
   list_kind: { label: 'list kind', section: 'service', order: 14 },
   count_kind: { label: 'count kind', section: 'service', order: 15 },
   orphans: { label: 'orphans', section: 'service', order: 16 },
-  inherited: { label: 'inherited', section: 'service', order: 17 },
+  pair_write: { label: 'pair write', section: 'service', order: 17 },
+  upsert: { label: 'upsert', section: 'service', order: 18 },
+  kind_guard: { label: 'kind guard', section: 'service', order: 19 },
+  inherited: { label: 'inherited', section: 'service', order: 20 },
 };
 
 export const USE_CASE_KINDS: Record<UseCaseKind, KindDescriptor> = {
