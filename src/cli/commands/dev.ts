@@ -13,7 +13,7 @@ import type { CommandClass } from 'clipanion';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { projectLayout } from '../shared/project-layout.js';
-import { findYamlFiles } from '../../utils/find-yaml-files.js';
+import { listEntityYamls } from '../../utils/find-yaml-files.js';
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
 import { printError, printInfo, printSuccess, printWarning } from '../ui/output.js';
@@ -191,9 +191,8 @@ function checkApp(cwd: string, port: number): ServiceStatus {
 }
 
 function listEntityNames(ctx: Context): string[] {
-	const entitiesDir = projectLayout(ctx.cwd, ctx.config).entities;
-	if (!fs.existsSync(entitiesDir)) return [];
-	return findYamlFiles(entitiesDir).map((f) =>
+	const { entities: entitiesDir, nonEntityDirs } = projectLayout(ctx.cwd, ctx.config);
+	return listEntityYamls(entitiesDir, nonEntityDirs).map((f) =>
 		path.basename(f).replace(/\.ya?ml$/, ''),
 	);
 }

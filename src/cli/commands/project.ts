@@ -23,7 +23,7 @@ import type { CommandClass } from 'clipanion';
 import { stringify as stringifyYaml } from 'yaml';
 
 import { analyzeDomain } from '../../index.js';
-import { junctionsDirFor } from '../../config/junctions-dir.js';
+import { junctionsDirFor, relationshipsDirFor } from '../../config/junctions-dir.js';
 import { loadAppPatternsForCli, patternLoadIssues } from '../shared/pattern-globs.js';
 import { serializeDomainGraph } from '../../analyzer/serialize-graph.js';
 import {
@@ -47,6 +47,8 @@ import {
 	parseCodegenConfig,
 } from '../../config/project-config.js';
 import { projectLayout } from '../shared/project-layout.js';
+import { definitionSetRejections } from '../shared/entity-render.js';
+import { printRejections, rejectionEntry, type RejectionEntry, type RunRejection } from '../shared/run-rejections.js';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { buildInitPlan, writePlan, type InitPlan } from '../shared/init-scaffold.js';
@@ -120,7 +122,7 @@ async function hints(ctx: Context): Promise<Hint[]> {
 	];
 	if (ctx.entityCount === 0) {
 		out.push({
-			command: 'codegen entity new entities/example.yaml',
+			command: 'codegen entity new entities/<name>.yaml',
 			description: 'Generate first entity',
 		});
 	} else {
@@ -857,7 +859,7 @@ export class ProjectGraphCommand extends Command {
 		const relCandidates = [
 			path.resolve(path.dirname(entitiesDir), 'relationships'),
 			path.resolve(entitiesDir, 'relationships'),
-			path.resolve(ctx.cwd, 'relationships'),
+			relationshipsDirFor(ctx.cwd),
 		];
 		const relationshipsDir = relCandidates.find((d) => fs.existsSync(d));
 
@@ -930,13 +932,31 @@ export class ProjectGraphCommand extends Command {
  * empty stdout (#669) — Studio's `GET /api/surface` forwards `error` as the 502's detail, so the API tab shows the
  * CLI's own reason (an invalid `api.includes` path is a generation error).
  */
-function reportSurfaceError(error: string): 1 {
+function reportSurfaceError(error: string, failed?: RejectionEntry[]): 1 {
 	if (isJsonMode()) {
-		printJson({ command: 'project surface', status: 'error', error });
+		printJson({ command: 'project surface', status: 'error', error, ...(failed ? { failed } : {}) });
 	} else {
 		printError(error);
 	}
 	return 1;
+}
+
+/**
+ * `project surface` has no `entity new` pre-flight in front of it, so it runs the same
+ * definition-set check itself (#915): an invalid entity, relationship or junction file is named, by file and
+ * issue, instead of reaching the loaders' "the pre-flight should have stopped it" invariant. In `--json` the
+ * `error` string carries the names (Studio's API tab shows it as the 502 detail) and `failed[]` the structure.
+ */
+function reportSurfaceRejections(rejections: RunRejection[]): 1 {
+	if (!isJsonMode()) {
+		printRejections(rejections);
+		return 1;
+	}
+	const failed = rejections.map(rejectionEntry);
+	const error = failed
+		.map((f) => [`${f.name ?? 'definition'} — ${f.message}`, ...f.details.map((d) => `   • ${d}`)].join('\n'))
+		.join('\n');
+	return reportSurfaceError(error, failed);
 }
 
 export class ProjectSurfaceCommand extends Command {
@@ -969,6 +989,9 @@ export class ProjectSurfaceCommand extends Command {
 			return reportSurfaceError(`Entity directory not found: ${entitiesDir}`);
 		}
 
+		const rejections = definitionSetRejections(ctx);
+		if (rejections.length > 0) return reportSurfaceRejections(rejections);
+
 		// App patterns decide an entity's base classes and inherited methods — load them first, as every
 		// whole-set step does, or an app pattern's entity derives against `Base`.
 		const loadErrors = await loadAppPatternsForCli(ctx);
@@ -986,7 +1009,7 @@ export class ProjectSurfaceCommand extends Command {
 					entitiesDir,
 					junctionsDir: junctionsDirFor(ctx.cwd),
 					// Where `relationship new` writes and `entity new` reads them.
-					relationshipsDir: path.resolve(ctx.cwd, 'relationships'),
+					relationshipsDir: relationshipsDirFor(ctx.cwd),
 				}),
 			);
 		} catch (err) {

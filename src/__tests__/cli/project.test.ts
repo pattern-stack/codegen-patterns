@@ -372,7 +372,7 @@ describe('buildInitPlan', () => {
 		expect(paths).toContain('src/app.module.ts');
 		expect(paths).toContain('src/schema.ts');
 		expect(paths).toContain('entities');
-		expect(paths).toContain('entities/example.yaml');
+		expect(paths).toContain('entities/README.md');
 
 		// No backend-architecture key: backend is the only pipeline (ARCH-0).
 		const config = plan.entries.find((e) => e.relPath === 'codegen.config.yaml');
@@ -575,7 +575,8 @@ describe('writePlan', () => {
 		expect(fs.existsSync(path.join(cwd, 'src/generated/modules.ts'))).toBe(true);
 		expect(fs.existsSync(path.join(cwd, 'src/app.module.ts'))).toBe(true);
 		expect(fs.existsSync(path.join(cwd, 'src/schema.ts'))).toBe(true);
-		expect(fs.existsSync(path.join(cwd, 'entities/example.yaml'))).toBe(true);
+		expect(fs.existsSync(path.join(cwd, 'entities/README.md'))).toBe(true);
+		expect(fs.existsSync(path.join(cwd, 'entities/example.yaml'))).toBe(false);
 
 		expect(result.created.length).toBeGreaterThan(10);
 		expect(result.skipped.length).toBe(0);

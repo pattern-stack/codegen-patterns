@@ -52,9 +52,12 @@ codegen junction list
 ```
 
 `entity new` pre-flights each target (schema, `emits:`, `roles:`) and prints every rejection with its reasons in every
-mode; `--json` carries them in `failed[].details`. Continue-on-error is the default: rejected entities are skipped
-and the run exits 1. With `--no-continue-on-error` a pre-flight rejection stops the run before anything is generated (#627).
-Three pre-flight rejections are **run-level** and stop the run before hygen whatever the flag says: an invalid
+mode; `--json` carries them in `failed[].details`. Continue-on-error is the default for `emits:` / `roles:` rejections:
+those entities are skipped and the run exits 1; with `--no-continue-on-error` a pre-flight rejection stops the run before
+anything is generated (#627). A definition file that fails its schema — entity, relationship or junction, anywhere in
+those directories, not only the target — is **run-level** (#915): the run stops, naming each file, and writes nothing.
+Providers, jobs and events directories under `paths.entities` are not entity files.
+Besides that, three pre-flight rejections are **run-level** and stop the run before hygen whatever the flag says: an invalid
 `<paths.jobs_dir>/*.yaml` (JOBS-2, #664 — its handler, scheduled events and bridge triggers feed registries every
 entity imports), an app-pattern file the loader cannot register (a partial set would rewrite the orchestration barrel
 without its module), and a `<paths.providers>/*.yaml` with a blocking issue — it does not load, names an unknown
@@ -186,7 +189,7 @@ codegen studio [projectDir] [--port N] [--vite <origin>]   # local Studio UI (de
 
 `init` (package mode, the default) writes: `codegen.config.yaml`,
 `src/shared/database/database.module.ts`, `src/generated/{modules,schema,app-config}.ts`,
-`src/app.module.ts`, `src/main.ts`, `src/schema.ts`, `entities/example.yaml`
+`src/app.module.ts`, `src/main.ts`, `src/schema.ts`, `entities/README.md`
 (`tsconfig.json` only with `--with-tsconfig`). In `--runtime vendored` it also copies
 the runtime closure into `src/shared/**`.
 

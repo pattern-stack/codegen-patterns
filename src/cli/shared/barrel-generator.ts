@@ -28,9 +28,9 @@ import path from 'node:path';
 
 import pluralize from 'pluralize';
 import { junctionPlural } from '../../config/junction-naming.js';
-import { junctionsDirFor } from '../../config/junctions-dir.js';
+import { junctionsDirFor, relationshipsDirFor } from '../../config/junctions-dir.js';
 
-import { findYamlFiles } from '../../utils/find-yaml-files';
+import { findYamlFiles, listEntityYamls } from '../../utils/find-yaml-files';
 
 import type { Context } from './context.js';
 import { entityModuleNaming } from '../../config/module-tree.js';
@@ -55,6 +55,8 @@ export interface BarrelGeneratorOptions {
 	ctx: Context;
 	/** Absolute path to the entities directory. */
 	entitiesDir: string;
+	/** Other definition kinds under the entities root (`ProjectLayout.nonEntityDirs`); skipped by entity discovery. */
+	nonEntityDirs?: string[];
 	/**
 	 * Absolute path to the relationships directory. Optional — when present
 	 * relationship modules are included in the generated barrels alongside entity
@@ -116,13 +118,8 @@ function toPascalCase(input: string): string {
 // Entity discovery
 // ---------------------------------------------------------------------------
 
-export function listEntityYamls(entitiesDir: string): string[] {
-	if (!fs.existsSync(entitiesDir)) return [];
-	return findYamlFiles(entitiesDir);
-}
-
-function collectEntities(entitiesDir: string): EntityInfo[] {
-	const files = listEntityYamls(entitiesDir);
+function collectEntities(entitiesDir: string, nonEntityDirs: readonly string[]): EntityInfo[] {
+	const files = listEntityYamls(entitiesDir, nonEntityDirs);
 	const entities: EntityInfo[] = [];
 	for (const file of files) {
 		const result = loadEntityFromYaml(file);
@@ -150,22 +147,17 @@ function collectEntities(entitiesDir: string): EntityInfo[] {
  * like category→categories). Matches the convention in
  * templates/relationship/new/prompt.js `deriveTableName()`.
  */
-function listRelationshipYamls(relationshipsDir: string): string[] {
-	if (!fs.existsSync(relationshipsDir)) return [];
-	return findYamlFiles(relationshipsDir).filter(
-		(full) => detectYamlType(full) === 'relationship',
-	);
-}
-
 function collectRelationships(relationshipsDir: string): EntityInfo[] {
 	const files = fs.existsSync(relationshipsDir) ? findYamlFiles(relationshipsDir) : [];
 	const junctions: EntityInfo[] = [];
 	for (const file of files) {
-		const failure = relationshipFileFailure(file);
-		if (failure) throw invalidDefinitionError(failure);
-		if (detectYamlType(file) !== 'relationship') continue;
 		const result = loadRelationshipFromYaml(file);
-		if (!result.success) throw invalidDefinitionError(result);
+		if (!result.success) {
+			// A file that is not a relationship (no `relationship:` key) is not this
+			// step's; one that is, or that does not even parse, is a rejection.
+			if (relationshipFileFailure(file, false, result)) throw invalidDefinitionError(result);
+			continue;
+		}
 		const rel = result.definition.relationship;
 		const name = rel.name;
 		const plural = rel.table ?? pluralize(name);
@@ -304,7 +296,8 @@ export async function regenerateBarrels(
 	const {
 		ctx,
 		entitiesDir,
-		relationshipsDir = path.resolve(ctx.cwd, 'relationships'),
+		nonEntityDirs = [],
+		relationshipsDir = relationshipsDirFor(ctx.cwd),
 		junctionsDir = junctionsDirFor(ctx.cwd),
 		generatedDir,
 		dryRun = false,
@@ -339,7 +332,7 @@ export async function regenerateBarrels(
 	// commit 01bb917 covers junctions automatically.
 	const entities = generating(modulesAbs, () =>
 		[
-			...collectEntities(entitiesDir),
+			...collectEntities(entitiesDir, nonEntityDirs),
 			...collectRelationships(relationshipsDir),
 			...collectJunctions(junctionsDir),
 		].sort((a, b) => a.name.localeCompare(b.name)),

@@ -17,7 +17,7 @@ import path from 'node:path';
 import { loadEntityRegistry } from '../../parser/entity-registry';
 import type { EntityDefinition } from '../../schema/entity-definition.schema';
 import type { JunctionDefinition } from '../../schema/junction-definition.schema';
-import { findYamlFiles } from '../../utils/find-yaml-files';
+import { findYamlFiles, listEntityYamls } from '../../utils/find-yaml-files';
 import { assertNoInvalidDefinitions, invalidDefinitionError } from '../../utils/definition-invariant';
 import {
 	loadEntityFromYaml,
@@ -25,6 +25,7 @@ import {
 } from '../../utils/yaml-loader';
 import { TablesConfigSchema, TenancyConfigSchema } from '../../schema/codegen-config.schema';
 import { runtimeImport, type RuntimeMode } from '../../cli/shared/runtime-import';
+import { projectLayout } from '../../cli/shared/project-layout';
 import { junctionIdentity } from './build-graph';
 import { sortEntities, type RelationsEmitContext } from './types';
 
@@ -78,10 +79,11 @@ export function loadJunctionDefinitions(junctionsDir: string): JunctionDefinitio
 /** Load every entity YAML under `entitiesDir` as a raw definition, keyed by name. */
 export function loadEntityDefinitions(
 	entitiesDir: string,
+	nonEntityDirs: readonly string[] = [],
 ): Map<string, EntityDefinition> {
 	const defs = new Map<string, EntityDefinition>();
 	if (!existsSync(entitiesDir) || !statSync(entitiesDir).isDirectory()) return defs;
-	for (const file of findYamlFiles(entitiesDir)) {
+	for (const file of listEntityYamls(entitiesDir, nonEntityDirs)) {
 		const result = loadEntityFromYaml(file);
 		if (!result.success) throw invalidDefinitionError(result);
 		defs.set(result.definition.entity.name, result.definition);
@@ -105,8 +107,10 @@ export function loadRelationsEmitContext(
 	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, JUNCTIONS_DIRNAME);
 	const outDir = path.resolve(cwd, config?.paths?.generated ?? GENERATED_DIRNAME);
 
+	const { nonEntityDirs } = projectLayout(cwd, config as Parameters<typeof projectLayout>[1]);
 	const { registry, issues } = loadEntityRegistry(entitiesDir, {
 		tablePrefix: TablesConfigSchema.parse(config?.tables ?? {}).prefix,
+		nonEntityDirs,
 	});
 	assertNoInvalidDefinitions(issues);
 	const mode: RuntimeMode = config?.runtime === 'vendored' ? 'vendored' : 'package';
@@ -114,7 +118,7 @@ export function loadRelationsEmitContext(
 	return {
 		ctx: {
 			entities: sortEntities([...registry.values()]),
-			definitions: loadEntityDefinitions(entitiesDir),
+			definitions: loadEntityDefinitions(entitiesDir, nonEntityDirs),
 			junctions: loadJunctionDefinitions(junctionsDir),
 			scopeFiltersImport: runtimeImport(mode, 'base-classes/scope-filters'),
 			tenancyColumn: TenancyConfigSchema.parse(config?.tenancy ?? {}).column,

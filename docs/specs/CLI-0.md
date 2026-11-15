@@ -38,7 +38,7 @@ Three defects in the generator's own plumbing, found by CAP-1, NAME-0 and NAME-1
   stop the run whatever `--continue-on-error` says; the flag decides nothing for them (`docs/specs/JOBS-2.md`).
   *Revision 2026-09-18 (CLI-1, #666):* a provider YAML with a blocking issue is a third run-level rejection
   (`docs/specs/CLI-1.md`).
-  *Revision (#915):* a definition file that fails validation is run-level too — entity, relationship and junction
+  *Revision 2026-11-15 (#915):* a definition file that fails validation is run-level too — entity, relationship and junction
   YAMLs alike, every file in the directory and not only the targets (`definitionSetRejections`,
   `src/cli/shared/entity-render.ts`; `entity new` through its pre-flight, `junction new` through the parents'
   pre-flight, `relationship new` directly). The barrels, relations manifest and scope union read these directories whole,
@@ -46,8 +46,18 @@ Three defects in the generator's own plumbing, found by CAP-1, NAME-0 and NAME-1
   its own invalid targets. `--continue-on-error` still decides `emits:` / `roles:` rejections.
   The loaders the whole-set steps read through (barrels, scope union, event codegen, relations / semantic / frontend
   load-contexts) no longer skip an invalid file: they throw `InvalidDefinitionError` (`src/utils/definition-invariant.ts`),
-  naming the file and its first issue — an invariant breach, since the pre-flight stops the run first. The one tolerant
-  caller is the pre-flight's own `collectMergedEvents({ skipInvalid: true })`, which reports those files itself.
+  naming the file and its first issue — an invariant breach, since the pre-flight stops the run first. `project surface`
+  has no such pre-flight, so it runs `definitionSetRejections` itself and reports the named rejections (text, and
+  `--json` as `{ status: 'error', error, failed[] }`). The tolerant callers are the ones that report or only look up:
+  the pre-flight's own loads (`preflightEntityTargets`' `loadEntities` and `collectMergedEvents({ skipInvalid: true })`,
+  and the provider-surface lookup, whose files `definitionSetRejections` already named) and the templates' parse-only
+  lookups (`entity-naming.mjs`, `junction-fan-out.mjs`); the provider-adapter post-step throws like the others.
+  *One rule for which files are entities:* `listEntityYamls(dir, layout.nonEntityDirs)`
+  (`src/utils/find-yaml-files.ts`) — the entities root minus the providers, jobs, events, junctions and relationships
+  directories. The pre-flight and every whole-set loader use it, so `paths.entities: definitions` with
+  `definitions/providers/` and `definitions/jobs/` beside the entities works. A directory that does not exist is the
+  empty set; one that exists and cannot be read is an error. `codegen init` seeds `entities/README.md`, not a YAML file,
+  so the first command after it is never rejected by its own scaffold.
 - An entity whose `emits:` fails the cross-check is now rejected like a bad role, with the message
   `emits: validation failed` and one detail per error. It is not generated and counts as failed. Before, the default mode generated it anyway, and `prompt.js` emitted a TODO-only payload mapping for the
   unknown event. The EVT-7 comment already said "reported and skipped by default".

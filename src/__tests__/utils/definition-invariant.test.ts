@@ -19,7 +19,8 @@ import {
 } from '../../emitters/relations/load-context.js';
 import { loadSemanticEmitContext } from '../../emitters/semantic/load-context.js';
 import { loadFrontendEmitContext } from '../../emitters/frontend/load-context.js';
-import { InvalidDefinitionError } from '../../utils/definition-invariant.js';
+import { loadEntityRegistry } from '../../parser/entity-registry.js';
+import { assertNoInvalidDefinitions, InvalidDefinitionError } from '../../utils/definition-invariant.js';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -80,14 +81,22 @@ describe('whole-set loaders throw on an invalid definition (#915)', () => {
 		expectInvariant(() => collectScopeableNames(path.join(root, 'entities')), 'bad.yaml');
 	});
 
-	test('barrels: an entity, a junction and a relationship each throw', async () => {
+	test('barrels: an entity, a junction and a relationship each throw, naming its own file', async () => {
 		const ctx = { cwd: '/', config: null } as never;
-		for (const make of [withBadEntity, withBadJunction, () => {
-			const root = mkRoot();
-			fs.mkdirSync(path.join(root, 'relationships'));
-			fs.writeFileSync(path.join(root, 'relationships', 'broken_rel.yaml'), 'relationship:\n  name: broken_rel\n  from: note\n');
-			return root;
-		}]) {
+		const cases: Array<[string, () => string]> = [
+			['bad.yaml', withBadEntity],
+			['broken.yaml', withBadJunction],
+			[
+				'broken_rel.yaml',
+				() => {
+					const root = mkRoot();
+					fs.mkdirSync(path.join(root, 'relationships'));
+					fs.writeFileSync(path.join(root, 'relationships', 'broken_rel.yaml'), 'relationship:\n  name: broken_rel\n  from: note\n');
+					return root;
+				},
+			],
+		];
+		for (const [file, make] of cases) {
 			const root = make();
 			let caught: unknown;
 			try {
@@ -104,9 +113,43 @@ describe('whole-set loaders throw on an invalid definition (#915)', () => {
 			}
 			// `generating` wraps it in a GeneratedFileError naming the barrel; the cause
 			// is still the invariant breach, named file and all.
-			expect((caught as Error).message).toContain('the pre-flight should have stopped it');
-			expect((caught as Error).message).toMatch(/bad\.yaml|broken\.yaml|broken_rel\.yaml/);
+			const message = (caught as Error).message;
+			expect(message).toContain('the pre-flight should have stopped it');
+			expect(message).toContain(file);
+			// `broken.yaml` must not satisfy `broken_rel.yaml` or the reverse.
+			for (const other of cases.map(([f]) => f).filter((f) => f !== file)) expect(message).not.toContain(other);
 		}
+	});
+
+	test('the directory exemption is a directory that does not exist, nothing else', () => {
+		const missing = path.join(mkRoot(), 'no-such-dir');
+		const read = (dir: string) => loadEntityRegistry(dir, { tablePrefix: '' }).issues;
+		// Absent: an empty set, not an invalid definition.
+		expect(() => assertNoInvalidDefinitions(read(missing))).not.toThrow();
+		// Present but not a directory (ENOTDIR): the read fails and the invariant says so.
+		const notADir = path.join(mkRoot(), 'entities-file');
+		fs.writeFileSync(notADir, 'x');
+		expect(() => assertNoInvalidDefinitions(read(notADir))).toThrow('cannot be read');
+		// Present but unreadable (EACCES).
+		const locked = path.join(mkRoot(), 'locked');
+		fs.mkdirSync(locked);
+		fs.chmodSync(locked, 0o000);
+		try {
+			if (process.getuid?.() !== 0) expect(() => assertNoInvalidDefinitions(read(locked))).toThrow('cannot be read');
+		} finally {
+			fs.chmodSync(locked, 0o755);
+		}
+	});
+
+	test('a provider / jobs directory under the entities root is not read as entities', () => {
+		const root = mkRoot();
+		fs.mkdirSync(path.join(root, 'entities', 'providers'));
+		fs.writeFileSync(path.join(root, 'entities', 'providers', 'p.yaml'), 'slug: p\n');
+		const nonEntityDirs = [path.join(root, 'entities', 'providers')];
+		expect(collectScopeableNames(path.join(root, 'entities'), nonEntityDirs)).toEqual([]);
+		expect(() => collectScopeableNames(path.join(root, 'entities'))).toThrow('p.yaml');
+		expect(loadEntityDefinitions(path.join(root, 'entities'), nonEntityDirs).size).toBe(1);
+		expect(collectEntityEvents(path.join(root, 'entities'), { nonEntityDirs }).events).toEqual([]);
 	});
 
 	test('relations manifest: loadEntityDefinitions / loadJunctionDefinitions / loadRelationsEmitContext', () => {

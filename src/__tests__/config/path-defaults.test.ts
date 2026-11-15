@@ -286,7 +286,7 @@ describe('project init honours an existing config (#566, #612)', () => {
 		expect(content('apps/backend/src/app.module.ts')).toContain("from '../codegen/modules'");
 		expect(content('apps/backend/src/app.module.ts')).toContain("from './shared/database/database.module'");
 		expect(content('apps/backend/src/schema.ts')).toContain("export * from '../codegen/schema';");
-		expect(rel).toContain('definitions/entities/example.yaml');
+		expect(rel).toContain('definitions/entities/README.md');
 		const tsconfig = JSON.parse(content('tsconfig.json'));
 		expect(tsconfig.compilerOptions.paths['@shared/*']).toEqual(['./apps/backend/src/shared/*']);
 		expect(tsconfig.include).toContain('apps/backend/codegen/**/*');

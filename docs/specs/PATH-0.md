@@ -104,7 +104,7 @@ resolver. Those are deleted, and their call sites read the layout.
 | `app.module.ts` | `src/` → `<backend_src>/` | `importSpecifier(appModule, <shared>/database/database.module)`, `importSpecifier(appModule, <generated>/modules)` |
 | root `schema.ts` | `src/` → `<backend_src>/` | `importSpecifier(rootSchema, <generated>/schema)` |
 | `main.ts` | `src/` → `<backend_src>/` | `./app.module` (sibling, invariant) |
-| `entities/example.yaml` | `entities/` → `<entities>/` | — |
+| `entities/README.md` | `entities/` → `<entities>/` | — |
 | tsconfig (create + merge) | aliases `./src/shared/*` … → `tsconfigAliases(layout)`; `include` → `<backend_src>/**/*` (+ `<generated>/**/*` when outside it) | — |
 | `subsystem install jobs` `worker.ts`, main hook | `src/worker.ts`, `src/main.ts` → `<backend_src>/…` | `./app.module` (sibling) |
 | `subsystem install auth` / `observability` / `auth-integrations` | `appModulePath` from the layout (fallback literals deleted) | — |

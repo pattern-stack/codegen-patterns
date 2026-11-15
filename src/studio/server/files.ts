@@ -19,7 +19,7 @@ import type { z } from 'zod';
 
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import { projectLayout } from '../../cli/shared/project-layout.js';
-import { junctionsDirFor } from '../../config/junctions-dir.js';
+import { junctionsDirFor, relationshipsDirFor } from '../../config/junctions-dir.js';
 import { loadProjectConfig } from '../../config/project-config.js';
 import { EntityDefinitionSchema } from '../../schema/entity-definition.schema.js';
 import { JunctionDefinitionSchema } from '../../schema/junction-definition.schema.js';
@@ -52,7 +52,7 @@ export function definitionDirs(projectDir: string): DefinitionDirs {
 		entities: layout.entities,
 		providers: layout.providers,
 		junctions: junctionsDirFor(root),
-		relationships: path.resolve(root, 'relationships'),
+		relationships: relationshipsDirFor(root),
 	};
 }
 

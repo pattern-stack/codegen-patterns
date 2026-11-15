@@ -40,6 +40,7 @@ import {
 	ResolvedPathsSchema,
 } from '../../schema/codegen-config.schema';
 import { findYamlFiles } from '../../utils/find-yaml-files';
+import { projectLayout } from '../../cli/shared/project-layout';
 import { loadProvidersFromYaml } from '../../utils/yaml-loader';
 import type {
 	EntityRegistryEntry,
@@ -215,7 +216,8 @@ export function loadFrontendEmitContext(
 
 	const emitConfig = mapFrontendEmitConfig(config);
 	const { tablePrefix } = emitConfig;
-	const { registry, issues: registryIssues } = loadEntityRegistry(entitiesDir, { tablePrefix });
+	const { nonEntityDirs } = projectLayout(cwd, config as Parameters<typeof projectLayout>[1]);
+	const { registry, issues: registryIssues } = loadEntityRegistry(entitiesDir, { tablePrefix, nonEntityDirs });
 	assertNoInvalidDefinitions(registryIssues);
 	const entities: EntityRegistryEntry[] = sortEntities([...registry.values()]);
 
@@ -225,7 +227,7 @@ export function loadFrontendEmitContext(
 		};
 	}
 
-	const loadedEntities = loadEntities(entitiesDir, { tablePrefix });
+	const loadedEntities = loadEntities(entitiesDir, { tablePrefix, excludeDirs: nonEntityDirs });
 	assertNoInvalidDefinitions(loadedEntities.issues);
 	const parsedList = loadedEntities.entities;
 	const parsed: Map<string, ParsedEntity> = new Map(
@@ -244,7 +246,7 @@ export function loadFrontendEmitContext(
 	// set, fed to REL-1's own builder. Loaded through the relations emitter's
 	// loaders — the same functions `relations.ts` is built from — so the client
 	// descriptor and the Drizzle manifest cannot read the YAML differently.
-	const definitions = loadEntityDefinitions(entitiesDir);
+	const definitions = loadEntityDefinitions(entitiesDir, nonEntityDirs);
 	const junctions = loadJunctionDefinitions(junctionsDir);
 
 	return {

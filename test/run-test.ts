@@ -15,7 +15,6 @@ import { entityNewArgs } from '../src/cli/shared/hygen';
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, cpSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { findYamlFiles } from '../src/utils/find-yaml-files';
-import { detectYamlType } from '../src/utils/yaml-loader';
 import { resolve, join, relative } from 'node:path';
 // Repo root — one level up from this file's directory (test/ → repo).
 // The legacy three-dots resolution dated back to when this runner lived
@@ -46,23 +45,31 @@ const FIXTURES_DIR = join(TEST_DIR, 'fixtures');
 const ENTITY_FIXTURES_DIR = join(FIXTURES_DIR, 'entities');
 
 /**
- * The entity YAMLs anywhere under `fixtures/` — the closed `entities/` set plus
- * the integration-pattern entities — copied, relative paths kept, into a scratch
- * tree. The event and scope-union steps used to be pointed at `fixtures/` itself
- * and relied on the generators silently skipping every non-entity file there
- * (config, events, jobs, providers, relationships, junctions). They no longer
- * skip (#915): a step reads a directory of entity definitions and nothing else.
+ * The two directories that hold entity definitions, by name. The event and
+ * scope-union steps read a directory of entity definitions and nothing else
+ * (#915: they throw on a file that is not one), so every YAML in these two is
+ * copied — relative paths under `fixtures/` kept — into one scratch tree. No
+ * content sniffing: a file in either directory that is not a valid entity fails
+ * the step, which is the point.
  */
+const ENTITY_DIRECTORIES = [
+  ENTITY_FIXTURES_DIR,
+  join(FIXTURES_DIR, 'integration-patterns', 'definitions', 'entities'),
+];
+
+let stagedEntities: string | undefined;
 function stageEntityOnlyFixtures(): string {
+  if (stagedEntities) return stagedEntities;
   const dir = mkdtempSync(join(tmpdir(), 'baseline-entities-'));
   process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
-  for (const file of findYamlFiles(FIXTURES_DIR)) {
-    if (detectYamlType(file) !== 'entity') continue;
-    const dest = join(dir, relative(FIXTURES_DIR, file));
-    mkdirSync(resolve(dest, '..'), { recursive: true });
-    cpSync(file, dest);
+  for (const source of ENTITY_DIRECTORIES) {
+    for (const file of findYamlFiles(source)) {
+      const dest = join(dir, relative(FIXTURES_DIR, file));
+      mkdirSync(resolve(dest, '..'), { recursive: true });
+      cpSync(file, dest);
+    }
   }
-  return dir;
+  return (stagedEntities = dir);
 }
 const BASELINE_DIR = join(TEST_DIR, 'baseline');
 const GEN_DIR = join(TEST_DIR, 'gen');

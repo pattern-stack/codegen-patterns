@@ -23,7 +23,7 @@ import path from 'node:path';
 import type { AnalysisIssue } from '../../analyzer/types.js';
 import { loadEntityFromYaml } from '../../utils/yaml-loader.js';
 import { invalidDefinitionError } from '../../utils/definition-invariant.js';
-import { findYamlFiles } from '../../utils/find-yaml-files.js';
+import { listEntityYamls } from '../../utils/find-yaml-files.js';
 import {
 	desugarEntityEvents,
 	loadEvents,
@@ -127,6 +127,8 @@ function eventsRuntimeImports(mode: RuntimeMode): EventsRuntimeImports {
 export interface EventCodegenGeneratorOptions {
 	/** Absolute path to the entities directory (used for desugaring entity events: blocks). */
 	entitiesDir: string;
+	/** Other definition kinds under the entities root (`ProjectLayout.nonEntityDirs`); skipped by entity discovery. */
+	nonEntityDirs?: string[];
 	/** Absolute path to the events directory (top-level events/*.yaml files). */
 	eventsDir: string;
 	/** Absolute path to the generator's output directory. */
@@ -274,7 +276,7 @@ function aggregateTypeLiteral(ev: EventDefinition): string {
  */
 export function collectEntityEvents(
 	entitiesDir: string,
-	opts: { skipInvalid?: boolean } = {},
+	opts: { skipInvalid?: boolean; nonEntityDirs?: readonly string[] } = {},
 ): {
 	events: EventDefinition[];
 	issues: AnalysisIssue[];
@@ -282,11 +284,7 @@ export function collectEntityEvents(
 	const events: EventDefinition[] = [];
 	const issues: AnalysisIssue[] = [];
 
-	if (!fs.existsSync(entitiesDir)) {
-		return { events, issues };
-	}
-
-	const files = findYamlFiles(entitiesDir);
+	const files = listEntityYamls(entitiesDir, opts.nonEntityDirs);
 
 	for (const filePath of files) {
 		const result = loadEntityFromYaml(filePath);
@@ -354,6 +352,8 @@ export function mergeEvents(
 export interface CollectMergedEventsOptions {
 	/** Absolute path to the entities directory. */
 	entitiesDir: string;
+	/** Other definition kinds under the entities root (`ProjectLayout.nonEntityDirs`); skipped by entity discovery. */
+	nonEntityDirs?: string[];
 	/** Absolute path to the events directory. */
 	eventsDir: string;
 	/**
@@ -391,17 +391,14 @@ export function collectMergedEvents(
 	opts: CollectMergedEventsOptions,
 ): CollectMergedEventsResult {
 	const { entitiesDir, eventsDir } = opts;
-	const loadOpts = { skipInvalid: opts.skipInvalid };
+	const loadOpts = { skipInvalid: opts.skipInvalid, nonEntityDirs: opts.nonEntityDirs };
 
 	// 1. Gather entity names (for loadEvents cross-validation).
 	const entityNames: string[] = [];
-	if (fs.existsSync(entitiesDir)) {
-		const entityFiles = findYamlFiles(entitiesDir);
-		for (const f of entityFiles) {
-			const result = loadEntityFromYaml(f);
-			if (result.success) entityNames.push(result.definition.entity.name);
-			else if (!opts.skipInvalid) throw invalidDefinitionError(result);
-		}
+	for (const f of listEntityYamls(entitiesDir, opts.nonEntityDirs)) {
+		const result = loadEntityFromYaml(f);
+		if (result.success) entityNames.push(result.definition.entity.name);
+		else if (!opts.skipInvalid) throw invalidDefinitionError(result);
 	}
 
 	// 2. Load top-level events and desugar entity events.
@@ -903,13 +900,14 @@ export function buildEventCodegenContents(
 export async function generateEventCodegen(
 	opts: EventCodegenGeneratorOptions,
 ): Promise<EventCodegenResult> {
-	const { entitiesDir, eventsDir, outputDir, mode = 'vendored', dryRun = false, extraSugarEvents } = opts;
+	const { entitiesDir, eventsDir, outputDir, mode = 'vendored', dryRun = false, extraSugarEvents, nonEntityDirs } = opts;
 
 	// 1–3. Load + merge via the shared helper. `no_events_dir` / `no_files`
 	// warnings are retained — the generator still emits stub files, matching
 	// JOB-7's empty case.
 	const { events: merged, issues } = collectMergedEvents({
 		entitiesDir,
+		nonEntityDirs,
 		eventsDir,
 		extraSugarEvents,
 	});

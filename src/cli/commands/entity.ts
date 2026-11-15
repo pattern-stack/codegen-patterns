@@ -12,8 +12,10 @@ import type { CommandClass } from 'clipanion';
 
 import { loadEntityFromYaml, loadEntitiesFromYaml } from '../../utils/yaml-loader.js';
 import { analyzeDomain, validateEntities } from '../../index.js';
-import { junctionsDirFor } from '../../config/junctions-dir.js';
-import { listEntityYamls, preflightEntityTargets, renderEntityTargets } from '../shared/entity-render.js';
+import { junctionsDirFor, relationshipsDirFor } from '../../config/junctions-dir.js';
+import { preflightEntityTargets, renderEntityTargets } from '../shared/entity-render.js';
+import { listEntityYamls } from '../../utils/find-yaml-files.js';
+import { invalidDefinitionError } from '../../utils/definition-invariant.js';
 import {
 	loadAppPatternsForCli,
 	patternLoadIssues,
@@ -150,7 +152,7 @@ async function summary(ctx: Context): Promise<PaneOutput> {
 		};
 	}
 
-	const files = listEntityYamls(layout.entities, layout.providers);
+	const files = listEntityYamls(layout.entities, layout.nonEntityDirs);
 	const rows = files.map(summarizeEntityFile).filter((r): r is EntitySummaryRow => r !== null);
 
 	const patterns = new Set(rows.map((r) => r.pattern));
@@ -181,7 +183,7 @@ async function hints(ctx: Context): Promise<Hint[]> {
 	if (ctx.entityCount === 0) {
 		return [
 			{
-				command: `codegen entity new ${path.relative(ctx.cwd, path.join(projectLayout(ctx.cwd, ctx.config).entities, 'example.yaml'))}`,
+				command: `codegen entity new ${path.relative(ctx.cwd, path.join(projectLayout(ctx.cwd, ctx.config).entities, '<name>.yaml'))}`,
 				description: 'Generate first entity',
 			},
 		];
@@ -277,7 +279,7 @@ export class EntityNewCommand extends Command {
 		let targets: string[] = [];
 		if (this.all) {
 			const dir = projectLayout(ctx.cwd, ctx.config).entities;
-			targets = listEntityYamls(dir, projectLayout(ctx.cwd, ctx.config).providers);
+			targets = listEntityYamls(dir, projectLayout(ctx.cwd, ctx.config).nonEntityDirs);
 			if (targets.length === 0) {
 				return reportEntityNewError(`No entity YAML files found in ${dir}`, 1);
 			}
@@ -322,7 +324,8 @@ export class EntityNewCommand extends Command {
 
 		// Compute barrel plan (used in both dry-run reporting and post-gen execution).
 		const entitiesDir = projectLayout(ctx.cwd, ctx.config).entities;
-		const relationshipsDir = path.resolve(ctx.cwd, 'relationships');
+		const nonEntityDirs = projectLayout(ctx.cwd, ctx.config).nonEntityDirs;
+		const relationshipsDir = relationshipsDirFor(ctx.cwd);
 		const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
 
 		const subsystemsRoot = projectLayout(ctx.cwd, ctx.config).subsystems;
@@ -402,6 +405,7 @@ export class EntityNewCommand extends Command {
 			const barrelPlan = await regenerateBarrels({
 				ctx,
 				entitiesDir,
+				nonEntityDirs,
 				relationshipsDir,
 				generatedDir,
 				dryRun: true,
@@ -428,12 +432,14 @@ export class EntityNewCommand extends Command {
 
 			const scopePlan = await generateScopeEntityType({
 				entitiesDir,
+				nonEntityDirs,
 				outputPath: scopeEntityTypePath,
 				dryRun: true,
 			});
 
 			const eventCodegenPlan = await generateEventCodegen({
 				entitiesDir,
+				nonEntityDirs,
 				eventsDir,
 				outputDir: eventCodegenOutputDir,
 				mode: runtimeMode,
@@ -601,6 +607,7 @@ export class EntityNewCommand extends Command {
 			barrelResult = await regenerateBarrels({
 				ctx,
 				entitiesDir,
+				nonEntityDirs,
 				relationshipsDir,
 				generatedDir,
 			});
@@ -656,6 +663,7 @@ export class EntityNewCommand extends Command {
 			scopeResult = await generating(scopeEntityTypePath, () =>
 				generateScopeEntityType({
 					entitiesDir,
+					nonEntityDirs,
 					outputPath: scopeEntityTypePath,
 				}),
 			);
@@ -671,6 +679,7 @@ export class EntityNewCommand extends Command {
 			eventCodegenResult = await generating(eventCodegenOutputDir, async () => {
 				const result = await generateEventCodegen({
 					entitiesDir,
+					nonEntityDirs,
 					eventsDir,
 					outputDir: eventCodegenOutputDir,
 					mode: runtimeMode,
@@ -847,9 +856,13 @@ export class EntityNewCommand extends Command {
 			let adapterResult: ReturnType<typeof emitAdapters>;
 			try {
 				adapterResult = generating(adapterOutputRoot, () => {
-					const entityDefs = loadEntitiesFromYaml(
-						listEntityYamls(entitiesDir, providersDir),
-					).successes.map((s) => s.definition);
+					// An invalid entity is a pre-flight rejection; reaching here with one is the
+					// whole-set invariant (#915), not a file to drop from the adapters.
+					const loadedEntityDefs = loadEntitiesFromYaml(listEntityYamls(entitiesDir, nonEntityDirs));
+					if (loadedEntityDefs.failures.length > 0) {
+						throw invalidDefinitionError(loadedEntityDefs.failures[0]);
+					}
+					const entityDefs = loadedEntityDefs.successes.map((s) => s.definition);
 					// The consumer's tsconfig aliases (resolved for the provider import
 					// pre-flight) make the assembly's entity repo/module imports prefer
 					// the project's `@modules/...`-style alias.
@@ -1065,7 +1078,7 @@ export class EntityListCommand extends Command {
 			return 1;
 		}
 
-		const files = listEntityYamls(layout.entities, layout.providers);
+		const files = listEntityYamls(layout.entities, layout.nonEntityDirs);
 		const rows = files
 			.map(summarizeEntityFile)
 			.filter((r): r is EntitySummaryRow => r !== null)

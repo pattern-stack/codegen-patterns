@@ -19,6 +19,7 @@ import { loadEntityRegistry, type EntityRegistryEntry } from '../../parser/entit
 import { loadEntities } from '../../parser/load-entities';
 import type { JunctionDefinition } from '../../schema/junction-definition.schema';
 import { findYamlFiles } from '../../utils/find-yaml-files';
+import { projectLayout } from '../../cli/shared/project-layout';
 import { assertNoInvalidDefinitions, invalidDefinitionError } from '../../utils/definition-invariant';
 import { detectYamlType, loadJunctionFromYaml } from '../../utils/yaml-loader';
 import { junctionName } from '../../config/junction-naming.js';
@@ -91,7 +92,8 @@ export function loadSemanticEmitContext(
 	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, JUNCTIONS_DIRNAME);
 
 	const tablePrefix = TablesConfigSchema.parse(config?.tables ?? {}).prefix;
-	const { registry, issues: registryIssues } = loadEntityRegistry(entitiesDir, { tablePrefix });
+	const { nonEntityDirs } = projectLayout(cwd, config as Parameters<typeof projectLayout>[1]);
+	const { registry, issues: registryIssues } = loadEntityRegistry(entitiesDir, { tablePrefix, nonEntityDirs });
 	assertNoInvalidDefinitions(registryIssues);
 	const entities: EntityRegistryEntry[] = sortEntities([...registry.values()]);
 
@@ -101,7 +103,7 @@ export function loadSemanticEmitContext(
 		};
 	}
 
-	const loadedEntities = loadEntities(entitiesDir, { tablePrefix });
+	const loadedEntities = loadEntities(entitiesDir, { tablePrefix, excludeDirs: nonEntityDirs });
 	assertNoInvalidDefinitions(loadedEntities.issues);
 	const parsed = new Map<string, ParsedEntity>(
 		loadedEntities.entities.map((entity) => [entity.name, entity]),

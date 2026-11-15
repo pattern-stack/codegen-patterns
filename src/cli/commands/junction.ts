@@ -38,9 +38,9 @@ import { reportRegenerationFailure } from '../shared/generated-file.js';
 import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
-import { junctionsDirFor } from '../../config/junctions-dir.js';
+import { junctionsDirFor, relationshipsDirFor } from '../../config/junctions-dir.js';
+import { listEntityYamls } from '../../utils/find-yaml-files.js';
 import {
-	listEntityYamls,
 	preflightEntityTargets,
 	renderEntityTargets,
 } from '../shared/entity-render.js';
@@ -238,7 +238,7 @@ export class JunctionNewCommand extends Command {
 		// written; a rejection stops the run as it would stop `entity new`.
 		const layout = projectLayout(ctx.cwd, ctx.config);
 		const entityFileByName = new Map<string, string>();
-		for (const file of listEntityYamls(layout.entities, layout.providers)) {
+		for (const file of listEntityYamls(layout.entities, layout.nonEntityDirs)) {
 			const result = loadEntityFromYaml(file);
 			if (result.success) entityFileByName.set(result.definition.entity.name, file);
 		}
@@ -309,7 +309,7 @@ export class JunctionNewCommand extends Command {
 		// Regenerate barrels so new junction modules land in GENERATED_MODULES
 		// and src/generated/schema.ts. Mirrors what `entity new` and `relationship new` do.
 		const entitiesDir = projectLayout(ctx.cwd, ctx.config).entities;
-		const relationshipsDir = path.resolve(ctx.cwd, 'relationships');
+		const relationshipsDir = relationshipsDirFor(ctx.cwd);
 		const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
 		// The app imports both barrels: a failed regeneration fails the command,
 		// naming the file (JOBS-0, #655).
@@ -318,6 +318,7 @@ export class JunctionNewCommand extends Command {
 			barrelResult = await regenerateBarrels({
 				ctx,
 				entitiesDir,
+				nonEntityDirs: projectLayout(ctx.cwd, ctx.config).nonEntityDirs,
 				relationshipsDir,
 				junctionsDir,
 				generatedDir,

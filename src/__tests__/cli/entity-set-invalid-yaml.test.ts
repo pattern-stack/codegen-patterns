@@ -202,4 +202,17 @@ describe('an invalid definition YAML (entity, relationship, junction) is a named
 		expect(JSON.parse(out).stopped).toBe('pre-flight');
 		expectNothingWritten(root);
 	});
+
+	test('an invalid target OUTSIDE the entities directory is named too (`extra.entities`)', async () => {
+		const root = mkProject('relationship');
+		const outside = path.join(root, 'staging', 'bad.yaml');
+		fs.mkdirSync(path.dirname(outside));
+		fs.writeFileSync(outside, BAD);
+		const { code, out } = await run(['entity', 'new', outside, '--force', '--json', '--cwd', root]);
+		expect(code).toBe(1);
+		const payload = JSON.parse(out);
+		expect(payload.stopped).toBe('pre-flight');
+		expect(payload.failed.map((f: { file: string }) => f.file)).toContain(outside);
+		expectNothingWritten(root);
+	});
 });

@@ -92,6 +92,8 @@ export function loadEntityRegistry(
 	opts: {
 		/** The project's resolved `tables.prefix`; every entry's `table` is the SQL name. */
 		tablePrefix: string;
+		/** Other definition kinds under the entities root (`ProjectLayout.nonEntityDirs`). */
+		nonEntityDirs?: readonly string[];
 	},
 ): LoadEntityRegistryResult {
 	const registry = new Map<string, EntityRegistryEntry>();
@@ -101,7 +103,7 @@ export function loadEntityRegistry(
 
 	let files: string[];
 	try {
-		files = findYamlFiles(resolvedDir);
+		files = findYamlFiles(resolvedDir, { excludeDirs: [...(opts.nonEntityDirs ?? [])] });
 	} catch {
 		issues.push({
 			severity: 'error',

@@ -6,6 +6,7 @@
  * It throws, naming the file and its first issue.
  */
 
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 import type { AnalysisIssue } from '../analyzer/types.js';
@@ -33,14 +34,21 @@ export function invalidDefinitionError(
 }
 
 /**
- * Throw on the first error-severity load issue that names a definition FILE
- * (`loadEntities` / `loadEntityRegistry`). An issue naming the directory (it
- * does not exist: an empty set) is not an invalid definition and stays the
- * caller's to read.
+ * Throw on the first error-severity load issue (`loadEntities` /
+ * `loadEntityRegistry`) that names a definition FILE, and on a directory that
+ * exists but cannot be read (EACCES, ENOTDIR): that is not an empty set. A
+ * directory that does not exist is the empty set and stays the caller's to read.
  */
 export function assertNoInvalidDefinitions(issues: readonly AnalysisIssue[]): void {
-	const first = issues.find((i) => i.severity === 'error' && i.path && /\.ya?ml$/.test(i.path));
-	if (first) throw new InvalidDefinitionError(first.path!, first.message);
+	for (const i of issues) {
+		if (i.severity !== 'error' || !i.path) continue;
+		if (/\.ya?ml$/.test(i.path)) throw new InvalidDefinitionError(i.path, i.message);
+		// The one exemption: the directory itself does not exist (an empty set). One that
+		// exists and cannot be read (EACCES, ENOTDIR) is not.
+		if (i.type === 'parse_error' && existsSync(i.path)) {
+			throw new Error(`${i.message} — a definitions directory that exists but cannot be read is not an empty set`);
+		}
+	}
 }
 
 /**
@@ -50,8 +58,12 @@ export function assertNoInvalidDefinitions(issues: readonly AnalysisIssue[]): vo
  * relationship and is not read. Shared by the pre-flight and the loaders so the
  * two cannot disagree about which files count.
  */
-export function relationshipFileFailure(file: string, explicit = false): LoadError | null {
-	const result = loadRelationshipFromYaml(file);
+export function relationshipFileFailure(
+	file: string,
+	explicit = false,
+	loaded: ReturnType<typeof loadRelationshipFromYaml> = loadRelationshipFromYaml(file),
+): LoadError | null {
+	const result = loaded;
 	if (result.success) return null;
 	if (explicit || detectYamlType(file) === 'relationship' || result.error.startsWith('Invalid YAML')) {
 		return result;

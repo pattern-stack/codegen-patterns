@@ -110,4 +110,49 @@ describe('project surface --json — failures carry a payload (#669)', () => {
 		expect(payload.status).toBe('error');
 		expect(payload.error).toBe(`No entity 'nope' in ${path.join(root, 'entities')}`);
 	});
+
+	test('an invalid entity YAML is a named rejection, not the loader invariant (#915)', async () => {
+		const root = mkDemoProject();
+		fs.writeFileSync(
+			path.join(root, 'entities', 'bad.yaml'),
+			'entity:\n  name: bad\n  plural: bads\nconfig:\n  x: 1\nfields:\n  title:\n    type: string\n',
+		);
+		const { code, out } = await run(['project', 'surface', '--json', '--cwd', root]);
+		expect(code).toBe(1);
+		const payload = JSON.parse(out) as { status: string; error: string; failed: { name: string; details: string[] }[] };
+		expect(payload.status).toBe('error');
+		expect(payload.error).toContain('bad.yaml');
+		expect(payload.error).not.toContain('pre-flight should have stopped');
+		expect(payload.failed.map((f) => f.name)).toEqual(['bad.yaml']);
+
+		const text = await run(['project', 'surface', '--cwd', root]);
+		expect(text.code).toBe(1);
+		expect(text.out).toContain('bad.yaml');
+		expect(text.out).not.toContain('pre-flight should have stopped');
+	});
+
+	test('an invalid relationship YAML is named too, by the pre-flight rule', async () => {
+		const root = mkDemoProject();
+		fs.mkdirSync(path.join(root, 'relationships'));
+		fs.writeFileSync(path.join(root, 'relationships', 'broken_rel.yaml'), 'relationship:\n  name: broken_rel\n  from: account\n');
+		const { code, out } = await run(['project', 'surface', '--json', '--cwd', root]);
+		expect(code).toBe(1);
+		const payload = JSON.parse(out) as { error: string; failed: { name: string }[] };
+		expect(payload.failed.map((f) => f.name)).toEqual(['broken_rel.yaml']);
+		expect(payload.error).toContain('broken_rel.yaml');
+	});
+
+	test('loadProjectApiContext on an invalid relationship throws (the pre-flight skipped)', async () => {
+		const { loadProjectApiContext } = await import('../../derived/api/project.js');
+		const root = mkDemoProject();
+		fs.mkdirSync(path.join(root, 'relationships'));
+		fs.writeFileSync(path.join(root, 'relationships', 'broken_rel.yaml'), 'relationship:\n  name: broken_rel\n  from: account\n');
+		expect(() =>
+			loadProjectApiContext(root, null, {
+				entitiesDir: path.join(root, 'entities'),
+				junctionsDir: path.join(root, 'junctions'),
+				relationshipsDir: path.join(root, 'relationships'),
+			}),
+		).toThrow('broken_rel.yaml');
+	});
 });

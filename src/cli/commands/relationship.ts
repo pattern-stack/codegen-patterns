@@ -13,6 +13,7 @@ import type { CommandClass } from 'clipanion';
 
 import { loadRelationshipFromYaml, detectYamlType } from '../../utils/yaml-loader.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
+import { relationshipsDirFor } from '../../config/junctions-dir.js';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { invokeRelationshipNew } from '../shared/hygen.js';
@@ -85,7 +86,7 @@ function padRight(s: string, n: number): string {
 // ---------------------------------------------------------------------------
 
 async function summary(ctx: Context): Promise<PaneOutput> {
-	const relDir = path.resolve(ctx.cwd, 'relationships');
+	const relDir = relationshipsDirFor(ctx.cwd);
 	const files = listRelationshipYamls(relDir);
 
 	if (files.length === 0) {
@@ -174,7 +175,7 @@ export class RelationshipNewCommand extends Command {
 
 		let targets: string[] = [];
 		if (this.all) {
-			const dir = path.resolve(ctx.cwd, 'relationships');
+			const dir = relationshipsDirFor(ctx.cwd);
 			targets = listRelationshipYamls(dir);
 			if (targets.length === 0) {
 				printError(`No relationship YAML files found in ${dir}`);
@@ -254,7 +255,7 @@ export class RelationshipNewCommand extends Command {
 		// Regenerate barrels so new junction modules land in GENERATED_MODULES
 		// and src/generated/schema.ts. Mirrors what `entity new` does.
 		const entitiesDir = projectLayout(ctx.cwd, ctx.config).entities;
-		const relationshipsDir = path.resolve(ctx.cwd, 'relationships');
+		const relationshipsDir = relationshipsDirFor(ctx.cwd);
 		const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
 		// The app imports both barrels: a failed regeneration fails the command,
 		// naming the file (JOBS-0, #655).
@@ -263,6 +264,7 @@ export class RelationshipNewCommand extends Command {
 			barrelResult = await regenerateBarrels({
 				ctx,
 				entitiesDir,
+				nonEntityDirs: projectLayout(ctx.cwd, ctx.config).nonEntityDirs,
 				relationshipsDir,
 				generatedDir,
 			});
@@ -353,7 +355,7 @@ export class RelationshipListCommand extends Command {
 			skipDetection: true,
 		});
 
-		const relDir = path.resolve(ctx.cwd, 'relationships');
+		const relDir = relationshipsDirFor(ctx.cwd);
 		const files = listRelationshipYamls(relDir);
 
 		if (files.length === 0) {

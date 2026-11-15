@@ -887,9 +887,6 @@ async function main(): Promise<number> {
 		}
 		const entitiesDir = path.join(tmpDir, 'entities');
 		fs.mkdirSync(entitiesDir, { recursive: true });
-		// Remove the example.yaml that init dropped.
-		const examplePath = path.join(entitiesDir, 'example.yaml');
-		if (fs.existsSync(examplePath)) fs.rmSync(examplePath);
 		for (const f of fixtureFiles) {
 			fs.copyFileSync(path.join(FIXTURES_DIR, f), path.join(entitiesDir, f));
 			log(`copied fixture: ${f}`);

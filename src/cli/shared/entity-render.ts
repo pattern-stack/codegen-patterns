@@ -17,7 +17,7 @@ import path from 'node:path';
 
 import { loadEntityFromYaml, loadEntitiesFromYaml } from '../../utils/yaml-loader.js';
 import { relationshipFileFailure } from '../../utils/definition-invariant.js';
-import { junctionsDirFor } from '../../config/junctions-dir.js';
+import { junctionsDirFor, relationshipsDirFor } from '../../config/junctions-dir.js';
 import { junctionSetIssues, loadJunctionSet } from '../../parser/load-junctions.js';
 import { validateRolesForGeneration } from '../../roles/validate-roles.js';
 import { loadAppPatternsForCli, patternLoadRejections } from './pattern-globs.js';
@@ -36,7 +36,7 @@ import { loadEntities } from '../../parser/load-entities.js';
 import { TablesConfigSchema } from '../../schema/codegen-config.schema.js';
 import { sqlTableCollisionMessage, sqlTableCollisions } from '../../config/table-naming.js';
 import { junctionTableName } from '../../config/junction-naming.js';
-import { findYamlFiles } from '../../utils/find-yaml-files.js';
+import { findYamlFiles, listEntityYamls } from '../../utils/find-yaml-files.js';
 import type { AnalysisIssue } from '../../analyzer/types.js';
 import { projectLayout } from './project-layout.js';
 import { loadJobs } from '../../parser/load-jobs.js';
@@ -45,19 +45,6 @@ import { resolveInstalledSubsystems } from './subsystem-detect.js';
 import { issueRejections, type RejectionEntry, type RunRejection } from './run-rejections.js';
 import { printError, printInfo, printSuccess, printWarning } from '../ui/output.js';
 import { isJsonMode } from '../ui/json.js';
-
-/**
- * List entity YAML files under `dir`, excluding the provider-definitions
- * subtree. When the entities dir IS the `definitions` root, the recursive walk
- * would otherwise pull in `definitions/providers/*.yaml`; passing the providers
- * dir as an exclusion keeps entity discovery to entity files only.
- */
-export function listEntityYamls(dir: string, providersDir?: string): string[] {
-	if (!fs.existsSync(dir)) return [];
-	return findYamlFiles(dir, {
-		excludeDirs: providersDir ? [providersDir] : [],
-	});
-}
 
 export interface EntityTarget {
 	file: string;
@@ -99,7 +86,7 @@ export function definitionSetRejections(
 	const rejections: RunRejection[] = [];
 
 	const entityFiles = new Set([
-		...listEntityYamls(layout.entities, layout.providers),
+		...listEntityYamls(layout.entities, layout.nonEntityDirs),
 		...(extra.entities ?? []),
 	]);
 	for (const file of [...entityFiles].sort()) {
@@ -110,7 +97,7 @@ export function definitionSetRejections(
 
 	// A relationship file is one the barrels would read (`relationship:` key) or
 	// one that does not even parse; a file of another kind is not its business.
-	const relationshipsDir = path.resolve(ctx.cwd, 'relationships');
+	const relationshipsDir = relationshipsDirFor(ctx.cwd);
 	const relationshipFiles = new Set([
 		...(fs.existsSync(relationshipsDir) ? findYamlFiles(relationshipsDir) : []),
 		...(extra.relationships ?? []),
@@ -163,7 +150,7 @@ export async function preflightEntityTargets(
 	const tablePrefix = TablesConfigSchema.parse(ctx.config?.tables ?? {}).prefix;
 	const allEntitiesForEmits = loadEntities(entitiesDirForEmits, {
 		tablePrefix,
-		excludeDirs: [projectLayout(ctx.cwd, ctx.config).providers],
+		excludeDirs: projectLayout(ctx.cwd, ctx.config).nonEntityDirs,
 	}).entities;
 
 	// A child imports its base's table and `.enums` module, and a `match:` target's table carries the unique
@@ -187,6 +174,7 @@ export async function preflightEntityTargets(
 		// Invalid entity files are already in `setRejections`; skipped here, reported once.
 		skipInvalid: true,
 		entitiesDir: entitiesDirForEmits,
+		nonEntityDirs: projectLayout(ctx.cwd, ctx.config).nonEntityDirs,
 		eventsDir: eventsDirForEmits,
 	});
 	const emitsIssues: AnalysisIssue[] = validateEntityEmits(
@@ -257,12 +245,12 @@ export async function preflightEntityTargets(
 	// would regenerate the entities beside a stale integration layer. The
 	// D1 import pre-flight resolves `@app/…#Export` against the consumer
 	// tsconfig; with no tsconfig it is skipped (slug / surface checks still run).
-	const { providers: providersDir } = projectLayout(ctx.cwd, ctx.config);
+	const { providers: providersDir, nonEntityDirs } = projectLayout(ctx.cwd, ctx.config);
 	const tsAliases = resolveTsconfigAliases(ctx.cwd);
 	const providerSet = loadProviderSet({
 		providersDir,
 		entitySurfaces: collectEntitySurfaces(
-			loadEntitiesFromYaml(listEntityYamls(entitiesDirForEmits, providersDir)).successes.map(
+			loadEntitiesFromYaml(listEntityYamls(entitiesDirForEmits, nonEntityDirs)).successes.map(
 				(s) => s.definition,
 			),
 		),

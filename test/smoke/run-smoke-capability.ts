@@ -628,8 +628,6 @@ async function leg(mode: Mode): Promise<number> {
 
 		const entitiesDir = path.join(tmpDir, 'entities');
 		fs.mkdirSync(entitiesDir, { recursive: true });
-		const examplePath = path.join(entitiesDir, 'example.yaml');
-		if (fs.existsSync(examplePath)) fs.rmSync(examplePath);
 		for (const f of fs.readdirSync(FIXTURES).filter((f) => f.endsWith('.yaml'))) {
 			fs.copyFileSync(path.join(FIXTURES, f), path.join(entitiesDir, f));
 		}

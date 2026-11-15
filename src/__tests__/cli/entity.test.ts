@@ -351,13 +351,13 @@ describe('entity noun — new --dry-run', () => {
 	test('--all stops on an invalid YAML alongside a valid one, by name (#915)', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
-		// A comments-only file (no `entity:` key) next to the valid contact fixture
-		// — the scaffold's placeholder shape that originally triggered F12. The
+		// A file with no `entity:` key next to the valid contact fixture. The
 		// whole-set post-steps would otherwise skip it silently, so it is a
-		// run-level rejection: nothing is planned.
+		// run-level rejection: nothing is planned. (`codegen init` seeds no such
+		// file — its `entities/README.md` is not YAML.)
 		fs.writeFileSync(
-			path.join(root, 'entities', 'example.yaml'),
-			'# this is a placeholder\n',
+			path.join(root, 'entities', 'broken.yaml'),
+			'not_an_entity:\n  name: broken\n',
 		);
 		const cli = buildCli();
 		const { result, out } = await captureStdoutWrite(() =>
@@ -377,7 +377,7 @@ describe('entity noun — new --dry-run', () => {
 		expect(parsed.command).toBe('entity new');
 		expect(parsed.stopped).toBe('pre-flight');
 		expect(parsed.failed).toHaveLength(1);
-		expect(parsed.failed[0].name).toBe('example.yaml');
+		expect(parsed.failed[0].name).toBe('broken.yaml');
 		expect(parsed.failed[0].message.length).toBeGreaterThan(0);
 	});
 
@@ -385,8 +385,8 @@ describe('entity noun — new --dry-run', () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
 		fs.writeFileSync(
-			path.join(root, 'entities', 'example.yaml'),
-			'# this is a placeholder\n',
+			path.join(root, 'entities', 'broken.yaml'),
+			'not_an_entity:\n  name: broken\n',
 		);
 		const cli = buildCli();
 		const { result } = await captureStdoutWrite(() =>
