@@ -3,7 +3,7 @@
  * `loadAppPatterns()` glob discovery, and two-process determinism.
  */
 
-import { describe, test, expect, beforeEach, afterAll } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -119,21 +119,10 @@ describe('loadAppPatterns', () => {
 		_resetRegistryForTests();
 	});
 
-	afterAll(() => {
-		// tmpdirs are small; leave the OS to clean them up if a test bailed
-		// out mid-way. Best-effort cleanup of anything we can see:
-		try {
-			for (const leftover of fs.readdirSync(os.tmpdir())) {
-				if (leftover.startsWith('pattern-registry-')) {
-					fs.rmSync(path.join(os.tmpdir(), leftover), {
-						recursive: true,
-						force: true,
-					});
-				}
-			}
-		} catch {
-			// ignore
-		}
+	afterEach(() => {
+		// Only this test's own directory; a prefix sweep of os.tmpdir() would
+		// delete a parallel run's live one.
+		fs.rmSync(tmpdir, { recursive: true, force: true });
 	});
 
 	function writePatternFile(relPath: string, source: string): string {

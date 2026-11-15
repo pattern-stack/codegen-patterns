@@ -8,7 +8,7 @@
  * import + routing path end-to-end.
  */
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -296,24 +296,18 @@ describe('loadAppPatterns — duplicate-name detection', () => {
 		return abs;
 	}
 
-	afterAll(() => {
-		try {
-			for (const leftover of fs.readdirSync(os.tmpdir())) {
-				if (leftover.startsWith('orch-loader-')) {
-					fs.rmSync(path.join(os.tmpdir(), leftover), {
-						recursive: true,
-						force: true,
-					});
-				}
-			}
-		} catch {
-			// ignore
-		}
+	// Each test owns one mkdtemp directory and removes only that one. A prefix
+	// sweep of os.tmpdir() would also delete a parallel run's live directory.
+	beforeEach(() => {
+		tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-loader-'));
+		fs.mkdirSync(path.join(tmpdir, 'src', 'patterns'), { recursive: true });
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpdir, { recursive: true, force: true });
 	});
 
 	test('two orchestration fixtures with the same name → loader error', async () => {
-		tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-loader-'));
-		fs.mkdirSync(path.join(tmpdir, 'src', 'patterns'), { recursive: true });
 		_resetRegistryForTests();
 
 		const defModule = path.resolve(
@@ -349,8 +343,6 @@ export const ${exportName} = defineOrchestrationPattern({
 	});
 
 	test('two domain fixtures with the same name → loader error (symmetric protection)', async () => {
-		tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-loader-'));
-		fs.mkdirSync(path.join(tmpdir, 'src', 'patterns'), { recursive: true });
 		_resetRegistryForTests();
 
 		const defModule = path.resolve(
