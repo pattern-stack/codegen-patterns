@@ -1322,7 +1322,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   (index, unique, composite FK, CHECK), not only S2's: the check is in `assertDistinctConstraints` (C5), and the
   message names `entity.table:` (TABLE-0) as the way out. Not covered: the names Drizzle derives for a single-column
   `.references()` FK, `pgEnum` type names, and junction / relationship tables. Closing that gap changes names or
-  fails generation for existing long FK names, so it waits for a decision.
+  fails generation for existing long FK names, so it waits for a decision: #921 owns explicit FK names (D3, §11.3).
 - **`match:` shorthand and family discovery have one owner.** `matchPairsOf` and `inheritanceCounterpartNames` are in
   `src/schema/inheritance.ts`, next to `inheritsOf`, `matchPairsOf` is read by the parsed model, the validator and the
   templates (whose reverse walk, `matchReferrers`, is separate); `inheritanceCounterpartNames` only by the
@@ -1353,8 +1353,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   `generate.writes`, so a child would get mutations aimed at routes that do not exist until S4/S5. A table with a derived
   `match:` column cannot be created through its generated `create` until S4: the column is NOT NULL, absent from
   the DTO, and filled by the repository's scalar subquery, which is A5's "the matched column is filled by the
-  insert" and lands in S4. The column is absent from the output DTO too (§2.4 calls it read-only in the output; no slice owns that yet — an open
-  decision). S2's integration test covers A5's two rejections and the derived column's NOT NULL.
+  insert" and lands in S4. The column is absent from the output DTO too: decided, not emitted (D2, §11.3). S2's integration test covers A5's two rejections and the derived column's NOT NULL.
 - **Gates.** `test/scaffold/tests/inheritance-ddl.test.ts` asserts by SQLSTATE and constraint name, with a
   succeeding control for each rejection. A15, first half: with the kind FK left out of the template, the A4 cases
   (insert under another kind, update of the base kind) and the part-over-another-kind case went red; restored.

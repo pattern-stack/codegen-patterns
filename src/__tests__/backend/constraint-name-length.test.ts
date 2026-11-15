@@ -5,7 +5,8 @@
  * word, so two names that differ only after byte 63 are one constraint to the
  * database. Those names pass through `assertDistinctConstraints`, so the
  * rule is stated once, there. NOT covered: the names Drizzle derives for a single-column `.references()` FK,
- * pgEnum type names, and junction / relationship tables.
+ * pgEnum type names, and junction / relationship tables
+ * (explicit FK names are #921's).
  */
 
 import { describe, expect, it } from 'bun:test';

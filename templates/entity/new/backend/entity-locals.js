@@ -1092,7 +1092,7 @@ export const PG_IDENTIFIER_MAX_BYTES = 63;
 
 /**
  * C3, C4 (#784) and C5: every name in the extra-config callback is distinct and at most
- * 63 bytes (C5), and no
+ * 63 bytes (C5; explicit FK names are #921's), and no
  * two non-partial uniques cover the same column set. Partial entries are exempt
  * from C4 — two partial entries over the same columns with different
  * predicates are the documented use.
