@@ -71,12 +71,12 @@ describe('the derived family reads', () => {
 
 	it('a base: the five cross-kind reads, caused by its discriminator:, naming the child kinds', () => {
 		const s = surfaces.get('communication')!;
-		const repo = s.repository.methods.filter((m) => m.kind === 'across_kinds' || m.kind === 'orphans');
+		const repo = s.repository.methods.filter((m) => ['all_kinds', 'kind_by_id', 'list_kind', 'count_kind', 'orphans'].includes(m.kind));
 		expect(repo.map((m) => m.name)).toEqual(['findAllKinds', 'findKindById', 'listKind', 'countKind', 'findOrphans']);
 		for (const m of repo) {
 			expect(m.origin).toMatchObject({ from: 'yaml', at: { path: ['discriminator'], note: 'kinds with a child table: email, meeting' } });
 		}
-		expect(s.service.methods.filter((m) => m.kind === 'across_kinds' || m.kind === 'orphans').map((m) => m.name)).toEqual(
+		expect(s.service.methods.filter((m) => ['all_kinds', 'kind_by_id', 'list_kind', 'count_kind', 'orphans'].includes(m.kind)).map((m) => m.name)).toEqual(
 			repo.map((m) => m.name),
 		);
 	});
@@ -84,7 +84,7 @@ describe('the derived family reads', () => {
 	it('a plain entity carries none of them', () => {
 		for (const [name, s] of surfaces) {
 			if (['email', 'meeting', 'communication'].includes(name)) continue;
-			expect(s.repository.methods.some((m) => ['with_base', 'across_kinds', 'orphans'].includes(m.kind))).toBe(false);
+			expect(s.repository.methods.some((m) => ['with_base', 'all_kinds', 'kind_by_id', 'list_kind', 'count_kind', 'orphans'].includes(m.kind))).toBe(false);
 		}
 	});
 });

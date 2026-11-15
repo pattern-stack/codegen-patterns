@@ -133,6 +133,18 @@ function mergedRelationships(definition: EntityDefinitionInput): Record<string, 
 	};
 }
 
+/** The repository kinds the service forwards verbatim (RFC-0006 S3). */
+function isFamilyReadKind(kind: RepositoryMethod['kind']): kind is 'with_base' | 'all_kinds' | 'kind_by_id' | 'list_kind' | 'count_kind' | 'orphans' {
+	return (
+		kind === 'with_base' ||
+		kind === 'all_kinds' ||
+		kind === 'kind_by_id' ||
+		kind === 'list_kind' ||
+		kind === 'count_kind' ||
+		kind === 'orphans'
+	);
+}
+
 /**
  * Can this entity's repository name a `with` — is there a typed include? REL-2 (#587) §2.5: yes when its table
  * carries an edge in the relations manifest. Three things put one there: a direct relationship of its own
@@ -140,9 +152,8 @@ function mergedRelationships(definition: EntityDefinitionInput): Record<string, 
  * child table, RFC-0006 §3.1) — edges its own YAML does not declare, so a family member has a typed include
  * whatever it writes under `relationships:`.
  *
- * The ONE owner: `entity-locals.js` reads it for `includes`, `deriveEntityApiSurface` for `typedInclude` and every
- * read's `readOptions`, and the include-allowlist gate (`build-includes.ts`) for "would this allowlist ever be
- * reached".
+ * The ONE owner: `deriveEntityApiSurface` reads it for `typedInclude` and every read's `readOptions`, and the
+ * include-allowlist gate (`build-includes.ts`) for "would this allowlist ever be reached".
  */
 export function hasTypedInclude(
 	definition: EntityDefinitionInput,
@@ -358,10 +369,10 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 	}
 	if (family.crossKind) {
 		repository.push(
-			{ name: FAMILY_METHOD.findAllKinds, kind: 'across_kinds', emitted: true, params: [{ name: 'query' }], returns: 'many', readOptions: 'none', origin: discriminatorOrigin },
-			{ name: FAMILY_METHOD.findKindById, kind: 'across_kinds', emitted: true, params: [{ name: 'id' }], returns: 'one', readOptions: 'none', origin: discriminatorOrigin },
-			{ name: FAMILY_METHOD.listKind, kind: 'across_kinds', emitted: true, params: [{ name: 'kind' }, { name: 'query' }], returns: 'many', readOptions: 'none', origin: discriminatorOrigin },
-			{ name: FAMILY_METHOD.countKind, kind: 'across_kinds', emitted: true, params: [{ name: 'kind' }, { name: 'where' }], returns: 'count', readOptions: 'none', origin: discriminatorOrigin },
+			{ name: FAMILY_METHOD.findAllKinds, kind: 'all_kinds', emitted: true, params: [{ name: 'query' }], returns: 'many', readOptions: 'none', origin: discriminatorOrigin },
+			{ name: FAMILY_METHOD.findKindById, kind: 'kind_by_id', emitted: true, params: [{ name: 'id' }], returns: 'one', readOptions: 'none', origin: discriminatorOrigin },
+			{ name: FAMILY_METHOD.listKind, kind: 'list_kind', emitted: true, params: [{ name: 'kind' }, { name: 'query' }], returns: 'many', readOptions: 'none', origin: discriminatorOrigin },
+			{ name: FAMILY_METHOD.countKind, kind: 'count_kind', emitted: true, params: [{ name: 'kind' }, { name: 'where' }], returns: 'count', readOptions: 'none', origin: discriminatorOrigin },
 			{ name: FAMILY_METHOD.findOrphans, kind: 'orphans', emitted: true, params: [{ name: 'opts' }], returns: 'many', readOptions: 'none', origin: discriminatorOrigin },
 		);
 	}
@@ -460,7 +471,7 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 
 	// The family reads, forwarded verbatim — right after the core reads, as the repository has them (same names, same params, the repository's result).
 	for (const m of repository) {
-		if (m.kind !== 'with_base' && m.kind !== 'across_kinds' && m.kind !== 'orphans') continue;
+		if (!isFamilyReadKind(m.kind)) continue;
 		service.push({
 			name: m.name,
 			kind: m.kind,

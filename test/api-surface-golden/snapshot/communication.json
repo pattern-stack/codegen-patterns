@@ -75,7 +75,7 @@
 			},
 			{
 				"name": "findAllKinds",
-				"kind": "across_kinds",
+				"kind": "all_kinds",
 				"emitted": true,
 				"params": [
 					{
@@ -100,7 +100,7 @@
 			},
 			{
 				"name": "findKindById",
-				"kind": "across_kinds",
+				"kind": "kind_by_id",
 				"emitted": true,
 				"params": [
 					{
@@ -125,7 +125,7 @@
 			},
 			{
 				"name": "listKind",
-				"kind": "across_kinds",
+				"kind": "list_kind",
 				"emitted": true,
 				"params": [
 					{
@@ -153,7 +153,7 @@
 			},
 			{
 				"name": "countKind",
-				"kind": "across_kinds",
+				"kind": "count_kind",
 				"emitted": true,
 				"params": [
 					{
@@ -383,7 +383,7 @@
 			},
 			{
 				"name": "findAllKinds",
-				"kind": "across_kinds",
+				"kind": "all_kinds",
 				"emitted": true,
 				"params": [
 					{
@@ -412,7 +412,7 @@
 			},
 			{
 				"name": "findKindById",
-				"kind": "across_kinds",
+				"kind": "kind_by_id",
 				"emitted": true,
 				"params": [
 					{
@@ -441,7 +441,7 @@
 			},
 			{
 				"name": "listKind",
-				"kind": "across_kinds",
+				"kind": "list_kind",
 				"emitted": true,
 				"params": [
 					{
@@ -473,7 +473,7 @@
 			},
 			{
 				"name": "countKind",
-				"kind": "across_kinds",
+				"kind": "count_kind",
 				"emitted": true,
 				"params": [
 					{

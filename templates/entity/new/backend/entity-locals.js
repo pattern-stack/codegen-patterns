@@ -1594,7 +1594,7 @@ export function buildBackendLocals(definition, baseLocals) {
   const behaviors = definition.behaviors || [];
   const queriesBlock = definition.queries || null;
   // ADR-043 §6 `api: false` and REL-2 §2.5's typed include are decided once, in
-  // the derivation (`apiEnabled` / `declaresOwnRelation`, `src/derived/api/
+  // the derivation (`apiEnabled` / `hasTypedInclude`, `src/derived/api/
   // entity.ts`); the templates read its answers as `apiSurface.http.enabled` /
   // `apiSurface.repository.typedInclude`.
 
@@ -2090,10 +2090,6 @@ export function buildBackendLocals(definition, baseLocals) {
   });
   // The entities that `inherits:` this one — the derivation's input (`inheritanceChildren`): a base's cross-kind
   // reads and a family member's typed include both follow from it (`apiSurface.repository.methods` / `.typedInclude`).
-  if (typeof definition.discriminator === 'string' && !entityLookup?.definitions) {
-    // A base's children are found across the whole set; with no lookup the answer is unknown, not "none".
-    throw new Error(`[codegen] '${entityName}' declares discriminator '${definition.discriminator}', but no entity lookup was supplied to find its children.`);
-  }
   const familyChildren = inheritanceChildrenOf(entityName, entityLookup?.definitions ? entityLookup.definitions() : []);
   // The scope a child's repository declares: its tenant column (the base's, carried as a copy) with strict
   // enforcement, plus the base's lifecycle scope. A plain entity's is its own `tenantScoped`.

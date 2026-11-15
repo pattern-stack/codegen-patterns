@@ -69,8 +69,14 @@ export interface RepositoryMethod {
 		| 'eav_upsert'
 		/** A child's flat read through its base row (`findWithBase`, `findManyWithBase`) — `inherits:` (RFC-0006 §3.2). */
 		| 'with_base'
-		/** A base's cross-kind read (`findAllKinds`, `findKindById`, `listKind`, `countKind`) — `discriminator:` (RFC-0006 §3.3). */
-		| 'across_kinds'
+		/** A base's `findAllKinds` — every row, its child nested under its kind (`discriminator:`, RFC-0006 §3.3). */
+		| 'all_kinds'
+		/** A base's `findKindById` — one row by id with its child. */
+		| 'kind_by_id'
+		/** A base's `listKind` — one kind, flat, filtered and sorted on base columns. */
+		| 'list_kind'
+		/** A base's `countKind` — how many rows of one kind. */
+		| 'count_kind'
 		/** A base's `findOrphans` — a kind with a child table but no child row. */
 		| 'orphans'
 		| 'inherited';
@@ -102,8 +108,11 @@ export interface ServiceMethod {
 		| 'eav_write'
 		/** The repository's `with_base` reads, forwarded. */
 		| 'with_base'
-		/** The repository's `across_kinds` reads, forwarded. */
-		| 'across_kinds'
+		/** The repository's cross-kind reads, forwarded (same four kinds as the repository). */
+		| 'all_kinds'
+		| 'kind_by_id'
+		| 'list_kind'
+		| 'count_kind'
 		/** The repository's `findOrphans`, forwarded. */
 		| 'orphans'
 		| 'inherited';

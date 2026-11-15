@@ -392,8 +392,8 @@ describe('buildApiIncludes — the emitted file', () => {
 	});
 });
 
-// `hasTypedInclude` is the one rule for "this entity's repository can name a `with`", read by the template's
-// `includes` local and by the allowlist gate. Pinned here against the locals the template actually computes: if the
+// `hasTypedInclude` is the one rule for "this entity's repository can name a `with`", read by the derivation (the
+// hygen half is `apiSurface.repository.typedInclude`) and by the allowlist gate. Pinned here against the locals the template actually computes: if the
 // gate said "fine" and the locals said "no include surface", every allowlisted path would be a silent 400.
 describe('hasTypedInclude agrees with the locals the template computes', () => {
 	const cases: Array<{ name: string; relationships: unknown; expected: boolean }> = [

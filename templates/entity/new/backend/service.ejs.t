@@ -13,9 +13,11 @@ import { <%= classNames.repository %> } from './<%= entityFileStem %>.repository
 // the same generics, the same options, the same result.
 const E = classNames.entity;
 const _typedInclude = apiSurface.repository.typedInclude;
-// RFC-0006 (#875) S3 — which family reads exist is the derivation's call (`with_base` / `across_kinds` entries).
+// RFC-0006 (#875) S3 — which family reads exist is the derivation's call (`with_base` / cross-kind entries).
 const _child = apiSurface.service.methods.some((m) => m.kind === 'with_base');
-const _base = apiSurface.service.methods.some((m) => m.kind === 'across_kinds');
+const _ACROSS = ['all_kinds', 'kind_by_id', 'list_kind', 'count_kind'];
+const _isAcross = (m) => _ACROSS.includes(m.kind);
+const _base = apiSurface.service.methods.some(_isAcross);
 const _readGenerics = _typedInclude
   ? `<W extends ${E}Include = ${E}NoInclude, C extends ${E}Columns | undefined = undefined>`
   : `<C extends ${E}Columns | undefined = undefined>`;
@@ -121,7 +123,7 @@ const _group = (m) =>
   m.kind.startsWith('junction_') ? 'junction'
   : m.kind === 'relation_one' || m.kind === 'relation_many' ? 'relation'
   : m.kind === 'eav_read' || m.kind === 'eav_write' ? 'eav'
-  : m.kind === 'with_base' || m.kind === 'across_kinds' || m.kind === 'orphans' ? 'read'
+  : m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans' ? 'read'
   : m.kind;
 _%>
 <%_ _methods.forEach((m, i) => { _%>
@@ -156,7 +158,7 @@ _%>
     return this.repository.<%= m.delegatesTo.method %><%- _readArgs %>(<%= _p %>);
   }
 <%_ } _%>
-<%_ } else if (m.kind === 'with_base' || m.kind === 'across_kinds' || m.kind === 'orphans') { _%>
+<%_ } else if (m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans') { _%>
 <%_ /* RFC-0006 (#875) §3 — the family reads, forwarded verbatim: the repository's names, params and result. */ _%>
 <%_ const _p = m.params.map((x) => x.name); _%>
 <%_ if (m.kind === 'with_base' && m.returns === 'one') { _%>
@@ -182,22 +184,22 @@ _%>
     return this.repository.<%= m.delegatesTo.method %>(<%= _p[0] %>);
   }
 <%_ } else { _%>
-<%_ if (_methods[i - 1].kind !== 'across_kinds') { _%>
+<%_ if (!_isAcross(_methods[i - 1])) { _%>
 
   // RFC-0006 §3.3 — reading across kinds: the repository's, forwarded.
 <%_ } _%>
-<%_ if (m.returns === 'many' && _p.length === 1) { _%>
+<%_ if (m.kind === 'all_kinds') { _%>
   <%= m.name %>(
     <%= _p[0] %>?: ListOptions<typeof <%= entityNamePlural %>> & { kinds?: readonly <%= E %>Kind[] },
   ): Promise<<%= E %>OfKind[]> {
     return this.repository.<%= m.delegatesTo.method %>(<%= _p[0] %>);
   }
-<%_ } else if (m.returns === 'one') { _%>
+<%_ } else if (m.kind === 'kind_by_id') { _%>
 
   <%= m.name %>(<%= _p[0] %>: string): Promise<<%= E %>OfKind | null> {
     return this.repository.<%= m.delegatesTo.method %>(<%= _p[0] %>);
   }
-<%_ } else if (m.returns === 'many') { _%>
+<%_ } else if (m.kind === 'list_kind') { _%>
 
   <%= m.name %><K extends keyof <%= E %>FlatByKind>(
     <%= _p[0] %>: K,

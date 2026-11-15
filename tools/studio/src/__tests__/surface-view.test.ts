@@ -262,7 +262,7 @@ describe('HTTP', () => {
     };
     contact.repository.methods.push({
       name: 'findAllKinds',
-      kind: 'across_kinds',
+      kind: 'all_kinds',
       emitted: true,
       params: [{ name: 'query' }],
       returns: 'many',
@@ -271,7 +271,7 @@ describe('HTTP', () => {
     });
     contact.service.methods.push({
       name: 'findAllKinds',
-      kind: 'across_kinds',
+      kind: 'all_kinds',
       emitted: true,
       params: [{ name: 'query' }],
       returns: 'many',
@@ -279,7 +279,7 @@ describe('HTTP', () => {
     });
     for (const id of ['repository', 'service'] as const) {
       const r = sectionOf(family, 'contact', id).rows.find((x) => x.name === 'findAllKinds');
-      expect(r?.kindLabel).toBe('across kinds');
+      expect(r?.kindLabel).toBe('all kinds');
       expect(r?.origin?.text).toBe('← discriminator (kinds with a child table: email)');
     }
   });

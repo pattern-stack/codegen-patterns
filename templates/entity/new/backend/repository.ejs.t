@@ -28,11 +28,13 @@ const _readOpts = _typedInclude ? 'ReadOptions<W, C>' : 'ReadOptions<never, C>';
 const _readResult = _typedInclude ? `${E}Result<W, C>` : `${E}Result<${E}NoInclude, C>`;
 const _withLine = _typedInclude ? '\n      with: opts?.with,' : '';
 // RFC-0006 (#875) S3 — the read half of a joined-table family. Which reads exist is the derivation's call
-// (`with_base` / `across_kinds` / `orphans` entries); the facts the bodies print (the base edge, the kind column and
+// (`with_base` / `all_kinds` / `kind_by_id` / `list_kind` / `count_kind` / `orphans` entries); the facts the bodies print (the base edge, the kind column and
 // its child keys) come from `familyChild` / `familyBase`.
-const _isRead = (m) => m.kind === 'count' || m.kind === 'with_base' || m.kind === 'across_kinds' || m.kind === 'orphans';
+const _ACROSS = ['all_kinds', 'kind_by_id', 'list_kind', 'count_kind'];
+const _isAcross = (m) => _ACROSS.includes(m.kind);
+const _isRead = (m) => m.kind === 'count' || m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans';
 const _child = _methods.some((m) => m.kind === 'with_base') ? familyChild : null;
-const _base = _methods.some((m) => m.kind === 'across_kinds') ? familyBase : null;
+const _base = _methods.some(_isAcross) ? familyBase : null;
 const _EU = entityName.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
 const _eLower = E.charAt(0).toLowerCase() + E.slice(1);
 _%>
@@ -443,11 +445,11 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
   override async <%= m.name %>(<%= m.params[0].name %>?: RowFilter<typeof <%= entityNamePlural %>>): Promise<number> {
     return super.<%= m.name %>(<%= m.params[0].name %>);
   }
-<%_ } else if (m.kind === 'with_base' || m.kind === 'across_kinds' || m.kind === 'orphans') { _%>
+<%_ } else if (m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans') { _%>
 <%_ /* RFC-0006 (#875) §3 — the family reads. Each is a derived method (`src/derived/api/entity.ts`, caused by the
       child's `inherits:` or the base's `discriminator:`); the first of each kind opens its banner. */ _%>
 <%_ const _p = m.params.map((x) => x.name); _%>
-<%_ const _firstOfKind = i === 0 || _methods[i - 1].kind !== m.kind; _%>
+<%_ const _firstOfKind = i === 0 || (_isAcross(m) ? !_isAcross(_methods[i - 1]) : _methods[i - 1].kind !== m.kind); _%>
 <%_ if (m.kind === 'with_base') { _%>
 <%_ if (_firstOfKind) { _%>
 
@@ -495,7 +497,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
     ) as Array<<%= E %>Flat<W, C>>;
   }
 <%_ } _%>
-<%_ } else if (m.kind === 'across_kinds') { _%>
+<%_ } else if (_isAcross(m)) { _%>
 <%_ if (_firstOfKind) { _%>
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -506,7 +508,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
   // Each child is scoped by the relations manifest like any other hop.
   // ═══════════════════════════════════════════════════════════════════════
 <%_ } _%>
-<%_ if (m.returns === 'many' && _p.length === 1) { _%>
+<%_ if (m.kind === 'all_kinds') { _%>
 
   /**
    * Every row with its child nested under its kind's key, a base-only kind bare. `kinds` filters the scan
@@ -529,7 +531,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
     });
     return rows.map((row) => asKind<<%= E %>OfKind>(row, '<%= _base.discriminator %>', <%= _EU %>_CHILD_KEY_BY_KIND));
   }
-<%_ } else if (m.returns === 'one') { _%>
+<%_ } else if (m.kind === 'kind_by_id') { _%>
 
   /** One row by id with its child, narrowed by kind. `null` when absent or out of scope. */
   async <%= m.name %>(<%= _p[0] %>: string): Promise<<%= E %>OfKind | null> {
@@ -539,7 +541,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
     });
     return row ? asKind<<%= E %>OfKind>(row, '<%= _base.discriminator %>', <%= _EU %>_CHILD_KEY_BY_KIND) : null;
   }
-<%_ } else if (m.returns === 'many') { _%>
+<%_ } else if (m.kind === 'list_kind') { _%>
 
   /**
    * One kind, flat (the base's columns and the child's at one level), filtered and sorted on BASE columns —
