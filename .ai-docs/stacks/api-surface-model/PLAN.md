@@ -1,6 +1,6 @@
 # PLAN — backend API-surface derivation (slice 1) + Studio API view
 
-**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · Phase A (A0–A6) merged 2026-11-14 (`main` @ `c8da953a`) · B1–B4 built · S1, S2, S3 signed off 2026-11-14 · A6 (#778) added to Phase A by Doug 2026-11-14
+**Status:** approved (Doug, 2026-11-13; N1 decided: `src/derived/api/`) · **Revision 1** folded in · Phase A (A0–A6) merged 2026-11-14 (`main` @ `c8da953a`) · B1–B5 built · S1, S2, S3 signed off 2026-11-14 · A6 (#778) added to Phase A by Doug 2026-11-14
 **Basis:** `main` @ `c1ceeefd`. READ-1 merged 2026-11-12 (#859 and the ten PRs under it). Every `path:line`
 below was taken at the READ-1 tip `e9fe6f5f`; every cited file is byte-identical on `main` (checked one by one
 with `git diff --quiet e9fe6f5f c1ceeefd -- <file>`), so the line numbers hold.
@@ -410,6 +410,17 @@ on `apiSurface.repository.typedInclude` instead of `includes`. They are type tex
 `capabilityForwarders`, `repositoryInheritedMethods`, `serviceInheritedMethods`, the fan-out `*Method` and
 `*IdParam` keys.
 
+*As built (B5, owner-approved 2026-11-14 — "option B"):* the locals on this list are deleted, and the 21 unit-test
+assertions that read them are repointed at `locals.apiSurface` with the same matcher and the same expected value — the
+one enumerated §14.3 exception for B5 (the table is in B5's PR). `includes`' last template readers
+(`use-cases/find-by-id.ejs.t`, `list.ejs.t`) read `apiSurface.repository.typedInclude`; `queryTypes` and the collision
+check key on `finderName(q)`. **Stays:** `repositoryInheritedMethods` / `serviceInheritedMethods` (named expectation,
+#893). **Not converted — #894:** the generated class names `entity-locals.js` still builds from template literals
+(`classNames.*` — entity, repository, service, controller, module, use cases — and `searchQuery.useCaseClassName`), read
+by the use-case templates, module and index this table did not list. The lint's four patterns cannot see a
+template-literal class name; the parity gate holds them equal to the derivation. #894 prints them from `apiSurface` and
+adds a lint pattern.
+
 **The silent-drop rule applies to every deletion** (CLAUDE.md § Testing). Each PR body lists, per deleted
 local, every reader found by `grep` across `templates/**`, `src/__tests__/**` and `prompt.js` — which itself
 reads `backendLocals.*` (`prompt.js:542-550`). `assertNoUndefinedLocals` (`EL:2716`) and the unguarded-locals
@@ -618,6 +629,7 @@ Two `gh stack`s; each lands as one atomic merge, by you (§14.8). Sizes are roug
 | **B2** | `repository.ejs.t` prints. `deriveQueryMethodName` deleted from `entity-locals.js`, `query-routes.ts` (file deleted), `relationship/new/prompt.js`; `build-includes.ts` reads `names.ts`; `queryTypes` local; `package.json` `files`; `resolvePatternComposition` moves into `src/` and `project.ts`'s restated copy is deleted (A2). Closes #711. | templates, `EL`, `src/schema/query-routes.ts`, the finder half of `route-name-parity.test.ts` | M · 1d |
 | **B3** | Controller, search controller, `index` / `module` flags print. One reader each for `apiEnabled`, typed-include, includes const. | templates, `EL`, `emit-includes.ts`, `build-includes.ts`, the rest of `route-name-parity.test.ts` | M · 1d |
 | **B4** | `service.ejs.t` + `declarative-queries.ejs.t` print; fan-out names from `names.ts`; entity-backend allowlist empty; CLAUDE.md clause removed; ADR and specs to post-implementation truth | templates, `EL`, `_shared/junction-fan-out.mjs`, `prompt.js` | M · 1–1.5d |
+| **B5** | Delete the locals the derivation replaced (`capabilityForwarders`, `declarativeQueryClasses`, `processedQueries[].methodName` / `.useCaseClassName`, the fan-out `*Method` / `*IdParam` keys, `apiEnabled`, `includes`); repoint the tests that asserted them at `locals.apiSurface` (owner-approved 2026-11-14) | `entity-locals.js`, `_shared/junction-fan-out.mjs`, `use-cases/{find-by-id,list}.ejs.t`, five test files | S |
 
 Order: A0 → A1 → A2 → A3 → A4 → A5 → A6, then B1 → B2 → B3 → B4. Phase A critical path 5.5 days (A0 is half a day
 of docs beside it); Phase B 3.5–4.5 days.
@@ -929,7 +941,7 @@ again by the reviewer; a non-empty result is a stop (§14.6), not something to e
 | Add to the lint allowlist. It only shrinks. | `git diff --numstat <A1>..HEAD -- src/__tests__/templates/no-name-derivation.allowlist.ts \| cut -f1` → `0`, **except** one approved label edit: the `bridge-listener.ejs.t` entry's `issue` became `#884` in A5 (Doug, S2, 2026-11-14) — same file, pattern and count, so `1` added line that widens nothing |
 | Loosen the lint or the parity comparison after S1 signed them off. | `git diff --stat <A1>..HEAD -- src/__tests__/derived/api-surface-parity.test.ts src/__tests__/derived/_parity-compare.ts src/__tests__/templates/no-name-derivation-in-templates.test.ts` |
 | Skip or narrow a test. | `git diff $BASE..HEAD \| grep -nE '^\+.*\b(it\|test\|describe)\.(skip\|todo\|only)\b\|^\+.*\b(xit\|xdescribe)\('` |
-| Delete or weaken an assertion in an existing test. | `git diff $BASE..HEAD -- src/__tests__ test tools/studio/src/__tests__ \| grep -c '^-.*expect('` → `0`, **except** in the two enumerated deletions: `src/__tests__/emitters/relations/route-name-parity.test.ts` (B2 its finder half, B3 the rest); A6's canvas pins in `tools/studio/src/__tests__/schema-adapter.test.ts`, which fall because inverse pairs collapse (#778) — the demo's edge count `toHaveLength(6)` → `4`, approved by Doug 2026-11-14 in A6.md, still exact; and one enumerated update: `src/__tests__/cli/project.test.ts`'s `expect(projectNoun.commandClasses.length).toBe(<n>)`, whose count changes only when a command is added and is never deleted or loosened (A2: `8` → `9` for `project surface`; approved by Doug 2026-11-14 after it tripped this detection) |
+| Delete or weaken an assertion in an existing test. | `git diff $BASE..HEAD -- src/__tests__ test tools/studio/src/__tests__ \| grep -c '^-.*expect('` → `0`, **except** in the two enumerated deletions: `src/__tests__/emitters/relations/route-name-parity.test.ts` (B2 its finder half, B3 the rest); A6's canvas pins in `tools/studio/src/__tests__/schema-adapter.test.ts`, which fall because inverse pairs collapse (#778) — the demo's edge count `toHaveLength(6)` → `4`, approved by Doug 2026-11-14 in A6.md, still exact; B5's repointed assertions — each `expect(locals.<deleted local>)` becomes `expect(locals.apiSurface.<same fact>)` with the same matcher and expected value, approved by Doug 2026-11-14 (option B), listed one by one in B5's PR; and one enumerated update: `src/__tests__/cli/project.test.ts`'s `expect(projectNoun.commandClasses.length).toBe(<n>)`, whose count changes only when a command is added and is never deleted or loosened (A2: `8` → `9` for `project surface`; approved by Doug 2026-11-14 after it tripped this detection) |
 | Delete a test file not enumerated above. | `git diff --diff-filter=D --name-only $BASE..HEAD -- src/__tests__ test tools/studio/src/__tests__` → only that file, plus `src/schema/query-routes.ts`'s own test if one exists |
 | Add a predicate to the smoke filter, or touch the #680 expectation. | `git diff --stat $BASE..HEAD -- test/smoke/_consumer-errors.ts test/run-test.ts` |
 | Silence the type checker. | `git diff $BASE..HEAD -- src/derived src/studio tools/studio/src \| grep -nE '^\+.*(@ts-ignore\|@ts-expect-error\|as any\|as unknown as)'` |

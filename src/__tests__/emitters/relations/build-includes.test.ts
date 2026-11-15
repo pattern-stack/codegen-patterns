@@ -393,8 +393,8 @@ describe('buildApiIncludes — the emitted file', () => {
 });
 
 // `declaresOwnRelation` (`src/derived/api/entity.ts`, ADR-046) is the one rule:
-// the emitter calls it on the parsed definition, and the hygen half's `includes`
-// local is the derivation's `typedInclude`, which calls it on the raw YAML. If
+// the emitter calls it on the parsed definition, and the hygen half
+// (`apiSurface.repository.typedInclude`) calls it on the raw YAML. If
 // the two ever answered differently, every allowlisted path would be a silent
 // 400 — so the pair is still pinned, across both input spellings.
 describe('declaresOwnRelation matches the template’s includes', () => {
@@ -441,8 +441,10 @@ describe('declaresOwnRelation matches the template’s includes', () => {
 			);
 			// NAME-0 (#630): cross-entity naming resolves through an entity lookup,
 			// so a hand-built call needs the same base locals `prompt.js` passes.
-			const locals = buildBackendLocals(raw, withEntities()) as { includes: boolean };
-			expect(locals.includes).toBe(expected);
+			const locals = buildBackendLocals(raw, withEntities()) as {
+				apiSurface: { repository: { typedInclude: boolean } };
+			};
+			expect(locals.apiSurface.repository.typedInclude).toBe(expected);
 		});
 	}
 });

@@ -64,6 +64,16 @@ const activityDefinition = {
 // Tests
 // ============================================================================
 
+// ADR-046: the `queries:` use cases and the capability forwarders, read from the derivation.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const queryUseCases = (locals: any) =>
+  locals.apiSurface.useCases.filter((u: { kind: string }) => u.kind === 'query');
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const capabilityForwarders = (locals: any) =>
+  locals.apiSurface.service.methods
+    .filter((m: { kind: string }) => m.kind === 'capability_forwarder')
+    .map((m: { name: string; origin: { capability: string } }) => ({ capability: m.origin.capability, method: m.name }));
+
 describe('buildBackendLocals', () => {
   it('derives correct class names from entity name', () => {
     const locals = buildBackendLocals(contactDefinition, EMPTY_BASE_LOCALS);
@@ -235,15 +245,15 @@ describe('buildBackendLocals', () => {
 
     expect(locals.hasDeclarativeQueries).toBe(true);
     expect(locals.processedQueries).toHaveLength(4);
-    expect(locals.processedQueries[0].methodName).toBe('findByUserId');
-    expect(locals.processedQueries[1].methodName).toBe('findByEmail');
+    expect(queryUseCases(locals)[0].calls.method).toBe('findByUserId');
+    expect(queryUseCases(locals)[1].calls.method).toBe('findByEmail');
     expect(locals.processedQueries[1].isUnique).toBe(true);
     expect(locals.processedQueries[1].returnType).toBe('Contact | null');
     expect(locals.processedQueries[2].hasOrder).toBe(true);
     expect(locals.processedQueries[2].orderBy).toBe('createdAt');
     expect(locals.processedQueries[2].orderDirection).toBe('desc');
     expect(locals.processedQueries[3].hasMultipleParams).toBe(true);
-    expect(locals.processedQueries[3].methodName).toBe('findByUserIdAndAccountId');
+    expect(queryUseCases(locals)[3].calls.method).toBe('findByUserIdAndAccountId');
   });
 
   it('processes via-table and select queries', () => {
@@ -259,9 +269,9 @@ describe('buildBackendLocals', () => {
     expect(locals.hasViaQuery).toBe(true);
     expect(locals.processedQueries[0].hasVia).toBe(true);
     expect(locals.processedQueries[0].viaTable).toBe('opportunity_contact_link');
-    expect(locals.processedQueries[0].methodName).toBe('findByOpportunityId');
+    expect(queryUseCases(locals)[0].calls.method).toBe('findByOpportunityId');
     expect(locals.processedQueries[1].hasSelect).toBe(true);
-    expect(locals.processedQueries[1].methodName).toBe('findEmailsByOpportunityId');
+    expect(queryUseCases(locals)[1].calls.method).toBe('findEmailsByOpportunityId');
   });
 
   it('generates entity-prefixed use case class names from queries', () => {
@@ -273,7 +283,7 @@ describe('buildBackendLocals', () => {
 
     // Names are prefixed with the entity to avoid collisions across modules
     // and read as English: "Find contact by user id".
-    expect(locals.declarativeQueryClasses).toEqual([
+    expect(queryUseCases(locals).map((u: { className: string }) => u.className)).toEqual([
       'FindContactByUserIdUseCase',
       'FindContactByEmailUseCase',
     ]);
@@ -286,10 +296,10 @@ describe('buildBackendLocals', () => {
     };
     const locals = buildBackendLocals(withQueries, EMPTY_BASE_LOCALS);
 
-    expect(locals.declarativeQueryClasses).toEqual([
+    expect(queryUseCases(locals).map((u: { className: string }) => u.className)).toEqual([
       'FindContactByUserIdAndAccountIdUseCase',
     ]);
-    expect(locals.processedQueries[0].useCaseClassName).toBe(
+    expect(queryUseCases(locals)[0].className).toBe(
       'FindContactByUserIdAndAccountIdUseCase',
     );
   });
@@ -304,7 +314,7 @@ describe('buildBackendLocals', () => {
     const locals = buildBackendLocals(withQueries, EMPTY_BASE_LOCALS);
 
     // methodName 'findEmailsByOpportunityId' → 'FindContactEmailsByOpportunityIdUseCase'
-    expect(locals.declarativeQueryClasses).toEqual([
+    expect(queryUseCases(locals).map((u: { className: string }) => u.className)).toEqual([
       'FindContactEmailsByOpportunityIdUseCase',
     ]);
   });
@@ -328,11 +338,11 @@ describe('buildBackendLocals', () => {
     const accountLocals = buildBackendLocals(accountDef, EMPTY_BASE_LOCALS);
     const opportunityLocals = buildBackendLocals(opportunityDef, EMPTY_BASE_LOCALS);
 
-    expect(accountLocals.declarativeQueryClasses).toEqual(['FindAccountByDomainUseCase']);
-    expect(opportunityLocals.declarativeQueryClasses).toEqual(['FindOpportunityByDomainUseCase']);
+    expect(queryUseCases(accountLocals).map((u: { className: string }) => u.className)).toEqual(['FindAccountByDomainUseCase']);
+    expect(queryUseCases(opportunityLocals).map((u: { className: string }) => u.className)).toEqual(['FindOpportunityByDomainUseCase']);
     // Different entities must not produce colliding class names
-    expect(accountLocals.declarativeQueryClasses[0]).not.toBe(
-      opportunityLocals.declarativeQueryClasses[0],
+    expect(queryUseCases(accountLocals)[0].className).not.toBe(
+      queryUseCases(opportunityLocals)[0].className,
     );
   });
 
@@ -341,7 +351,7 @@ describe('buildBackendLocals', () => {
 
     expect(locals.hasDeclarativeQueries).toBe(false);
     expect(locals.processedQueries).toEqual([]);
-    expect(locals.declarativeQueryClasses).toEqual([]);
+    expect(queryUseCases(locals).map((u: { className: string }) => u.className)).toEqual([]);
   });
 
   it('includes declarativeQueries output path when queries exist', () => {
@@ -764,7 +774,7 @@ describe('capability composition emission (ADR-041)', () => {
     expect(locals.composedBaseClass).toBeNull();
     expect(locals.outputPaths.composedBase).toBeNull();
     expect(locals.capabilityMixins).toEqual([]);
-    expect(locals.capabilityForwarders).toEqual([]);
+    expect(capabilityForwarders(locals)).toEqual([]);
   });
 
   it('one capability → inline wrap, still no composed-base file', () => {
@@ -825,7 +835,7 @@ describe('capability composition emission (ADR-041)', () => {
       entityWith(['CeGroup', 'CeIndividual', 'CeAudited']),
       EMPTY_BASE_LOCALS,
     );
-    expect(locals.capabilityForwarders).toEqual([
+    expect(capabilityForwarders(locals)).toEqual([
       { capability: 'CeGroup', method: 'members' },
       { capability: 'CeIndividual', method: 'principal' },
       { capability: 'CeAudited', method: 'auditCount' },

@@ -5,7 +5,7 @@ force: true
 <%- generatedBanner %>
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
-<% if (includes) { -%>
+<% if (apiSurface.repository.typedInclude) { -%>
 import type {
   <%= classNames.entity %>Include,
   <%= classNames.entity %>NoInclude,
@@ -19,7 +19,7 @@ import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 export class <%= classNames.findByIdUseCase %> {
   constructor(private readonly service: <%= classNames.service %>) {}
 
-<% if (includes) { -%>
+<% if (apiSurface.repository.typedInclude) { -%>
   /**
    * `include` is a typed include TREE, not a client string — the controller has
    * already resolved `?include=` against the route's allowlist and rejected
