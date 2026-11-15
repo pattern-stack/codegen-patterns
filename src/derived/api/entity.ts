@@ -15,7 +15,7 @@
 
 import { entityModuleNaming } from '../../config/module-tree.js';
 import { junctionName } from '../../config/junction-naming.js';
-import { inheritsOf, naturalKeyIndexOf, type InheritanceBase, type InheritanceChild } from '../../schema/inheritance.js';
+import { baseOnlyKinds, inheritsOf, naturalKeyIndexOf, type InheritanceBase, type InheritanceChild } from '../../schema/inheritance.js';
 import { deriveRoleRelationships, type RoleDefinition } from '../../roles/derive.js';
 import {
 	controllerClassName,
@@ -105,25 +105,45 @@ export interface EntityDefinitionInput {
 
 /**
  * The YAML declaration that turns the write side off — create / update / delete use cases, their routes and
- * their module providers — or `null` when writes are emitted (RFC-0006 §13.2, #875).
+ * their module providers — or `null` when writes are emitted: `generate.writes: false`. A child's `inherits:` is no
+ * cause (RFC-0006 §13.2, #875 S5): its flat DTOs extend the base's and its repository's pair write is the write.
  *
- * Two causes, `generate.writes: false` and a child's `inherits:` (the child's use cases would take the flat
- * input, whose DTOs are S5's; until then the pair write is the repository's and the service's, not a use case's, and S5 deletes
- * this branch).
- * The ONE owner of this decision —
- * `deriveEntityApiSurface` reads it for the use cases and routes, and the templates read those — so a third
- * cause is one edit here.
+ * The ONE owner of this decision — `deriveEntityApiSurface` reads it for the use cases and routes, and the
+ * templates read those — so another cause is one edit here.
  */
 export function writesDisabledBy(definition: {
 	entity: { name: string };
-	// Required keys (their values may be undefined): a narrowed call that leaves one out does not compile,
-	// instead of silently turning a child's writes on.
+	// Required key (its value may be undefined): a narrowed call that leaves it out does not compile, instead of
+	// silently turning writes on.
 	generate: EntityDefinitionInput['generate'];
-	inherits: EntityDefinitionInput['inherits'];
 }): YamlPath | null {
-	if (inheritsOf(definition) !== null) return ['inherits'];
 	if (definition.generate?.writes === false) return ['generate', 'writes'];
 	return null;
+}
+
+/**
+ * The declaration that removes a base's own `create` — the use case, the `POST` route and its provider — or `null`
+ * when it has one (RFC-0006 §4.1, §5, #875 S5). A base's create accepts only base-only kinds, so a base whose every
+ * kind has a child table has none: a row of any kind is created through its child's `POST`. The cause is the
+ * `discriminator:`, with the kinds it admits named in the note.
+ *
+ * `kinds` is required, not defaulted: an unknown list (`null`) on a base is an error, not "every kind is base-only".
+ * A non-base, or a base with no child at all, always has a create. Writes being off (`writesDisabledBy`) removes it
+ * too, but that is the caller's: this answers only the family question.
+ */
+export function createDisabledBy(
+	definition: { discriminator?: string },
+	inheritanceChildren: readonly InheritanceChild[],
+	kinds: readonly string[] | null,
+): YamlPath | null {
+	if (typeof definition.discriminator !== 'string' || inheritanceChildren.length === 0) return null;
+	// `== null`: a JS caller (entity-locals.js) that omits the key gets the named error, not a TypeError.
+	if (kinds == null) {
+		throw new Error(
+			`[codegen] discriminator '${definition.discriminator}': its kinds are unknown, so whether the base has a create cannot be decided.`,
+		);
+	}
+	return baseOnlyKinds(kinds, inheritanceChildren.map((c) => c.as)).length === 0 ? ['discriminator'] : null;
 }
 
 /**
@@ -138,9 +158,11 @@ function mergedRelationships(definition: EntityDefinitionInput): Record<string, 
 }
 
 /** The repository kinds the service forwards verbatim (RFC-0006 S3). */
-function isFamilyReadKind(kind: RepositoryMethod['kind']): kind is 'with_base' | 'all_kinds' | 'kind_by_id' | 'list_kind' | 'count_kind' | 'orphans' {
+function isFamilyReadKind(kind: RepositoryMethod['kind']): kind is 'with_base' | 'list_flat' | 'count_flat' | 'all_kinds' | 'kind_by_id' | 'list_kind' | 'count_kind' | 'orphans' {
 	return (
 		kind === 'with_base' ||
+		kind === 'list_flat' ||
+		kind === 'count_flat' ||
 		kind === 'all_kinds' ||
 		kind === 'kind_by_id' ||
 		kind === 'list_kind' ||
@@ -271,6 +293,11 @@ export interface EntityApiInput {
 	inheritanceChildren: readonly InheritanceChild[];
 	/** The base this entity inherits, with whether that base declares a natural key — `null` for a non-child. */
 	inheritanceBase: InheritanceBase | null;
+	/**
+	 * The kinds this entity's `discriminator:` admits (`discriminatorKindsOf`) — `null` for a non-base. Required, not
+	 * defaulted: an unknown list on a base is an error (`createDisabledBy`), never "every kind is base-only".
+	 */
+	discriminatorKinds: readonly string[] | null;
 	/** Another entity's `entity:` block, by name (NAME-0) — `null` when it has no YAML. */
 	entityLookup: (name: string) => EntityBlockInput | null;
 }
@@ -402,6 +429,7 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 		},
 	};
 	if (family.child) {
+		const baseOf = inheritsOf(definition)!.base;
 		repository.push(
 			{
 				name: FAMILY_METHOD.findWithBase,
@@ -421,13 +449,34 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 				readOptions: 'columns+with',
 				origin: inheritsOrigin,
 			},
+			// S5 — what the HTTP list reads: this kind's rows over the base's, flat, filtered and sorted on the base's columns.
+			{
+				name: FAMILY_METHOD.listFlat,
+				kind: 'list_flat',
+				delegatesTo: repoRef(baseOf, FAMILY_METHOD.listKind),
+				emitted: true,
+				params: [{ name: 'query' }, { name: 'opts' }],
+				returns: 'many',
+				readOptions: 'with',
+				origin: inheritsOrigin,
+			},
+			{
+				name: FAMILY_METHOD.countFlat,
+				kind: 'count_flat',
+				delegatesTo: repoRef(baseOf, FAMILY_METHOD.countKind),
+				emitted: true,
+				params: [{ name: 'where' }],
+				returns: 'count',
+				readOptions: 'none',
+				origin: inheritsOrigin,
+			},
 		);
 	}
 	if (family.crossKind) {
 		repository.push(
 			{ name: FAMILY_METHOD.findAllKinds, kind: 'all_kinds', emitted: true, params: [{ name: 'query' }], returns: 'many', readOptions: 'none', origin: discriminatorOrigin },
 			{ name: FAMILY_METHOD.findKindById, kind: 'kind_by_id', emitted: true, params: [{ name: 'id' }], returns: 'one', readOptions: 'none', origin: discriminatorOrigin },
-			{ name: FAMILY_METHOD.listKind, kind: 'list_kind', emitted: true, params: [{ name: 'kind' }, { name: 'query' }], returns: 'many', readOptions: 'none', origin: discriminatorOrigin },
+			{ name: FAMILY_METHOD.listKind, kind: 'list_kind', emitted: true, params: [{ name: 'kind' }, { name: 'query' }, { name: 'childWith' }], returns: 'many', readOptions: 'none', origin: discriminatorOrigin },
 			{ name: FAMILY_METHOD.countKind, kind: 'count_kind', emitted: true, params: [{ name: 'kind' }, { name: 'where' }], returns: 'count', readOptions: 'none', origin: discriminatorOrigin },
 			{ name: FAMILY_METHOD.findOrphans, kind: 'orphans', emitted: true, params: [{ name: 'opts' }], returns: 'many', readOptions: 'none', origin: discriminatorOrigin },
 		);
@@ -791,20 +840,36 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 	}
 
 	// ── Use cases ───────────────────────────────────────────────────────────
-	const writesOff = writesDisabledBy({
-		entity: definition.entity,
-		generate: definition.generate,
-		inherits: definition.inherits,
-	});
+	const writesOff = writesDisabledBy({ entity: definition.entity, generate: definition.generate });
 	const generateWrites = writesOff === null;
+	// A base whose every kind has a child table has no create of its own (RFC-0006 §4.1, S5).
+	const createOff = generateWrites ? createDisabledBy(definition, input.inheritanceChildren, input.discriminatorKinds) : null;
+	const generateCreate = generateWrites && createOff === null;
 	const useCases: UseCase[] = [
 		{
 			className: useCaseClassName('find_by_id', entityName, plural),
 			kind: 'find_by_id',
-			calls: serviceRef(entityName, 'findById'),
+			// A child is read FLAT, through its base row (RFC-0006 §3.2, S5).
+			calls: serviceRef(entityName, family.child ? FAMILY_METHOD.findWithBase : 'findById'),
 			origin: BASE,
 		},
-		{ className: useCaseClassName('list', entityName, plural), kind: 'list', calls: serviceRef(entityName, 'list'), origin: BASE },
+		{
+			className: useCaseClassName('list', entityName, plural),
+			kind: 'list',
+			calls: serviceRef(entityName, 'list'),
+			// A child's list has two roots (S5): base-rooted by default (`listFlat` / `countFlat`), child-rooted
+			// (`list` / `count`) for a child-column sort or a filter. Both paths are named.
+			...(family.child
+				? {
+						alsoCalls: [
+							serviceRef(entityName, 'count'),
+							serviceRef(entityName, FAMILY_METHOD.listFlat),
+							serviceRef(entityName, FAMILY_METHOD.countFlat),
+						],
+					}
+				: {}),
+			origin: BASE,
+		},
 	];
 	if (eav) {
 		const origin = fromYaml(['eav']);
@@ -829,6 +894,7 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 			['update', 'update'],
 			['delete', 'delete'],
 		] as const) {
+			if (kind === 'create' && !generateCreate) continue;
 			useCases.push({
 				className: useCaseClassName(kind, entityName, plural),
 				kind,
@@ -927,8 +993,10 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 			);
 		}
 		if (generateWrites) {
+			if (generateCreate) {
+				routes.push(crud('POST', undefined, 'create', 'create', useCaseClassName('create', entityName, plural), BASE));
+			}
 			routes.push(
-				crud('POST', undefined, 'create', 'create', useCaseClassName('create', entityName, plural), BASE),
 				crud('PATCH', ':id', 'update', 'update', useCaseClassName('update', entityName, plural), BASE),
 				crud('DELETE', ':id', 'remove', 'delete', useCaseClassName('delete', entityName, plural), BASE),
 			);
@@ -963,6 +1031,15 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 		http,
 		// Recorded only when writes are off, so an entity that emits them carries no new key.
 		...(writesOff ? { writesDisabledBy: ref(writesOff) } : {}),
+		// Recorded only for a base with no create of its own; the note names the kinds that all have a child table.
+		...(createOff
+			? {
+					createDisabledBy: {
+						...ref(createOff),
+						note: `every kind has a child table: ${input.inheritanceChildren.map((c) => c.as).join(', ')}`,
+					},
+				}
+			: {}),
 	};
 }
 

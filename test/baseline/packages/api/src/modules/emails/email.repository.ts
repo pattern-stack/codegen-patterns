@@ -59,9 +59,12 @@ export type EmailResult<
  *
  * Internal callers keep the exact inferred type, because `TWith` is inferred at
  * the call site (REL-2 §2.3/§5.2).
+ *
+ * A child's HTTP result is FLAT (RFC-0006 §5): the base's columns are in the body, so the base relation is never an
+ * include and never needs an allowlist entry.
  */
-export type EmailApiResult = Email &
-  globalThis.Partial<EmailResult<EmailInclude>>;
+export type EmailApiResult = EmailFlat &
+  globalThis.Partial<globalThis.Omit<EmailResult<EmailInclude>, 'communication'>>;
 
 /**
  * A email with its base row's columns hoisted to the root (RFC-0006 §3.2) — a projection of ONE
@@ -244,6 +247,23 @@ export class EmailRepository extends BaseRepository<Email, typeof emails, Relati
   ): Promise<Array<EmailFlat<W, C>>> {
     const rows = await this.findByIds(ids, { ...opts, with: { ...opts?.with, communication: true as const } } as never);
     return rows.map((row) => flattenBase(row as never, 'communication')) as Array<EmailFlat<W, C>>;
+  }
+
+  /**
+   * This kind's rows, flat, filtered and sorted on the BASE's columns (RFC-0006 §3.3): the base's `listKind`, which
+   * is what a child's HTTP list reads — its default sort is `created_at desc, id desc`, and `created_at` is the base's.
+   * `opts.with` names this table's own relations; they are joined in the same statement.
+   */
+  async listFlat<W extends EmailInclude = EmailNoInclude>(
+    query?: ListOptions<typeof communications>,
+    opts?: { with?: W },
+  ): Promise<Array<EmailFlat<W>>> {
+    return this.baseRepo.listKind('email', query, opts?.with) as unknown as Array<EmailFlat<W>>;
+  }
+
+  /** How many rows `listFlat` ranges over, on the same scope: the base's `countKind`. */
+  async countFlat(where?: RowFilter<typeof communications>): Promise<number> {
+    return this.baseRepo.countKind('email', where);
   }
 
   // ═══════════════════════════════════════════════════════════════════════

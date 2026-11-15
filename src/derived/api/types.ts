@@ -51,7 +51,8 @@ export interface MethodRef {
 }
 
 /** The read options a repository read takes (READ-1 §2.3). */
-export type ReadOptionsShape = 'none' | 'columns' | 'columns+with';
+/** `with`: only the typed include (`{ with }`), no column selection — a child's `listFlat`. */
+export type ReadOptionsShape = 'none' | 'columns' | 'with' | 'columns+with';
 
 export interface RepositoryMethod {
 	name: string;
@@ -69,6 +70,10 @@ export interface RepositoryMethod {
 		| 'eav_upsert'
 		/** A child's flat read through its base row (`findWithBase`, `findManyWithBase`) — `inherits:` (RFC-0006 §3.2). */
 		| 'with_base'
+		/** A child's `listFlat` — this kind's rows over the base's, flat, filtered and sorted on base columns (RFC-0006 §3.3, S5). */
+		| 'list_flat'
+		/** A child's `countFlat` — how many rows `listFlat` ranges over. */
+		| 'count_flat'
 		/** A base's `findAllKinds` — every row, its child nested under its kind (`discriminator:`, RFC-0006 §3.3). */
 		| 'all_kinds'
 		/** A base's `findKindById` — one row by id with its child. */
@@ -102,6 +107,8 @@ export interface RepositoryMethod {
 	/** The FK finder takes `{ limit }`. */
 	limit?: boolean;
 	unique?: boolean;
+	/** The method this one calls on another class (a child's `listFlat` reads its base repository's `listKind`). */
+	delegatesTo?: MethodRef;
 	order?: { column: string; direction: 'asc' | 'desc' };
 	origin: Origin;
 }
@@ -122,6 +129,9 @@ export interface ServiceMethod {
 		| 'eav_write'
 		/** The repository's `with_base` reads, forwarded. */
 		| 'with_base'
+		/** The repository's `listFlat` / `countFlat`, forwarded. */
+		| 'list_flat'
+		| 'count_flat'
 		/** The repository's cross-kind reads, forwarded (same four kinds as the repository). */
 		| 'all_kinds'
 		| 'kind_by_id'
@@ -161,6 +171,11 @@ export interface UseCase {
 		| 'query'
 		| 'search';
 	calls: MethodRef;
+	/**
+	 * Further methods the use case calls on another path: a child's list reads `service.listFlat` / `countFlat` by
+	 * default and `service.list` / `count` when a child column sorts or a filter applies (RFC-0006 §3.3, S5).
+	 */
+	alsoCalls?: MethodRef[];
 	origin: Origin;
 }
 
@@ -186,10 +201,14 @@ export interface EntityApiSurface {
 	useCases: UseCase[];
 	/**
 	 * The declaration that turned the write side off: no `create` / `update` / `delete` use case, route or
-	 * provider. `generate.writes: false`, or a child's `inherits:` (RFC-0006, until S5's flat DTOs). Absent when
-	 * the entity emits writes.
+	 * provider — `generate.writes: false`. Absent when the entity emits writes.
 	 */
 	writesDisabledBy?: YamlRef;
+	/**
+	 * The declaration that removed a base's own `create` use case, route and provider while its `update` / `delete`
+	 * stay: the `discriminator:`, every kind of which has a child table (RFC-0006 §4.1). Absent otherwise.
+	 */
+	createDisabledBy?: YamlRef;
 	http: {
 		enabled: boolean;
 		/** The declaration that turned HTTP off (`api: false` / `api: { enabled: false }`). */

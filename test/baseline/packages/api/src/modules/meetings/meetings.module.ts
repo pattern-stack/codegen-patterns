@@ -14,6 +14,11 @@ import { UpdateMeetingSchema } from './dto/update-meeting.dto';
 import { MeetingOutputSchema } from './dto/meeting-output.dto';
 import { FindMeetingByIdUseCase } from './use-cases/find-meeting-by-id.use-case';
 import { ListMeetingsUseCase } from './use-cases/list-meetings.use-case';
+import { CreateMeetingUseCase } from './use-cases/create-meeting.use-case';
+import { UpdateMeetingUseCase } from './use-cases/update-meeting.use-case';
+import { DeleteMeetingUseCase } from './use-cases/delete-meeting.use-case';
+import { SearchMeetingsUseCase } from './use-cases/search-meetings.use-case';
+import { MeetingSearchController } from './meeting-search.controller';
 
 @Module({
   imports: [
@@ -23,12 +28,16 @@ import { ListMeetingsUseCase } from './use-cases/list-meetings.use-case';
     forwardRef(() => MeetingTranscriptsModule),
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
   ],
-  controllers: [MeetingController],
+  controllers: [MeetingController, MeetingSearchController],
   providers: [
     MeetingRepository,
     MeetingService,
     FindMeetingByIdUseCase,
     ListMeetingsUseCase,
+    CreateMeetingUseCase,
+    UpdateMeetingUseCase,
+    DeleteMeetingUseCase,
+    SearchMeetingsUseCase,
   ],
   // ADR-002 (revised): the service is the public API; the repository is ALSO
   // exported so sibling modules that compose this entity cross-module (junction

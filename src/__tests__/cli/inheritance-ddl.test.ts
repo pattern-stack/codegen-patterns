@@ -108,8 +108,8 @@ describe('the family generates (S2: the DDL)', () => {
 		expect(enums).toContain("export const communicationKindEnum = pgEnum('communication_kind'");
 		expect(enums.match(/^import /gm)).toHaveLength(1);
 
-		// a child gets no write use cases or routes until S4 (its inherited create would insert without an id)
-		expect(fs.existsSync(path.join(root, 'src/modules/meetings/use-cases/create-meeting.use-case.ts'))).toBe(false);
+		// a child has write use cases like any entity (S5): its flat DTOs extend the base's and its repository writes the pair
+		expect(fs.existsSync(path.join(root, 'src/modules/meetings/use-cases/create-meeting.use-case.ts'))).toBe(true);
 		expect(fs.existsSync(path.join(root, 'src/modules/meetings/use-cases/find-meeting-by-id.use-case.ts'))).toBe(true);
 		expect(fs.existsSync(path.join(root, 'src/modules/communications/use-cases/create-communication.use-case.ts'))).toBe(true);
 	});

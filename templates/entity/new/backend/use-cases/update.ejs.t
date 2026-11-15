@@ -20,7 +20,11 @@ import { tryGetRequester } from '<%= tenantContextImport %>';
 import { FieldValueService } from '<%= eavFieldValueUseCaseImportDir %>/<%= eavFieldValueStem %>.service';
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 import type { <%= classNames.updateDto %> } from '../dto/update-<%= entityFileStem %>.dto';
+<% if (isInheritanceChild) { -%>
+import type { <%= classNames.entity %>Flat } from '../<%= entityFileStem %>.repository';
+<% } else { -%>
 import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
+<% } -%>
 
 /**
  * EAV compound-write use case (ADR-13).
@@ -49,7 +53,7 @@ export class <%= classNames.updateUseCase %> {
   async execute(
     id: string,
     dto: <%= classNames.updateDto %> & { fields?: globalThis.Record<string, unknown> },
-  ): Promise<<%= classNames.entity %> | null> {
+  ): Promise<<%= classNames.entity %><%= isInheritanceChild ? 'Flat' : '' %> | null> {
 <% if (hasEmits && updateEventType) { -%>
     const requester = tryGetRequester();
 <% } -%>
@@ -101,7 +105,11 @@ import { TypedEventBus } from '<%= typedEventBusImport %>';
 import { tryGetRequester } from '<%= tenantContextImport %>';
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 import type { <%= classNames.updateDto %> } from '../dto/update-<%= entityFileStem %>.dto';
+<% if (isInheritanceChild) { -%>
+import type { <%= classNames.entity %>Flat } from '../<%= entityFileStem %>.repository';
+<% } else { -%>
 import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
+<% } -%>
 
 /**
  * EXTENSION POINT (EVT-7): verify payload mapping against
@@ -118,7 +126,7 @@ export class <%= classNames.updateUseCase %> {
   async execute(
     id: string,
     dto: <%= classNames.updateDto %>,
-  ): Promise<<%= classNames.entity %> | null> {
+  ): Promise<<%= classNames.entity %><%= isInheritanceChild ? 'Flat' : '' %> | null> {
     const requester = tryGetRequester();
     return this.db.transaction(async (tx) => {
       const entity = await this.service.update(id, dto, tx);
@@ -146,7 +154,11 @@ export class <%= classNames.updateUseCase %> {
 import { Injectable } from '@nestjs/common';
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 import type { <%= classNames.updateDto %> } from '../dto/update-<%= entityFileStem %>.dto';
+<% if (isInheritanceChild) { -%>
+import type { <%= classNames.entity %>Flat } from '../<%= entityFileStem %>.repository';
+<% } else { -%>
 import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
+<% } -%>
 
 @Injectable()
 export class <%= classNames.updateUseCase %> {
@@ -155,7 +167,7 @@ export class <%= classNames.updateUseCase %> {
   async execute(
     id: string,
     dto: <%= classNames.updateDto %>,
-  ): Promise<<%= classNames.entity %> | null> {
+  ): Promise<<%= classNames.entity %><%= isInheritanceChild ? 'Flat' : '' %> | null> {
     return this.service.update(id, dto);
   }
 }

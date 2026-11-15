@@ -59,8 +59,11 @@ import { <%= _C('BASE_KEYS') %> } from './<%= entityFileStem %>.repository';
 <% if (_writes && !eavValueTable) { -%>
 import type { DrizzleTx } from '<%= drizzleTypeImport %>';
 <% } -%>
-import type { ListOptions, ReadOptions<%= _base ? ', RowFilter' : '' %> } from '<%= baseRepositoryImport %>';
+import type { ListOptions, ReadOptions<%= _base || _child ? ', RowFilter' : '' %> } from '<%= baseRepositoryImport %>';
 import type { <%= entityNamePlural %>, <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
+<% if (_child) { -%>
+import type { <%= _child.baseTable %> } from '<%= _child.baseImportPath %>';
+<% } -%>
 <% if (eavEnabled) { -%>
 import { FieldValueService } from '<%= eavFieldValueImportDir %>/<%= eavFieldValueStem %>.service';
 <% } -%>
@@ -147,7 +150,7 @@ const _group = (m) =>
   m.kind.startsWith('junction_') ? 'junction'
   : m.kind === 'relation_one' || m.kind === 'relation_many' ? 'relation'
   : m.kind === 'eav_read' || m.kind === 'eav_write' ? 'eav'
-  : m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans' || _isWrite(m) ? 'read'
+  : m.kind === 'with_base' || m.kind === 'list_flat' || m.kind === 'count_flat' || _isAcross(m) || m.kind === 'orphans' || _isWrite(m) ? 'read'
   : m.kind;
 _%>
 <%_ _methods.forEach((m, i) => { _%>
@@ -182,6 +185,22 @@ _%>
     return this.repository.<%= m.delegatesTo.method %><%- _readArgs %>(<%= _p %>);
   }
 <%_ } _%>
+<%_ } else if (m.kind === 'list_flat') { _%>
+<%_ const _p = m.params.map((x) => x.name); _%>
+
+  /** This kind's rows, flat, filtered and sorted on the base's columns — the base's `<%= apiSurface.repository.methods.find((r) => r.name === m.delegatesTo.method).delegatesTo.method %>` (RFC-0006 §3.3). What the HTTP list reads. */
+  <%= m.name %><W extends <%= E %>Include = <%= E %>NoInclude>(
+    <%= _p[0] %>?: ListOptions<typeof <%= _child.baseTable %>>,
+    <%= _p[1] %>?: { with?: W },
+  ): Promise<Array<<%= E %>Flat<W>>> {
+    return this.repository.<%= m.delegatesTo.method %><W>(<%= _p[0] %>, <%= _p[1] %>);
+  }
+<%_ } else if (m.kind === 'count_flat') { _%>
+
+  /** How many rows `listFlat` ranges over, on the same scope. */
+  <%= m.name %>(<%= m.params[0].name %>?: RowFilter<typeof <%= _child.baseTable %>>): Promise<number> {
+    return this.repository.<%= m.delegatesTo.method %>(<%= m.params[0].name %>);
+  }
 <%_ } else if (m.kind === 'with_base' || _isAcross(m) || m.kind === 'orphans') { _%>
 <%_ /* RFC-0006 (#875) §3 — the family reads, forwarded verbatim: the repository's names, params and result. */ _%>
 <%_ const _p = m.params.map((x) => x.name); _%>

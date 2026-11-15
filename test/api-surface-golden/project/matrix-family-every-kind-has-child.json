@@ -1,0 +1,8 @@
+{
+	"case": "matrix-family-every-kind-has-child",
+	"covers": "a joined-table family whose every kind has a child table — the base has no create use case, route or provider; each child has all three writes",
+	"relations": [],
+	"unmodelled": [],
+	"warnings": [],
+	"includes": {}
+}

@@ -14,6 +14,9 @@ import { UpdateEmailSchema } from './dto/update-email.dto';
 import { EmailOutputSchema } from './dto/email-output.dto';
 import { FindEmailByIdUseCase } from './use-cases/find-email-by-id.use-case';
 import { ListEmailsUseCase } from './use-cases/list-emails.use-case';
+import { CreateEmailUseCase } from './use-cases/create-email.use-case';
+import { UpdateEmailUseCase } from './use-cases/update-email.use-case';
+import { DeleteEmailUseCase } from './use-cases/delete-email.use-case';
 
 @Module({
   imports: [
@@ -29,6 +32,9 @@ import { ListEmailsUseCase } from './use-cases/list-emails.use-case';
     EmailService,
     FindEmailByIdUseCase,
     ListEmailsUseCase,
+    CreateEmailUseCase,
+    UpdateEmailUseCase,
+    DeleteEmailUseCase,
   ],
   // ADR-002 (revised): the service is the public API; the repository is ALSO
   // exported so sibling modules that compose this entity cross-module (junction

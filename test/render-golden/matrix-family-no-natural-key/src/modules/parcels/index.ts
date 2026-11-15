@@ -14,4 +14,5 @@ export type { Parcel } from './parcel.entity';
 export type { CreateParcelDto } from './dto/create-parcel.dto';
 export type { UpdateParcelDto } from './dto/update-parcel.dto';
 export type { ParcelOutputDto } from './dto/parcel-output.dto';
+export type { ParcelOfKindDto } from './dto/parcel-of-kind.dto';
 export type { ListParcelsQueryDto } from './dto/list-parcels.query';

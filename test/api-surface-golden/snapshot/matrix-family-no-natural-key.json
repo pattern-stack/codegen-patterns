@@ -137,6 +137,9 @@
 							},
 							{
 								"name": "query"
+							},
+							{
+								"name": "childWith"
 							}
 						],
 						"returns": "many",
@@ -441,6 +444,9 @@
 							},
 							{
 								"name": "query"
+							},
+							{
+								"name": "childWith"
 							}
 						],
 						"returns": "many",
@@ -836,6 +842,67 @@
 						}
 					},
 					{
+						"name": "listFlat",
+						"kind": "list_flat",
+						"delegatesTo": {
+							"entity": "parcel",
+							"layer": "repository",
+							"method": "listKind"
+						},
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "with",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "crate"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "countFlat",
+						"kind": "count_flat",
+						"delegatesTo": {
+							"entity": "parcel",
+							"layer": "repository",
+							"method": "countKind"
+						},
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "crate"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
 						"name": "create",
 						"kind": "pair_create",
 						"emitted": true,
@@ -1075,6 +1142,65 @@
 						}
 					},
 					{
+						"name": "listFlat",
+						"kind": "list_flat",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "crate",
+							"layer": "repository",
+							"method": "listFlat"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "crate"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "countFlat",
+						"kind": "count_flat",
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"delegatesTo": {
+							"entity": "crate",
+							"layer": "repository",
+							"method": "countFlat"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "crate"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
 						"name": "create",
 						"kind": "pair_create",
 						"emitted": true,
@@ -1201,7 +1327,7 @@
 					"calls": {
 						"entity": "crate",
 						"layer": "service",
-						"method": "findById"
+						"method": "findWithBase"
 					},
 					"origin": {
 						"from": "base"
@@ -1214,6 +1340,59 @@
 						"entity": "crate",
 						"layer": "service",
 						"method": "list"
+					},
+					"alsoCalls": [
+						{
+							"entity": "crate",
+							"layer": "service",
+							"method": "count"
+						},
+						{
+							"entity": "crate",
+							"layer": "service",
+							"method": "listFlat"
+						},
+						{
+							"entity": "crate",
+							"layer": "service",
+							"method": "countFlat"
+						}
+					],
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "CreateCrateUseCase",
+					"kind": "create",
+					"calls": {
+						"entity": "crate",
+						"layer": "service",
+						"method": "create"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "UpdateCrateUseCase",
+					"kind": "update",
+					"calls": {
+						"entity": "crate",
+						"layer": "service",
+						"method": "update"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "DeleteCrateUseCase",
+					"kind": "delete",
+					"calls": {
+						"entity": "crate",
+						"layer": "service",
+						"method": "delete"
 					},
 					"origin": {
 						"from": "base"
@@ -1244,19 +1423,43 @@
 						"origin": {
 							"from": "base"
 						}
+					},
+					{
+						"verb": "POST",
+						"path": "/crates",
+						"controller": "CrateController",
+						"handler": "create",
+						"operationId": "createCrate",
+						"useCase": "CreateCrateUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "PATCH",
+						"path": "/crates/:id",
+						"controller": "CrateController",
+						"handler": "update",
+						"operationId": "updateCrate",
+						"useCase": "UpdateCrateUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "DELETE",
+						"path": "/crates/:id",
+						"controller": "CrateController",
+						"handler": "remove",
+						"operationId": "deleteCrate",
+						"useCase": "DeleteCrateUseCase",
+						"origin": {
+							"from": "base"
+						}
 					}
 				],
 				"includeRoutes": [],
 				"includesConst": "CRATES_API_INCLUDES"
-			},
-			"writesDisabledBy": {
-				"doc": {
-					"kind": "entity",
-					"name": "crate"
-				},
-				"path": [
-					"inherits"
-				]
 			}
 		}
 	}

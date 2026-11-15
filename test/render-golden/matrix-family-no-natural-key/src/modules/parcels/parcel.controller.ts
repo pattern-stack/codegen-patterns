@@ -1,5 +1,5 @@
 
-import { BadRequestException, Controller, Get, Post, Patch, Delete, Body, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import { BadRequestException, Controller, ConflictException, Get, Post, Patch, Delete, Body, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { ZodValidationPipe } from '@shared/pipes/zod-validation.pipe';
 import type { Page } from '@shared/http/page';
@@ -15,6 +15,11 @@ import type { CreateParcelDto } from './dto/create-parcel.dto';
 import { UpdateParcelSchema } from './dto/update-parcel.dto';
 import type { UpdateParcelDto } from './dto/update-parcel.dto';
 import type { Parcel } from './parcel.entity';
+import {
+  KindImmutableError,
+  KindMismatchError,
+  KindRequiresChildError,
+} from '@shared/base-classes/inheritance';
 // REL-2 (#587): the HTTP include allowlist (charter I6). A client sends dot
 // PATHS; this controller looks each one up in a compile-time literal map and
 // merges the fragments. It never builds an include tree from client input, and a
@@ -57,7 +62,7 @@ export class ParcelController {
       return resolveAllowedInclude(raw, allow);
     } catch (err: unknown) {
       if (err instanceof IncludeNotAllowedError) {
-        throw new BadRequestException({ code: err.code, path: err.path, message: err.message });
+        throw new BadRequestException({ statusCode: 400, error: 'Bad Request', code: err.code, path: err.path, message: err.message });
       }
       throw err;
     }
@@ -127,6 +132,26 @@ export class ParcelController {
   }
 
 
+  /**
+   * RFC-0006 §4.1: the family's domain errors are HTTP answers, mapped HERE — the one place this layer already turns a
+   * domain error into a status (`resolveInclude`'s 400). Bodies match `ErrorResponseDto` (`statusCode`, `error`,
+   * `message`) plus a stable `code`. `KindImmutableError` and `KindRequiresChildError` are a request no state of the
+   * server could make valid (400; the second names the route to use); `KindMismatchError` depends on a row that already
+   * exists (409).
+   */
+  private kindError(err: unknown): unknown {
+    if (err instanceof KindImmutableError) {
+      return new BadRequestException({ statusCode: 400, error: 'Bad Request', code: 'kind_immutable', message: err.message });
+    }
+    if (err instanceof KindRequiresChildError) {
+      return new BadRequestException({ statusCode: 400, error: 'Bad Request', code: 'kind_requires_child', kind: err.kind, createPath: err.createPath, message: err.message });
+    }
+    if (err instanceof KindMismatchError) {
+      return new ConflictException({ statusCode: 409, error: 'Conflict', code: 'kind_mismatch', message: err.message });
+    }
+    return err;
+  }
+
   @ApiOperation({ summary: 'Create parcel', operationId: 'createParcel' })
   @ApiBody({ schema: { $ref: '#/components/schemas/CreateParcelDto' } })
   @ApiResponse({ status: 201, schema: { $ref: '#/components/schemas/ParcelOutputDto' } })
@@ -136,7 +161,11 @@ export class ParcelController {
   async create(
     @Body(new ZodValidationPipe(CreateParcelSchema)) dto: CreateParcelDto,
   ): Promise<Parcel> {
-    return this.createUseCase.execute(dto);
+    try {
+      return await this.createUseCase.execute(dto);
+    } catch (err: unknown) {
+      throw this.kindError(err);
+    }
   }
 
   @ApiOperation({ summary: 'Update parcel', operationId: 'updateParcel' })
@@ -151,7 +180,12 @@ export class ParcelController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(UpdateParcelSchema)) dto: UpdateParcelDto,
   ): Promise<Parcel> {
-    const entity = await this.updateUseCase.execute(id, dto);
+    let entity: Parcel | null;
+    try {
+      entity = await this.updateUseCase.execute(id, dto);
+    } catch (err: unknown) {
+      throw this.kindError(err);
+    }
     if (!entity) throw new NotFoundException(`Parcel ${id} not found`);
     return entity;
   }

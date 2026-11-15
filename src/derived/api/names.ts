@@ -256,6 +256,9 @@ export const FAMILY_METHOD = {
 	listKind: 'listKind',
 	countKind: 'countKind',
 	findOrphans: 'findOrphans',
+	/** A child's list over its base's rows, flat — the base's `listKind`, hoisted; what the HTTP list reads (S5). */
+	listFlat: 'listFlat',
+	countFlat: 'countFlat',
 	/** A child's pair write: these override the base class's, in the generated class body. */
 	create: 'create',
 	update: 'update',

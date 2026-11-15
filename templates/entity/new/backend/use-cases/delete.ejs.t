@@ -34,7 +34,12 @@ export class <%= classNames.deleteUseCase %> {
   ): Promise<void> {
     const requester = tryGetRequester();
     return this.db.transaction(async (tx) => {
+<% if (isInheritanceChild) { -%>
+      // The flat row: the event payload reads base fields too (RFC-0006 §5).
+      const entity = await this.service.findWithBase(id);
+<% } else { -%>
       const entity = await this.service.findById(id);
+<% } -%>
       if (!entity) {
         throw new NotFoundException(`<%= classNames.entity %> with id ${id} not found`);
       }

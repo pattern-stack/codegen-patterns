@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { CreateCommunicationSchema } from './create-communication.dto';
 
-export const UpdateCommunicationSchema = CreateCommunicationSchema.partial();
+// RFC-0006 §4.1: a row does not change kind, so the update takes no `kind`; one in a body is stripped.
+export const UpdateCommunicationSchema = CreateCommunicationSchema.omit({ kind: true }).partial();
 
 export type UpdateCommunicationDto = z.infer<typeof UpdateCommunicationSchema>;

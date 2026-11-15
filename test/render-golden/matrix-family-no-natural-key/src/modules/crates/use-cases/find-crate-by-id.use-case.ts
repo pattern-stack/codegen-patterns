@@ -4,7 +4,7 @@ import { CrateService } from '../crate.service';
 import type {
   CrateInclude,
   CrateNoInclude,
-  CrateResult,
+  CrateFlat,
 } from '../crate.repository';
 
 @Injectable()
@@ -12,17 +12,15 @@ export class FindCrateByIdUseCase {
   constructor(private readonly service: CrateService) {}
 
   /**
-   * `include` is a typed include TREE, not a client string — the controller has
-   * already resolved `?include=` against the route's allowlist and rejected
-   * anything it does not name (REL-2 §5). An internal caller passes the tree
-   * directly and gets the exact nested result type back, because `TWith` is
-   * inferred at the call site.
+   * RFC-0006 §3.2, §5: a crate is read FLAT — `findWithBase`, one statement, the base's columns
+   * hoisted to the root — so the base relation is never an include. `include` is a typed include TREE, not a client
+   * string: the controller already resolved `?include=` against the route's allowlist (REL-2 §5).
    */
   async execute<TWith extends CrateInclude = CrateNoInclude>(
     id: string,
     include?: TWith,
-  ): Promise<CrateResult<TWith>> {
-    const entity = await this.service.findById<TWith>(
+  ): Promise<CrateFlat<TWith>> {
+    const entity = await this.service.findWithBase<TWith>(
       id,
       include === undefined ? undefined : { with: include },
     );

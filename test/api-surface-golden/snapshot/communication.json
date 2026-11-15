@@ -133,6 +133,9 @@
 					},
 					{
 						"name": "query"
+					},
+					{
+						"name": "childWith"
 					}
 				],
 				"returns": "many",
@@ -517,6 +520,9 @@
 					},
 					{
 						"name": "query"
+					},
+					{
+						"name": "childWith"
 					}
 				],
 				"returns": "many",

@@ -14,4 +14,5 @@ export type { Communication } from './communication.entity';
 export type { CreateCommunicationDto } from './dto/create-communication.dto';
 export type { UpdateCommunicationDto } from './dto/update-communication.dto';
 export type { CommunicationOutputDto } from './dto/communication-output.dto';
+export type { CommunicationOfKindDto } from './dto/communication-of-kind.dto';
 export type { ListCommunicationsQueryDto } from './dto/list-communications.query';

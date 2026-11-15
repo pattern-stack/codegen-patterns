@@ -21,8 +21,8 @@
 
 import { camelCase, emittedStem } from '../../src/config/file-naming.js';
 import { resolveChildTenancy, resolveTenancy } from '../../src/schema/tenancy.js';
-import { entityClassName, FAMILY_METHOD, repositoryClassName, serviceClassName } from '../../src/derived/api/names.js';
-import { familyRelationKey, inheritanceChildrenOf, inheritsOf, matchPairsOf } from '../../src/schema/inheritance.js';
+import { entityClassName, repositoryClassName, routePath } from '../../src/derived/api/names.js';
+import { baseOnlyKinds, enumChoices, familyRelationKey, inheritanceChildrenOf, inheritsOf, matchPairsOf } from '../../src/schema/inheritance.js';
 import { entityModuleNaming, relativeModuleDir } from './entity-naming.mjs';
 
 /**
@@ -84,8 +84,9 @@ export function resolveEnumField({ lookup, modulesDir, fromNaming, entityName, f
   if (field.choices_of !== undefined) {
     const [ownerName, ownerField] = String(field.choices_of).split('.');
     const ownerDef = requireDefinition(lookup, ownerName, `'${entityName}.${fieldName}' choices_of '${field.choices_of}'`);
-    const ownerFieldDef = ownerDef.fields?.[ownerField];
-    if (!ownerFieldDef || !Array.isArray(ownerFieldDef.choices) || ownerFieldDef.choices.length === 0) {
+    // The choices come from the ONE resolver (`enumChoices`); this function adds the owner's names and import path.
+    const choices = enumChoices(field, (name) => (name === ownerName ? ownerDef : undefined));
+    if (choices === undefined) {
       throw new Error(
         `[codegen] '${entityName}.${fieldName}' choices_of '${field.choices_of}': '${ownerName}.${ownerField}' is not an enum field with literal choices.`,
       );
@@ -94,18 +95,19 @@ export function resolveEnumField({ lookup, modulesDir, fromNaming, entityName, f
     const ref = moduleRef(lookup, fromNaming, modulesDir, ownerName, `'${entityName}.${fieldName}' choices_of '${field.choices_of}'`);
     return {
       ownerEntity: ownerName,
-      choices: ownerFieldDef.choices,
+      choices,
       enumName: names.enumName,
       dbName: names.dbName,
       importPath: ref.enumsImportPath,
     };
   }
-  if (Array.isArray(field.choices) && field.choices.length > 0) {
+  const choices = enumChoices(field, () => undefined);
+  if (choices !== undefined) {
     const names = enumTypeNames(entityName, fieldName);
     const ref = moduleRef(lookup, fromNaming, modulesDir, entityName, `'${entityName}.${fieldName}'`);
     return {
       ownerEntity: entityName,
-      choices: field.choices,
+      choices,
       enumName: names.enumName,
       dbName: names.dbName,
       importPath: ref.enumsImportPath,
@@ -347,6 +349,13 @@ export function familyReads({ entityName, definition, lookup, ownNaming, modules
       baseRepositoryImportPath: `${ref.dir}/${ref.stem}.repository`,
       baseModuleDir: ref.dir,
       baseTimestamps: baseBehaviors.includes('timestamps'),
+      // S5 — the flat DTOs (their paths are as seen from `<module>/dto/`): the base's schemas are the owner, the child extends them (RFC-0006 §5).
+      // The same entity file as seen from a file one folder deeper (`dto/`, `use-cases/`).
+      baseImportPathFromSubdir: `../${ref.importPath}`,
+      baseCreateSchema: `Create${baseClass}Schema`,
+      baseCreateImportPath: `../${ref.dir}/dto/${emittedStem('create', declaration.base)}.dto`,
+      baseOutputSchema: `${baseClass}OutputSchema`,
+      baseOutputImportPath: `../${ref.dir}/dto/${emittedStem(declaration.base, 'output')}.dto`,
     };
   }
 
@@ -376,8 +385,11 @@ export function familyReads({ entityName, definition, lookup, ownNaming, modules
         plural: ref.plural,
         className: entityClassName(c.name),
         entityImportPath: ref.importPath,
-        // The create path a write through the base is told to use for this kind (KindRequiresChildError).
-        createPath: `${serviceClassName(c.name)}.${FAMILY_METHOD.create}`,
+        // The create route a write through the base is told to use for this kind (KindRequiresChildError): the child's POST.
+        createPath: `POST ${routePath(ref.plural)}`,
+        // S5 — the child's own columns as an output schema (nested under its kind key in `<Base>OfKindSchema`).
+        ownOutputSchema: `${entityClassName(c.name)}OwnOutputSchema`,
+        outputImportPath: `../${ref.dir}/dto/${emittedStem(c.name, 'output')}.dto`,
       };
     });
     base = {
@@ -385,6 +397,8 @@ export function familyReads({ entityName, definition, lookup, ownNaming, modules
       discriminatorProp: camelCase(definition.discriminator),
       kinds: enumRef.choices,
       children,
+      // The kinds with no child table: the only ones the base's own create accepts (RFC-0006 §4.1, §5).
+      baseOnlyKinds: baseOnlyKinds(enumRef.choices, children.map((c) => c.as)),
     };
   }
   return { child, base };

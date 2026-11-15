@@ -59,9 +59,12 @@ export type MeetingResult<
  *
  * Internal callers keep the exact inferred type, because `TWith` is inferred at
  * the call site (REL-2 §2.3/§5.2).
+ *
+ * A child's HTTP result is FLAT (RFC-0006 §5): the base's columns are in the body, so the base relation is never an
+ * include and never needs an allowlist entry.
  */
-export type MeetingApiResult = Meeting &
-  globalThis.Partial<MeetingResult<MeetingInclude>>;
+export type MeetingApiResult = MeetingFlat &
+  globalThis.Partial<globalThis.Omit<MeetingResult<MeetingInclude>, 'communication'>>;
 
 /**
  * A meeting with its base row's columns hoisted to the root (RFC-0006 §3.2) — a projection of ONE
@@ -244,6 +247,23 @@ export class MeetingRepository extends BaseRepository<Meeting, typeof meetings, 
   ): Promise<Array<MeetingFlat<W, C>>> {
     const rows = await this.findByIds(ids, { ...opts, with: { ...opts?.with, communication: true as const } } as never);
     return rows.map((row) => flattenBase(row as never, 'communication')) as Array<MeetingFlat<W, C>>;
+  }
+
+  /**
+   * This kind's rows, flat, filtered and sorted on the BASE's columns (RFC-0006 §3.3): the base's `listKind`, which
+   * is what a child's HTTP list reads — its default sort is `created_at desc, id desc`, and `created_at` is the base's.
+   * `opts.with` names this table's own relations; they are joined in the same statement.
+   */
+  async listFlat<W extends MeetingInclude = MeetingNoInclude>(
+    query?: ListOptions<typeof communications>,
+    opts?: { with?: W },
+  ): Promise<Array<MeetingFlat<W>>> {
+    return this.baseRepo.listKind('meeting', query, opts?.with) as unknown as Array<MeetingFlat<W>>;
+  }
+
+  /** How many rows `listFlat` ranges over, on the same scope: the base's `countKind`. */
+  async countFlat(where?: RowFilter<typeof communications>): Promise<number> {
+    return this.baseRepo.countKind('meeting', where);
   }
 
   // ═══════════════════════════════════════════════════════════════════════

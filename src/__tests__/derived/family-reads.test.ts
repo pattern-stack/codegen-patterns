@@ -54,21 +54,47 @@ describe('familyReadSurface', () => {
 describe('the derived family reads', () => {
 	const surfaces = deriveSet(baselineSet());
 
-	it('a child: findWithBase / findManyWithBase on both layers, caused by its inherits:', () => {
+	it('a child: the flat reads (findWithBase, findManyWithBase, listFlat, countFlat) on both layers, caused by its inherits:', () => {
 		for (const child of ['email', 'meeting']) {
 			const s = surfaces.get(child)!;
 			const origin = { from: 'yaml', at: { doc: { kind: 'entity', name: child }, path: ['inherits'] } };
-			const repo = s.repository.methods.filter((m) => m.kind === 'with_base');
-			expect(repo.map((m) => m.name)).toEqual(['findWithBase', 'findManyWithBase']);
-			expect(repo.map((m) => m.origin)).toEqual([origin, origin]);
-			expect(repo.map((m) => m.readOptions)).toEqual(['columns+with', 'columns+with']);
-			const svc = s.service.methods.filter((m) => m.kind === 'with_base');
-			expect(svc.map((m) => [m.name, m.delegatesTo?.method])).toEqual([
-				['findWithBase', 'findWithBase'],
-				['findManyWithBase', 'findManyWithBase'],
+			const flatKinds = ['with_base', 'list_flat', 'count_flat'];
+			const repo = s.repository.methods.filter((m) => flatKinds.includes(m.kind));
+			expect(repo.map((m) => [m.name, m.kind])).toEqual([
+				['findWithBase', 'with_base'],
+				['findManyWithBase', 'with_base'],
+				['listFlat', 'list_flat'],
+				['countFlat', 'count_flat'],
+			]);
+			expect(repo.map((m) => m.origin)).toEqual([origin, origin, origin, origin]);
+			expect(repo.map((m) => m.readOptions)).toEqual(['columns+with', 'columns+with', 'with', 'none']);
+			expect(repo.map((m) => m.returns)).toEqual(['one', 'many', 'many', 'count']);
+			// `listFlat` / `countFlat` read the BASE repository's `listKind` / `countKind` — named on the surface, not in the template.
+			expect(repo.map((m) => m.delegatesTo)).toEqual([
+				undefined,
+				undefined,
+				{ entity: 'communication', layer: 'repository', method: 'listKind' },
+				{ entity: 'communication', layer: 'repository', method: 'countKind' },
+			]);
+			const svc = s.service.methods.filter((m) => flatKinds.includes(m.kind));
+			expect(svc.map((m) => [m.name, m.kind, m.delegatesTo?.method])).toEqual([
+				['findWithBase', 'with_base', 'findWithBase'],
+				['findManyWithBase', 'with_base', 'findManyWithBase'],
+				['listFlat', 'list_flat', 'listFlat'],
+				['countFlat', 'count_flat', 'countFlat'],
 			]);
 			expect(s.repository.typedInclude).toBe(true);
 		}
+	});
+
+	it('a child\'s list use case names both roots: list / count, and listFlat / countFlat', () => {
+		for (const child of ['email', 'meeting']) {
+			const list = surfaces.get(child)!.useCases.find((u) => u.kind === 'list')!;
+			const ref = (method: string) => ({ entity: child, layer: 'service', method });
+			expect(list.calls).toEqual(ref('list'));
+			expect(list.alsoCalls).toEqual([ref('count'), ref('listFlat'), ref('countFlat')]);
+		}
+		expect(surfaces.get('communication')!.useCases.find((u) => u.kind === 'list')!.alsoCalls).toBeUndefined();
 	});
 
 	it('a base: the five cross-kind reads, caused by its discriminator:, naming the child kinds', () => {

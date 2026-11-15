@@ -733,7 +733,7 @@ export const communicationOfKindSchema = z.discriminatedUnion('kind', [
 ```
 
 The child's HTTP routes return the flat shape: `GET /meetings/:id` uses `findWithBase`, `GET /meetings` uses
-`listKind`. Include allowlists (`api.includes`, charter I6) apply unchanged. `communication` never needs to be
+`listKind` (through the child's `listFlat`; a sort on a child column or a search is child-rooted: see S5 as built). Include allowlists (`api.includes`, charter I6) apply unchanged. `communication` never needs to be
 allowlisted on the child, because it is already in the body.
 
 **Lifecycle events: both names, one write.** `BaseService` emits after `repository.create/update/delete`
@@ -800,6 +800,10 @@ upsertByNaturalKey(input: MeetingCreate, tx?: DrizzleTx): Promise<{ row: Meeting
 /** findById with the base included, flattened. `with` and `columns` still apply to the child. */
 findWithBase<W extends MeetingInclude = MeetingNoInclude, C extends MeetingColumns | undefined = undefined>(id: string, opts?: ReadOptions<W, C>): Promise<MeetingFlat<W, C> | null>;
 findManyWithBase<W extends MeetingInclude = MeetingNoInclude, C extends MeetingColumns | undefined = undefined>(ids: readonly string[], opts?: ReadOptions<W, C>): Promise<Array<MeetingFlat<W, C>>>;
+
+/** This kind's rows, flat, filtered and sorted on the BASE's columns: the base's `listKind`, with this table's includes joined in the same statement. */
+listFlat<W extends MeetingInclude = MeetingNoInclude>(query?: ListOptions<typeof communications>, opts?: { with?: W }): Promise<Array<MeetingFlat<W>>>;
+countFlat(where?: RowFilter<typeof communications>): Promise<number>;
 
 export type MeetingFlat<W extends MeetingInclude = MeetingNoInclude, C extends MeetingColumns | undefined = undefined> =
   Flattened<MeetingResult<W & { communication: true }, C>, 'communication'>;
@@ -1618,7 +1622,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   the inherited entry. The smoke's Nest DI boot caught the first attempt, a base repository provided locally in
   `MeetingTranscriptsModule`; that second path was deleted. This changes every composing module's emitted file.
 - **Sequencing: routes and use cases stay off.** A child still has no create / update / delete use case or route
-  (`generateWrites` is false for it): the flat create / update DTOs are S5's, and a child-shaped DTO cannot carry the
+  (`generateWrites` was false for it in S4): the flat create / update DTOs are S5's, and a child-shaped DTO cannot carry the
   base fields the pair write needs. S4's writes are reachable through the repository and the service; S5 turns the use
   cases on. The base's own use cases are generated as before: its create DTO still accepts every kind until S5, so a
   base `POST` with a child kind reaches `KindRequiresChildError` from the repository (an unmapped 500 until S5) and an update
@@ -1662,7 +1666,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   `test/smoke/fixtures/` (smoke-only) so the shape is compiled by `tsc`, not only existence-checked. No byte of the baseline, scaffold or smoke
   output changes (every baseline base declares a key). `moduleClassName(plural)` in `names.ts` is the one owner of a module's class name (the base module a child imports, a composed module, the entity's own). Not derived, on purpose: `readBeforeUpdate` and `baseEntityName` /
   `baseSliceKeys` (`protected` wiring, not API), and the module imports of the home module / `forwardRef` (wiring, not a name
-  or an existence — ADR-046 slice 1). `writesDisabledBy`'s `inherits` branch stays until S5. Golden: `communication`,
+  or an existence — ADR-046 slice 1). `writesDisabledBy`'s `inherits` branch stays until S5 (removed there, S5 phase R). Golden: `communication`,
   `email`, `meeting` (the overrides replace `inherited`), `matrix-discriminator-no-child` (the base `update` guard), new
   `catalog_entry` (S4's fixture) and `matrix-family-no-natural-key`; Studio's API tab lists the repository kinds and the service kinds
   (`surface-kinds.ts`, `surface-view.test.ts`).
@@ -1689,6 +1693,121 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
 - Adds: cases in `test/scaffold/tests/http.test.ts` for the child's flat routes and the base's restricted create.
 - Gates: `just test-baseline`, `just test-smoke`, `just test-integration`.
 - Closes: A10, and the rest of A2.
+
+**S5 as built (2026-11-14, revised after review).** What the build settled, beyond the plan above:
+
+- **Flat DTOs, one owner.** A child's create schema is `Create<Base>Schema.omit({ kind }).extend({ own fields })` (imported
+  from the base's DTO file, never re-declared); update is `.partial()` of it. Its output is
+  `<Base>OutputSchema.extend({ kind: z.literal('<as>'), ...<Child>OwnOutputSchema.omit({ id }).shape })`, and the file also
+  exports `<Child>OwnOutputSchema`, the child's own columns alone. All three read `familyReads`'s `baseCreateSchema` /
+  `baseOutputSchema` and import paths (`templates/_shared/inheritance.mjs`).
+- **Unknown keys are stripped, as for every DTO.** A `kind`, a tenant column or a derived column in a body is dropped by the
+  schema and sets nothing: the row's kind and tenant are unchanged (`inheritance-http.test.ts` asserts the rows, not a
+  status). An earlier cut made a family's DTOs `.strict()` (a 400); that made one rule for two kinds of entity. **Open
+  follow-up, for Doug:** `.strict()` on every generated DTO is a generator-wide behaviour change the frontend client may not
+  survive (unverified), so it is not done here. The base's update is `Create<Base>Schema.omit({ kind }).partial()`: a row
+  does not change kind.
+- **The base's create `kind` is `z.enum([<base-only kinds>])`**, or `z.never()` when every kind has a child (the field stays so
+  a child's `.omit({ kind })` has a key to omit). When every kind has a child the base has **no create use case, no create
+  provider, no `POST` route and no registered `Create<Base>Dto`** (`generateCreate`, a local next to `generateWrites`);
+  `communication_part` is that case, and `verify-openapi` asserts it.
+- **`<Base>OfKindSchema`** is a `z.discriminatedUnion` in its own file, `dto/<base>-of-kind.dto.ts`: the children's output
+  schemas extend the base's, so putting the union in the base's output file would be an import cycle. Each arm is the base's
+  output with the kind fixed and the child's own columns nested under **its relation key** (`meeting`, `email`: the key
+  `<Base>OfKind` and `asKind` already use; OQ-5's "kind key" means that); the base-only kinds are bare. **No v1 route returns
+  the union**, so it is not registered with the OpenAPI registry and the smoke does not check for it. The schema file stays
+  for programmatic callers of `findAllKinds`; register it when an HTTP cross-kind read exists.
+- **A child's list has two roots, both one statement** (charter I4):
+  - **Base-rooted (the default):** `service.listFlat(query, { with })` is the base's `listKind('<as>', query, childWith)`,
+    reached through `<Child>Repository.listFlat` / `countFlat` (the repository holds the injected base repository). `listKind`
+    gained a third parameter, `childWith`, an include tree for the **child's** relations joined under the child's relation
+    key in the same statement, so a list with an allowlisted `?include=` is still one. The default sort (`created_at desc, id
+    desc` when the **base** has `timestamps`) and a sort on a base column (`occurred_at`) take this path; `total` is the
+    base's `countKind`.
+  - **Child-rooted:** a sort on a column of the child's own table (`?sort_by=title`), or any `where` (a child's `search`
+    names only its own columns, R7). It reads the child's own `list({ with: { communication: true, ...include }, sort,
+    where })` and hoists the base with `flattenBase`; scope is the child's own (tenant + the base `EXISTS`), and `total` is
+    the child's scoped `count(where)`. A base column cannot order this root (§8: no single read filters on one table's
+    columns and sorts on the other's), so a `sort_by` that names a base column together with a `where` is a **400**
+    `sort_not_combinable` (`ErrorResponseDto` shape) naming the column; a request with no `sort_by` gets `id desc`. A `sort_by` that names no column of either table falls to the default, as for a
+    plain entity.
+  - A child's find-by-id is `findWithBase`, one statement. `communication` (the base relation) is never an include: it is in
+    the body, and `<Child>ApiResult` omits it. **Orphans:** `listKind` throws `OrphanBaseError` for a row of this kind with no
+    child row (§3.3), so on the base-rooted path one orphan base row makes the page that contains it a 500 for `GET
+    /meetings`. `findOrphans()` is how a job finds them; the generated write path never produces one.
+- **Error → status, and where.** The mapping is in the **generated controller**, a private `kindError` that the create /
+  update routes of a child and of a discriminator base call in a `catch`. Nothing in `runtime/` maps any domain error
+  (`CrossTenantWriteError` and `MissingTenantIdError` reach the host's filter unmapped); the one precedent in this layer is
+  the controller's own `resolveInclude`, which turns `IncludeNotAllowedError` into a 400, so `kindError` follows it and
+  `runtime/` is untouched. Both now answer in `ErrorResponseDto`'s shape (`statusCode`, `error`, `message`) plus a stable
+  `code`; `resolveInclude`'s body gained `statusCode` / `error` too, which is why every controller's snapshot changed.
+  - `KindImmutableError` → **400** `kind_immutable`; `KindRequiresChildError` → **400** `kind_requires_child`, with `kind` and
+    `createPath`, now the **route** to use (`POST /meetings`; it was `MeetingService.create`). Both are a request no state of
+    the server could make valid.
+  - `KindMismatchError` → **409** `kind_mismatch`: it depends on a row that already exists. The upsert has no route, so it is
+    not reachable over HTTP.
+  - With unknown keys stripped, neither of the first two is reachable from a body either (the create DTO has no child kind,
+    the update DTO no `kind`), so they are covered through the generated controllers with stub use cases
+    (`inheritance-http.test.ts`). `MatchColumnImmutableError` and `OutOfScopeWriteError` are not mapped: neither is reachable
+    through a generated route. A host that wants a global filter instead can move the three `instanceof` checks into one.
+- **Write use cases and results.** A child's create / update / delete use cases exist (`generateWrites` is no longer false for
+  a child) and return `<Child>Flat`; the delete use case's event path reads `findWithBase` so a payload expression sees the
+  flat row. A child's `search` use case returns `Page<<Child>Flat>` and its `where` is a row filter on the child's table.
+- **The "Inherited from …" comments list what is inherited.** The repository's named methods the class overrides
+  (`findById`, `findByIds`, `list`, `count` for every entity; `create`, `update`, `delete` for a child; `update` for a base);
+  the service's named the three forwarded reads and a child's / base's `create` / `update`. Both are filtered in their
+  templates, for every entity, which is why 12 plain repositories' and every service's snapshots changed by one comment line.
+- **Frontend.** The frontend emitter does not read `generate.writes`, but the frontend smoke fixture set has **no
+  family**, so its pass says nothing about child routes: S6 owns the check.
+- **Tests.** `test/scaffold/tests/inheritance-http.test.ts` (A10 and the rest of A2: the flat POST / GET / list / PATCH /
+  DELETE, a base-column sort, a child-column sort, `?include=transcripts` on the list, a child search, a body's `kind` / tenant
+  column setting nothing, the base's restricted create, no create route when every kind has a child, a derived `match:`
+  column ignored, and the three errors with their bodies) and, in `inheritance-reads.test.ts`, the counting client on a child
+  list with an include and on the child-rooted list (both 1 statement; the include case was 2 on the first cut). `meeting`
+  carries `api.includes.list: [transcripts]` and a `search` in all four fixture sets, so the baseline's `tsc` covers a child
+  search (it was red, TS2322, on the first cut's `list` / `search` templates).
+- **ADR-046 (phase R).** What S5 made exist is derived once in `src/derived/api/`, and the templates print it.
+  **Existence:** `writesDisabledBy` lost its `inherits` branch (a child's use cases and routes now exist; `generate.writes:
+  false` is its only cause), and a base whose every kind has a child table has no `create` use case, `POST` route or
+  provider — `createDisabledBy(definition, children, kinds)` in `entity.ts`, caused by the base's `discriminator:`
+  (`EntityApiSurface.createDisabledBy`, the note names the kinds). The templates read the use-case and route lists, not a flag (the
+  `baseOnlyKinds` list that types the base's create `kind` stays in `familyReads`: a DTO shape, not an existence);
+  `deriveEntityApiSurface` takes the kind list as a required `discriminatorKinds` input (`discriminatorKindsOf`, one `choices_of`
+  hop), an unknown list on a base with children throws rather than reading as "every kind is base-only". **Names:**
+  `FAMILY_METHOD.listFlat` / `countFlat` — their own kinds `list_flat` / `count_flat` (the bodies differ from `findWithBase`'s; a repository
+  entry's `delegatesTo` names the base repository's `listKind` / `countKind`), origin the child's `inherits:`, forwarded by the
+  service (so the child's HTTP list, its search and its count read derived methods); the create route a
+  `KindRequiresChildError` names is `POST ${routePath(plural)}`. The child's use cases, its search controller and the
+  `api.includes` allowlist entries were already derived (a child differs from a plain entity only in the existence of its
+  writes); `meeting`'s `api.includes.list` is pinned by the project golden. Deliberately not derived (ADR-046 §4): the `kindError`
+  mapping, the flat DTOs and `<Base>OfKindSchema` (shapes, not names or existence), `<Child>Flat`. New matrix case
+  `matrix-family-every-kind-has-child` (a base with no create; each child with all three writes); golden: `email`, `meeting`
+  (their writes, search and the two flat reads), `matrix-family-no-natural-key`, the project baseline. Studio's API tab renders
+  `createDisabledBy` as "No create use case / No POST route", credited to the `discriminator:` (`surface-view.test.ts`). No byte of the
+  baseline, scaffold or smoke output changes.
+- **ADR-046 Phase B (phase R2).** Rebased onto S4's Phase-B tip (the seven slice commits applied as one 3-way merge; the
+  stack lands squash-merged): conflicts in `entity.ts`, `inheritance.mjs`, `entity-locals.js`, `repository` / `service` /
+  `controller` / `module` and the `find-by-id` / `list` use cases. Phase B's structure carries S5's behaviour: `listFlat` / `countFlat` are
+  their own kinds `list_flat` / `count_flat` in both loops (`listKind` takes a third param, `childWith`, on its entry); a repository
+  entry may carry `delegatesTo` (checked by the project pass like a service's). The controller and module read the derived route and
+  use-case lists (`_create` = the create route / use case; `_writes` = update + delete), and the create DTO is registered unless
+  `createDisabledBy` removed the base's create. The child's `find_by_id` use case `calls` `findWithBase`, and the use cases print
+  `calls.method` / the `list_flat` / `count_flat` service entries instead of literals. Deleted: the `generateCreate` / `generateWrites`
+  / `includes` / `familySurface` / `familyWrites` locals. `entity-locals.js` now passes `discriminatorKinds` to the derivation.
+  **Bytes vs phase R:** the `// Inherited from <Base>:` comments list the pattern's lines verbatim again (S5's filter of overridden
+  methods contradicted #893's named expectation, which pins a single unfiltered read); every controller's include-400 body gains
+  `statusCode` / `error` (S5's own change, now visible in the render goldens). Render goldens: every `*.controller.ts` re-blessed for the 400
+  body; `matrix-family-no-natural-key` and `matrix-discriminator-no-child` gain S5's writes / `kindError` / flat DTOs;
+  `matrix-family-every-kind-has-child` is new. The allowlist did not grow.
+- **Known v1 edge: `createDisabledBy` counts any child as covering its kind.** A child with `generate.writes: false` or
+  `api: false` leaves its kind with no HTTP create path at all, while the base (which has no create either) answers a
+  write of that kind with `KindRequiresChildError` naming a `POST` route that does not exist. Not fixed in v1: such a
+  child is a declared choice, and the message is the only place it shows.
+- **One resolver, one computation (R5 review).** `enumChoices(field, getDefinition)` in `src/schema/inheritance.ts` is the
+  only reader of `choices:` / `choices_of:` (the validator's `resolveChoices`, the derivation's `discriminatorKindsOf` and the
+  templates' `resolveEnumField` call it), and `baseOnlyKinds(kinds, childKinds)` the only computation of "kinds with no child"
+  (`familyReads`' DTO `z.enum` / `z.never()` and `createDisabledBy`). `listFlat`'s `readOptions` is `with` (a typed include,
+  no column selection); a child's list use case lists `alsoCalls` for its other root.
 
 **S6 — Frontend graph, Studio, docs.**
 

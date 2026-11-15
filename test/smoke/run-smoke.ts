@@ -768,7 +768,7 @@ function assertRelationshipEmission(tmpDir: string): void {
 	);
 	assertContains(
 		accountController,
-		/throw new BadRequestException\(\{ code: err\.code, path: err\.path, message: err\.message \}\)/,
+		/throw new BadRequestException\(\{ statusCode: 400, error: 'Bad Request', code: err\.code, path: err\.path, message: err\.message \}\)/,
 		'account.controller.ts turns a disallowed include into a 400',
 	);
 	assertContains(
@@ -1233,7 +1233,8 @@ async function main(): Promise<number> {
 		if (exitCode === 0) {
 			log('verifying /docs-json via programmatic AppModule import');
 			const verifyResult = runSilent(
-				`bun ${path.join(REPO_ROOT, 'test', 'smoke', 'verify-openapi.ts')} ${tmpDir}`,
+				// The default scenario's fixtures carry the joined-table family; the relationship scenario's do not.
+				`bun ${path.join(REPO_ROOT, 'test', 'smoke', 'verify-openapi.ts')} ${tmpDir}${SCENARIO === 'default' ? ' family' : ''}`,
 				tmpDir,
 			);
 			if (verifyResult.code !== 0) {

@@ -1,5 +1,5 @@
 
-import { BadRequestException, Controller, Get, Post, Patch, Delete, Body, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import { BadRequestException, Controller, ConflictException, Get, Post, Patch, Delete, Body, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { ZodValidationPipe } from '@shared/pipes/zod-validation.pipe';
 import type { Page } from '@shared/http/page';
@@ -15,6 +15,11 @@ import type { CreateNoticeDto } from './dto/create-notice.dto';
 import { UpdateNoticeSchema } from './dto/update-notice.dto';
 import type { UpdateNoticeDto } from './dto/update-notice.dto';
 import type { Notice } from './notice.entity';
+import {
+  KindImmutableError,
+  KindMismatchError,
+  KindRequiresChildError,
+} from '@shared/base-classes/inheritance';
 // REL-2 (#587): the HTTP include allowlist (charter I6). A client sends dot
 // PATHS; this controller looks each one up in a compile-time literal map and
 // merges the fragments. It never builds an include tree from client input, and a
@@ -57,7 +62,7 @@ export class NoticeController {
       return resolveAllowedInclude(raw, allow);
     } catch (err: unknown) {
       if (err instanceof IncludeNotAllowedError) {
-        throw new BadRequestException({ code: err.code, path: err.path, message: err.message });
+        throw new BadRequestException({ statusCode: 400, error: 'Bad Request', code: err.code, path: err.path, message: err.message });
       }
       throw err;
     }
@@ -127,6 +132,26 @@ export class NoticeController {
   }
 
 
+  /**
+   * RFC-0006 §4.1: the family's domain errors are HTTP answers, mapped HERE — the one place this layer already turns a
+   * domain error into a status (`resolveInclude`'s 400). Bodies match `ErrorResponseDto` (`statusCode`, `error`,
+   * `message`) plus a stable `code`. `KindImmutableError` and `KindRequiresChildError` are a request no state of the
+   * server could make valid (400; the second names the route to use); `KindMismatchError` depends on a row that already
+   * exists (409).
+   */
+  private kindError(err: unknown): unknown {
+    if (err instanceof KindImmutableError) {
+      return new BadRequestException({ statusCode: 400, error: 'Bad Request', code: 'kind_immutable', message: err.message });
+    }
+    if (err instanceof KindRequiresChildError) {
+      return new BadRequestException({ statusCode: 400, error: 'Bad Request', code: 'kind_requires_child', kind: err.kind, createPath: err.createPath, message: err.message });
+    }
+    if (err instanceof KindMismatchError) {
+      return new ConflictException({ statusCode: 409, error: 'Conflict', code: 'kind_mismatch', message: err.message });
+    }
+    return err;
+  }
+
   @ApiOperation({ summary: 'Create notice', operationId: 'createNotice' })
   @ApiBody({ schema: { $ref: '#/components/schemas/CreateNoticeDto' } })
   @ApiResponse({ status: 201, schema: { $ref: '#/components/schemas/NoticeOutputDto' } })
@@ -136,7 +161,11 @@ export class NoticeController {
   async create(
     @Body(new ZodValidationPipe(CreateNoticeSchema)) dto: CreateNoticeDto,
   ): Promise<Notice> {
-    return this.createUseCase.execute(dto);
+    try {
+      return await this.createUseCase.execute(dto);
+    } catch (err: unknown) {
+      throw this.kindError(err);
+    }
   }
 
   @ApiOperation({ summary: 'Update notice', operationId: 'updateNotice' })
@@ -151,7 +180,12 @@ export class NoticeController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(UpdateNoticeSchema)) dto: UpdateNoticeDto,
   ): Promise<Notice> {
-    const entity = await this.updateUseCase.execute(id, dto);
+    let entity: Notice | null;
+    try {
+      entity = await this.updateUseCase.execute(id, dto);
+    } catch (err: unknown) {
+      throw this.kindError(err);
+    }
     if (!entity) throw new NotFoundException(`Notice ${id} not found`);
     return entity;
   }

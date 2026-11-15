@@ -29,7 +29,7 @@ import {
 // prompt.js via loadAppPatterns() against `codegen.config.yaml patterns:`
 // globs before this helper runs — we only read the registry here, through
 // `resolvePatternComposition`.
-import { inheritanceBaseOf, inheritsOf, naturalKeyIndexOf } from '../../../../src/schema/inheritance.js';
+import { discriminatorKindsOf, inheritanceBaseOf, inheritsOf, naturalKeyIndexOf } from '../../../../src/schema/inheritance.js';
 import { detectMethodCollisions } from '../../../../src/patterns/compose.js';
 import { resolvePatternComposition } from '../../../../src/patterns/resolve-composition.js';
 import '../../../../src/patterns/library/index.js';
@@ -2490,9 +2490,10 @@ export function buildBackendLocals(definition, baseLocals) {
     wiredTargets: hasMany.filter((r) => r.targetExists).map((r) => r.target),
     inheritanceChildren: familyChildren,
     inheritanceBase,
+    discriminatorKinds: discriminatorKindsOf(definition, entityLookup?.definitions ? entityLookup.definitions() : []),
     entityLookup: (name) => (entityLookup ? entityLookup(name) : null),
   });
-  // Whether writes are emitted is the derivation's answer (ADR-046): `generate.writes: false`, or a child (RFC-0006).
+  // Whether writes are emitted is the derivation's answer (ADR-046): `generate.writes: false`; a base with a child for every kind has no create (RFC-0006 §4.1, S5).
   const hasUseCase = (kind) => apiSurface.useCases.some((u) => u.kind === kind);
 
   // Output paths
@@ -2525,6 +2526,10 @@ export function buildBackendLocals(definition, baseLocals) {
     createDto: `${moduleDir}/dto/${emittedStem('create', entityName)}.dto.ts`,
     updateDto: `${moduleDir}/dto/${emittedStem('update', entityName)}.dto.ts`,
     outputDto: `${moduleDir}/dto/${emittedStem(entityName, 'output')}.dto.ts`,
+    // RFC-0006 §5: a base with child tables also emits the cross-kind output (`<Base>OfKindSchema`).
+    ofKindDto: family.base !== null && family.base.children.length > 0
+      ? `${moduleDir}/dto/${emittedStem(entityName, 'of-kind')}.dto.ts`
+      : null,
     // Pagination-by-default: the universal list query DTO (page/cursor/pageSize
     // + sort). Always emitted — the list endpoint is unconditional.
     listQueryDto: `${moduleDir}/dto/${emittedStem('list', entityNamePlural)}.query.ts`,
@@ -2586,6 +2591,10 @@ export function buildBackendLocals(definition, baseLocals) {
     createSchema: `Create${entityNamePascal}Schema`,
     updateSchema: `Update${entityNamePascal}Schema`,
     outputSchema: `${entityNamePascal}OutputSchema`,
+    // RFC-0006 §5: a child's own columns alone, and a base's output across its kinds.
+    ownOutputSchema: `${entityNamePascal}OwnOutputSchema`,
+    ofKindSchema: `${entityNamePascal}OfKindSchema`,
+    ofKindDto: `${entityNamePascal}OfKindDto`,
     // Pagination-by-default: list query DTO + schema (re-export of the shared
     // ListQuerySchema). Named per-entity so the controller import is unambiguous.
     listQueryDto: `List${entityNamePluralPascal}QueryDto`,
@@ -2613,10 +2622,20 @@ export function buildBackendLocals(definition, baseLocals) {
   // ...and for the create DTO: an adopted tenant FK (#791) is stamped, not input.
   const createFkFields = belongsToFkFields.filter((fk) => !(tenantScoped && fk.camelName === tenancy.prop));
 
+  // The kinds with no child table — the only ones a base's own create accepts (RFC-0006 §4.1, §5).
+  const baseOnlyKinds = family.base === null ? [] : family.base.baseOnlyKinds;
+
   // Build zodChain for each create DTO field
+  // RFC-0006 §5: a base's discriminator accepts only its base-only kinds (`z.never()` when every kind has a child:
+  // the field stays so a child's `.omit({ kind: true })` has something to omit, and the base has no create route).
   const createDtoFieldsWithZod = createDtoFields.map((f) => ({
     ...f,
-    zodChainCreate: zodChainForCreate(f),
+    zodChainCreate:
+      family.base !== null && f.name === family.base.discriminator
+        ? baseOnlyKinds.length === 0
+          ? 'z.never()'
+          : `z.enum([${baseOnlyKinds.map((k) => `'${k}'`).join(', ')}])`
+        : zodChainForCreate(f),
   }));
 
   // Build zodChain for each output DTO field (all non-FK fields).

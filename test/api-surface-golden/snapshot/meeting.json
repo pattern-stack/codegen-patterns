@@ -128,6 +128,67 @@
 				}
 			},
 			{
+				"name": "listFlat",
+				"kind": "list_flat",
+				"delegatesTo": {
+					"entity": "communication",
+					"layer": "repository",
+					"method": "listKind"
+				},
+				"emitted": true,
+				"params": [
+					{
+						"name": "query"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "with",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "meeting"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "countFlat",
+				"kind": "count_flat",
+				"delegatesTo": {
+					"entity": "communication",
+					"layer": "repository",
+					"method": "countKind"
+				},
+				"emitted": true,
+				"params": [
+					{
+						"name": "where"
+					}
+				],
+				"returns": "count",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "meeting"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
 				"name": "create",
 				"kind": "pair_create",
 				"emitted": true,
@@ -397,6 +458,65 @@
 				}
 			},
 			{
+				"name": "listFlat",
+				"kind": "list_flat",
+				"emitted": true,
+				"params": [
+					{
+						"name": "query"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "listFlat"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "meeting"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "countFlat",
+				"kind": "count_flat",
+				"emitted": true,
+				"params": [
+					{
+						"name": "where"
+					}
+				],
+				"returns": "count",
+				"delegatesTo": {
+					"entity": "meeting",
+					"layer": "repository",
+					"method": "countFlat"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "meeting"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
 				"name": "create",
 				"kind": "pair_create",
 				"emitted": true,
@@ -589,7 +709,7 @@
 			"calls": {
 				"entity": "meeting",
 				"layer": "service",
-				"method": "findById"
+				"method": "findWithBase"
 			},
 			"origin": {
 				"from": "base"
@@ -603,8 +723,83 @@
 				"layer": "service",
 				"method": "list"
 			},
+			"alsoCalls": [
+				{
+					"entity": "meeting",
+					"layer": "service",
+					"method": "count"
+				},
+				{
+					"entity": "meeting",
+					"layer": "service",
+					"method": "listFlat"
+				},
+				{
+					"entity": "meeting",
+					"layer": "service",
+					"method": "countFlat"
+				}
+			],
 			"origin": {
 				"from": "base"
+			}
+		},
+		{
+			"className": "CreateMeetingUseCase",
+			"kind": "create",
+			"calls": {
+				"entity": "meeting",
+				"layer": "service",
+				"method": "create"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "UpdateMeetingUseCase",
+			"kind": "update",
+			"calls": {
+				"entity": "meeting",
+				"layer": "service",
+				"method": "update"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "DeleteMeetingUseCase",
+			"kind": "delete",
+			"calls": {
+				"entity": "meeting",
+				"layer": "service",
+				"method": "delete"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "SearchMeetingsUseCase",
+			"kind": "search",
+			"calls": {
+				"entity": "meeting",
+				"layer": "service",
+				"method": "list"
+			},
+			"origin": {
+				"from": "yaml",
+				"at": {
+					"doc": {
+						"kind": "entity",
+						"name": "meeting"
+					},
+					"path": [
+						"queries",
+						0
+					]
+				}
 			}
 		}
 	],
@@ -618,6 +813,7 @@
 				"handler": "getAll",
 				"operationId": "listMeetings",
 				"useCase": "ListMeetingsUseCase",
+				"includeRoute": "list",
 				"origin": {
 					"from": "base"
 				}
@@ -632,18 +828,64 @@
 				"origin": {
 					"from": "base"
 				}
+			},
+			{
+				"verb": "POST",
+				"path": "/meetings",
+				"controller": "MeetingController",
+				"handler": "create",
+				"operationId": "createMeeting",
+				"useCase": "CreateMeetingUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "PATCH",
+				"path": "/meetings/:id",
+				"controller": "MeetingController",
+				"handler": "update",
+				"operationId": "updateMeeting",
+				"useCase": "UpdateMeetingUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "DELETE",
+				"path": "/meetings/:id",
+				"controller": "MeetingController",
+				"handler": "remove",
+				"operationId": "deleteMeeting",
+				"useCase": "DeleteMeetingUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "GET",
+				"path": "/meetings/search",
+				"controller": "MeetingSearchController",
+				"handler": "search",
+				"useCase": "SearchMeetingsUseCase",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "meeting"
+						},
+						"path": [
+							"queries",
+							0
+						]
+					}
+				}
 			}
 		],
-		"includeRoutes": [],
+		"includeRoutes": [
+			"list"
+		],
 		"includesConst": "MEETINGS_API_INCLUDES"
-	},
-	"writesDisabledBy": {
-		"doc": {
-			"kind": "entity",
-			"name": "meeting"
-		},
-		"path": [
-			"inherits"
-		]
 	}
 }

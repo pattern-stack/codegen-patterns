@@ -11,6 +11,17 @@
 // and the `satisfies` below re-checks the rendered fragments against the
 // manifest's own types, so an allowlist naming a relation that does not exist
 // cannot compile.
+import type { IncludeOf, Relations } from './relations';
 
-// No entity declares `api.includes` — nothing is exposed over HTTP.
-export {};
+/** One route's allowlist: dot path → the include fragment it compiles to. */
+type RouteIncludes<TTable extends keyof Relations> = Readonly<
+	Record<string, IncludeOf<TTable>>
+>;
+
+/** `meeting`'s allowlisted include shapes, by read route. */
+export const MEETINGS_API_INCLUDES = {
+	// list — max_depth 1
+	list: {
+		transcripts: { transcripts: true },
+	},
+} as const satisfies Readonly<Record<string, RouteIncludes<'meetings'>>>;

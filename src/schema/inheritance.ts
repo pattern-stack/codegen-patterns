@@ -96,6 +96,60 @@ export function inheritanceBaseOf(
 	return null;
 }
 
+/** What `enumChoices` reads of a field: literal `choices:`, or another entity's through `choices_of: <entity>.<field>`. */
+export interface EnumChoicesField {
+	choices?: readonly string[];
+	choices_of?: string;
+}
+
+/**
+ * The literal choice list of an enum field — its own `choices:`, or the owner's through `choices_of:
+ * <entity>.<field>` (ONE hop; S1 refuses a chain). `undefined` when it cannot be read: not an enum, an unknown owner,
+ * or an owner field without literal choices (the validator refuses those; "unknown", never "none").
+ *
+ * The ONE resolver: the validator (`resolveChoices`), the derivation (`discriminatorKindsOf`) and the templates'
+ * `resolveEnumField` all take their choices from here, so a base's kinds cannot differ between the check, the DTO
+ * `z.enum` and the decision whether the base has a create (`createDisabledBy`).
+ */
+export function enumChoices(
+	field: EnumChoicesField | undefined,
+	getDefinition: (entityName: string) => { fields?: Readonly<Record<string, EnumChoicesField>> } | undefined,
+): string[] | undefined {
+	if (field === undefined) return undefined;
+	if (field.choices !== undefined && field.choices.length > 0) return [...field.choices];
+	if (field.choices_of !== undefined) {
+		const [ownerName, ownerField] = String(field.choices_of).split('.');
+		if (ownerName === undefined || ownerField === undefined) return undefined;
+		const owned = getDefinition(ownerName)?.fields?.[ownerField]?.choices;
+		return owned !== undefined && owned.length > 0 ? [...owned] : undefined;
+	}
+	return undefined;
+}
+
+/**
+ * The kinds a base's discriminator admits — `enumChoices` of the discriminator field; `null` for an entity with no
+ * `discriminator:`, or when the list cannot be read from the set.
+ */
+export function discriminatorKindsOf(
+	def: { discriminator?: string; fields?: Readonly<Record<string, EnumChoicesField>> },
+	definitions: Iterable<{ entity: { name: string }; fields?: Readonly<Record<string, EnumChoicesField>> }>,
+): string[] | null {
+	if (typeof def.discriminator !== 'string') return null;
+	const byName = new Map<string, { fields?: Readonly<Record<string, EnumChoicesField>> }>();
+	for (const d of definitions) byName.set(d.entity.name, d);
+	return enumChoices(def.fields?.[def.discriminator], (name) => byName.get(name)) ?? null;
+}
+
+/**
+ * The kinds with no child table — the only ones a base's own `create` accepts (RFC-0006 §4.1, §5). Empty exactly when
+ * every kind has a child, which is when the base has no create at all (`createDisabledBy`). The ONE computation:
+ * `familyReads` (the DTO's `z.enum`, or `z.never()` when empty) and the derivation both call it.
+ */
+export function baseOnlyKinds(kinds: readonly string[], childKinds: readonly string[]): string[] {
+	const withChild = new Set(childKinds);
+	return kinds.filter((k) => !withChild.has(k));
+}
+
 /**
  * `match:` as `[local column, target column]` pairs — the ONE normaliser of the
  * two spellings (the object form, and the `[col]` shorthand for `{ col: col }`).

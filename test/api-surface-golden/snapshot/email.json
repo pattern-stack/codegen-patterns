@@ -128,6 +128,67 @@
 				}
 			},
 			{
+				"name": "listFlat",
+				"kind": "list_flat",
+				"delegatesTo": {
+					"entity": "communication",
+					"layer": "repository",
+					"method": "listKind"
+				},
+				"emitted": true,
+				"params": [
+					{
+						"name": "query"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "with",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "email"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "countFlat",
+				"kind": "count_flat",
+				"delegatesTo": {
+					"entity": "communication",
+					"layer": "repository",
+					"method": "countKind"
+				},
+				"emitted": true,
+				"params": [
+					{
+						"name": "where"
+					}
+				],
+				"returns": "count",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "email"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
 				"name": "create",
 				"kind": "pair_create",
 				"emitted": true,
@@ -427,6 +488,65 @@
 				}
 			},
 			{
+				"name": "listFlat",
+				"kind": "list_flat",
+				"emitted": true,
+				"params": [
+					{
+						"name": "query"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "email",
+					"layer": "repository",
+					"method": "listFlat"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "email"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "countFlat",
+				"kind": "count_flat",
+				"emitted": true,
+				"params": [
+					{
+						"name": "where"
+					}
+				],
+				"returns": "count",
+				"delegatesTo": {
+					"entity": "email",
+					"layer": "repository",
+					"method": "countFlat"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "email"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
 				"name": "create",
 				"kind": "pair_create",
 				"emitted": true,
@@ -616,7 +736,7 @@
 			"calls": {
 				"entity": "email",
 				"layer": "service",
-				"method": "findById"
+				"method": "findWithBase"
 			},
 			"origin": {
 				"from": "base"
@@ -629,6 +749,59 @@
 				"entity": "email",
 				"layer": "service",
 				"method": "list"
+			},
+			"alsoCalls": [
+				{
+					"entity": "email",
+					"layer": "service",
+					"method": "count"
+				},
+				{
+					"entity": "email",
+					"layer": "service",
+					"method": "listFlat"
+				},
+				{
+					"entity": "email",
+					"layer": "service",
+					"method": "countFlat"
+				}
+			],
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "CreateEmailUseCase",
+			"kind": "create",
+			"calls": {
+				"entity": "email",
+				"layer": "service",
+				"method": "create"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "UpdateEmailUseCase",
+			"kind": "update",
+			"calls": {
+				"entity": "email",
+				"layer": "service",
+				"method": "update"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "DeleteEmailUseCase",
+			"kind": "delete",
+			"calls": {
+				"entity": "email",
+				"layer": "service",
+				"method": "delete"
 			},
 			"origin": {
 				"from": "base"
@@ -659,18 +832,42 @@
 				"origin": {
 					"from": "base"
 				}
+			},
+			{
+				"verb": "POST",
+				"path": "/emails",
+				"controller": "EmailController",
+				"handler": "create",
+				"operationId": "createEmail",
+				"useCase": "CreateEmailUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "PATCH",
+				"path": "/emails/:id",
+				"controller": "EmailController",
+				"handler": "update",
+				"operationId": "updateEmail",
+				"useCase": "UpdateEmailUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "DELETE",
+				"path": "/emails/:id",
+				"controller": "EmailController",
+				"handler": "remove",
+				"operationId": "deleteEmail",
+				"useCase": "DeleteEmailUseCase",
+				"origin": {
+					"from": "base"
+				}
 			}
 		],
 		"includeRoutes": [],
 		"includesConst": "EMAILS_API_INCLUDES"
-	},
-	"writesDisabledBy": {
-		"doc": {
-			"kind": "entity",
-			"name": "email"
-		},
-		"path": [
-			"inherits"
-		]
 	}
 }

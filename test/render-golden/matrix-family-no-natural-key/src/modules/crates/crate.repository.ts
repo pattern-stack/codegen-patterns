@@ -59,9 +59,12 @@ export type CrateResult<
  *
  * Internal callers keep the exact inferred type, because `TWith` is inferred at
  * the call site (REL-2 §2.3/§5.2).
+ *
+ * A child's HTTP result is FLAT (RFC-0006 §5): the base's columns are in the body, so the base relation is never an
+ * include and never needs an allowlist entry.
  */
-export type CrateApiResult = Crate &
-  globalThis.Partial<CrateResult<CrateInclude>>;
+export type CrateApiResult = CrateFlat &
+  globalThis.Partial<globalThis.Omit<CrateResult<CrateInclude>, 'parcel'>>;
 
 /**
  * A crate with its base row's columns hoisted to the root (RFC-0006 §3.2) — a projection of ONE
@@ -224,6 +227,23 @@ export class CrateRepository extends BaseRepository<Crate, typeof crates, Relati
   ): Promise<Array<CrateFlat<W, C>>> {
     const rows = await this.findByIds(ids, { ...opts, with: { ...opts?.with, parcel: true as const } } as never);
     return rows.map((row) => flattenBase(row as never, 'parcel')) as Array<CrateFlat<W, C>>;
+  }
+
+  /**
+   * This kind's rows, flat, filtered and sorted on the BASE's columns (RFC-0006 §3.3): the base's `listKind`, which
+   * is what a child's HTTP list reads — its default sort is `created_at desc, id desc`, and `created_at` is the base's.
+   * `opts.with` names this table's own relations; they are joined in the same statement.
+   */
+  async listFlat<W extends CrateInclude = CrateNoInclude>(
+    query?: ListOptions<typeof parcels>,
+    opts?: { with?: W },
+  ): Promise<Array<CrateFlat<W>>> {
+    return this.baseRepo.listKind('crate', query, opts?.with) as unknown as Array<CrateFlat<W>>;
+  }
+
+  /** How many rows `listFlat` ranges over, on the same scope: the base's `countKind`. */
+  async countFlat(where?: RowFilter<typeof parcels>): Promise<number> {
+    return this.baseRepo.countKind('crate', where);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
