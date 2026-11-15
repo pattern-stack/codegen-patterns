@@ -38,6 +38,10 @@ describe('relativeModuleDir', () => {
 		expect(relativeModuleDir('src/modules/org/crews', 'src/modules/persons')).toBe('../../persons');
 	});
 
+	it('the same folder is "." — a joined path never gets a doubled slash', () => {
+		expect(relativeModuleDir('src/modules/nodes', 'src/modules/nodes')).toBe('.');
+	});
+
 	it('same context stays a sibling', () => {
 		expect(relativeModuleDir('src/modules/org/crews', 'src/modules/org/teams')).toBe('../teams');
 	});

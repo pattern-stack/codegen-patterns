@@ -111,26 +111,18 @@ export async function preflightEntityTargets(
 		excludeDirs: [projectLayout(ctx.cwd, ctx.config).providers],
 	}).entities;
 
-	// A child's table is rendered from its base's YAML, and a `match:` target's
-	// from its referrers' (the base carries the unique every child's composite
-	// FK points at). Rendering a child or a referrer alone therefore renders its
-	// base / target too, as `junction new` re-renders a junction's parents —
-	// otherwise a newly added child leaves the base's table stale. They join
-	// `validated` HERE, before the `emits:` and `roles:` checks below read it: a
-	// counterpart those checks reject must stop the run before hygen writes the
-	// child, not crash hygen on the base after the child is written.
+	// A child imports its base's table and `.enums` module, and a `match:` target's table carries the unique
+	// every referrer's composite FK points at, so rendering one alone renders its counterpart too (as
+	// `junction new` re-renders a junction's parents): a stale base or target is brought current, and a
+	// counterpart that is missing or fails below stops the child. They join `validated` HERE, before the
+	// `emits:` and `roles:` checks below read it: a counterpart those checks reject must stop the run before
+	// hygen writes the child, not crash hygen on the base after the child is written. `allEntitiesForEmits`
+	// holds only entities that already parsed, so a counterpart is valid by construction.
 	const alreadyValidated = new Set(validated.map((v) => v.name));
-	const counterpartSchemaRejections: string[] = [];
 	for (const name of inheritanceCounterparts(allEntitiesForEmits, alreadyValidated)) {
 		const counterpart = allEntitiesForEmits.find((e) => e.name === name);
 		if (counterpart === undefined) continue;
-		const result = loadEntityFromYaml(counterpart.sourcePath);
-		if (result.success) {
-			validated.push({ file: counterpart.sourcePath, name });
-		} else {
-			invalid.push({ file: counterpart.sourcePath, message: result.error, details: result.details });
-			counterpartSchemaRejections.push(name);
-		}
+		validated.push({ file: counterpart.sourcePath, name });
 	}
 	const validatedNames = new Set(validated.map((v) => v.name));
 	const emitsTargetEntities = allEntitiesForEmits.filter((e) =>
@@ -276,7 +268,7 @@ export async function preflightEntityTargets(
 
 	// An entity with an `emits:` or `roles:` error is not generated: the
 	// hygen prompt assumes both blocks are valid.
-	const rejectedNames = new Set<string>(counterpartSchemaRejections);
+	const rejectedNames = new Set<string>();
 	for (let i = validated.length - 1; i >= 0; i--) {
 		const v = validated[i]!;
 		const ownEmits = emitsErrors.filter((e) => e.entity === v.name);
@@ -295,19 +287,26 @@ export async function preflightEntityTargets(
 		rejectedNames.add(v.name);
 	}
 
-	// A child (or a `match:` referrer) whose base (target) was rejected above is rejected with it: its table is
-	// rendered from that YAML, so rendering it beside a rejected counterpart is the half run this pre-flight
-	// exists to prevent (`--continue-on-error` keeps independent entities going, not dependent ones).
-	for (let i = validated.length - 1; i >= 0; i--) {
-		const v = validated[i]!;
-		const blockers = inheritanceCounterparts(allEntitiesForEmits, new Set([v.name])).filter((c) => rejectedNames.has(c));
-		if (blockers.length === 0) continue;
-		invalid.push({
-			file: v.file,
-			message: `its base / match: target ${blockers.map((b) => `'${b}'`).join(', ')} failed validation`,
-			details: [`'${v.name}' is rendered from ${blockers.map((b) => `'${b}'`).join(', ')}'s YAML, so it is not generated until that validates.`],
-		});
-		validated.splice(i, 1);
+	// A child (or a `match:` referrer) whose base (target) was rejected is rejected with it, and so is whatever
+	// depends on THAT one: it is rendered from the rejected YAML, so rendering it beside a rejected counterpart is
+	// the half run this pre-flight exists to prevent (`--continue-on-error` keeps independent entities going, not
+	// dependent ones). Repeated to a fixpoint — an inheritance chain is longer than one hop.
+	for (let changed = true; changed; ) {
+		changed = false;
+		for (let i = validated.length - 1; i >= 0; i--) {
+			const v = validated[i]!;
+			const blockers = inheritanceCounterparts(allEntitiesForEmits, new Set([v.name])).filter((c) => rejectedNames.has(c));
+			if (blockers.length === 0) continue;
+			const named = blockers.map((b) => `'${b}'`).join(', ');
+			invalid.push({
+				file: v.file,
+				message: `its base / match: target ${named} failed validation`,
+				details: [`'${v.name}' is rendered from the YAML of ${named}, so it is not generated until that validates.`],
+			});
+			validated.splice(i, 1);
+			rejectedNames.add(v.name);
+			changed = true;
+		}
 	}
 
 	return {

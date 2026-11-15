@@ -46,6 +46,7 @@ export { entityModuleNaming };
  */
 export function relativeModuleDir(fromDir, toDir) {
   const rel = path.posix.relative(fromDir, toDir);
+  if (rel === '') return '.';
   return rel.startsWith('.') ? rel : `./${rel}`;
 }
 

@@ -537,16 +537,19 @@ export function validateInheritance(
 }
 
 /**
- * The entities whose generated table depends on a rendered one's YAML, and so
- * must be re-rendered with it (RFC-0006 §2): a child's BASE and every `match:`
- * relationship's TARGET (`inheritanceCounterpartNames`, the one reader of both
+ * The entities a rendered one's generated files read, and so must be rendered
+ * with it (RFC-0006 §2): a child's BASE (its file imports the base's table and
+ * `.enums` module, so the base must exist and validate) and every `match:`
+ * relationship's TARGET (whose table carries the unique the composite FK points
+ * at; its pgEnum is imported) (`inheritanceCounterpartNames`, the one reader of both
  * shapes). Names only; ones already in `rendered`, and the entity itself, are
  * left out.
  *
  * Only this direction exists. A base's output depends on its own YAML and on
  * its `match:` referrers' (the uniques their composite FKs point at) and NOT on
- * its children, so editing a base and rendering only the base leaves its
- * children stale — as a `belongs_to` target's edit leaves its referrers stale.
+ * its children: adding a child changes no byte of the base. Rendering a child
+ * re-renders the base so that a stale base becomes current, and a rejected base
+ * rejects the child.
  */
 export function inheritanceCounterparts(entities: ParsedEntity[], rendered: ReadonlySet<string>): string[] {
 	const byName = new Map(entities.map((e) => [e.name, e]));

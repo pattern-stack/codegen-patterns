@@ -2349,8 +2349,11 @@ export function buildBackendLocals(definition, baseLocals) {
     ...fieldFkImports.map((i) => i.relatedTable),
   ]);
   const inheritanceImportMap = new Map();
+  // An enum this entity declares is imported from its own `.enums` leaf by the entity template already
+  // (a self-targeting `match:` onto the entity's own enum column derives a column typed with it).
+  const ownEnumNames = new Set(enumFields.map((e) => e.enumName));
   const wantImport = (importPath, name) => {
-    if (alreadyImported.has(name)) return;
+    if (alreadyImported.has(name) || ownEnumNames.has(name)) return;
     // One statement per module: fold into a belongs_to table import from the same file.
     const sameModule = belongsToTableImports.find((imp) => imp.importPath === importPath);
     if (sameModule) {

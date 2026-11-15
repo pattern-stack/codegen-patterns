@@ -47,8 +47,8 @@ export function matchPairsOf(rel: { match?: readonly string[] | Readonly<Record<
 
 /**
  * The entities a rendered entity's table depends on, besides itself (RFC-0006
- * §2): its BASE (which carries the uniques the child's two composite FKs point
- * at) and every `match:` relationship's TARGET (which carries
+ * §2): its BASE (whose table the child's two composite FKs point at,
+ * and whose `.enums` module the child imports) and every `match:` relationship's TARGET (which carries
  * `unique(id, <matched columns>)`). Shape-neutral: the raw YAML and the parsed
  * model both reduce to it, so family discovery is written once.
  */

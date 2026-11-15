@@ -162,7 +162,7 @@ describe('the family generates (S2: the DDL)', () => {
 		const files = fs
 			.readdirSync(modulesDir)
 			.flatMap((d) => fs.readdirSync(path.join(modulesDir, d)).filter((f) => f.endsWith('.entity.ts')).map((f) => path.join(modulesDir, d, f)));
-		expect(files.length).toBeGreaterThan(8);
+		expect(files.length).toBe(fs.readdirSync(FAMILY).length);
 		const failures: string[] = [];
 		for (const file of files) {
 			const r = spawnSync('bun', ['-e', `await import(${JSON.stringify(file)})`], { cwd: REPO, encoding: 'utf8' });
@@ -262,6 +262,44 @@ describe('the family generates (S2: the DDL)', () => {
 		expect(r.out).toContain("'communication' failed validation");
 		expect(fs.existsSync(path.join(root, 'src/modules/meetings'))).toBe(false);
 		expect(fs.existsSync(path.join(root, 'src/modules/communications'))).toBe(false);
+	});
+
+	it("a rejected counterpart rejects every dependant, not just the first hop (a chain is rejected whole)", () => {
+		// communication is rejected (emits:); communication_part's match: targets it; the two part kinds inherit
+		// communication_part. All three tiers must stop before hygen writes anything for them.
+		const root = familyProject('inh-chain', (f) => {
+			f['communication.yaml'] = f['communication.yaml']!.concat('\nemits: [no_such_event]\n');
+		});
+		const r = run(root, ['entity', 'new', '--all', '--force']);
+		expect(r.status).not.toBe(0);
+		for (const dir of ['communication-parts', 'email-communication-parts', 'transcript-communication-parts', 'meetings']) {
+			expect(fs.existsSync(path.join(root, 'src/modules', dir))).toBe(false);
+		}
+	});
+
+	it('a match: onto the entity\'s OWN enum imports that enum once, from no doubled path', () => {
+		const root = project('inh-self-match', {
+			'node.yaml': [
+				'entity:',
+				'  name: node',
+				'  plural: nodes',
+				'fields:',
+				'  kind: { type: enum, choices: [a, b], required: true }',
+				'relationships:',
+				'  parent:',
+				'    type: belongs_to',
+				'    target: node',
+				'    foreign_key: parent_id',
+				'    nullable: true',
+				'    match: { parent_kind: kind }',
+				'',
+			].join('\n'),
+		});
+		const r = run(root, ['entity', 'new', '--all', '--force']);
+		expect(r.status).toBe(0);
+		const out = read(root, 'nodes/node.entity.ts');
+		expect(out.match(/import \{[^}]*nodeKindEnum[^}]*\}/g)).toHaveLength(1);
+		expect(out).not.toContain('.//');
 	});
 
 	it("M2's exception: the discriminator is the matched column, so nothing is derived", () => {
