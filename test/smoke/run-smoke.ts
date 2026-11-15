@@ -27,6 +27,7 @@ import { execSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { composeSubsystemModules } from './_compose-subsystems';
 import { tscGateErrors } from './_consumer-errors';
 import { assertTimestampColumns, collectTimezoneOptOuts, projectBehaviorsTimezone } from './_timestamp-columns';
 
@@ -932,20 +933,9 @@ async function main(): Promise<number> {
 		// (Only the default scenario carries that fixture; the relationship one has no child.)
 		if (SCENARIO === 'default') {
 			run(`${cli(tmpDir)} subsystem install events`, tmpDir);
-			// The AppModule must compose the barrel, or `TYPED_EVENT_BUS` has no provider and the boot check
-			// (openapi-verify) fails to resolve `DeleteCrateUseCase` — a gate that boots what it compiled.
-			const appModulePath = path.join(tmpDir, 'src', 'app.module.ts');
-			const appModule = fs.readFileSync(appModulePath, 'utf-8');
-			const composed = appModule
-				.replace(
-					"import { GENERATED_MODULES } from './generated/modules';",
-					"import { GENERATED_MODULES } from './generated/modules';\nimport { SUBSYSTEM_MODULES } from './generated/subsystems';",
-				)
-				.replace('...GENERATED_MODULES]', '...SUBSYSTEM_MODULES, ...GENERATED_MODULES]');
-			if (composed === appModule || !composed.includes('...SUBSYSTEM_MODULES')) {
-				throw new Error('could not compose SUBSYSTEM_MODULES into the smoke AppModule — its shape changed');
-			}
-			fs.writeFileSync(appModulePath, composed);
+			// `subsystem install` does not wire AppModule (the CLI leaves it manual), so without this the boot check
+			// (openapi-verify) cannot resolve `TYPED_EVENT_BUS` for `DeleteCrateUseCase`.
+			composeSubsystemModules(tmpDir);
 		}
 
 		// 5. Run `codegen entity new --all`.

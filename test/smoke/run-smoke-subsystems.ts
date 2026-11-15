@@ -32,6 +32,7 @@ import { execSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { composeSubsystemModules } from './_compose-subsystems';
 import { tscGateErrors } from './_consumer-errors';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -313,40 +314,9 @@ async function vendoredLeg(): Promise<number> {
 			);
 		}
 
-		// 5c. Wire SUBSYSTEM_MODULES into AppModule. The CLI's install flow
-		//     intentionally LEAVES the wiring as a manual step (prints a
-		//     TODO + relies on the user to spread `...SUBSYSTEM_MODULES`
-		//     into AppModule.imports). For the smoke's boot check to
-		//     exercise the bridge ↔ jobs ↔ events dependency graph for
-		//     real, we apply that wiring here.
-		//
-		//     Patch shape (idempotent):
-		//       - Add `import { SUBSYSTEM_MODULES } from './generated/subsystems';`
-		//       - Inject `...SUBSYSTEM_MODULES,` into the AppModule `imports`
-		//         array, immediately after `OpenApiModule,` to honor the
-		//         registration-order constraint from the `subsystems` skill
-		//         (Database first → OpenApi → SubsystemModules → Generated).
-		const appModulePath = path.join(tmpDir, 'src/app.module.ts');
-		let appModuleSrc = fs.readFileSync(appModulePath, 'utf-8');
-		if (!appModuleSrc.includes('SUBSYSTEM_MODULES')) {
-			appModuleSrc =
-				`import { SUBSYSTEM_MODULES } from './generated/subsystems';\n` +
-				appModuleSrc;
-			// The AppModule's imports line in the init-emitted template reads:
-			//   imports: [DatabaseModule, OpenApiModule, ...GENERATED_MODULES],
-			// Spread SUBSYSTEM_MODULES between OpenApiModule and GENERATED_MODULES.
-			appModuleSrc = appModuleSrc.replace(
-				/(imports:\s*\[DatabaseModule,\s*OpenApiModule,)\s*\.\.\.GENERATED_MODULES/,
-				'$1 ...SUBSYSTEM_MODULES, ...GENERATED_MODULES',
-			);
-			fs.writeFileSync(appModulePath, appModuleSrc, 'utf-8');
-		}
-		// Sanity: the patch landed.
-		if (!fs.readFileSync(appModulePath, 'utf-8').includes('...SUBSYSTEM_MODULES')) {
-			throw new Error(
-				'failed to wire SUBSYSTEM_MODULES into app.module.ts — the imports-array regex did not match. Init template may have drifted.',
-			);
-		}
+		// 5c. Wire SUBSYSTEM_MODULES into AppModule — the manual step the CLI's install leaves (see the helper), so the
+		//     boot check exercises the bridge ↔ jobs ↔ events dependency graph for real.
+		composeSubsystemModules(tmpDir);
 
 		// 6. Acceptance #2 — assert no subsystem excludes leaked into the
 		//    generated tsconfig.json. Consumers who hand-excluded
