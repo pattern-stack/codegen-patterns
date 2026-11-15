@@ -63,7 +63,11 @@ CLI flattens to strings.
 components — the schema graph and a future instance graph. The Studio's graph pane is the schema view of exactly those
 components on an `@xyflow/react` canvas, the composition `tools/schema-graph-viewer` uses — laid out as a tree on spine
 lines by Studio's own `layout/tree-layout.ts` since STUDIO-3, each disconnected tree a block wrapped into rows that
-fit the canvas since STUDIO-4 (the viewer keeps `elkjs`; see CLAUDE.md § Studio).
+fit the canvas since STUDIO-4 — except a one-card tree a secondary line reaches from a bigger tree, which docks
+directly under the card that references it (first in declaration order; never under another one-card tree), at the
+same place at every canvas width. Docking is the one place a secondary line places a card: adding or removing such a
+line docks or undocks that one card, moves no other card within its block, and may change the packing because the
+block's footprint grows (the viewer keeps `elkjs`; see CLAUDE.md § Studio).
 When slice 3 adds the data explorer, its instance graph is the second view of the same components, not a new library.
 
 ### Hiding the panels (STUDIO-4, 2026-11-14)

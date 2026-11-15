@@ -110,20 +110,49 @@ describe('treeLayout — parents above children (#778)', () => {
     expect(violations).toEqual([]);
   });
 
-  test("a secondary parent in another block wraps where its block's size puts it — below its child here (STUDIO-4)", () => {
+  test('a one-card secondary parent docks directly under its referencer (STUDIO-4)', () => {
     const { nodes, edges } = adaptDomainGraph(SHAPE);
     expect(edges.find((e) => e.child === 'chart' && e.parent === 'atlas')!.treeRole).toBe('secondary');
     const laid = treeLayout(nodes, edges);
     const at = Object.fromEntries(laid.nodes.map((n) => [n.id, n.position]));
-    // The catalog block (3 cards) comes first; the lone atlas block wraps to the
-    // second row of blocks at 16:10: the first row is 232 tall, plus the
-    // block-row gap (192) — below chart, its child through the secondary line.
+    // atlas is a one-card tree referenced by chart, so it docks: x-centred
+    // under chart, its top the catalog block's bottom (164 + 68 = 232) plus the
+    // row spacing (96). Before docking it wrapped to { x: 0, y: 424 }.
+    expect(at).toEqual({
+      book: { x: 0, y: 164 },
+      chart: { x: 296, y: 164 },
+      catalog: { x: 148, y: 0 },
+      atlas: { x: 296, y: 328 },
+    });
+  });
+
+  test("a multi-card secondary parent in another block wraps where its block's size puts it — below its child here (#778)", () => {
+    // atlas now has a child of its own, so its tree is two cards and never docks.
+    const graph = graphOf(
+      ['book', 'chart', 'catalog', 'atlas', 'map'],
+      [...fk('book', 'catalog'), ...fk('chart', 'catalog'), ...fk('map', 'atlas'), ...fk('chart', 'atlas')],
+    );
+    const { nodes, edges } = adaptDomainGraph(graph);
+    expect(edges.find((e) => e.child === 'chart' && e.parent === 'atlas')!.treeRole).toBe('secondary');
+    const at = Object.fromEntries(treeLayout(nodes, edges, { targetAspect: 0.8 }).nodes.map((n) => [n.id, n.position]));
+    // At 0.8:1 the atlas block wraps under the catalog block: its row starts at
+    // the first row's height (232) plus the block-row gap (192) — below chart.
     expect(at).toEqual({
       book: { x: 0, y: 164 },
       chart: { x: 296, y: 164 },
       catalog: { x: 148, y: 0 },
       atlas: { x: 0, y: 424 },
+      map: { x: 0, y: 588 },
     });
+    // The secondary line placed nothing: the same without it.
+    const without = graphOf(
+      ['book', 'chart', 'catalog', 'atlas', 'map'],
+      [...fk('book', 'catalog'), ...fk('chart', 'catalog'), ...fk('map', 'atlas')],
+    );
+    const bare = adaptDomainGraph(without);
+    expect(
+      Object.fromEntries(treeLayout(bare.nodes, bare.edges, { targetAspect: 0.8 }).nodes.map((n) => [n.id, n.position])),
+    ).toEqual(at);
   });
 
   test('the drawn edges keep their meaning — FK holder → referenced, one per foreign key', () => {
@@ -525,5 +554,141 @@ describe('packBlocks (STUDIO-4)', () => {
       );
     }
     expect(packBlocks([], 1, 0, 0)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// One-card trees dock under their referencer (STUDIO-4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Canvas aspects a 1440×900 window gives, as measured: the inspector open and
+ * hidden with the drawer hidden (1016×780, 1404×780 — full screen measures the
+ * same 1404×780, since the drawer is already hidden), the default with the
+ * drawer open (1016×540), and the full window height as the tallest bound.
+ */
+const CANVAS_ASPECTS = {
+  'inspector open': 1016 / 780,
+  'inspector hidden': 1404 / 780,
+  'drawer open': 1016 / 540,
+  'full height': 1404 / 900,
+};
+
+/**
+ * A 4-card tree, `station` → `dock`, `gate`, `lane`, and two one-card trees:
+ * `bay`, referenced by `dock`, and `pier`, referenced by `lane`. Each child
+ * declares `station` first, so both references are secondary.
+ */
+const PORT = graphOf(
+  ['bay', 'dock', 'gate', 'lane', 'pier', 'station'],
+  [
+    ...fk('dock', 'station'),
+    ...fk('gate', 'station'),
+    ...fk('lane', 'station'),
+    ...fk('dock', 'bay'),
+    ...fk('lane', 'pier'),
+  ],
+);
+const STATION_TREE = ['station', 'dock', 'gate', 'lane'];
+
+/** `docked`'s offset from `by`: x-centre difference and top below `by`'s block bottom. */
+function dockOffset(box: Map<string, Box>, docked: string, by: string, hostTree: string[]) {
+  const d = box.get(docked)!;
+  const b = box.get(by)!;
+  const hostBottom = bounds(hostTree.map((id) => box.get(id)!)).bottom;
+  return { dx: centre(d) - centre(b), dTop: d.y - hostBottom, rel: { x: d.x - b.x, y: d.y - b.y } };
+}
+
+describe('treeLayout — one-card trees dock under their referencer (STUDIO-4)', () => {
+  test('a docked card sits x-centred under its referencer, a row spacing below its block, at every canvas aspect', () => {
+    const offsets = Object.values(CANVAS_ASPECTS).map((aspect) => {
+      const { box } = layAt(SHAPE, aspect);
+      const o = dockOffset(box, 'atlas', 'chart', ['catalog', 'book', 'chart']);
+      expect(o.dx).toBe(0);
+      expect(o.dTop).toBe(96);
+      return o.rel;
+    });
+    for (const rel of offsets) expect(rel).toEqual(offsets[0]!);
+  });
+
+  test('a 4-card tree with three children: each one-card tree docks under its own referencer, at every aspect', () => {
+    const rels = Object.values(CANVAS_ASPECTS).map((aspect) => {
+      const { box, edges } = layAt(PORT, aspect);
+      expect(edges.filter((e) => e.treeRole === 'secondary').map((e) => [e.child, e.parent])).toEqual([
+        ['dock', 'bay'],
+        ['lane', 'pier'],
+      ]);
+      const bay = dockOffset(box, 'bay', 'dock', STATION_TREE);
+      const pier = dockOffset(box, 'pier', 'lane', STATION_TREE);
+      expect([bay.dx, bay.dTop, pier.dx, pier.dTop]).toEqual([0, 96, 0, 96]);
+      return [bay.rel, pier.rel];
+    });
+    for (const rel of rels) expect(rel).toEqual(rels[0]!);
+  });
+
+  test('a docked card makes its block bigger for packing, and moves no other card in it', () => {
+    const bare = graphOf(['dock', 'gate', 'lane', 'station'], [
+      ...fk('dock', 'station'),
+      ...fk('gate', 'station'),
+      ...fk('lane', 'station'),
+    ]);
+    const without = Object.fromEntries(layAt(bare, 16 / 10).laid.nodes.map((n) => [n.id, n.position]));
+    const { laid } = layAt(PORT, 16 / 10);
+    const withDocks = Object.fromEntries(laid.nodes.map((n) => [n.id, n.position]));
+    expect(Object.fromEntries(STATION_TREE.map((id) => [id, withDocks[id]]))).toEqual(without);
+    // One block: nothing wraps beside or below the station tree.
+    expect(withDocks.bay).toEqual({ x: withDocks.dock!.x, y: 328 });
+    expect(withDocks.pier).toEqual({ x: withDocks.lane!.x, y: 328 });
+  });
+
+  test('referenced from several blocks, it docks under the first secondary line in declaration order', () => {
+    const names = ['alpha', 'ant', 'beta', 'bee', 'cell'];
+    const spines = [...fk('ant', 'alpha'), ...fk('bee', 'beta')];
+    const beeFirst = layAt(graphOf(names, [...spines, ...fk('bee', 'cell'), ...fk('ant', 'cell')]), 16 / 10).box;
+    const antFirst = layAt(graphOf(names, [...spines, ...fk('ant', 'cell'), ...fk('bee', 'cell')]), 16 / 10).box;
+    expect(dockOffset(beeFirst, 'cell', 'bee', ['beta', 'bee'])).toMatchObject({ dx: 0, dTop: 96 });
+    expect(dockOffset(antFirst, 'cell', 'ant', ['alpha', 'ant'])).toMatchObject({ dx: 0, dTop: 96 });
+  });
+
+  test('two docked cards whose spots would overlap are pushed apart by the sibling gap, in referencer order', () => {
+    // Two one-card trees, `flag` and `sail`, both referenced by `rod`, the one
+    // child of `pole`: both would centre on rod, so they are pushed apart.
+    const graph = graphOf(['flag', 'pole', 'rod', 'sail'], [...fk('rod', 'pole'), ...fk('rod', 'flag'), ...fk('rod', 'sail')]);
+    const { box } = layAt(graph, 16 / 10);
+    const flag = box.get('flag')!;
+    const sail = box.get('sail')!;
+    const rod = box.get('rod')!;
+    expect(flag.y).toBe(sail.y);
+    // One referencer: declaration order keeps flag left of sail. The gap is
+    // exactly the sibling gap, the pair centred under rod — and flag, pushed
+    // left of the block's edge, shifts the whole block right to x = 0.
+    expect(flag.x).toBeLessThan(sail.x);
+    expect(sail.x - (flag.x + flag.width)).toBe(46);
+    expect((centre(flag) + centre(sail)) / 2).toBe(centre(rod));
+    expect(Math.min(flag.x, rod.x)).toBe(0);
+  });
+
+  test('a one-card tree referenced only by another one-card tree is not docked (no chains)', () => {
+    // `kite` has_many `wing` with no belongs_to back: an unpaired inverse, a
+    // secondary line with kite as its parent end and wing — itself a one-card
+    // tree — as its child.
+    const hasMany: Edge = {
+      from: 'kite',
+      to: 'wing',
+      relationship: { name: 'wings', type: 'has_many', target: 'wing', foreignKey: 'kite_id', resolved: true },
+      cardinality: '1:N',
+      bidirectional: false,
+    };
+    const graph = graphOf(['kite', 'wing'], [hasMany]);
+    const { box, edges } = layAt(graph, 16 / 10);
+    expect(edges.map((e) => [e.treeRole, e.parent, e.child])).toEqual([['secondary', 'kite', 'wing']]);
+    const bare = layAt(graphOf(['kite', 'wing'], []), 16 / 10).box;
+    expect(box).toEqual(bare);
+  });
+
+  test('a one-card tree with no lines onto it still wraps as before', () => {
+    const { box } = layAt(TWO_PARENT, 16 / 10);
+    // tag: the third block, wrapped to the second row of blocks (232 + 192).
+    expect({ x: box.get('tag')!.x, y: box.get('tag')!.y }).toEqual({ x: 0, y: 424 });
   });
 });

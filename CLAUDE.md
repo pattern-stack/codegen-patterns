@@ -230,7 +230,18 @@ fit-to-view shows the cards largest on the canvas container's aspect (ties to
 the nearer aspect; measured by `SchemaCanvas`, passed in as `targetAspect` — the
 layout reads no DOM; 16:10 until measured). Block order and packing read spine lines only, so a secondary
 line still moves no card — which means a secondary parent in another block may
-sit below its child. A resize that re-wraps the blocks re-fits the view.
+sit below its child — with one exception, **docking** (`dockLoneTrees`): a
+one-card tree whose card is the parent end of a secondary line from a card in a
+block of more than one card is not wrapped; it joins that block, x-centred under
+the referencing card, a row spacing (96 px) below the block's lowest card, so its
+place is the same at every canvas width. Several referencers: the first secondary
+line in declaration order wins. No chains (never under a one-card tree). Two
+docked under one block whose spots overlap are pushed apart by the sibling gap,
+in their referencers' left-to-right order. Docking is the one place a secondary
+line places a card: adding or removing such a line docks or undocks that one card;
+no other card moves within its block, but the block's footprint grows, so the
+packing may change. A multi-card secondary parent still wraps by its block's size
+(#778). A resize that re-wraps the blocks re-fits the view.
 Every fit — the first, a re-wrap's, a panel toggle's, the Controls button — goes
 through `fitAvoidingCorner` (`graph/fit-corner.ts`), which keeps the legend's
 corner off the cards; never call ReactFlow's plain `fitView`. The inspector and

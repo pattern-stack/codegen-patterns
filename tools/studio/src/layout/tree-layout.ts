@@ -180,6 +180,117 @@ export function packBlocks(
 }
 
 /**
+ * Dock each one-card tree under the card that references it (STUDIO-4).
+ *
+ * A block of exactly one card whose card is the parent end of a secondary
+ * line from a card C in a block B of more than one card is not wrapped by
+ * `packBlocks`: it becomes part of B, x-centred under C, its top at B's bottom
+ * (B's lowest card) plus the normal row spacing — a row of its own below B's
+ * rows — and B's footprint includes it. Its place relative to B is fixed, so
+ * it is the same at every canvas width.
+ *
+ * - One referencer: if cards in several blocks reference it, it docks under
+ *   the first secondary line in `lines` order — the order the adapter lists
+ *   the edges in, which is the analyzer's: declaration order.
+ * - No chains: it docks only under a card of a block of more than one card, so
+ *   never under another one-card tree, docked or not; a one-card tree
+ *   referenced only by one-card trees wraps as before.
+ * - Two docked under one block whose spots would overlap keep their
+ *   referencers' left-to-right order and are pushed apart just enough to clear
+ *   by the sibling gap — each overlapping run centred on its members' spots.
+ *   If that pushes one left of the block's edge, the whole block shifts right
+ *   so its left edge stays at 0; nothing inside it moves relative to the rest.
+ * - A multi-card tree that is the parent end of a secondary line is untouched
+ *   (#778's narrowing): it wraps by its block's size and may sit below its child.
+ *
+ * This is the one place a secondary line places a card: adding or removing
+ * such a line docks or undocks that one card. No other card moves within its
+ * block; the referencing block's footprint grows, so the packing may change.
+ */
+function dockLoneTrees(
+  trees: Block[],
+  lines: readonly StudioEdgeData[],
+  sizes: ReadonlyMap<string, { width: number; height: number }>,
+  spacing: number,
+  nodeSpacing: number,
+): Block[] {
+  const blockOf = new Map<string, Block>();
+  for (const b of trees) for (const id of b.ids) blockOf.set(id, b);
+
+  // Each one-card tree's referencer: the first secondary line onto it from a
+  // card in a block of more than one card.
+  const referencer = new Map<string, string>();
+  for (const e of lines) {
+    if (e.treeRole !== 'secondary' || referencer.has(e.parent)) continue;
+    const lone = blockOf.get(e.parent);
+    const host = blockOf.get(e.child);
+    if (lone == null || host == null || lone === host) continue;
+    if (lone.ids.length !== 1 || host.ids.length < 2) continue;
+    referencer.set(e.parent, e.child);
+  }
+  if (referencer.size === 0) return trees;
+
+  const docked = new Map<Block, { id: string; want: number; width: number; height: number }[]>();
+  for (const [id, by] of referencer) {
+    const host = blockOf.get(by)!;
+    const size = sizes.get(id)!;
+    const want = host.x.get(by)! + sizes.get(by)!.width / 2 - size.width / 2;
+    docked.set(host, [...(docked.get(host) ?? []), { id, want, ...size }]);
+  }
+
+  for (const [host, cards] of docked) {
+    // Referencer order left to right; a tie keeps declaration order (stable sort).
+    cards.sort((a, b) => a.want + a.width / 2 - (b.want + b.width / 2));
+    // Push overlapping spots apart: merge each run that would overlap and
+    // centre it on the mean of its members' wanted spots.
+    const runs: { cards: typeof cards; left: number; width: number }[] = [];
+    for (const c of cards) {
+      runs.push({ cards: [c], left: c.want, width: c.width });
+      while (runs.length > 1) {
+        const prev = runs[runs.length - 2]!;
+        const last = runs[runs.length - 1]!;
+        if (prev.left + prev.width + nodeSpacing <= last.left) break;
+        const merged = [...prev.cards, ...last.cards];
+        let offset = 0;
+        let sum = 0;
+        for (const m of merged) {
+          sum += m.want - offset;
+          offset += m.width + nodeSpacing;
+        }
+        runs.splice(runs.length - 2, 2, {
+          cards: merged,
+          left: sum / merged.length,
+          width: offset - nodeSpacing,
+        });
+      }
+    }
+
+    const top = host.height + spacing;
+    const rowHeight = Math.max(...cards.map((c) => c.height));
+    const row = host.rowY.length;
+    host.rowY.push(top);
+    host.rowHeight.push(rowHeight);
+    host.gap.push(spacing);
+    for (const r of runs) {
+      let left = r.left;
+      for (const c of r.cards) {
+        host.ids.push(c.id);
+        host.depth.set(c.id, row);
+        host.x.set(c.id, left);
+        left += c.width + nodeSpacing;
+      }
+    }
+    const minX = Math.min(0, ...cards.map((c) => host.x.get(c.id)!));
+    if (minX < 0) for (const [id, x] of host.x) host.x.set(id, x - minX);
+    host.width = Math.max(...host.ids.map((id) => host.x.get(id)! + sizes.get(id)!.width));
+    host.height = top + rowHeight;
+  }
+
+  const dockedIds = new Set(referencer.keys());
+  return trees.filter((b) => !(b.ids.length === 1 && dockedIds.has(b.root)));
+}
+
+/**
  * Lay the graph out as a forest of tree blocks (STUDIO-3, STUDIO-4).
  *
  * Every node hangs under its spine parent (`StudioEdgeData.treeRole`), so the
@@ -187,7 +298,8 @@ export function packBlocks(
  * its root on the block's top row, each child directly under its parent,
  * siblings side by side in node order, each parent centred over its children,
  * rows top-aligned. Only spine lines are read; a secondary line can be added
- * or removed without moving a card.
+ * or removed without moving a card — except that a one-card tree a secondary
+ * line reaches docks under its referencer (`dockLoneTrees`).
  *
  * The blocks are then wrapped into rows that fit `targetAspect`
  * (`packBlocks`), biggest tree first — most cards, then the root's id — so a
@@ -292,8 +404,10 @@ export function treeLayout(
   };
 
   // Biggest tree first, then by root id: the order does not depend on the
-  // order the analyzer happened to list the entities in.
-  const blocks = roots.map(layBlock).sort((a, b) => b.ids.length - a.ids.length || byId(a.root, b.root));
+  // order the analyzer happened to list the entities in. The size is the
+  // tree's own card count — a docked card (below) does not reorder blocks.
+  const trees = roots.map(layBlock).sort((a, b) => b.ids.length - a.ids.length || byId(a.root, b.root));
+  const blocks = dockLoneTrees(trees, drawable, sizes, spacing, nodeSpacing);
   const at = packBlocks(blocks, targetAspect, treeSpacing, blockRowSpacing);
   const placed: Placed[] = blocks.map((block, i) => ({ block, ...at[i]! }));
 
