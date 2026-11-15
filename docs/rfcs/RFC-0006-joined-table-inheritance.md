@@ -1137,9 +1137,10 @@ three. §13 of the RFC is the build plan.
 - [x] **A14** Studio shows the inherits edge from its two vocabulary tables (`just test-studio`).
 - [x] **A15** Each new gate can fail on its own subject: remove the kind FK from the template and A4 goes red;
       remove the inner join and A13 goes red.
-- [ ] **A16** CLAUDE.md, `consumer-skills/entities/yaml-reference.md` and this RFC say what was built. #780, #786
+- [x] **A16** CLAUDE.md, `consumer-skills/entities/yaml-reference.md` and this RFC say what was built. #780, #786
       and #787 each get a comment saying which part landed here and what remains.
-      *Evidence:* CLAUDE.md, `yaml-reference.md`, `SKILL.md` and this RFC are written (S6). **Not ticked:** the #780 / #786 / #787 comments are drafted (`.ai-docs/stacks/inherits-875/issue-comments.md`) and not posted; the coordinator posts them after Doug's word.
+      *Evidence:* CLAUDE.md, `yaml-reference.md`, `SKILL.md` and this RFC are written (S6); the comments were posted
+      2026-11-15 on #780, #786 and #787, each naming the stack PRs (#907–#912) that landed its part.
 
 **Relations:**
 
