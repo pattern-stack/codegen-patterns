@@ -1058,7 +1058,6 @@ Each was scope revision 2 pulled in to satisfy the answers above, with a default
 | OQ-10 | How the natural key is declared | `natural_key: true` on a `unique_indexes` entry, not a top-level key. The index is declared once. This settles #780's first open question. | S1 (schema), S4 (`upsertByNaturalKey` on every `natural_key` entity) |
 | OQ-12 | #787's implicit same-tenant FK on every tenant-scoped `belongs_to` | Stays in #787. This build gave #787 its emitter and the explicit `match:` form (the child's tenant FK and the part-kind FK use it). | S2 |
 | OQ-13 | Sharing an enum type across entities | `choices_of: <entity>.<field>`, one hop, the owner's `pgEnum` imported from its `<entity>.enums.ts` leaf. | S1, S2 |
-| OQ-14 | Upserting onto a soft-deleted row | Updated, `deleted_at` left alone. A provider re-sending an object is not a decision to undelete it. | S4 |
 
 ### 11.3 Decided at Gate 2.5 (Doug, 2026-11-15)
 
