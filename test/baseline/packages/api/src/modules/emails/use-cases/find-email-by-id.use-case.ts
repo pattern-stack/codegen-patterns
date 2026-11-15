@@ -16,7 +16,7 @@ export class FindEmailByIdUseCase {
    * hoisted to the root — so the base relation is never an include. `include` is a typed include TREE, not a client
    * string: the controller already resolved `?include=` against the route's allowlist (REL-2 §5).
    */
-  async execute<TWith extends EmailInclude = EmailNoInclude>(
+  async execute<TWith extends EmailInclude & { communication?: never } = EmailNoInclude>(
     id: string,
     include?: TWith,
   ): Promise<EmailFlat<TWith>> {

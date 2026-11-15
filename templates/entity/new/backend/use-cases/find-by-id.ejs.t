@@ -30,7 +30,7 @@ export class <%= classNames.findByIdUseCase %> {
    * hoisted to the root — so the base relation is never an include. `include` is a typed include TREE, not a client
    * string: the controller already resolved `?include=` against the route's allowlist (REL-2 §5).
    */
-  async execute<TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
+  async execute<TWith extends <%= classNames.entity %>Include & { <%= familyChild.relKey %>?: never } = <%= classNames.entity %>NoInclude>(
     id: string,
     include?: TWith,
   ): Promise<<%= classNames.entity %>Flat<TWith>> {

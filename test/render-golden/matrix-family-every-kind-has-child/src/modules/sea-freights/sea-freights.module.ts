@@ -1,5 +1,5 @@
 
-import { Inject, Module, type OnModuleInit } from '@nestjs/common';
+import { Inject, Module, forwardRef, type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
 import { ShipmentsModule } from '../shipments/shipments.module';
@@ -21,7 +21,7 @@ import { DeleteSeaFreightUseCase } from './use-cases/delete-sea-freight.use-case
   imports: [
     DatabaseModule,
     // A sea_freight is a kind of shipment: its repository injects the base's, which that module exports.
-    ShipmentsModule,
+    forwardRef(() => ShipmentsModule),
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
   ],
   controllers: [SeaFreightController],

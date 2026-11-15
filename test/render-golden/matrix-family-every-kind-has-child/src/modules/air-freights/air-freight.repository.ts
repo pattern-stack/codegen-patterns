@@ -1,8 +1,7 @@
 
 import { Injectable, Inject } from '@nestjs/common';
 
-import { eq, inArray } from 'drizzle-orm';
-import { getTableColumns } from 'drizzle-orm';
+import { eq, inArray, getTableColumns } from 'drizzle-orm';
 import { DRIZZLE } from '@shared/constants/tokens';
 import type { DrizzleClient, DrizzleTx } from '@shared/types/drizzle';
 // REL-2 (#587): the generated relation graph. `Relations` binds the repository's
@@ -209,41 +208,25 @@ export class AirFreightRepository extends BaseRepository<AirFreight, typeof air_
   // The base row (RFC-0006 §3.2, #875) — a air_freight IS a kind of a shipment
   //
   // `findWithBase` is `findById` with the base joined in and its columns hoisted
-  // to the root: ONE statement (a primary-key lateral join), the same scope as
-  // every other read here, `columns` / `with` still applying to this table.
+  // to the root: it CALLS `findById` / `findByIds`, so ONE statement (a primary-key
+  // lateral join) and the one scope body — `columns` / `with` still apply to this table.
   // ═══════════════════════════════════════════════════════════════════════
 
-  async findWithBase<W extends AirFreightInclude = AirFreightNoInclude, C extends AirFreightColumns | undefined = undefined>(
+  async findWithBase<W extends AirFreightInclude & { shipment?: never } = AirFreightNoInclude, C extends AirFreightColumns | undefined = undefined>(
     id: string,
     opts?: ReadOptions<W, C>,
   ): Promise<AirFreightFlat<W, C> | null> {
-    const row = await this.db.query.air_freights.findFirst({
-      where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
-      columns: this.checkColumns<C>(opts?.columns),
-      with: { ...opts?.with, shipment: true as const },
-    });
+    const row = await this.findById(id, { ...opts, with: { ...opts?.with, shipment: true as const } } as never);
     return row ? (flattenBase(row as never, 'shipment') as AirFreightFlat<W, C>) : null;
   }
 
-  /** One statement for many ids, flat — `findByIds`' contract (no statement for `[]`, input order, absent when out of scope). */
-  async findManyWithBase<W extends AirFreightInclude = AirFreightNoInclude, C extends AirFreightColumns | undefined = undefined>(
+  /** One statement for many ids, flat — it IS `findByIds` (no statement for `[]`, input order, absent when out of scope), with the base joined in. */
+  async findManyWithBase<W extends AirFreightInclude & { shipment?: never } = AirFreightNoInclude, C extends AirFreightColumns | undefined = undefined>(
     ids: readonly string[],
     opts?: ReadOptions<W, C>,
   ): Promise<Array<AirFreightFlat<W, C>>> {
-    const unique = this.uniqueIds(ids);
-    if (unique.length === 0) {
-      this.assertReadScope();
-      return [];
-    }
-    const mask = this.byIdsColumns(this.checkColumns<C>(opts?.columns));
-    const rows = await this.db.query.air_freights.findMany({
-      where: { RAW: this.rootFilter((t) => inArray(t.id, unique)) },
-      columns: mask.columns,
-      with: { ...opts?.with, shipment: true as const },
-    });
-    return this.inInputOrder(rows, unique, mask.stripId).map((row) =>
-      flattenBase(row as never, 'shipment'),
-    ) as Array<AirFreightFlat<W, C>>;
+    const rows = await this.findByIds(ids, { ...opts, with: { ...opts?.with, shipment: true as const } } as never);
+    return rows.map((row) => flattenBase(row as never, 'shipment')) as Array<AirFreightFlat<W, C>>;
   }
 
   /**

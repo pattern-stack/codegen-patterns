@@ -72,14 +72,14 @@ export class AirFreightService extends WithAnalytics(
   }
 
   // RFC-0006 §3.2 — the base row, flat: the repository's `findWithBase` / `findManyWithBase`, forwarded.
-  findWithBase<W extends AirFreightInclude = AirFreightNoInclude, C extends AirFreightColumns | undefined = undefined>(
+  findWithBase<W extends AirFreightInclude & { shipment?: never } = AirFreightNoInclude, C extends AirFreightColumns | undefined = undefined>(
     id: string,
     opts?: ReadOptions<W, C>,
   ): Promise<AirFreightFlat<W, C> | null> {
     return this.repository.findWithBase<W, C>(id, opts);
   }
 
-  findManyWithBase<W extends AirFreightInclude = AirFreightNoInclude, C extends AirFreightColumns | undefined = undefined>(
+  findManyWithBase<W extends AirFreightInclude & { shipment?: never } = AirFreightNoInclude, C extends AirFreightColumns | undefined = undefined>(
     ids: readonly string[],
     opts?: ReadOptions<W, C>,
   ): Promise<Array<AirFreightFlat<W, C>>> {
@@ -110,13 +110,25 @@ export class AirFreightService extends WithAnalytics(
     return super.create(input as globalThis.Partial<AirFreight>, tx) as Promise<AirFreightFlat>;
   }
 
-  override update(id: string, patch: AirFreightUpdate, tx?: DrizzleTx): Promise<AirFreightFlat> {
+  /** Not a air_freight in scope: nothing is written (the repository's update is a no-op) and nothing is emitted — `BaseService` would snapshot `undefined`. */
+  override async update(id: string, patch: AirFreightUpdate, tx?: DrizzleTx): Promise<AirFreightFlat> {
+    if ((await this.repository.findWithBase(id)) === null) return undefined as unknown as AirFreightFlat;
     return super.update(id, patch as globalThis.Partial<AirFreight>, tx) as Promise<AirFreightFlat>;
   }
 
   /** The pre-update read is the FLAT row: against the table's own columns every base field would look changed. */
   protected override readBeforeUpdate(id: string): Promise<AirFreight | null> {
     return this.repository.findWithBase(id);
+  }
+
+  /**
+   * The repository's delete is a no-op for an id that is not a air_freight (a row of another kind is never deleted
+   * through this service), so `BaseService`'s events fire only when there was a row of this kind to delete — a
+   * `shipment.deleted` for a row that still exists would drop it from every subscriber.
+   */
+  override async delete(id: string, tx?: unknown): Promise<void> {
+    if ((await this.repository.findWithBase(id)) === null) return;
+    return super.delete(id, tx);
   }
 
 

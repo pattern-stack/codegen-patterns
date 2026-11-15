@@ -255,10 +255,14 @@ export class ParcelRepository extends BaseRepository<Parcel, typeof parcels, Rel
   /**
    * One kind, flat (the base's columns and the child's at one level), filtered and sorted on BASE columns —
    * the read a child's HTTP list uses, since `created_at` and `occurred_at` live here.
+   *
+   * `childWith` is an include tree for the CHILD's own includes (`{ transcripts: true }`): it is joined under the
+   * child's relation key in the same statement (charter I4), so a child list with an include is still one statement.
    */
   async listKind<K extends keyof ParcelFlatByKind>(
     kind: K,
     query?: ListOptions<typeof parcels>,
+    childWith?: globalThis.Record<string, unknown>,
   ): Promise<Array<ParcelFlatByKind[K]>> {
     const where: ParcelRowFilter = (t) =>
       and(eq(t.kind, kind), query?.where?.(t));
@@ -267,7 +271,10 @@ export class ParcelRepository extends BaseRepository<Parcel, typeof parcels, Rel
       sort: query?.sort,
       limit: query?.limit,
       offset: query?.offset,
-      with: parcelKindJoins([kind]),
+      with:
+        childWith === undefined
+          ? parcelKindJoins([kind])
+          : ({ [PARCEL_CHILD_KEY_BY_KIND[kind]]: { with: childWith } } as never),
     } as never);
     return rows.map((row) =>
       flattenBase(

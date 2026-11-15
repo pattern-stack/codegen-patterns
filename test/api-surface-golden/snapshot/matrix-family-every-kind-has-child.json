@@ -1250,6 +1250,37 @@
 						}
 					},
 					{
+						"name": "delete",
+						"kind": "pair_delete",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "none",
+						"delegatesTo": {
+							"entity": "air_freight",
+							"layer": "repository",
+							"method": "delete"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "air_freight"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
 						"name": "count",
 						"kind": "inherited",
 						"emitted": false,
@@ -1262,17 +1293,6 @@
 					},
 					{
 						"name": "exists",
-						"kind": "inherited",
-						"emitted": false,
-						"params": [],
-						"returns": "forwarded",
-						"origin": {
-							"from": "pattern",
-							"pattern": "Base"
-						}
-					},
-					{
-						"name": "delete",
 						"kind": "inherited",
 						"emitted": false,
 						"params": [],

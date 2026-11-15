@@ -1,8 +1,7 @@
 
 import { Injectable, Inject } from '@nestjs/common';
 
-import { eq, inArray } from 'drizzle-orm';
-import { and, notExists, or, sql } from 'drizzle-orm';
+import { eq, inArray, and, notExists, or, sql } from 'drizzle-orm';
 import { DRIZZLE } from '@shared/constants/tokens';
 import type { DrizzleClient, DrizzleTx } from '@shared/types/drizzle';
 // REL-2 (#587): the generated relation graph. `Relations` binds the repository's
@@ -80,6 +79,9 @@ export interface ShipmentFlatByKind {
   air: Flattened<Shipment & { airFreight: AirFreight }, 'airFreight'>;
   sea: Flattened<Shipment & { seaFreight: SeaFreight }, 'seaFreight'>;
 }
+
+/** A row filter over this table — what the cross-kind reads hand `list`. */
+type ShipmentRowFilter = RowFilter<typeof shipments>;
 
 /** The relation key each child kind is read under, and the one `asKind` narrows by. */
 const SHIPMENT_CHILD_KEY_BY_KIND = {
@@ -236,25 +238,21 @@ export class ShipmentRepository extends BaseRepository<Shipment, typeof shipment
     query?: ListOptions<typeof shipments> & { kinds?: readonly ShipmentKind[] },
   ): Promise<ShipmentOfKind[]> {
     const kinds = query?.kinds;
-    const sort = query?.sort;
-    const rows = await this.db.query.shipments.findMany({
-      where: { RAW: this.rootFilter((t) =>
-        and(query?.where?.(t), kinds === undefined ? undefined : inArray(t.kind, [...kinds])),
-      ) },
-      with: shipmentKindJoins(kinds),
-      orderBy: sort === undefined || sort.length === 0 ? undefined : (t) => this.orderByOn(t, sort) ?? [],
+    const where: ShipmentRowFilter = (t) =>
+      and(query?.where?.(t), kinds === undefined ? undefined : inArray(t.kind, [...kinds]));
+    const rows = await this.list({
+      where,
+      sort: query?.sort,
       limit: query?.limit,
       offset: query?.offset,
-    });
+      with: shipmentKindJoins(kinds),
+    } as never);
     return rows.map((row) => asKind<ShipmentOfKind>(row, 'kind', SHIPMENT_CHILD_KEY_BY_KIND));
   }
 
   /** One row by id with its child, narrowed by kind. `null` when absent or out of scope. */
   async findKindById(id: string): Promise<ShipmentOfKind | null> {
-    const row = await this.db.query.shipments.findFirst({
-      where: { RAW: this.rootFilter((t) => eq(t.id, id)) },
-      with: shipmentKindJoins(undefined),
-    });
+    const row = await this.findById(id, { with: shipmentKindJoins(undefined) } as never);
     return row ? asKind<ShipmentOfKind>(row, 'kind', SHIPMENT_CHILD_KEY_BY_KIND) : null;
   }
 
@@ -270,17 +268,18 @@ export class ShipmentRepository extends BaseRepository<Shipment, typeof shipment
     query?: ListOptions<typeof shipments>,
     childWith?: globalThis.Record<string, unknown>,
   ): Promise<Array<ShipmentFlatByKind[K]>> {
-    const sort = query?.sort;
-    const rows = await this.db.query.shipments.findMany({
-      where: { RAW: this.rootFilter((t) => and(eq(t.kind, kind), query?.where?.(t))) },
+    const where: ShipmentRowFilter = (t) =>
+      and(eq(t.kind, kind), query?.where?.(t));
+    const rows = await this.list({
+      where,
+      sort: query?.sort,
+      limit: query?.limit,
+      offset: query?.offset,
       with:
         childWith === undefined
           ? shipmentKindJoins([kind])
           : ({ [SHIPMENT_CHILD_KEY_BY_KIND[kind]]: { with: childWith } } as never),
-      orderBy: sort === undefined || sort.length === 0 ? undefined : (t) => this.orderByOn(t, sort) ?? [],
-      limit: query?.limit,
-      offset: query?.offset,
-    });
+    } as never);
     return rows.map((row) =>
       flattenBase(
         asKind<ShipmentOfKind>(row, 'kind', SHIPMENT_CHILD_KEY_BY_KIND) as never,

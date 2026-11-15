@@ -16,7 +16,7 @@ export class FindCrateByIdUseCase {
    * hoisted to the root — so the base relation is never an include. `include` is a typed include TREE, not a client
    * string: the controller already resolved `?include=` against the route's allowlist (REL-2 §5).
    */
-  async execute<TWith extends CrateInclude = CrateNoInclude>(
+  async execute<TWith extends CrateInclude & { parcel?: never } = CrateNoInclude>(
     id: string,
     include?: TWith,
   ): Promise<CrateFlat<TWith>> {
