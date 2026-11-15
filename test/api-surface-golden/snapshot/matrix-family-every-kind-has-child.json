@@ -242,19 +242,37 @@
 						}
 					},
 					{
-						"name": "exists",
-						"kind": "inherited",
-						"emitted": false,
-						"params": [],
-						"returns": "forwarded",
+						"name": "create",
+						"kind": "create_guard",
+						"emitted": true,
+						"params": [
+							{
+								"name": "input"
+							},
+							{
+								"name": "tx"
+							},
+							{
+								"name": "via"
+							}
+						],
+						"returns": "one",
 						"readOptions": "none",
 						"origin": {
-							"from": "pattern",
-							"pattern": "Base"
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "shipment"
+								},
+								"path": [
+									"discriminator"
+								]
+							}
 						}
 					},
 					{
-						"name": "create",
+						"name": "exists",
 						"kind": "inherited",
 						"emitted": false,
 						"params": [],
@@ -513,32 +531,6 @@
 						}
 					},
 					{
-						"name": "create",
-						"kind": "kind_guard",
-						"emitted": true,
-						"params": [
-							{
-								"name": "input"
-							},
-							{
-								"name": "tx"
-							}
-						],
-						"returns": "one",
-						"origin": {
-							"from": "yaml",
-							"at": {
-								"doc": {
-									"kind": "entity",
-									"name": "shipment"
-								},
-								"path": [
-									"discriminator"
-								]
-							}
-						}
-					},
-					{
 						"name": "count",
 						"kind": "inherited",
 						"emitted": false,
@@ -551,6 +543,17 @@
 					},
 					{
 						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "create",
 						"kind": "inherited",
 						"emitted": false,
 						"params": [],

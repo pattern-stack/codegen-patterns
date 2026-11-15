@@ -11,7 +11,7 @@ import type { DrizzleClient, DrizzleTx } from '@shared/types/drizzle';
 import type { ColumnsOf, IncludeOf, Relations, ResultOf } from '../../generated/relations';
 import { BaseRepository } from '@shared/base-classes/base-repository';
 import type { ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
-import { flattenBase, inTransaction, KindImmutableError, KindMismatchError, splitByOwner, type Flattened } from '@shared/base-classes/inheritance';
+import { flattenBase, inTransaction, KindImmutableError, KindMismatchError, PAIR_WRITE, splitByOwner, type Flattened } from '@shared/base-classes/inheritance';
 import { sea_freights, type SeaFreight } from './sea-freight.entity';
 import { shipments, type Shipment } from '../shipments/shipment.entity';
 import { ShipmentRepository } from '../shipments/shipment.repository';
@@ -268,7 +268,7 @@ export class SeaFreightRepository extends BaseRepository<SeaFreight, typeof sea_
     const { base, own } = splitByOwner(input, SEA_FREIGHT_BASE_KEYS);
     this.assertOwnKind(base);
     return inTransaction(this.db, tx, async (txClient) => {
-      const baseRow = await this.baseRepo.create({ ...base, kind: 'sea' }, txClient);
+      const baseRow = await this.baseRepo.create({ ...base, kind: 'sea' }, txClient, PAIR_WRITE);
       const [childRow] = await this.runner(txClient)
         .insert(this.table)
         .values(this.childValues({ ...own, id: baseRow.id }))

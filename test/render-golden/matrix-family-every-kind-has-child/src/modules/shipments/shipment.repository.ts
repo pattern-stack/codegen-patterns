@@ -11,7 +11,7 @@ import type { DrizzleClient, DrizzleTx } from '@shared/types/drizzle';
 import type { ColumnsOf, IncludeOf, Relations, ResultOf } from '../../generated/relations';
 import { BaseRepository } from '@shared/base-classes/base-repository';
 import type { ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
-import { asKind, flattenBase, KindImmutableError, type Flattened } from '@shared/base-classes/inheritance';
+import { asKind, assertBaseOnlyKind, flattenBase, KindImmutableError, type Flattened, type PairWrite } from '@shared/base-classes/inheritance';
 import { shipments, type Shipment } from './shipment.entity';
 import { air_freights, type AirFreight } from '../air-freights/air-freight.entity';
 import { sea_freights, type SeaFreight } from '../sea-freights/sea-freight.entity';
@@ -116,6 +116,12 @@ function shipmentOrphanFilter(dbClient: DrizzleClient<Relations>, rootRow: typeo
     ),
   );
 }
+
+/** The kinds that have a child table, and the create path that writes both rows for each (`KindRequiresChildError`). */
+const SHIPMENT_CHILD_CREATE_PATH = {
+  air: 'AirFreightService.create',
+  sea: 'SeaFreightService.create',
+} as const;
 
 @Injectable()
 export class ShipmentRepository extends BaseRepository<Shipment, typeof shipments, Relations> {
@@ -317,6 +323,12 @@ export class ShipmentRepository extends BaseRepository<Shipment, typeof shipment
   override async update(id: string, input: globalThis.Partial<Shipment>, tx?: DrizzleTx): Promise<Shipment> {
     if (input.kind !== undefined) throw new KindImmutableError('shipment');
     return super.update(id, input, tx);
+  }
+
+  /** A kind with a child table is created through the child (`KindRequiresChildError`); a base-only kind is created here. */
+  override async create(input: globalThis.Partial<Shipment>, tx?: DrizzleTx, via?: PairWrite): Promise<Shipment> {
+    assertBaseOnlyKind('shipment', input.kind, SHIPMENT_CHILD_CREATE_PATH, via);
+    return super.create(input, tx);
   }
 
   // Inherited from BaseRepository:

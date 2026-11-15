@@ -13,16 +13,8 @@ import type {
   ShipmentNoInclude,
   ShipmentResult,
 } from './shipment.repository';
-import { assertBaseOnlyKind } from '@shared/base-classes/inheritance';
-import type { DrizzleTx } from '@shared/types/drizzle';
 import type { ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
 import type { shipments, Shipment } from './shipment.entity';
-
-/** The kinds that have a child table, and the create path that writes both rows for each (`KindRequiresChildError`). */
-const SHIPMENT_CHILD_CREATE_PATH = {
-  air: 'AirFreightService.create',
-  sea: 'SeaFreightService.create',
-} as const;
 
 @Injectable()
 export class ShipmentService extends WithAnalytics(
@@ -96,16 +88,6 @@ export class ShipmentService extends WithAnalytics(
 
   findOrphans(opts?: { limit?: number }): Promise<Shipment[]> {
     return this.repository.findOrphans(opts);
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // Writes through the base (RFC-0006 §4.1)
-  // ═══════════════════════════════════════════════════════════════════════
-
-  /** A kind with a child table is created through the child (`KindRequiresChildError`); a base-only kind is created here. */
-  override async create(input: globalThis.Partial<Shipment>, tx?: unknown): Promise<Shipment> {
-    assertBaseOnlyKind('shipment', input.kind, SHIPMENT_CHILD_CREATE_PATH);
-    return super.create(input, tx);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
