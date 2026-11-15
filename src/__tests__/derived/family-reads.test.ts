@@ -98,14 +98,20 @@ describe('the derived family reads', () => {
 	});
 
 	it('a delete use case records its pre-read only when the entity publishes `<entity>_deleted`', () => {
-		const delete_ = (name: string) => surfaces.get(name)!.useCases.find((u) => u.kind === 'delete')!;
-		// the baseline's meeting declares emits (a child: the flat row, so a payload sees base fields)
-		expect(delete_('meeting').preRead).toEqual({ entity: 'meeting', layer: 'service', method: 'findWithBase' });
-		// email declares none: the delete makes no read first, and says so
-		expect(delete_('email').preRead).toBeUndefined();
-		expect(delete_('communication').preRead).toBeUndefined();
-		// contact publishes created / merged / marked_champion but not `contact_deleted`: no pre-read
-		expect(delete_('contact').preRead).toBeUndefined();
+		const matrix = RENDER_MATRIX.find((c) => c.id === 'matrix-family-every-kind-has-child')!;
+		// air_freight (a child) publishes its delete; sea_freight (a child) and shipment (the base) publish nothing
+		const entities = matrix.entities.map((d) =>
+			d.entity.name === 'air_freight' ? { ...d, emits: ['air_freight_deleted'] } : d,
+		);
+		const derived = deriveSet({ entities, junctions: [...matrix.junctions] });
+		const delete_ = (name: string) => derived.get(name)!.useCases.find((u) => u.kind === 'delete')!;
+		// a child reads the FLAT row, so a payload expression sees base fields too
+		expect(delete_('air_freight').preRead).toEqual({ entity: 'air_freight', layer: 'service', method: 'findWithBase' });
+		// no delete event: the delete makes no read first, and says so
+		expect(delete_('sea_freight').preRead).toBeUndefined();
+		expect(delete_('shipment').preRead).toBeUndefined();
+		// an entity that emits other events but not its delete has none either
+		expect(surfaces.get('contact')!.useCases.find((u) => u.kind === 'delete')!.preRead).toBeUndefined();
 	});
 
 	it('a base: the five cross-kind reads, caused by its discriminator:, naming the child kinds', () => {

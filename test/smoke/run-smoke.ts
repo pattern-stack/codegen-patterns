@@ -926,6 +926,28 @@ async function main(): Promise<number> {
 			log('set tenancy.column: organization_id for the default scenario');
 		}
 
+		// 4.9. Install the events subsystem BEFORE generating: the default fixture set's `crate` (a child, RFC-0006 §5)
+		// declares `emits: [crate_deleted]`, so its delete use case imports `@shared/subsystems/events` and the typed
+		// bus. That is what makes this smoke's `tsc` compile a child's flat event payload and `findWithBase` pre-read.
+		// (Only the default scenario carries that fixture; the relationship one has no child.)
+		if (SCENARIO === 'default') {
+			run(`${cli(tmpDir)} subsystem install events`, tmpDir);
+			// The AppModule must compose the barrel, or `TYPED_EVENT_BUS` has no provider and the boot check
+			// (openapi-verify) fails to resolve `DeleteCrateUseCase` — a gate that boots what it compiled.
+			const appModulePath = path.join(tmpDir, 'src', 'app.module.ts');
+			const appModule = fs.readFileSync(appModulePath, 'utf-8');
+			const composed = appModule
+				.replace(
+					"import { GENERATED_MODULES } from './generated/modules';",
+					"import { GENERATED_MODULES } from './generated/modules';\nimport { SUBSYSTEM_MODULES } from './generated/subsystems';",
+				)
+				.replace('...GENERATED_MODULES]', '...SUBSYSTEM_MODULES, ...GENERATED_MODULES]');
+			if (composed === appModule || !composed.includes('...SUBSYSTEM_MODULES')) {
+				throw new Error('could not compose SUBSYSTEM_MODULES into the smoke AppModule — its shape changed');
+			}
+			fs.writeFileSync(appModulePath, composed);
+		}
+
 		// 5. Run `codegen entity new --all`.
 		//
 		// ONE run is the whole subject (#815): every `has_many` onto an entity in

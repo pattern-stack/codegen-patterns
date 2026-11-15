@@ -19,3 +19,16 @@ relationships:
     target: parcel
     foreign_key: home_id
     nullable: true
+
+# SMOKE ONLY: a child that publishes its delete, so the smoke's `tsc` compiles the child's flat event-payload path and
+# the delete use case's `findWithBase` pre-read (RFC-0006 §5). Not on a baseline fixture: the baseline generates
+# `runtime/subsystems/events/generated/*`, which ships in the package, so a baseline emit would change a published file.
+emits:
+  - crate_deleted
+
+events:
+  - name: crate_deleted
+    queue: domain-events
+    body:
+      crate_id: uuid
+      label: string

@@ -64,33 +64,6 @@ export interface DealStageChangedEvent extends DomainEvent {
 	};
 }
 
-export interface MeetingCreatedEvent extends DomainEvent {
-	readonly type: 'meeting_created';
-	readonly aggregateType: 'meeting';
-	readonly payload: {
-		meetingId: string;
-		title: string;
-	};
-}
-
-export interface MeetingDeletedEvent extends DomainEvent {
-	readonly type: 'meeting_deleted';
-	readonly aggregateType: 'meeting';
-	readonly payload: {
-		meetingId: string;
-		title: string;
-	};
-}
-
-export interface MeetingUpdatedEvent extends DomainEvent {
-	readonly type: 'meeting_updated';
-	readonly aggregateType: 'meeting';
-	readonly payload: {
-		meetingId: string;
-		title: string;
-	};
-}
-
 export interface MessageCreatedEvent extends DomainEvent {
 	readonly type: 'message_created';
 	readonly aggregateType: 'message';
@@ -173,9 +146,6 @@ export type AppDomainEvent =
 	| CrmSyncStartedEvent
 	| DealCreatedEvent
 	| DealStageChangedEvent
-	| MeetingCreatedEvent
-	| MeetingDeletedEvent
-	| MeetingUpdatedEvent
 	| MessageCreatedEvent
 	| MessageDeletedEvent
 	| MessageEditedEvent

@@ -38,28 +38,3 @@ api:
       max_depth: 1
       paths:
         - transcripts
-
-# BASELINE ONLY (the fixtures-agree test names `emits` / `events` as the allowed difference): a child that publishes,
-# so the baseline's `tsc` compiles the flat create / update / delete payload paths and the delete use case's
-# `findWithBase` pre-read (RFC-0006 §5). `occurred_at` is a BASE column, so the payload reads the flat row.
-emits:
-  - meeting_created
-  - meeting_updated
-  - meeting_deleted
-
-events:
-  - name: meeting_created
-    queue: domain-events
-    body:
-      meeting_id: uuid
-      title: string
-  - name: meeting_updated
-    queue: domain-events
-    body:
-      meeting_id: uuid
-      title: string
-  - name: meeting_deleted
-    queue: domain-events
-    body:
-      meeting_id: uuid
-      title: string

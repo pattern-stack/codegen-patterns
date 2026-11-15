@@ -39,21 +39,6 @@ export const dealStageChangedPayloadSchema = z.object({
 	oldStage: z.string(),
 }).strict();
 
-export const meetingCreatedPayloadSchema = z.object({
-	meetingId: z.string().uuid(),
-	title: z.string(),
-}).strict();
-
-export const meetingDeletedPayloadSchema = z.object({
-	meetingId: z.string().uuid(),
-	title: z.string(),
-}).strict();
-
-export const meetingUpdatedPayloadSchema = z.object({
-	meetingId: z.string().uuid(),
-	title: z.string(),
-}).strict();
-
 export const messageCreatedPayloadSchema = z.object({
 	changedFields: z.record(z.unknown()).nullable(),
 	entityId: z.string().uuid(),
@@ -98,9 +83,6 @@ export const eventPayloadSchemas = {
 	'crm_sync_started': crmSyncStartedPayloadSchema,
 	'deal_created': dealCreatedPayloadSchema,
 	'deal_stage_changed': dealStageChangedPayloadSchema,
-	'meeting_created': meetingCreatedPayloadSchema,
-	'meeting_deleted': meetingDeletedPayloadSchema,
-	'meeting_updated': meetingUpdatedPayloadSchema,
 	'message_created': messageCreatedPayloadSchema,
 	'message_deleted': messageDeletedPayloadSchema,
 	'message_edited': messageEditedPayloadSchema,
