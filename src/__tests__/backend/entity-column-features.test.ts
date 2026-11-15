@@ -197,8 +197,8 @@ describe('single-column index (#355)', () => {
 
   it('emits a named index in the pgTable extra-config callback', () => {
     const { output } = render(definition);
-    expect(output).toMatch(/\},\s*\(t\) => \[/);
-    expect(output).toContain("index('conversations_role_name_idx').on(t.roleName)");
+    expect(output).toMatch(/\},\s*\(tCols\) => \[/);
+    expect(output).toContain("index('conversations_role_name_idx').on(tCols.roleName)");
   });
 
   it('imports index from drizzle-orm/pg-core', () => {
@@ -218,7 +218,7 @@ describe('single-column index (#355)', () => {
     });
     // Both the reference AND the index land.
     expect(output).toContain(".references((): AnyPgColumn => conversations.id)");
-    expect(output).toContain("index('tool_calls_conversation_id_idx').on(t.conversationId)");
+    expect(output).toContain("index('tool_calls_conversation_id_idx').on(tCols.conversationId)");
   });
 
   it('emits no callback or index import when no field declares index', () => {
@@ -229,7 +229,7 @@ describe('single-column index (#355)', () => {
       behaviors: [],
     });
     expect(locals.drizzleImports).not.toContain('index');
-    expect(output).not.toMatch(/\},\s*\(t\) => \[/);
+    expect(output).not.toMatch(/\},\s*\(tCols\) => \[/);
   });
 });
 
@@ -253,7 +253,7 @@ describe('composite unique_indexes (#356)', () => {
   it('emits uniqueIndex over the camelCased columns with the default name', () => {
     const { output } = render(definition);
     expect(output).toContain(
-      "uniqueIndex('messages_conversation_id_sequence_uniq').on(t.conversationId, t.sequence)",
+      "uniqueIndex('messages_conversation_id_sequence_uniq').on(tCols.conversationId, tCols.sequence)",
     );
   });
 
@@ -265,7 +265,7 @@ describe('composite unique_indexes (#356)', () => {
       ],
     });
     expect(output).toContain(
-      "uniqueIndex('messages_conversation_sequence_uniq').on(t.conversationId, t.sequence)",
+      "uniqueIndex('messages_conversation_sequence_uniq').on(tCols.conversationId, tCols.sequence)",
     );
   });
 
@@ -284,12 +284,12 @@ describe('composite unique_indexes (#356)', () => {
         body: { type: 'string', required: true },
       },
     });
-    // exactly one (t) => [ callback
-    const matches = output.match(/\(t\) => \[/g) ?? [];
+    // exactly one (tCols) => [ callback
+    const matches = output.match(/\(tCols\) => \[/g) ?? [];
     expect(matches.length).toBe(1);
-    expect(output).toContain("index('messages_conversation_id_idx').on(t.conversationId)");
+    expect(output).toContain("index('messages_conversation_id_idx').on(tCols.conversationId)");
     expect(output).toContain(
-      "uniqueIndex('messages_conversation_id_sequence_uniq').on(t.conversationId, t.sequence)",
+      "uniqueIndex('messages_conversation_id_sequence_uniq').on(tCols.conversationId, tCols.sequence)",
     );
   });
 });
@@ -318,28 +318,28 @@ describe('field-level unique (#511)', () => {
 
   it('emits a uniqueIndex for a scalar unique: true field, and no .unique() chain', () => {
     const { output, locals } = render(seasonDef({ label: { type: 'string', required: true, unique: true } }));
-    expect(output).toContain("uniqueIndex('seasons_label_uniq').on(t.label)");
+    expect(output).toContain("uniqueIndex('seasons_label_uniq').on(tCols.label)");
     expect(locals.drizzleImports).toContain('uniqueIndex');
     expect(output).not.toContain('.unique()');
   });
 
   it('covers a belongs_to FK column declared in fields: with unique: true', () => {
     const { output } = render(fkDef({ unique: true }));
-    expect(output).toContain("uniqueIndex('seasons_account_id_uniq').on(t.accountId)");
+    expect(output).toContain("uniqueIndex('seasons_account_id_uniq').on(tCols.accountId)");
   });
 
   it('drops the plain index when unique + index on a non-tenant scalar', () => {
     const { output, locals } = render(
       seasonDef({ label: { type: 'string', required: true, unique: true, index: true } }),
     );
-    expect(output).toContain("uniqueIndex('seasons_label_uniq').on(t.label)");
+    expect(output).toContain("uniqueIndex('seasons_label_uniq').on(tCols.label)");
     expect(output).not.toContain('seasons_label_idx');
     expect(locals.drizzleImports).not.toContain('index');
   });
 
   it('drops the plain index when unique + index on a non-tenant FK', () => {
     const { output, locals } = render(fkDef({ unique: true, index: true }));
-    expect(output).toContain("uniqueIndex('seasons_account_id_uniq').on(t.accountId)");
+    expect(output).toContain("uniqueIndex('seasons_account_id_uniq').on(tCols.accountId)");
     expect(output).not.toContain('seasons_account_id_idx');
     expect(locals.drizzleImports).not.toContain('index');
   });
@@ -351,7 +351,7 @@ describe('field-level unique (#511)', () => {
         code: { type: 'string', required: true, index: true },
       }),
     );
-    expect(output).toContain("index('seasons_code_idx').on(t.code)");
+    expect(output).toContain("index('seasons_code_idx').on(tCols.code)");
     expect(output).not.toContain('seasons_label_idx');
   });
 
@@ -366,7 +366,7 @@ describe('field-level unique (#511)', () => {
         { unique_indexes: [{ fields: ['b', 'c'] }] },
       ),
     );
-    expect((output.match(/\(t\) => \[/g) ?? []).length).toBe(1);
+    expect((output.match(/\(tCols\) => \[/g) ?? []).length).toBe(1);
     const ia = output.indexOf("'seasons_a_uniq'");
     const ic = output.indexOf("'seasons_c_uniq'");
     const ibc = output.indexOf("'seasons_b_c_uniq'");
@@ -448,7 +448,7 @@ describe('field-level foreign_key to a host-owned table (#636)', () => {
     // The host-owned branch must not skip the rest of the field's features —
     // a reference to an external table is usually exactly what you index.
     const { output } = render(definition, { ownedTableNames });
-    expect(output).toContain("index('notes_tenant_id_idx').on(t.tenantId)");
+    expect(output).toContain("index('notes_tenant_id_idx').on(tCols.tenantId)");
   });
 
   it('without an ownedTableNames list an unresolvable target is an error', () => {
@@ -551,7 +551,7 @@ describe('unique_indexes shapes (#784)', () => {
 
   it('single field, non-tenant', () => {
     const { output } = render(msgDef([{ fields: ['conversation_id'] }]));
-    expect(output).toContain("uniqueIndex('messages_conversation_id_uniq').on(t.conversationId)");
+    expect(output).toContain("uniqueIndex('messages_conversation_id_uniq').on(tCols.conversationId)");
   });
 
   it('explicit NULLS NOT DISTINCT, non-tenant; imports by use', () => {
@@ -559,7 +559,7 @@ describe('unique_indexes shapes (#784)', () => {
       msgDef([{ fields: ['conversation_id', 'sequence'], nulls_not_distinct: true }]),
     );
     expect(output).toContain(
-      "unique('messages_conversation_id_sequence_uniq').on(t.conversationId, t.sequence).nullsNotDistinct()",
+      "unique('messages_conversation_id_sequence_uniq').on(tCols.conversationId, tCols.sequence).nullsNotDistinct()",
     );
     expect(locals.drizzleImports).toContain('unique');
     expect(locals.drizzleImports).not.toContain('uniqueIndex');
@@ -570,7 +570,7 @@ describe('unique_indexes shapes (#784)', () => {
       msgDef([{ fields: ['conversation_id'], where: "status = 'open'", name: 'messages_open_uniq' }]),
     );
     expect(output).toContain(
-      "uniqueIndex('messages_open_uniq').on(t.conversationId).where(sql`${t.status} = 'open'`)",
+      "uniqueIndex('messages_open_uniq').on(tCols.conversationId).where(sql`${tCols.status} = 'open'`)",
     );
     expect(output).toContain("import { sql, type InferSelectModel } from 'drizzle-orm';");
   });
@@ -592,13 +592,13 @@ describe('unique_indexes shapes (#784)', () => {
         },
       }),
     );
-    expect(fk.output).toContain('${t.accountId} IS NOT NULL');
+    expect(fk.output).toContain('${tCols.accountId} IS NOT NULL');
     const sd = render(
       msgDef([{ fields: ['sequence'], where: 'deleted_at IS NULL', name: 'm_sd_uniq' }], {
         behaviors: ['soft_delete'],
       }),
     );
-    expect(sd.output).toContain('${t.deletedAt} IS NULL');
+    expect(sd.output).toContain('${tCols.deletedAt} IS NULL');
     const none = render(
       msgDef([{ fields: ['sequence'], where: 'deleted_at IS NULL', name: 'm_none_uniq' }]),
     );
@@ -664,7 +664,7 @@ describe('unique_indexes shapes (#784)', () => {
 
   it('nulls_not_distinct: false on a non-tenant entry renders the plain uniqueIndex', () => {
     const { output } = render(msgDef([{ fields: ['sequence'], nulls_not_distinct: false }]));
-    expect(output).toContain("uniqueIndex('messages_sequence_uniq').on(t.sequence)");
+    expect(output).toContain("uniqueIndex('messages_sequence_uniq').on(tCols.sequence)");
     expect(output).not.toContain('nullsNotDistinct');
   });
 

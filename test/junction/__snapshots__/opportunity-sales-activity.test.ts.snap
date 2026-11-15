@@ -47,9 +47,9 @@ export const opportunitySalesActivities = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
-  (table) => [
+  (tCols) => [
     // Composite primary key on the two FK columns (Q4 resolution: no surrogate id)
-    primaryKey({ columns: [table.opportunityId, table.salesActivityId] }),
+    primaryKey({ columns: [tCols.opportunityId, tCols.salesActivityId] }),
   ],
 );
 

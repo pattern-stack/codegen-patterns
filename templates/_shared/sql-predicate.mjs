@@ -1,9 +1,9 @@
 /**
  * Raw-SQL predicate renderer for `unique_indexes[].where` (#784).
  *
- * `renderSqlPredicate(predicate, columns)` returns the body of a
+ * `renderSqlPredicate(predicate, columns, tableParam)` returns the body of a
  * sql`...` template literal. Unquoted words that name a column of the table are
- * rewritten to `${t.<prop>}` so drizzle-kit quotes them; everything else is
+ * rewritten to `${<tableParam>.<prop>}` so drizzle-kit quotes them; everything else is
  * copied verbatim. Dependency-free so other raw-SQL readers (CHECK
  * constraints, #786) can share the same rules.
  *
@@ -21,9 +21,13 @@ function escapeTemplate(text) {
 /**
  * @param {string} predicate
  * @param {Map<string, string>} columns  column name -> TS property name
+ * @param {string} tableParam  the extra-config callback's parameter name (`TABLE_CALLBACK_PARAM`); required
  * @returns {string}
  */
-export function renderSqlPredicate(predicate, columns) {
+export function renderSqlPredicate(predicate, columns, tableParam) {
+  if (typeof tableParam !== 'string' || tableParam === '') {
+    throw new Error('renderSqlPredicate: the callback parameter name (tableParam) is required');
+  }
   const src = String(predicate);
   let out = '';
   let i = 0;
@@ -80,7 +84,7 @@ export function renderSqlPredicate(predicate, columns) {
       const next = src[k] ?? '';
       const excluded =
         prev === '.' || prev === '::' || next === '(' || next === '.' || next === "'";
-      out += prop && !excluded ? '${t.' + prop + '}' : word;
+      out += prop && !excluded ? '${' + tableParam + '.' + prop + '}' : word;
       i = j;
       prev = word;
       continue;

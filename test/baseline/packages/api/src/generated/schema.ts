@@ -2,9 +2,14 @@
 // Run `codegen entity new --all` to refresh.
 
 export * from '../modules/accounts/account.entity';
+export * from '../modules/communications/communication.entity';
 export * from '../modules/contacts/contact.entity';
 export * from '../modules/deals/deal.entity';
 export * from '../modules/deal-states/deal-state.entity';
+export * from '../modules/emails/email.entity';
+export * from '../modules/email-threads/email-thread.entity';
+export * from '../modules/meetings/meeting.entity';
+export * from '../modules/meeting-transcripts/meeting-transcript.entity';
 export * from '../modules/opportunities/opportunity.entity';
 export * from '../modules/organizations/organization.entity';
 export * from '../modules/persons/person.entity';

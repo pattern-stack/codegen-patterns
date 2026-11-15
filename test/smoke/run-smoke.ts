@@ -415,14 +415,14 @@ function assertFieldUniqueEmission(tmpDir: string): void {
 	const canonical = reads('modules/canonical-fields/canonical-field.entity.ts');
 	assertContains(
 		canonical,
-		/uniqueIndex\('canonical_fields_name_uniq'\)\.on\(t\.name\)/,
+		/uniqueIndex\('canonical_fields_name_uniq'\)\.on\(tCols\.name\)/,
 		'canonical_field.name unique: true -> uniqueIndex (#511)',
 	);
 
 	const fieldConfig = reads('modules/field-configs/field-config.entity.ts');
 	assertContains(
 		fieldConfig,
-		/uniqueIndex\('field_configs_field_definition_id_uniq'\)\.on\(t\.fieldDefinitionId\)/,
+		/uniqueIndex\('field_configs_field_definition_id_uniq'\)\.on\(tCols\.fieldDefinitionId\)/,
 		'field_config.field_definition_id unique FK -> uniqueIndex (#511)',
 	);
 	assertNotContains(
@@ -434,7 +434,7 @@ function assertFieldUniqueEmission(tmpDir: string): void {
 	const tenantNote = reads('modules/tenant-notes/tenant-note.entity.ts');
 	assertContains(
 		tenantNote,
-		/unique\('tenant_notes_tenant_id_slug_uniq'\)\.on\(t\.tenantId, t\.slug\)\.nullsNotDistinct\(\)/,
+		/unique\('tenant_notes_tenant_id_slug_uniq'\)\.on\(tCols\.tenantId, tCols\.slug\)\.nullsNotDistinct\(\)/,
 		'tenant_note.slug unique -> per-tenant NULLS NOT DISTINCT constraint (#511, #784)',
 	);
 	assertContains(
@@ -456,7 +456,7 @@ function assertUniqueIndexShapes(tmpDir: string): void {
 	const account = reads('modules/accounts/account.entity.ts');
 	assertContains(
 		account,
-		/uniqueIndex\('accounts_live_name_uniq'\)\.on\(t\.name\)\.where\(sql`\$\{t\.status\} <> 'archived'`\)/,
+		/uniqueIndex\('accounts_live_name_uniq'\)\.on\(tCols\.name\)\.where\(sql`\$\{tCols\.status\} <> 'archived'`\)/,
 		'account partial unique -> uniqueIndex().where(sql) (#784)',
 	);
 	assertContains(
@@ -468,24 +468,24 @@ function assertUniqueIndexShapes(tmpDir: string): void {
 	const contact = reads('modules/contacts/contact.entity.ts');
 	assertContains(
 		contact,
-		/unique\('contacts_account_id_email_uniq'\)\.on\(t\.accountId, t\.email\)\.nullsNotDistinct\(\)/,
+		/unique\('contacts_account_id_email_uniq'\)\.on\(tCols\.accountId, tCols\.email\)\.nullsNotDistinct\(\)/,
 		'contact nulls_not_distinct -> unique().nullsNotDistinct() (#784)',
 	);
 
 	const tenantNote = reads('modules/tenant-notes/tenant-note.entity.ts');
 	assertContains(
 		tenantNote,
-		/unique\('tenant_notes_tenant_id_title_slug_uniq'\)\.on\(t\.tenantId, t\.title, t\.slug\)\.nullsNotDistinct\(\)/,
+		/unique\('tenant_notes_tenant_id_title_slug_uniq'\)\.on\(tCols\.tenantId, tCols\.title, tCols\.slug\)\.nullsNotDistinct\(\)/,
 		'tenant_note composite unique defaults to NULLS NOT DISTINCT (#784)',
 	);
 	assertContains(
 		tenantNote,
-		/uniqueIndex\('tenant_notes_tenant_id_owner_workspace_id_uniq'\)\.on\(t\.tenantId, t\.ownerWorkspaceId\)/,
+		/uniqueIndex\('tenant_notes_tenant_id_owner_workspace_id_uniq'\)\.on\(tCols\.tenantId, tCols\.ownerWorkspaceId\)/,
 		'tenant_note nulls_not_distinct: false opt-out -> plain uniqueIndex (#784)',
 	);
 	assertContains(
 		tenantNote,
-		/uniqueIndex\('tenant_notes_live_title_uniq'\)\.on\(t\.tenantId, t\.title\)\.where\(sql`\$\{t\.deletedAt\} IS NULL`\)/,
+		/uniqueIndex\('tenant_notes_live_title_uniq'\)\.on\(tCols\.tenantId, tCols\.title\)\.where\(sql`\$\{tCols\.deletedAt\} IS NULL`\)/,
 		'tenant_note tenant partial -> uniqueIndex().where(sql) (#784)',
 	);
 }
@@ -507,10 +507,10 @@ function assertTenancyColumnEmission(tmpDir: string): void {
 	}
 	assertContains(entity, /organizationId: uuid\('organization_id'\)\.notNull\(\),/, 'org_task adopts its NOT NULL organization_id field');
 	assertNotContains(entity, /tenant_id|tenantId/, 'org_task emits no tenant_id column when it adopts organization_id');
-	assertContains(entity, /index\('org_tasks_organization_id_idx'\)\.on\(t\.organizationId\)/, 'org_task indexes the adopted tenant column');
+	assertContains(entity, /index\('org_tasks_organization_id_idx'\)\.on\(tCols\.organizationId\)/, 'org_task indexes the adopted tenant column');
 	assertContains(
 		entity,
-		/unique\('org_tasks_organization_id_slug_uniq'\)\.on\(t\.organizationId, t\.slug\)\.nullsNotDistinct\(\)/,
+		/unique\('org_tasks_organization_id_slug_uniq'\)\.on\(tCols\.organizationId, tCols\.slug\)\.nullsNotDistinct\(\)/,
 		'org_task slug is unique per organization',
 	);
 	assertContains(
@@ -530,7 +530,7 @@ function assertTenancyColumnEmission(tmpDir: string): void {
 	assertNotContains(lead, /tenant_id|tenantId/, 'org_lead emits no tenant_id column');
 	assertContains(
 		lead,
-		/unique\('uq_org_leads_tenant_provider_external_id'\)\.on\(t\.organizationId, t\.provider, t\.externalId\)\.nullsNotDistinct\(\)/,
+		/unique\('uq_org_leads_tenant_provider_external_id'\)\.on\(tCols\.organizationId, tCols\.provider, tCols\.externalId\)\.nullsNotDistinct\(\)/,
 		'org_lead external-id unique is per organization',
 	);
 	assertContains(

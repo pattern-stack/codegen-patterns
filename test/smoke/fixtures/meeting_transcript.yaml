@@ -1,0 +1,16 @@
+# RFC-0006 (#875) fixture family — smoke copy. Same as test/fixtures/inheritance/entities/meeting_transcript.yaml, except tenant_scoped names its column: this smoke sets tenancy.column to organization_id project-wide, and the family declares tenant_id (R10). Compared by src/__tests__/fixtures/inheritance-fixtures-agree.test.ts.
+entity:
+  name: meeting_transcript
+  plural: meeting_transcripts
+
+fields:
+  language:
+    type: string
+    nullable: true
+
+relationships:
+  meeting:
+    type: belongs_to
+    target: meeting
+    foreign_key: meeting_id
+    on_delete: cascade

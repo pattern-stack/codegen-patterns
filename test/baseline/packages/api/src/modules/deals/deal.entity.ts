@@ -5,7 +5,6 @@ import {
   integer,
   jsonb,
   numeric,
-  pgEnum,
   pgTable,
   timestamp,
   uniqueIndex,
@@ -16,8 +15,9 @@ import {
 import { type InferSelectModel } from 'drizzle-orm';
 import { users } from '../users/user.entity';
 import { accounts } from '../accounts/account.entity';
+import { dealStageEnum } from './deal.enums';
 
-export const dealStageEnum = pgEnum('deal_stage', ['prospecting', 'qualification', 'proposal', 'negotiation', 'closed_won', 'closed_lost']);
+export { dealStageEnum };
 
 export const deals = pgTable(
   'deals',
@@ -51,11 +51,11 @@ export const deals = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
   },
-  (t) => [
-    index('deals_owner_id_idx').on(t.ownerId),
-    index('deals_account_id_idx').on(t.accountId),
+  (tCols) => [
+    index('deals_owner_id_idx').on(tCols.ownerId),
+    index('deals_account_id_idx').on(tCols.accountId),
     // external_id_tracking behavior — ON CONFLICT target for integrationUpsert
-    uniqueIndex('uq_deals_provider_external_id').on(t.provider, t.externalId),
+    uniqueIndex('uq_deals_provider_external_id').on(tCols.provider, tCols.externalId),
   ],
 );
 

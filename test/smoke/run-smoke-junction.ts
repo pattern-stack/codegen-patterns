@@ -203,8 +203,8 @@ function assertJunctionEmission(
   assertContains(
     entityFile,
     hasRole
-      ? /primaryKey\(\{\s*columns:\s*\[table\.\w+Id,\s*table\.\w+Id,\s*table\.role\]/
-      : /primaryKey\(\{\s*columns:\s*\[table\.\w+Id,\s*table\.\w+Id\]/,
+      ? /primaryKey\(\{\s*columns:\s*\[tCols\.\w+Id,\s*tCols\.\w+Id,\s*tCols\.role\]/
+      : /primaryKey\(\{\s*columns:\s*\[tCols\.\w+Id,\s*tCols\.\w+Id\]/,
     'entity: composite PK',
   );
 

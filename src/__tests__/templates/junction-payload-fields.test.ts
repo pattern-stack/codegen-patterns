@@ -65,7 +65,7 @@ describe('junction payload fields use the entity column builder (#740)', () => {
 		);
 		expect(out).toContain("import { accounts } from '../accounts/account.entity';");
 		expect(out).toContain(
-			"index('opportunity_meetings_account_id_idx').on(table.accountId),",
+			"index('opportunity_meetings_account_id_idx').on(tCols.accountId),",
 		);
 		expect(out).toMatch(/\n {2}index,\n/);
 	});
@@ -92,7 +92,7 @@ describe('junction payload fields use the entity column builder (#740)', () => {
 	it('emits a role without choices as a plain column outside the key (#740)', async () => {
 		const out = render('entity', await junctionLocals('fields:\n  role: { type: string }\n'));
 		expect(out).toContain("role: text('role'),");
-		expect(out).toContain('primaryKey({ columns: [table.opportunityId, table.meetingId] })');
+		expect(out).toContain('primaryKey({ columns: [tCols.opportunityId, tCols.meetingId] })');
 		expect(out).not.toContain('pgEnum(');
 	});
 

@@ -12,6 +12,7 @@ import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';
 import { scopedRoot, tableScope, UNSCOPED, type ScopeConfig } from '@shared/base-classes/scope-filters';
 import * as schema from './schema';
 
+export const COMMUNICATIONS_SCOPE = tableScope(schema.communications, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: false, userTracking: false, enforcement: 'strict' });
 export const CONTACTS_SCOPE = tableScope(schema.contacts, { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' });
 export const DEALS_SCOPE = tableScope(schema.deals, { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' });
 
@@ -23,9 +24,14 @@ export const DEALS_SCOPE = tableScope(schema.deals, { tenantScoped: false, softD
  */
 export const SCOPES = {
 	accounts: tableScope(schema.accounts, UNSCOPED),
+	communications: COMMUNICATIONS_SCOPE,
 	contacts: CONTACTS_SCOPE,
 	deal_states: tableScope(schema.deal_states, UNSCOPED),
 	deals: DEALS_SCOPE,
+	email_threads: tableScope(schema.email_threads, UNSCOPED),
+	emails: tableScope(schema.emails, UNSCOPED),
+	meeting_transcripts: tableScope(schema.meeting_transcripts, UNSCOPED),
+	meetings: tableScope(schema.meetings, UNSCOPED),
 	opportunities: tableScope(schema.opportunities, UNSCOPED),
 	organizations: tableScope(schema.organizations, UNSCOPED),
 	persons: tableScope(schema.persons, UNSCOPED),
@@ -36,9 +42,14 @@ export const SCOPES = {
 /** The ROOT scope of one table, typed to it: AND it into a hand-written `db.query.<table>` root `where`. */
 export const rootScope = {
 	accounts: (owner: string) => scopedRoot(SCOPES.accounts, owner),
+	communications: (owner: string) => scopedRoot(SCOPES.communications, owner),
 	contacts: (owner: string) => scopedRoot(SCOPES.contacts, owner),
 	deal_states: (owner: string) => scopedRoot(SCOPES.deal_states, owner),
 	deals: (owner: string) => scopedRoot(SCOPES.deals, owner),
+	email_threads: (owner: string) => scopedRoot(SCOPES.email_threads, owner),
+	emails: (owner: string) => scopedRoot(SCOPES.emails, owner),
+	meeting_transcripts: (owner: string) => scopedRoot(SCOPES.meeting_transcripts, owner),
+	meetings: (owner: string) => scopedRoot(SCOPES.meetings, owner),
 	opportunities: (owner: string) => scopedRoot(SCOPES.opportunities, owner),
 	organizations: (owner: string) => scopedRoot(SCOPES.organizations, owner),
 	persons: (owner: string) => scopedRoot(SCOPES.persons, owner),
@@ -58,6 +69,15 @@ export const relations = defineRelations(schema, (r) => ({
 		account: r.one.accounts({ from: r.deals.accountId, to: r.accounts.id, optional: false }),
 		closer: r.one.users({ from: r.deals.closedById, to: r.users.id, optional: true }),
 		owner: r.one.users({ from: r.deals.ownerId, to: r.users.id, optional: false }),
+	},
+	emails: {
+		thread: r.one.email_threads({ from: r.emails.threadId, to: r.email_threads.id, optional: true }),
+	},
+	meeting_transcripts: {
+		meeting: r.one.meetings({ from: r.meeting_transcripts.meetingId, to: r.meetings.id, optional: false }),
+	},
+	meetings: {
+		transcripts: r.many.meeting_transcripts({ from: r.meetings.id, to: r.meeting_transcripts.meetingId }),
 	},
 	opportunities: {
 		organization: r.one.organizations({ from: r.opportunities.organizationId, to: r.organizations.id, optional: false }),

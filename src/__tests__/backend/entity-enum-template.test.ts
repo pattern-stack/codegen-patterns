@@ -37,6 +37,16 @@ function render(locals: Record<string, unknown>): string {
   return ejs.render(extractBody(ENTITY_TEMPLATE), locals, { rmWhitespace: false });
 }
 
+const ENUMS_TEMPLATE = readFileSync(
+  resolve(import.meta.dir, '../../../templates/entity/new/backend/enums.ejs.t'),
+  'utf8',
+);
+
+/** The entity's `.enums` leaf module: the pgEnum declarations, importing nothing but pg-core. */
+function renderEnums(locals: Record<string, unknown>): string {
+  return ejs.render(extractBody(ENUMS_TEMPLATE), { generatedBanner: '', ...locals }, { rmWhitespace: false });
+}
+
 const EMPTY_BASE_LOCALS = withEntities();
 
 const integrationDefinition = {
@@ -64,9 +74,10 @@ describe('backend entity template — pgEnum emission', () => {
     ]);
   });
 
-  it('adds pgEnum to drizzleImports when enum fields are present', () => {
+  it('keeps pgEnum out of the entity file: the declarations live in the .enums leaf module', () => {
     const locals = buildBackendLocals(integrationDefinition, EMPTY_BASE_LOCALS) as any;
-    expect(locals.drizzleImports).toContain('pgEnum');
+    expect(locals.drizzleImports).not.toContain('pgEnum');
+    expect(locals.outputPaths.enums).toMatch(/integration\.enums\.ts$/);
   });
 
   it('produces a drizzleChain referencing the namespaced enum const, not text()', () => {
@@ -77,20 +88,24 @@ describe('backend entity template — pgEnum emission', () => {
     expect(statusField.tsType).toBe("'active' | 'paused' | 'disabled'");
   });
 
-  it('renders pgEnum declaration above pgTable and column references it', () => {
+  it('declares the pgEnum in the leaf module; the entity imports and re-exports it and its column references it', () => {
     const locals = buildBackendLocals(integrationDefinition, EMPTY_BASE_LOCALS);
     const out = render(locals as Record<string, unknown>);
+    const enums = renderEnums(locals as Record<string, unknown>);
 
-    // Top-of-file declaration — const + pg TYPE name both namespaced by entity.
-    expect(out).toContain(
+    // Leaf declaration — const + pg TYPE name both namespaced by entity; the ONLY import is pg-core.
+    expect(enums).toContain(
       "export const integrationStatusEnum = pgEnum('integration_status', ['active', 'paused', 'disabled']);",
     );
+    expect(enums.match(/^import /gm)).toEqual(['import ']);
+    expect(enums).toContain("from 'drizzle-orm/pg-core'");
+    expect(out).not.toContain('pgEnum(');
+    expect(out).toContain("import { integrationStatusEnum } from './integration.enums';");
+    expect(out).toContain('export { integrationStatusEnum };');
     // Column reference inside pgTable block — namespaced const, bare column name.
     expect(out).toContain("status: integrationStatusEnum('status').notNull()");
     // No text() fallback for the enum column
     expect(out).not.toMatch(/status: text\('status'\)/);
-    // pgEnum import present
-    expect(out).toMatch(/pgEnum,/);
   });
 
   it('preserves text/string columns alongside enum columns', () => {
@@ -153,14 +168,16 @@ describe('backend entity template — enum namespacing across entities (no colli
     const aOut = render(buildBackendLocals(fieldConfig, EMPTY_BASE_LOCALS) as Record<string, unknown>);
     const bOut = render(buildBackendLocals(canonicalField, EMPTY_BASE_LOCALS) as Record<string, unknown>);
 
-    expect(aOut).toContain("export const fieldConfigRoleEnum = pgEnum('field_config_role', ['a', 'b']);");
+    const aEnums = renderEnums(buildBackendLocals(fieldConfig, EMPTY_BASE_LOCALS) as Record<string, unknown>);
+    const bEnums = renderEnums(buildBackendLocals(canonicalField, EMPTY_BASE_LOCALS) as Record<string, unknown>);
+    expect(aEnums).toContain("export const fieldConfigRoleEnum = pgEnum('field_config_role', ['a', 'b']);");
     expect(aOut).toContain("role: fieldConfigRoleEnum('role').notNull()");
 
-    expect(bOut).toContain("export const canonicalFieldRoleEnum = pgEnum('canonical_field_role', ['a', 'b']);");
+    expect(bEnums).toContain("export const canonicalFieldRoleEnum = pgEnum('canonical_field_role', ['a', 'b']);");
     expect(bOut).toContain("role: canonicalFieldRoleEnum('role').notNull()");
 
     // Neither file emits the bare, un-namespaced const that previously collided.
-    expect(aOut).not.toContain("export const roleEnum = pgEnum('role'");
-    expect(bOut).not.toContain("export const roleEnum = pgEnum('role'");
+    expect(aEnums).not.toContain("export const roleEnum = pgEnum('role'");
+    expect(bEnums).not.toContain("export const roleEnum = pgEnum('role'");
   });
 });

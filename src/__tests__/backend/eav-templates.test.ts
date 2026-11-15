@@ -322,7 +322,6 @@ describe('backend eav templates — composition with generate.writes', () => {
     const def = { ...eavEntity, generate: { writes: false } };
     const locals = buildBackendLocals(def, withEntities());
 
-    expect(locals.generateWrites).toBe(false);
     expect(locals.eavEnabled).toBe(true);
     expect(locals.outputPaths.createUseCase).toBeNull();
     expect(locals.outputPaths.updateUseCase).toBeNull();

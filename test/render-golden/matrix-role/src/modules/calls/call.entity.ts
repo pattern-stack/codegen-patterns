@@ -22,9 +22,9 @@ export const calls = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
-  (t) => [
-    index('calls_caller_id_idx').on(t.callerId),
-    index('calls_regarding_account_id_idx').on(t.regardingAccountId),
+  (tCols) => [
+    index('calls_caller_id_idx').on(tCols.callerId),
+    index('calls_regarding_account_id_idx').on(tCols.regardingAccountId),
   ],
 );
 

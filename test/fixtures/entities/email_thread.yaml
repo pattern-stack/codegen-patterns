@@ -1,0 +1,8 @@
+entity:
+  name: email_thread
+  plural: email_threads
+
+fields:
+  topic:
+    type: string
+    nullable: true

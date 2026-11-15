@@ -1,0 +1,15 @@
+entity:
+  name: meeting_transcript
+  plural: meeting_transcripts
+
+fields:
+  language:
+    type: string
+    nullable: true
+
+relationships:
+  meeting:
+    type: belongs_to
+    target: meeting
+    foreign_key: meeting_id
+    on_delete: cascade

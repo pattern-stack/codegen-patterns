@@ -502,6 +502,16 @@
 				],
 				"includeRoutes": [],
 				"includesConst": "TASKS_API_INCLUDES"
+			},
+			"writesDisabledBy": {
+				"doc": {
+					"kind": "entity",
+					"name": "task"
+				},
+				"path": [
+					"generate",
+					"writes"
+				]
 			}
 		}
 	}

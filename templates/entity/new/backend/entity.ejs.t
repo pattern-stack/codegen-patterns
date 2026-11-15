@@ -13,23 +13,33 @@ import {
 } from 'drizzle-orm/pg-core';
 import { <%- drizzleOrmImports.map(i => i + ', ').join('') %>type InferSelectModel } from 'drizzle-orm';
 <%_ belongsToTableImports.forEach(imp => { _%>
-import { <%= imp.relatedTable %> } from '<%= imp.importPath %>';
+import { <%- [imp.relatedTable, ...(imp.extraNames || [])].join(', ') %> } from '<%= imp.importPath %>';
 <%_ }) _%>
 <%_ /* #354: field-level foreign_key target table imports */ _%>
 <%_ fieldFkImports.forEach(imp => { _%>
 import { <%= imp.relatedTable %> } from '<%= imp.importPath %>';
 <%_ }) _%>
-<%_ if (enumFields.length > 0) { _%>
-
-<%_ enumFields.forEach(ef => { _%>
-export const <%= ef.enumName %> = pgEnum('<%= ef.dbName %>', [<%- ef.choices.map(c => `'${c}'`).join(', ') %>]);
+<%_ inheritanceImports.forEach(imp => { _%>
+import { <%- imp.names.join(', ') %> } from '<%= imp.importPath %>';
 <%_ }) _%>
+<%_ if (enumFields.length > 0) { _%>
+<%_ /* The pgEnum declarations live in a leaf module that imports only pg-core, so another entity can import an enum without an import cycle. Re-exported: the schema barrel and drizzle-kit read this file. */ _%>
+import { <%- enumFields.map(ef => ef.enumName).join(', ') %> } from '<%= enumsImportSpecifier %>';
+
+export { <%- enumFields.map(ef => ef.enumName).join(', ') %> };
 <%_ } _%>
 
 export const <%= entityNamePlural %> = pgTable(
   '<%= entityTableName %>',
   {
+<%_ if (isInheritanceChild) { _%>
+    id: uuid('id').primaryKey(), // the base row supplies it: a primary key that is also a foreign key
+<%_ inheritedKeyColumns.forEach(c => { _%>
+    <%- c.line %>,
+<%_ }) _%>
+<%_ } else { _%>
     id: uuid('id').primaryKey().defaultRandom(),
+<%_ } _%>
 <%_ belongsTo.forEach(rel => { _%>
 <%_ if (hasSoftDelete) { _%>
     // WARNING: on_delete: '<%= rel.onDeleteYaml %>' is a no-op when this entity uses soft_delete.
@@ -37,7 +47,16 @@ export const <%= entityNamePlural %> = pgTable(
     // cascade rules never fire for a soft-deleted parent. This FK constraint only applies on
     // hard-delete (e.g. admin purge). See ADR-021: docs/adrs/ADR-021-on-delete-semantics.md
 <%_ } _%>
+<%_ if (rel.match) { _%>
+    // match: this column is half of a composite FK (see the constraints below), not a single-column reference.
+    <%= rel.camelField %>: uuid('<%= rel.field %>')<%= rel.nullable ? '' : '.notNull()' %>,
+<%_ } else { _%>
     <%= rel.camelField %>: uuid('<%= rel.field %>')<%= rel.nullable ? '' : '.notNull()' %>.references((): AnyPgColumn => <%= rel.relatedTable %>.id, { onDelete: '<%= rel.onDelete %>' }),
+<%_ } _%>
+<%_ }) _%>
+<%_ matchDerivedColumns.forEach(c => { _%>
+    // match: derived from the target column; never client input, filled by the insert (RFC-0006 §2.4)
+    <%- c.line %>,
 <%_ }) _%>
 <%_ processedFields.forEach(field => { _%>
     <%= field.camelName %>: <%- field.drizzleChain %>,
@@ -66,7 +85,7 @@ export const <%= entityNamePlural %> = pgTable(
   },
 <%_ /* #355/#356/#511/#784: pgTable extra-config — indexes + unique constraints (uniqueIndex / unique().nullsNotDistinct()) + external_id unique */ _%>
 <%_ if (tableConstraints.length > 0) { _%>
-  (t) => [
+  (<%= tableCallbackParam %>) => [
 <%_ tableConstraints.forEach(c => { _%>
 <%_ if (c.comment) { _%>
     // <%= c.comment %>

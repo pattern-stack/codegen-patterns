@@ -3,7 +3,6 @@ import {
   index,
   integer,
   jsonb,
-  pgEnum,
   pgTable,
   text,
   uuid,
@@ -12,8 +11,9 @@ import {
 } from 'drizzle-orm/pg-core';
 import { type InferSelectModel } from 'drizzle-orm';
 import { tenants } from '../tenants/tenant.entity';
+import { dealStateStateTypeEnum } from './deal-state.enums';
 
-export const dealStateStateTypeEnum = pgEnum('deal_state_state_type', ['open', 'won', 'lost', 'stalled']);
+export { dealStateStateTypeEnum };
 
 export const deal_states = pgTable(
   'deal_states',
@@ -30,8 +30,8 @@ export const deal_states = pgTable(
     description: text('description'),
     metadata: jsonb('metadata'),
   },
-  (t) => [
-    index('deal_states_tenant_id_idx').on(t.tenantId),
+  (tCols) => [
+    index('deal_states_tenant_id_idx').on(tCols.tenantId),
   ],
 );
 

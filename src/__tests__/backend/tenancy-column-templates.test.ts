@@ -61,9 +61,9 @@ describe('#791 — a custom emitted tenant column', () => {
 		expect(out).toContain("workspaceId: uuid('workspace_id'),");
 		expect(out).not.toContain('tenant_id');
 		expect(out).not.toContain('tenantId');
-		expect(out).toContain("index('deals_workspace_id_idx').on(t.workspaceId)");
+		expect(out).toContain("index('deals_workspace_id_idx').on(tCols.workspaceId)");
 		expect(out).toContain(
-			"unique('deals_workspace_id_slug_uniq').on(t.workspaceId, t.slug).nullsNotDistinct()",
+			"unique('deals_workspace_id_slug_uniq').on(tCols.workspaceId, tCols.slug).nullsNotDistinct()",
 		);
 	});
 
@@ -101,7 +101,7 @@ describe('#791 — a custom emitted tenant column', () => {
 		const locals = localsFor(def, { tenancyColumn: 'workspace_id' });
 		expect(renderEntity(locals)).toContain(
 			"unique('uq_leads_tenant_provider_external_id')" +
-				'.on(t.workspaceId, t.provider, t.externalId).nullsNotDistinct()',
+				'.on(tCols.workspaceId, tCols.provider, tCols.externalId).nullsNotDistinct()',
 		);
 		expect(renderRepository(locals)).toContain(
 			"conflictTarget: ['workspaceId', 'provider', 'externalId']",
@@ -129,7 +129,7 @@ describe('#791 — adopting a declared field', () => {
 		expect(out.match(/organizationId:/g)).toHaveLength(1);
 		expect(out).toContain("organizationId: uuid('organization_id').notNull(),");
 		expect(out.match(/deals_organization_id_idx/g)).toHaveLength(1);
-		expect(out).toContain("index('deals_organization_id_idx').on(t.organizationId)");
+		expect(out).toContain("index('deals_organization_id_idx').on(tCols.organizationId)");
 		expect(out).not.toContain('tenant_id');
 	});
 
@@ -239,7 +239,7 @@ describe('#791 — adopting a belongs_to foreign key', () => {
 		expect(out.match(/accountId:/g)).toHaveLength(1);
 		expect(out).toContain("accountId: uuid('account_id')");
 		expect(out).toContain('.references((): AnyPgColumn => accounts.id');
-		expect(out).toContain("index('contacts_account_id_idx').on(t.accountId)");
+		expect(out).toContain("index('contacts_account_id_idx').on(tCols.accountId)");
 	});
 
 	it('drops the FK from the create DTO and keeps it on the output DTO', () => {
@@ -258,7 +258,7 @@ describe('#791 — adopting a belongs_to foreign key', () => {
 			}),
 		);
 		expect(out.match(/contacts_account_id_idx/g)).toHaveLength(1);
-		expect(out).toContain("index('contacts_account_id_idx').on(t.accountId)");
+		expect(out).toContain("index('contacts_account_id_idx').on(tCols.accountId)");
 	});
 
 	it('refuses to adopt a non-uuid field', () => {
@@ -290,7 +290,7 @@ describe('#791 — unique: true on an adopted tenant column', () => {
 	it('lowers to unique(<tenant column>) — one row per tenant', () => {
 		const out = renderEntity(localsFor(oneRowPerTenant()));
 		expect(out).toContain(
-			"unique('deals_organization_id_uniq').on(t.organizationId).nullsNotDistinct()",
+			"unique('deals_organization_id_uniq').on(tCols.organizationId).nullsNotDistinct()",
 		);
 		expect(out.match(/organizationId:/g)).toHaveLength(1);
 	});

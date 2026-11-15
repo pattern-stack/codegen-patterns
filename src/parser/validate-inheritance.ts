@@ -29,6 +29,7 @@ import { declaredPatternNames } from '../patterns/compose.js';
 import { getPattern } from '../patterns/registry.js';
 import { resolveImpliedBehaviors } from '../patterns/implied-behaviors.js';
 import { foreignKeyColumnNullable } from '../schema/field-nullability.js';
+import { inheritanceCounterpartNames, matchPairsOf } from '../schema/inheritance.js';
 import {
 	baseTenantColumnIssue,
 	tenantColumnName,
@@ -40,11 +41,6 @@ export interface ValidateInheritanceOptions {
 	tenancyColumn: string;
 	/** The project's `frontend.sync.mode`, which an entity with no `sync:` resolves to, resolved through `FrontendSyncConfigSchema` by the caller. */
 	syncMode: 'api' | 'electric';
-}
-
-/** `match:` of a relationship as `[local, target]` pairs (empty without one). */
-export function matchPairs(rel: Pick<ParsedRelationship, 'match'>): Array<[string, string]> {
-	return Object.entries(rel.match ?? {});
 }
 
 /** The parsed model as the tenancy helpers read it. */
@@ -83,7 +79,7 @@ function ownNames(e: ParsedEntity): Map<string, string> {
 	for (const key of e.roles?.keys() ?? []) add(key, `role '${key}'`);
 	// A `match:` derives its local column when the entity does not declare it (RFC-0006 §2.4).
 	for (const [key, rel] of e.relationships) {
-		for (const [local] of matchPairs(rel)) {
+		for (const [local] of matchPairsOf(rel)) {
 			if (!e.fields.has(local)) add(local, `column '${local}' derived by the match: of relationship '${key}'`);
 		}
 	}
@@ -437,7 +433,7 @@ export function validateInheritance(
 				);
 			}
 
-			for (const [local, targetCol] of matchPairs(rel)) {
+			for (const [local, targetCol] of matchPairsOf(rel)) {
 				// M1: the target column exists and is NOT NULL.
 				const notNull = columnNotNull(target, targetCol);
 				if (notNull === undefined) {
@@ -541,32 +537,34 @@ export function validateInheritance(
 }
 
 /**
- * The RFC-0006 keys an entity uses that the generator does not emit yet.
- * `natural_key:` is not among them: no emitter reads it, so accepting it
- * changes nothing that is generated. Empty when the entity uses none.
+ * The entities a rendered one's generated files read, and so must be rendered
+ * with it (RFC-0006 §2): a child's BASE (its file imports the base's table and
+ * `.enums` module, so the base must exist and validate) and every `match:`
+ * relationship's TARGET (whose table carries the unique the composite FK points
+ * at; its pgEnum is imported) (`inheritanceCounterpartNames`, the one reader of both
+ * shapes). Names only; ones already in `rendered`, and the entity itself, are
+ * left out.
  *
- * Until S2 of #875 lands the DDL, `entity new` stops the run when any entity in
- * the directory uses one of these: the cross-entity post-steps (barrels, the
- * relations manifest) read the whole set, so refusing only the entity's own
- * files would still emit exports of modules that were never written.
+ * Only this direction exists. A base's output depends on its own YAML and on
+ * its `match:` referrers' (the uniques their composite FKs point at) and NOT on
+ * its children: adding a child changes no byte of the base. Rendering a child
+ * re-renders the base so that a stale base becomes current, and a rejected base
+ * rejects the child.
  */
-export function unemittedInheritanceKeys(e: ParsedEntity): string[] {
-	const keys: string[] = [];
-	if (e.inherits !== undefined) keys.push("'inherits:'");
-	if (e.discriminator !== undefined) keys.push("'discriminator:'");
-	for (const [name, rel] of e.relationships) {
-		if (rel.match !== undefined) keys.push(`'match:' on relationship '${name}'`);
+export function inheritanceCounterparts(entities: ParsedEntity[], rendered: ReadonlySet<string>): string[] {
+	const byName = new Map(entities.map((e) => [e.name, e]));
+	const out: string[] = [];
+	for (const name of rendered) {
+		const e = byName.get(name);
+		if (e === undefined) continue;
+		const counterparts = inheritanceCounterpartNames({
+			base: e.inherits?.base ?? null,
+			relationships: e.relationships.values(),
+		});
+		for (const c of counterparts) {
+			if (c === name || rendered.has(c) || out.includes(c) || !byName.has(c)) continue;
+			out.push(c);
+		}
 	}
-	for (const [name, field] of e.fields) {
-		if (field.choicesOf !== undefined) keys.push(`'choices_of:' on field '${name}'`);
-	}
-	return keys;
-}
-
-/** The refusal `entity new` prints for an entity that uses {@link unemittedInheritanceKeys}. */
-export function notGeneratedYetMessage(entityName: string, keys: string[]): string {
-	return (
-		`'${entityName}' uses ${keys.join(', ')}. Joined-table inheritance validates but is not implemented ` +
-		`until S2 of #875 (RFC-0006 §13.2): nothing is generated for it yet, so nothing half-built is emitted.`
-	);
+	return out;
 }

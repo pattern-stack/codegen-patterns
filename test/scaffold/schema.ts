@@ -39,6 +39,20 @@ export * from '@gen/modules/org-leads/org-lead.entity';
 export * from '@gen/modules/appointments/appointment.entity';
 // #845: behavior columns switched to `timestamp without time zone` (ledger_entry).
 export * from '@gen/modules/ledger-entries/ledger-entry.entity';
+// RFC-0006 (#875): joined-table inheritance. Two families (communication, communication_part) and the
+// `match:` / `choices_of:` entities around them — wholesale, for the pgEnums (one shared type across entities).
+export * from '@gen/modules/communications/communication.entity';
+export * from '@gen/modules/meetings/meeting.entity';
+export * from '@gen/modules/emails/email.entity';
+export * from '@gen/modules/email-threads/email-thread.entity';
+export * from '@gen/modules/meeting-transcripts/meeting-transcript.entity';
+export * from '@gen/modules/communication-parts/communication-part.entity';
+export * from '@gen/modules/transcript-communication-parts/transcript-communication-part.entity';
+export * from '@gen/modules/email-communication-parts/email-communication-part.entity';
+export * from '@gen/modules/communication-participant-roles/communication-participant-role.entity';
+export * from '@gen/modules/communication-participants/communication-participant.entity';
+export * from '@gen/modules/parties/party.entity';
+export * from '@gen/modules/communication-notes/communication-note.entity';
 
 // Subsystem schemas come from `@shared/*` — i.e. `runtime/subsystems/*`, the
 // real source — NOT from a vendored copy generated into the repo root. One

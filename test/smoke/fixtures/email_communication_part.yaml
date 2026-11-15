@@ -1,0 +1,20 @@
+# RFC-0006 (#875) fixture family — smoke copy. Same as test/fixtures/inheritance/entities/email_communication_part.yaml, except tenant_scoped names its column: this smoke sets tenancy.column to organization_id project-wide, and the family declares tenant_id (R10). Compared by src/__tests__/fixtures/inheritance-fixtures-agree.test.ts.
+entity:
+  name: email_communication_part
+  plural: email_communication_parts
+
+inherits:
+  base: communication_part
+  as: email
+
+fields:
+  text:
+    type: string
+    nullable: true
+
+relationships:
+  resolves_to:
+    type: belongs_to
+    target: email
+    foreign_key: resolves_to_email_id
+    nullable: true

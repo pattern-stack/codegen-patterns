@@ -24,6 +24,7 @@ import yaml from 'yaml';
 
 import { buildBackendLocals } from '../../../templates/entity/new/backend/entity-locals.js';
 import { entityLookupFrom } from '../../../templates/_shared/entity-naming.mjs';
+import { TABLE_CALLBACK_PARAM } from '../../../templates/_shared/table-callback.mjs';
 import { buildDomainGraph } from '../../analyzer/graph-builder';
 import { serializeDomainGraph } from '../../analyzer/serialize-graph';
 import type { SerializedDomainGraph } from '../../analyzer/serialize-graph';
@@ -58,7 +59,7 @@ function generatedUnique(source: string, column: string, tenantColumn: string | 
   if (/\.unique\(\)/.test(line)) return true;
   const tenantProp = tenantColumn !== null ? propOf(source, tenantColumn) : undefined;
   for (const m of source.matchAll(/\b(?:unique|uniqueIndex)\('[^']*'\)\.on\(([^)]*)\)/g)) {
-    const cols = m[1]!.split(',').map((c) => c.trim().replace(/^t\./, ''));
+    const cols = m[1]!.split(',').map((c) => c.trim().replace(`${TABLE_CALLBACK_PARAM}.`, ''));
     if (cols.length === 1 && cols[0] === prop) return true;
     if (tenantProp !== undefined && cols.length === 2 && cols[0] === tenantProp && cols[1] === prop) return true;
   }

@@ -13,7 +13,7 @@ const cols = new Map<string, string>([
   ['col', 'col'],
   ['status', 'status'],
 ]);
-const r = (p: string) => renderSqlPredicate(p, cols);
+const r = (p: string) => renderSqlPredicate(p, cols, 't');
 
 describe('renderSqlPredicate', () => {
   it('rewrites a column word', () => {
@@ -39,7 +39,7 @@ describe('renderSqlPredicate', () => {
   it('rewrites the argument of a function call but not the function', () => {
     expect(r('lower(name) = 1')).toBe('lower(${t.name}) = 1');
     const withFn = new Map(cols).set('lower', 'lower');
-    expect(renderSqlPredicate('lower(name)', withFn)).toBe('lower(${t.name})');
+    expect(renderSqlPredicate('lower(name)', withFn, 't')).toBe('lower(${t.name})');
   });
 
   it('does not rewrite a type after :: or a typed literal', () => {

@@ -1,0 +1,9 @@
+# RFC-0006 (#875) fixture family — scaffold copy. Keep field-identical with test/fixtures/inheritance/entities/email_thread.yaml (src/__tests__/fixtures/inheritance-fixtures-agree.test.ts).
+entity:
+  name: email_thread
+  plural: email_threads
+
+fields:
+  topic:
+    type: string
+    nullable: true

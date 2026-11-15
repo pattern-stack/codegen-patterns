@@ -336,12 +336,12 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 	);
 	assertContains(
 		meetingEntity,
-		/index\('meetings_host_contact_id_idx'\)\.on\(t\.hostContactId\)/,
+		/index\('meetings_host_contact_id_idx'\)\.on\(tCols\.hostContactId\)/,
 		'meeting.entity.ts host role FK is indexed by default',
 	);
 	assertContains(
 		meetingEntity,
-		/index\('meetings_about_account_id_idx'\)\.on\(t\.aboutAccountId\)/,
+		/index\('meetings_about_account_id_idx'\)\.on\(tCols\.aboutAccountId\)/,
 		'meeting.entity.ts about role FK is indexed by default',
 	);
 	// A `many` role names its junction; it contributes no column here.

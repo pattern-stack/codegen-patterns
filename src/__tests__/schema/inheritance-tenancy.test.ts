@@ -53,7 +53,7 @@ describe('baseTenantColumnIssue (R10)', () => {
 		expect(baseTenantColumnIssue('communication', base, 'tenant_id')).toContain("'communication' declares its tenant column");
 	});
 	it('is null for a base that is not tenant_scoped', () => {
-		expect(baseTenantColumnIssue('x', rawFixture('person'), 'tenant_id')).toBeNull();
+		expect(baseTenantColumnIssue('x', rawFixture('party'), 'tenant_id')).toBeNull();
 	});
 });
 

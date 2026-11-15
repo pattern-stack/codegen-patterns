@@ -23,11 +23,7 @@ import type { Context } from './context.js';
 import { invokeEntityNew } from './hygen.js';
 import { collectMergedEvents } from './event-codegen-generator.js';
 import { validateEntityEmits } from '../../parser/validate-emits.js';
-import {
-	notGeneratedYetMessage,
-	unemittedInheritanceKeys,
-	validateInheritance,
-} from '../../parser/validate-inheritance.js';
+import { inheritanceCounterparts, validateInheritance } from '../../parser/validate-inheritance.js';
 import { FrontendConfigSchema, TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
 import {
 	loadProviderSet,
@@ -114,6 +110,20 @@ export async function preflightEntityTargets(
 		tablePrefix,
 		excludeDirs: [projectLayout(ctx.cwd, ctx.config).providers],
 	}).entities;
+
+	// A child imports its base's table and `.enums` module, and a `match:` target's table carries the unique
+	// every referrer's composite FK points at, so rendering one alone renders its counterpart too (as
+	// `junction new` re-renders a junction's parents): a stale base or target is brought current, and a
+	// counterpart that is missing or fails below stops the child. They join `validated` HERE, before the
+	// `emits:` and `roles:` checks below read it: a counterpart those checks reject must stop the run before
+	// hygen writes the child, not crash hygen on the base after the child is written. `allEntitiesForEmits`
+	// holds only entities that already parsed, so a counterpart is valid by construction.
+	const alreadyValidated = new Set(validated.map((v) => v.name));
+	for (const name of inheritanceCounterparts(allEntitiesForEmits, alreadyValidated)) {
+		const counterpart = allEntitiesForEmits.find((e) => e.name === name);
+		if (counterpart === undefined) continue;
+		validated.push({ file: counterpart.sourcePath, name });
+	}
 	const validatedNames = new Set(validated.map((v) => v.name));
 	const emitsTargetEntities = allEntitiesForEmits.filter((e) =>
 		validatedNames.has(e.name),
@@ -218,23 +228,14 @@ export async function preflightEntityTargets(
 
 	// RFC-0006 (#875): joined-table inheritance. A family is an input to the
 	// barrels (`schema.ts`, `modules.ts`) and the relations manifest, which read
-	// the WHOLE directory — so a violation, or a key the generator cannot emit
-	// yet, in ANY entity is a run-level rejection (the #666 posture), not one
-	// target's: refusing only that entity's own files would still emit exports of
-	// modules that were never written. Until S2 emits the DDL, an entity using
-	// `inherits:` / `discriminator:` / `match:` / `choices_of:` stops the run.
+	// the WHOLE directory — so a cross-entity violation (R1–R10, M1–M5) in ANY
+	// entity is a run-level rejection (the #666 posture), not one target's.
 	const frontendSync = FrontendConfigSchema.parse(ctx.config?.frontend ?? {}).sync.mode;
 	for (const issue of validateInheritance(allEntitiesForEmits, {
 		tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
 		syncMode: frontendSync,
 	})) {
 		runRejections.push({ file: issue.path ?? entitiesDirForEmits, message: `inheritance: ${issue.message}` });
-	}
-	for (const e of allEntitiesForEmits) {
-		const keys = unemittedInheritanceKeys(e);
-		if (keys.length > 0) {
-			runRejections.push({ file: e.sourcePath, message: notGeneratedYetMessage(e.name, keys) });
-		}
 	}
 
 	// TABLE-0: one SQL table, one owning definition — entities and junctions
@@ -267,6 +268,7 @@ export async function preflightEntityTargets(
 
 	// An entity with an `emits:` or `roles:` error is not generated: the
 	// hygen prompt assumes both blocks are valid.
+	const rejectedNames = new Set<string>();
 	for (let i = validated.length - 1; i >= 0; i--) {
 		const v = validated[i]!;
 		const ownEmits = emitsErrors.filter((e) => e.entity === v.name);
@@ -282,6 +284,29 @@ export async function preflightEntityTargets(
 			details: [...ownEmits, ...ownRoles].map((e) => e.message),
 		});
 		validated.splice(i, 1);
+		rejectedNames.add(v.name);
+	}
+
+	// A child (or a `match:` referrer) whose base (target) was rejected is rejected with it, and so is whatever
+	// depends on THAT one: it is rendered from the rejected YAML, so rendering it beside a rejected counterpart is
+	// the half run this pre-flight exists to prevent (`--continue-on-error` keeps independent entities going, not
+	// dependent ones). Repeated to a fixpoint — an inheritance chain is longer than one hop.
+	for (let changed = true; changed; ) {
+		changed = false;
+		for (let i = validated.length - 1; i >= 0; i--) {
+			const v = validated[i]!;
+			const blockers = inheritanceCounterparts(allEntitiesForEmits, new Set([v.name])).filter((c) => rejectedNames.has(c));
+			if (blockers.length === 0) continue;
+			const named = blockers.map((b) => `'${b}'`).join(', ');
+			invalid.push({
+				file: v.file,
+				message: `its base / match: target ${named} failed validation`,
+				details: [`'${v.name}' is rendered from the YAML of ${named}, so it is not generated until that validates.`],
+			});
+			validated.splice(i, 1);
+			rejectedNames.add(v.name);
+			changed = true;
+		}
 	}
 
 	return {

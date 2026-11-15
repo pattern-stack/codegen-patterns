@@ -1,0 +1,36 @@
+# RFC-0006 (#875) fixture family — smoke copy. Same as test/fixtures/inheritance/entities/communication.yaml, except tenant_scoped names its column: this smoke sets tenancy.column to organization_id project-wide, and the family declares tenant_id (R10). Compared by src/__tests__/fixtures/inheritance-fixtures-agree.test.ts.
+# RFC-0006 §13.1 — the base. Tenant-scoped (declared NOT NULL tenant column, R10),
+# `timestamps` on the base only (R5), no soft_delete: the tenant-only scope path.
+# `message` is a base-only kind (no child).
+
+entity:
+  name: communication
+  plural: communications
+  patterns: [Activity]
+
+tenant_scoped: { column: tenant_id }
+discriminator: kind
+behaviors: [timestamps]
+
+fields:
+  tenant_id:
+    type: uuid
+    required: true
+  kind:
+    type: enum
+    choices: [meeting, email, message]
+    required: true
+  occurred_at:
+    type: datetime
+    required: true
+  source:
+    type: string
+    required: true
+    max_length: 32
+  external_id:
+    type: string
+    required: true
+
+unique_indexes:
+  - fields: [source, external_id]
+    natural_key: true

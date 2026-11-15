@@ -107,8 +107,8 @@ describe('entity.ejs.t — `table:` differs from plural', () => {
 	});
 
 	it('index and constraint names are stemmed on the SQL table', () => {
-		expect(out).toContain("index('issues_tenant_id_idx').on(t.tenantId)");
-		expect(out).toContain("index('issues_name_idx').on(t.name)");
+		expect(out).toContain("index('issues_tenant_id_idx').on(tCols.tenantId)");
+		expect(out).toContain("index('issues_name_idx').on(tCols.name)");
 		expect(out).toContain("unique('issues_tenant_id_slug_uniq')");
 		expect(out).not.toContain("'tickets");
 	});

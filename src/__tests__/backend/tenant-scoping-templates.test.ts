@@ -85,7 +85,7 @@ describe('tenant_scoped — the tenant_id column', () => {
 
   it('indexes tenant_id — every scoped read filters on it', () => {
     const out = renderEntity(localsFor(noteDefinition()));
-    expect(out).toContain("index('notes_tenant_id_idx').on(t.tenantId)");
+    expect(out).toContain("index('notes_tenant_id_idx').on(tCols.tenantId)");
     expect(out).toMatch(/import \{[\s\S]*\bindex,/);
   });
 });
@@ -142,7 +142,7 @@ describe('tenant_scoped — uniqueness is per tenant', () => {
     });
     const out = renderEntity(localsFor(def));
     expect(out).toContain(
-      "unique('notes_tenant_id_title_slug_uniq').on(t.tenantId, t.title, t.slug).nullsNotDistinct()",
+      "unique('notes_tenant_id_title_slug_uniq').on(tCols.tenantId, tCols.title, tCols.slug).nullsNotDistinct()",
     );
     expect(out).not.toContain("uniqueIndex('notes_tenant_id_title_slug_uniq')");
   });
@@ -157,7 +157,7 @@ describe('tenant_scoped — uniqueness is per tenant', () => {
     });
     const out = renderEntity(localsFor(def));
     expect(out).toContain(
-      "uniqueIndex('notes_tenant_id_title_slug_uniq').on(t.tenantId, t.title, t.slug)",
+      "uniqueIndex('notes_tenant_id_title_slug_uniq').on(tCols.tenantId, tCols.title, tCols.slug)",
     );
     expect(out).not.toContain('nullsNotDistinct');
   });
@@ -169,7 +169,7 @@ describe('tenant_scoped — uniqueness is per tenant', () => {
     });
     const out = renderEntity(localsFor(def));
     expect(out).toContain(
-      "uniqueIndex('notes_live_title_uniq').on(t.tenantId, t.title).where(sql`${t.deletedAt} IS NULL`)",
+      "uniqueIndex('notes_live_title_uniq').on(tCols.tenantId, tCols.title).where(sql`${tCols.deletedAt} IS NULL`)",
     );
     expect(out).toContain("import { sql, type InferSelectModel } from 'drizzle-orm';");
   });
@@ -188,7 +188,7 @@ describe('tenant_scoped — uniqueness is per tenant', () => {
       unique_indexes: [{ fields: ['title', 'slug'], name: 'my_constraint' }],
     });
     const out = renderEntity(localsFor(def));
-    expect(out).toContain("unique('my_constraint').on(t.tenantId, t.title, t.slug).nullsNotDistinct()");
+    expect(out).toContain("unique('my_constraint').on(tCols.tenantId, tCols.title, tCols.slug).nullsNotDistinct()");
   });
 
   it('leaves unique_indexes alone when the entity is not tenant-scoped', () => {
@@ -201,7 +201,7 @@ describe('tenant_scoped — uniqueness is per tenant', () => {
       unique_indexes: [{ fields: ['title', 'slug'] }],
     });
     const out = renderEntity(localsFor(def));
-    expect(out).toContain("uniqueIndex('notes_title_slug_uniq').on(t.title, t.slug)");
+    expect(out).toContain("uniqueIndex('notes_title_slug_uniq').on(tCols.title, tCols.slug)");
     expect(out).not.toContain('tenantId');
   });
 
@@ -211,7 +211,7 @@ describe('tenant_scoped — uniqueness is per tenant', () => {
     });
     const out = renderEntity(localsFor(def));
     expect(out).toContain(
-      "unique('notes_tenant_id_title_uniq').on(t.tenantId, t.title).nullsNotDistinct()",
+      "unique('notes_tenant_id_title_uniq').on(tCols.tenantId, tCols.title).nullsNotDistinct()",
     );
     // no global unique that would forbid two tenants holding the same title
     expect(out).not.toContain('.unique()');
@@ -223,16 +223,16 @@ describe('tenant_scoped — uniqueness is per tenant', () => {
       fields: { title: { type: 'string', required: true, unique: true, index: true } },
     });
     const out = renderEntity(localsFor(def));
-    expect(out).toContain("index('notes_title_idx').on(t.title)");
+    expect(out).toContain("index('notes_title_idx').on(tCols.title)");
     expect(out).toContain(
-      "unique('notes_tenant_id_title_uniq').on(t.tenantId, t.title).nullsNotDistinct()",
+      "unique('notes_tenant_id_title_uniq').on(tCols.tenantId, tCols.title).nullsNotDistinct()",
     );
   });
 
   it('D1: a nullable `unique: true` field on a tenant-scoped entity is NULLS NOT DISTINCT — one NULL per tenant (#784)', () => {
     const def = noteDefinition({ fields: { code: { type: 'string', unique: true } } });
     const out = renderEntity(localsFor(def));
-    expect(out).toContain("unique('notes_tenant_id_code_uniq').on(t.tenantId, t.code).nullsNotDistinct()");
+    expect(out).toContain("unique('notes_tenant_id_code_uniq').on(tCols.tenantId, tCols.code).nullsNotDistinct()");
   });
 
   it('prefixes the tenant on a unique belongs_to FK (#511)', () => {
@@ -244,7 +244,7 @@ describe('tenant_scoped — uniqueness is per tenant', () => {
     });
     const out = renderEntity(localsFor(def));
     expect(out).toContain(
-      "unique('notes_tenant_id_account_id_uniq').on(t.tenantId, t.accountId).nullsNotDistinct()",
+      "unique('notes_tenant_id_account_id_uniq').on(tCols.tenantId, tCols.accountId).nullsNotDistinct()",
     );
     expect(out).not.toContain("uniqueIndex('notes_account_id_uniq')");
   });
@@ -267,7 +267,7 @@ describe('tenant_scoped + external_id_tracking', () => {
     const out = renderEntity(localsFor(integratedDef(true)));
     expect(out).toContain(
       "unique('uq_leads_tenant_provider_external_id')" +
-        '.on(t.tenantId, t.provider, t.externalId).nullsNotDistinct()',
+        '.on(tCols.tenantId, tCols.provider, tCols.externalId).nullsNotDistinct()',
     );
     // `unique(...)`, not `uniqueIndex(...)`: only the constraint builder
     // carries `.nullsNotDistinct()` on drizzle 1.0.0-rc.4, and without it a
@@ -280,7 +280,7 @@ describe('tenant_scoped + external_id_tracking', () => {
   it('keeps the plain (provider, external_id) uniqueIndex when not tenant-scoped', () => {
     const out = renderEntity(localsFor(integratedDef(false)));
     expect(out).toContain(
-      "uniqueIndex('uq_leads_provider_external_id').on(t.provider, t.externalId)",
+      "uniqueIndex('uq_leads_provider_external_id').on(tCols.provider, tCols.externalId)",
     );
     expect(out).not.toContain('nullsNotDistinct');
   });

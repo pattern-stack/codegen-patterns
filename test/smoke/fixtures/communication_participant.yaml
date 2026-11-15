@@ -1,0 +1,32 @@
+# RFC-0006 (#875) fixture family — smoke copy. Same as test/fixtures/inheritance/entities/communication_participant.yaml, except tenant_scoped names its column: this smoke sets tenancy.column to organization_id project-wide, and the family declares tenant_id (R10). Compared by src/__tests__/fixtures/inheritance-fixtures-agree.test.ts.
+# RFC-0006 §2.4 case 2 — one derived column (`communication_kind`) matched by two
+# relationships: the communication's kind and the role's kind.
+
+entity:
+  name: communication_participant
+  plural: communication_participants
+
+tenant_scoped: { column: tenant_id }
+
+fields:
+  tenant_id:
+    type: uuid
+    required: true
+
+relationships:
+  communication:
+    type: belongs_to
+    target: communication
+    foreign_key: communication_id
+    on_delete: cascade
+    match: { communication_kind: kind }
+  role:
+    type: belongs_to
+    target: communication_participant_role
+    foreign_key: role_id
+    match: { communication_kind: kind }
+  party:
+    type: belongs_to
+    target: party
+    foreign_key: party_id
+    nullable: true

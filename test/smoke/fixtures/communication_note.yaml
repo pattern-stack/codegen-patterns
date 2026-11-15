@@ -1,0 +1,27 @@
+# RFC-0006 (#875) fixture family — smoke copy. Same as test/fixtures/inheritance/entities/communication_note.yaml, except tenant_scoped names its column: this smoke sets tenancy.column to organization_id project-wide, and the family declares tenant_id (R10). Compared by src/__tests__/fixtures/inheritance-fixtures-agree.test.ts.
+# RFC-0006 §2.4 — a match: whose every FK is nullable, two of them sharing one derived column: the column is
+# nullable too, so each FK carries an internal CHECK that a SET FK has its derived column (MATCH SIMPLE skips a
+# composite FK that has a NULL in any column). One FK may be set while the other is NULL.
+
+entity:
+  name: communication_note
+  plural: communication_notes
+
+fields:
+  body:
+    type: string
+    required: true
+
+relationships:
+  communication:
+    type: belongs_to
+    target: communication
+    foreign_key: communication_id
+    nullable: true
+    match: { communication_kind: kind }
+  role:
+    type: belongs_to
+    target: communication_participant_role
+    foreign_key: role_id
+    nullable: true
+    match: { communication_kind: kind }

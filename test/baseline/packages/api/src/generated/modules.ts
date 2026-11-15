@@ -2,9 +2,14 @@
 // Run `codegen entity new --all` to refresh.
 
 import { AccountsModule } from '../modules/accounts/accounts.module';
+import { CommunicationsModule } from '../modules/communications/communications.module';
 import { ContactsModule } from '../modules/contacts/contacts.module';
 import { DealsModule } from '../modules/deals/deals.module';
 import { DealStatesModule } from '../modules/deal-states/deal-states.module';
+import { EmailsModule } from '../modules/emails/emails.module';
+import { EmailThreadsModule } from '../modules/email-threads/email-threads.module';
+import { MeetingsModule } from '../modules/meetings/meetings.module';
+import { MeetingTranscriptsModule } from '../modules/meeting-transcripts/meeting-transcripts.module';
 import { OpportunitiesModule } from '../modules/opportunities/opportunities.module';
 import { OrganizationsModule } from '../modules/organizations/organizations.module';
 import { PersonsModule } from '../modules/persons/persons.module';
@@ -13,9 +18,14 @@ import { UsersModule } from '../modules/users/users.module';
 
 export const GENERATED_MODULES = [
 	AccountsModule,
+	CommunicationsModule,
 	ContactsModule,
 	DealsModule,
 	DealStatesModule,
+	EmailsModule,
+	EmailThreadsModule,
+	MeetingsModule,
+	MeetingTranscriptsModule,
 	OpportunitiesModule,
 	OrganizationsModule,
 	PersonsModule,

@@ -286,7 +286,7 @@ describe('external_id_tracking unique index emission', () => {
     const output = render(locals as Record<string, unknown>);
 
     expect(output).toContain(
-      "uniqueIndex('uq_contacts_provider_external_id').on(t.provider, t.externalId)",
+      "uniqueIndex('uq_contacts_provider_external_id').on(tCols.provider, tCols.externalId)",
     );
   });
 
@@ -303,8 +303,8 @@ describe('external_id_tracking unique index emission', () => {
     const locals = buildBackendLocals(integratedExplicitDefinition, EMPTY_BASE_LOCALS);
     const output = render(locals as Record<string, unknown>);
 
-    // (t) => [ ... ] form — the modern Drizzle extra-config signature.
-    expect(output).toMatch(/\},\s*\(t\) => \[\s*[\s\S]*uniqueIndex\(/);
+    // (tCols) => [ ... ] form — the modern Drizzle extra-config signature.
+    expect(output).toMatch(/\},\s*\(tCols\) => \[\s*[\s\S]*uniqueIndex\(/);
     // The index follows the column block (appears after providerMetadata).
     const colPos = output.indexOf("providerMetadata: jsonb('provider_metadata')");
     const idxPos = output.indexOf("uniqueIndex('uq_contacts_provider_external_id')");
@@ -322,7 +322,7 @@ describe('external_id_tracking unique index emission', () => {
     expect(output).toContain("provider: varchar('provider')");
     expect(output).toContain("providerMetadata: jsonb('provider_metadata')");
     expect(output).toContain(
-      "uniqueIndex('uq_contacts_provider_external_id').on(t.provider, t.externalId)",
+      "uniqueIndex('uq_contacts_provider_external_id').on(tCols.provider, tCols.externalId)",
     );
   });
 
@@ -331,7 +331,7 @@ describe('external_id_tracking unique index emission', () => {
     const output = render(locals as Record<string, unknown>);
 
     expect(output).toContain(
-      "uniqueIndex('uq_widgets_provider_external_id').on(t.provider, t.externalId)",
+      "uniqueIndex('uq_widgets_provider_external_id').on(tCols.provider, tCols.externalId)",
     );
   });
 
@@ -342,7 +342,7 @@ describe('external_id_tracking unique index emission', () => {
     expect(locals.drizzleImports).not.toContain('uniqueIndex');
     expect(output).not.toContain('uniqueIndex');
     // pgTable closes with no extra-config callback.
-    expect(output).not.toMatch(/\},\s*\(t\) => \[/);
+    expect(output).not.toMatch(/\},\s*\(tCols\) => \[/);
   });
 });
 
@@ -401,7 +401,7 @@ describe('belongs_to FK inherits field required + index (#34 follow-on)', () => 
     const locals = buildBackendLocals(messageDefinitionFieldBackedFk, EMPTY_BASE_LOCALS);
     const output = render(locals as Record<string, unknown>);
 
-    expect(output).toContain("index('messages_conversation_id_idx').on(t.conversationId)");
+    expect(output).toContain("index('messages_conversation_id_idx').on(tCols.conversationId)");
     // index() must be imported from drizzle-orm/pg-core
     expect(locals.drizzleImports).toContain('index');
     expect(output).toContain('index,');
@@ -472,7 +472,7 @@ describe('belongs_to FK inherits field required + index (#34 follow-on)', () => 
     // nullable (no .notNull()) but indexed
     expect(output).toContain("conversationId: uuid('conversation_id').references(");
     expect(output).not.toContain("conversationId: uuid('conversation_id').notNull()");
-    expect(output).toContain("index('messages_conversation_id_idx').on(t.conversationId)");
+    expect(output).toContain("index('messages_conversation_id_idx').on(tCols.conversationId)");
   });
 
   it('does NOT emit an index when the field-backed FK has no index:true', () => {

@@ -39,7 +39,7 @@ import {
 } from '../schema/relationship-definition.schema';
 import type { FieldDefinition } from '../schema/entity-definition.schema';
 import { deriveRoleRelationships, roleForeignKey } from '../roles/derive';
-import { inheritsOf } from '../schema/inheritance';
+import { inheritsOf, matchPairsOf } from '../schema/inheritance';
 import { fieldColumnNullable, foreignKeyColumnNullable } from '../schema/field-nullability';
 
 /**
@@ -177,13 +177,7 @@ export function transformToEntity(result: LoadResult, tablePrefix: string): Pars
 				resolved: false,
 				nullable: relDef.nullable,
 				onDelete: relDef.on_delete,
-				...(relDef.match !== undefined
-					? {
-							match: Array.isArray(relDef.match)
-								? Object.fromEntries(relDef.match.map((c) => [c, c]))
-								: relDef.match,
-						}
-					: {}),
+				...(relDef.match !== undefined ? { match: Object.fromEntries(matchPairsOf(relDef)) } : {}),
 			};
 			entity.relationships.set(name, relationship);
 		}

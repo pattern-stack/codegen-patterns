@@ -197,9 +197,14 @@ function serviceSection(surface: ProjectApiSurface, e: EntityApiSurface): Surfac
   );
 }
 
+/** The write side is off: credited to the declaration that turned it off (`generate.writes: false`, a child's `inherits:`). */
+function writesOff(surface: ProjectApiSurface, e: EntityApiSurface, text: string): SurfaceSection['off'] {
+  return e.writesDisabledBy ? { text, origin: yamlChip(surface, e.writesDisabledBy) } : undefined;
+}
+
 function useCaseSection(surface: ProjectApiSurface, e: EntityApiSurface): SurfaceSection {
   const kinds = (u: EntityApiSurface['useCases'][number]) => USE_CASE_KINDS[u.kind];
-  return section(
+  const s = section(
     'useCases',
     byKindOrder(e.useCases, kinds).map((u) => ({
       key: `useCases.${u.className}`,
@@ -212,6 +217,9 @@ function useCaseSection(surface: ProjectApiSurface, e: EntityApiSurface): Surfac
       shadows: shadowsOf(surface, u.origin),
     })),
   );
+  const off = writesOff(surface, e, 'Writes off — no create, update or delete use case');
+  if (off) s.off = off;
+  return s;
 }
 
 function httpSection(surface: ProjectApiSurface, e: EntityApiSurface): SurfaceSection {
@@ -237,6 +245,9 @@ function httpSection(surface: ProjectApiSurface, e: EntityApiSurface): SurfaceSe
       text: 'HTTP off — no controller is generated',
       origin: e.http.disabledBy ? yamlChip(surface, e.http.disabledBy) : undefined,
     };
+  } else {
+    const off = writesOff(surface, e, 'Writes off — no POST, PATCH or DELETE route');
+    if (off) s.off = off;
   }
   return s;
 }

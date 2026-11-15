@@ -1,6 +1,6 @@
 entity:
-  name: person
-  plural: people
+  name: party
+  plural: parties
 
 fields:
   name:

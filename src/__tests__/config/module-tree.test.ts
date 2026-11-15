@@ -25,6 +25,7 @@ describe('entityModuleNaming (src/config/module-tree.ts)', () => {
 			plural: 'accounts',
 			moduleDir: `${MODULES_DIR}/accounts`,
 			entityFile: `${MODULES_DIR}/accounts/account.entity`,
+			enumsFile: `${MODULES_DIR}/accounts/account.enums`,
 			moduleFile: `${MODULES_DIR}/accounts/accounts.module.ts`,
 			repositoryFile: `${MODULES_DIR}/accounts/account.repository.ts`,
 		});
