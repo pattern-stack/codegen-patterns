@@ -250,6 +250,15 @@ export interface CapabilityPatternDefinition<TConfig = unknown> {
 	 */
 	columns?: PatternColumnContribution[];
 
+	/**
+	 * The snake_case columns this capability's mixin READS from the entity's own
+	 * table, given its `config:` block (`undefined` when none is declared). `[]`
+	 * is a statement, not an omission: the capability reads no column the entity
+	 * could have inherited. Joined-table inheritance fails closed on a capability
+	 * without it (RFC-0006 R6, D1).
+	 */
+	columnsRead?(config: TConfig | undefined): string[];
+
 	/** Behaviors this capability implicitly enables. Deduped across patterns. */
 	impliedBehaviors?: string[];
 

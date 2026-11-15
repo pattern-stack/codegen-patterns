@@ -342,6 +342,55 @@ describe('R6 — a child declares a pattern only over its own columns', () => {
 		expect(msg).toContain("which reads the column 'entity_type'");
 	});
 
+	it('R6 fails closed: a domain pattern with no columnsRead on a child names the pattern', () => {
+		const msg = errorMessages({
+			meeting: (r) => {
+				delete r.entity.patterns;
+				r.entity.pattern = 'Knowledge';
+			},
+		});
+		expect(msg).toContain("R6 — 'meeting' declares pattern 'Knowledge', which does not state the columns it reads");
+	});
+
+	it('R6 fails closed: a capability with no columnsRead names the capability', () => {
+		registerLibraryPattern({ name: 'ProbeCap', kind: 'capability', mixin: 'WithProbe', mixinImport: '@x/probe' });
+		try {
+			const msg = errorMessages({ meeting: (r) => (r.entity.patterns = ['ProbeCap']) });
+			expect(msg).toContain("R6 — 'meeting' declares pattern 'ProbeCap', which does not state the columns it reads");
+		} finally {
+			_unregisterLibraryPatternForTests('ProbeCap');
+		}
+	});
+
+	it('R6: a capability that states columnsRead is checked against the base, and [] passes', () => {
+		registerLibraryPattern({
+			name: 'ProbeReads',
+			kind: 'capability',
+			mixin: 'WithProbe',
+			mixinImport: '@x/probe',
+			columnsRead: () => ['source'],
+		});
+		registerLibraryPattern({
+			name: 'ProbeNone',
+			kind: 'capability',
+			mixin: 'WithNone',
+			mixinImport: '@x/none',
+			columnsRead: () => [],
+		});
+		try {
+			const msg = errorMessages({ meeting: (r) => (r.entity.patterns = ['ProbeReads']) });
+			expect(msg).toContain("'meeting' declares pattern 'ProbeReads', which reads the column 'source'");
+			expect(errorsFor({ meeting: (r) => (r.entity.patterns = ['ProbeNone']) })).toEqual([]);
+		} finally {
+			_unregisterLibraryPatternForTests('ProbeReads');
+			_unregisterLibraryPatternForTests('ProbeNone');
+		}
+	});
+
+	it('R6: Base on a child is not an error', () => {
+		expect(errorsFor({ meeting: (r) => (r.entity.patterns = ['Base']) })).toEqual([]);
+	});
+
 	it('R6: Activity on a child over its own column is fine', () => {
 		const errors = errorsFor({
 			meeting: (r) => {

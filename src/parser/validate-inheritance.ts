@@ -322,10 +322,20 @@ export function validateInheritance(
 			// Parsed through the pattern's own schema, as composition does: a config that fails it is
 			// reported there, and reads as no config here.
 			const parsed = definition?.configSchema?.safeParse(e.patternConfig?.[patternName] ?? {});
-			const read =
-				definition !== undefined && 'columnsRead' in definition
-					? (definition.columnsRead?.(parsed?.success ? parsed.data : undefined) ?? [])
-					: [];
+			if (definition === undefined || patternName === 'Base') continue;
+			// Fails closed: a pattern that does not say which columns it reads cannot be shown to read only the
+			// child's own, so declaring it on a child is an error naming the pattern (D1).
+			if (definition.columnsRead === undefined) {
+				error(
+					e,
+					'inherits_pattern_config',
+					`R6 — '${name}' declares pattern '${patternName}', which does not state the columns it reads ` +
+						`(no 'columnsRead'), so it cannot be checked against its base '${child.base}'. ` +
+						`Declare it on '${child.base}', or give the pattern a 'columnsRead'.`,
+				);
+				continue;
+			}
+			const read = definition.columnsRead(parsed?.success ? parsed.data : undefined);
 			for (const col of read) {
 				if (baseOnly(col)) {
 					error(

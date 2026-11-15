@@ -23,6 +23,8 @@ export const CommunicationPattern = defineCapabilityPattern({
 	mixin: 'WithCommunication',
 	mixinImport: '@shared/base-classes/with-communication',
 	forwarderMethods: ['findByRole', 'participants'],
+	// The role FK columns are derived belongs_to columns of the entity that declares `roles:`, so they are its own.
+	columnsRead: () => [],
 	description:
 		'An interaction with actors in roles — findByRole / participants, driven by the roles: block',
 });

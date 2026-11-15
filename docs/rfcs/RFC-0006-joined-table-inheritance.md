@@ -231,7 +231,7 @@ export const meetings = pgTable(
 ```
 
 `emails` is the same with `default('email')`, its own CHECK, and `thread_id uuid references email_threads(id)`.
-Enum and constraint names follow the existing rules (`entity-locals.js:597`, `:2168-2223`).
+Enum and constraint names follow the existing rules (`entity-locals.js:597`, `:2168-2223`). Postgres truncates an identifier at 63 bytes; the build checks only the names the table's extra-config callback declares, and an explicit `foreignKey({ name })` on every FK is #921's.
 
 **`kind` and the tenant column on the child are copies, on purpose.** Each is a value the base row owns, repeated
 on the child so that a constraint, a scope predicate or a shape filter can read it without a join. Neither can
@@ -337,8 +337,7 @@ What it emits:
   `(id, kind)` from `discriminator:`. The target's entity file is rendered by its own template from the referrers'
   YAML, the rule junction fan-out already follows (`templates/_shared/junction-fan-out.mjs`), so adding a `match:`
   re-renders the target.
-- **The value is never client input.** The column is absent from the create and update DTOs and read-only in the
-  output. The generated insert fills it with a scalar subquery in the same statement
+- **The value is never client input.** The column is absent from the create and update DTOs. The generated insert fills it with a scalar subquery in the same statement
   (`(SELECT kind FROM communications WHERE id = $1)`), and an update that changes the FK re-derives it. A missing
   parent then fails as NOT NULL, which the repository maps to the same error as an FK violation.
 
@@ -987,11 +986,12 @@ The summary. §13 is the build plan, slice by slice.
 | OQ-2 | Kind integrity | Composite FK, with a `kind` column on the child. |
 | OQ-3 | Tenant on the child | Column on the child, pinned by a composite FK now. `inherits:` requires the base's tenant column to be NOT NULL (R10), so the FK is always enforced. |
 | OQ-4 | Child DTO and HTTP shape | Flat. |
-| OQ-5 | Cross-kind row shape | The child nested under its kind key. |
+| OQ-5 | Cross-kind row shape | The child is nested under its relation key. (Revised at Gate 2.5, D11: the key differs from the kind key whenever `as:` is used.) |
 | OQ-6 | Lifecycle events | Both names: `meeting.*` (flat) and `communication.*` (base slice). |
 | OQ-7 | Provider sync | The pair upsert, `upsertByNaturalKey`, is in v1 (§4.2). `Integrated` on a child is a follow-up slice. |
 | OQ-8 | Orphan base rows | Service guard plus `findOrphans()`. The consumer's pivot writes inside one transaction. |
 | OQ-9 | Discriminator choices | Listed on the base. |
+| OQ-14 | Upserting onto a soft-deleted row | Update it, leave `deleted_at`. A provider re-sending an object is not a decision to undelete it. Confirmed by Doug at Gate 2.5 (2026-11-15, D8); built in S4. |
 | — | #787 | `match:` lands in this build (§2.4). |
 | OQ-11 | The "part kind fits communication kind" rule | `communication_part.kind` is `choices_of: communication.kind` and its `belongs_to` carries `match: { kind: kind }`: one composite FK, under M2's discriminator exception. No derived `communication_kind` column and no CHECK. The user-facing `checks:` key leaves this build and stays whole in #786; the child's `kind` CHECK uses an internal builder. |
 
@@ -1004,7 +1004,29 @@ Each of these is scope this revision pulled in to satisfy the answers above. Eac
 | OQ-10 | How the natural key is declared | `natural_key: true` on a `unique_indexes` entry | A top-level `natural_key: [fields]` that emits its own index (#780's proposal) | A schema rename before anything ships. | Default. The index is already declared in `unique_indexes`, and one entry cannot be declared twice. This settles #780's first open question, so say so there. |
 | OQ-12 | #787's implicit same-tenant FK on every tenant-scoped `belongs_to` | Stays in #787 | Build it here | It changes the DDL of every tenant-scoped relationship and needs a NOT NULL tenant on every entity, not only on bases. | Default. This build gives #787 its emitter and its `match:` form. The default-on rule is its own decision. |
 | OQ-13 | Sharing an enum type across entities | `choices_of: <entity>.<field>` | Make the lookup's `kind` a `match:` column against a kinds table | A field-option rename before anything ships. | Default. Without one of them, case 2's FK cannot be built. |
-| OQ-14 | Upserting onto a soft-deleted row | Update it, leave `deleted_at` | Clear `deleted_at` (revive) | One line in the `SET` list. | Default. A provider re-sending an object is not a decision to undelete it. |
+
+### 11.3 Decided at Gate 2.5 (Doug, 2026-11-15)
+
+Seventeen items the Gate 2.5 reviews marked `DECISION`. Each was decided as the coordinator recommended.
+
+| # | Question | Decision | Landed in |
+|---|---|---|---|
+| D1 | A child declares a pattern with no `columnsRead`: checked or not? | R6 fails closed. A pattern other than `Base`, or a capability, with no `columnsRead` is an R6 error naming it; `columnsRead` is added to `CapabilityPatternDefinition`. | S1 |
+| D2 | A derived `match:` column is "read-only in the output" (§2.4), but the output DTO does not carry it. | Delete the sentence. The column is not emitted in the output DTO. | S1 (§2.4), S2 |
+| D3 | The 63-byte constraint-name check is claimed for "every name". | Narrow it to the names the extra-config callback declares. Explicit FK names are #921's. | S1 (§2), S2 |
+| D4 | No base-only kind is covered on a soft-delete family. | A scaffold-only `document` family (`memo` base-only, `report` child) covers it in reads, writes and HTTP. | S3, S4, S5 |
+| D5 / D6 | The no-name-derivation lint misses `.charAt(0).toLowerCase()` and `.toUpperCase().replace(`; two helper-name sites are deferred. | Widen the lint; derive every remaining #875 site through `src/derived/api/names.ts`. A hit already on `main` gets an issue and a named expectation. The allowlist never grows. | S5 |
+| D7 | S4 touched the Integrated / Metadata repositories (`deriveColumns`) and S3's `<Child>Flat` alias. | Ratified as two scope exceptions; S4's "Must not touch" line names them. | S4 |
+| D8 | OQ-14: upsert onto a soft-deleted row. | Confirmed: update it, leave `deleted_at`. Moved to §11.1. | S1 |
+| D9 | Composing modules import their home modules instead of providing the repository. | Ratified. Every composing module imports the home module, all via `forwardRef`. | S4 |
+| D10 | S2's "`natural_key:` alone changes no emitted byte" assertion changed. | Ratified: the new form asserts the exact set of differing files. | S4 |
+| D11 | OQ-5: nested under the kind key or the relation key? | The relation key. §11.1's row is edited. | S1 |
+| D12 | `KindRequiresChildError`, `KindImmutableError` and `KindMismatchError` reach HTTP as 500s. | They are domain errors only: the controller's unreachable mapping goes; the DTO's zod issue refuses the request; `createPath` names the child's service method. | S5 |
+| D13 | The Studio writes-off test dropped its `origin.text` assertions. | Restore them with the current chip text. | S5 |
+| D14 | The client shows a child whose base is soft-deleted. | The client hides it: `<plural>WithBase` and the child-to-base root hop filter `deletedAt` when the base has `soft_delete`. | S6 |
+| D15 | A lib global in value position (`Map`, `URL`) in the emitted frontend. | `globalThis.*` across the emitted frontend; the `values` hygiene rule runs over the whole tree. | S6 |
+| D16 | Where "a kind with a child table is written only with its child row" lives. | Both kind invariants live in the repository, the one owner of the pair write. | S4 |
+| D17 | S4's remaining review items. | No change at S4. | — |
 
 ## 12. The issue (filed as #875)
 
@@ -1148,9 +1170,11 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   pattern's own config. `Activity` reads `occurredAt` (default `occurred_at`), `user_id` (`findByUserId`) and the
   subject column (`subjectColumn`, else `<subject>_id`); `Metadata` reads `entity_id`, `entity_type` and
   `valid_from`. A child declaring a pattern whose columns include one the base owns is an error. Config strings are
-  not compared. The config is parsed through the pattern's own schema first. A pattern with no `columnsRead`
-  (every other pattern, and every capability) is not checked: whether R6 should instead fail closed there is
-  pending a decision.
+  not compared. The config is parsed through the pattern's own schema first. R6 **fails closed** (D1, §11.3):
+  a child that declares a pattern other than `Base`, or a capability, with no `columnsRead` is an R6 error naming the
+  pattern. `columnsRead` is on `CapabilityPatternDefinition` too: `Actor` and `Communication` state `[]` (the first
+  reads its members' table through a `has_many`, the second reads role FK columns the declaring entity owns). `Knowledge`
+  and `Integrated` state none, so each is refused on a child.
 - **R4 and M2** see the columns a pattern contributes (`PatternDefinition.columns`) as well as behavior, tenant and
   derived columns.
 - **R7** covers `by`, `select` and `order` of the by-column queries and the `filters` and `search` column of a
