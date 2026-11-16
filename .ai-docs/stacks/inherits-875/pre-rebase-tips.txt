@@ -1,0 +1,7 @@
+dugshub/875-s1-inherits-schema 4c804b0568bd7fd780e29aabe92e31cf5be7b77e
+dugshub/875-s2-inherits-ddl 40097ac1a7df8debc9f9a553440d596fffc5e41b
+dugshub/875-s3-inherits-reads 5baf21aafb055eea323a81e0af6b85b17a846239
+dugshub/875-s4-inherits-writes 9d890e556beb82a55532b5031e13677f701cb302
+dugshub/875-s5-inherits-http 9628c146d3bf00c134a1f5c1bf66d0e96104e418
+origin/main cb44c88eb17400b2c6053d79f53f16ac2db3996f
+dugshub/875-s6-inherits-frontend a47e813417b4dce9399333838f1655bfee710054

@@ -1,0 +1,6 @@
+- **D16** (both kind invariants in the repository): `KindRequiresChildError` lives only in the base repository's `create` / `upsertByNaturalKey` (a child's pair write passes a `PAIR_WRITE` mark); the service keeps no copy; a new derived repository kind `create_guard` replaces the service `kind_guard`. Scaffold test of a direct repository call; red with the guard disabled (2b66692f).
+- **D7** (ratify two scope exceptions): S4's "Must not touch" line names `deriveColumns` in the Integrated / Metadata repositories and S3's `<Child>Flat` alias fix (2b66692f).
+- **D9 / D10** ratified: home-module imports, all `forwardRef`; the changed natural-key assertion (still exact). Recorded in S4's as-built note (2b66692f).
+- **D4** (writes): create a base-only `memo` through the base repository and the service; a `report` is refused; soft-delete a `memo` and its sibling `report` is untouched (2b66692f). Upsert stays covered on `communication`, because `document` declares no natural key.
+- **D17**: no change in S4.
+- The red `test-junction` snapshot came from S4's own new `account_contact` junction fixture: `contact` correctly gains a second junction fan-out (37 added lines). Re-blessed (2b66692f).
