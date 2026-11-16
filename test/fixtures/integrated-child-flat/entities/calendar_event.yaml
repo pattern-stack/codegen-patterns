@@ -16,6 +16,9 @@ fields:
   title:
     type: string
     required: true
+  preview:
+    type: string
+    nullable: true
   starts_at:
     type: datetime
     required: true
@@ -37,5 +40,5 @@ integration:
       direction: inbound
   sink:
     delete: soft
-    exclude_fields: [title]
+    exclude_fields: [preview]
     emit_changes: true

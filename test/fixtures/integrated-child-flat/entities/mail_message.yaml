@@ -19,6 +19,9 @@ fields:
   title:
     type: string
     required: true
+  preview:
+    type: string
+    nullable: true
   subject:
     type: string
     required: true
@@ -40,5 +43,5 @@ integration:
       direction: inbound
   sink:
     delete: tombstone
-    exclude_fields: [title]
+    exclude_fields: [preview]
     emit_changes: true

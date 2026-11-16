@@ -407,6 +407,7 @@ export function defaultCalendarEventBuildWrite(record: CalendarEventIntegrationP
   return {
       externalId: record.externalId,
       // copy-through fields (one line per \`fields:\` entry):
+      title: record.title,
       startsAt: record.startsAt,
       endsAt: record.endsAt,
       // FK external join-keys (null until canonical widens to carry them):
@@ -425,6 +426,7 @@ export function defaultCalendarEventToCanonicalView(row: CalendarEventIntegratio
       externalId: row.externalId,
       tenantId: row.tenantId,
       title: row.title,
+      preview: row.preview,
       startsAt: row.startsAt,
       endsAt: row.endsAt,
       mailboxId: row.mailboxId,
@@ -936,6 +938,7 @@ export function defaultMailMessageBuildWrite(record: MailMessageIntegrationProje
   return {
       externalId: record.externalId,
       // copy-through fields (one line per \`fields:\` entry):
+      title: record.title,
       subject: record.subject,
       sentAt: record.sentAt,
       // FK external join-keys (null until canonical widens to carry them):
@@ -954,6 +957,7 @@ export function defaultMailMessageToCanonicalView(row: MailMessageIntegrationPro
       externalId: row.externalId,
       tenantId: row.tenantId,
       title: row.title,
+      preview: row.preview,
       subject: row.subject,
       sentAt: row.sentAt,
       mailboxId: row.mailboxId,
