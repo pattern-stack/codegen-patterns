@@ -62,6 +62,14 @@ export interface SchemaCanvasProps {
    * change it: that refits only when the packing re-wraps, as before.
    */
   fitKey?: string;
+  /**
+   * Changes when the filter box or the chips choose a different subset
+   * (STUDIO-5). The subset is laid out as its own tree and the view refits to
+   * it once ReactFlow has measured its cards.
+   */
+  subsetKey?: string;
+  /** A card was double-clicked: the pane sets the box to `1+<id>+1`. */
+  onNodeFocus?: (id: string) => void;
 }
 
 /**
@@ -79,6 +87,8 @@ export function SchemaCanvas({
   selection,
   onSelect,
   fitKey = '',
+  subsetKey = '',
+  onNodeFocus,
 }: SchemaCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -136,6 +146,10 @@ export function SchemaCanvas({
   );
   const flow = useRef<ReactFlowInstance | null>(null);
   const legend = useRef<HTMLDivElement>(null);
+  // The cards the current layout places: a fit waits until ReactFlow holds
+  // exactly these, so a new subset is never fitted to the cards it replaced.
+  const laidIds = useRef<Set<string>>(new Set());
+  laidIds.current = new Set(laid.nodes.map((n) => n.id));
 
   /**
    * Fit-to-view that keeps the legend off the cards (`fit-corner.ts`): the
@@ -157,13 +171,14 @@ export function SchemaCanvas({
       // A re-layout hands ReactFlow fresh node objects, measured a frame or
       // two later; a fit that cannot see every card's size waits for them.
       const nodes = instance.getNodes();
+      const current = nodes.length === laidIds.current.size && nodes.every((n) => laidIds.current.has(n.id));
       const cards: Rect[] = [];
       for (const n of nodes) {
         const size = instance.getInternalNode(n.id)?.measured ?? n.measured;
         if (size?.width == null || size.height == null || size.width <= 0 || size.height <= 0) break;
         cards.push({ x: n.position.x, y: n.position.y, width: size.width, height: size.height });
       }
-      if (nodes.length === 0 || cards.length < nodes.length) {
+      if (!current || nodes.length === 0 || cards.length < nodes.length) {
         if (frames++ < MEASURE_FRAMES) retry.current = requestAnimationFrame(attempt);
         return;
       }
@@ -196,6 +211,15 @@ export function SchemaCanvas({
     const frame = requestAnimationFrame(() => fit());
     return () => cancelAnimationFrame(frame);
   }, [placement, aspect, fit]);
+
+  const lastSubset = useRef(subsetKey);
+  useEffect(() => {
+    if (lastSubset.current === subsetKey) return;
+    lastSubset.current = subsetKey;
+    if (flow.current == null) return;
+    const frame = requestAnimationFrame(() => fit());
+    return () => cancelAnimationFrame(frame);
+  }, [subsetKey, fit]);
 
   useEffect(() => {
     if (fitTick === 0 || flow.current == null) return;
@@ -251,6 +275,11 @@ export function SchemaCanvas({
     [onSelect, selection],
   );
 
+  const handleNodeDoubleClick = useCallback(
+    (_: unknown, node: Node) => onNodeFocus?.(node.id),
+    [onNodeFocus],
+  );
+
   const handleEdgeClick = useCallback(
     (_: unknown, edge: Edge) => onSelect(toggleSelection(selection, { kind: 'edge', id: edge.id })),
     [onSelect, selection],
@@ -296,6 +325,7 @@ export function SchemaCanvas({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
+        onNodeDoubleClick={handleNodeDoubleClick}
         onEdgeClick={handleEdgeClick}
         onPaneClick={() => onSelect(null)}
         nodeTypes={nodeTypes}

@@ -303,6 +303,18 @@ line meets each card on the sides that face each other
 (`tools/studio/src/graph/edge-geometry.ts`); the card's handles are only a
 fallback until ReactFlow has measured it.
 
+The filter box takes **dbt-style selectors** (STUDIO-5, `graph/selector.ts`, pure): tokens separated by whitespace
+**or commas** are a union (`a+, b+` is `a+ b+`; this diverges from dbt, where a comma is an intersection, and a stray
+comma is never a text token); `name+` is the entity and what depends on it (children), `+name` what it depends on
+(parents), `+name+` both (two separate walks), `N+name+M` limits the hops (a bare `+` is unlimited, a depth is ≥ 1); a
+token without `+` is the text filter — `matchesGraphQuery` from `packages/graph-components`, the one predicate its
+`useGraphFilter` also applies (never restate it). A line's child end depends on its parent end (the adapter's `parent` / `child`, as the layout reads
+them) — a role's holder depends on the actor, an `inherits` child on its base — and hops follow every line, spine or
+secondary. A junction node is one hop between its ends, either way (the owner's call, 2026-11-15), and is shown. An unknown name or a malformed token
+selects nothing and prints a message by the box, never a silent empty canvas. Double-clicking a card sets the box to
+`1+<name>+1`; Esc or clearing restores all. The subset is laid out as its own tree (hidden cards leave the layout) and
+refit through `fitAvoidingCorner` (`subsetKey`). Grammar and hop rules: `docs/specs/STUDIO-0.md` § Selecting a subset.
+
 The header names every count's unit: entities, junction **files**, relationship
 **files** (first-class relationship YAMLs — a model of plain foreign keys has
 none), and the canvas's **lines**, split spine / secondary.
