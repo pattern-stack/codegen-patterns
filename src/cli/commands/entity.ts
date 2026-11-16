@@ -11,7 +11,7 @@ import { Command, Option } from 'clipanion';
 import type { CommandClass } from 'clipanion';
 
 import { loadEntityFromYaml, loadEntitiesFromYaml } from '../../utils/yaml-loader.js';
-import { analyzeDomain, validateEntities } from '../../index.js';
+import { analyzeDomain } from '../../index.js';
 import { junctionsDirFor, relationshipsDirFor } from '../../config/junctions-dir.js';
 import { preflightEntityTargets, renderEntityTargets } from '../shared/entity-render.js';
 import { listEntityYamls } from '../../utils/find-yaml-files.js';
@@ -1165,7 +1165,6 @@ export class EntityValidateCommand extends Command {
 		// could not register is an error: the registry is partial (#667).
 		const loaderIssues = patternLoadIssues(await loadAppPatternsForCli(ctx), ctx.cwd);
 
-		const quick = validateEntities(targetDir, projectLayout(ctx.cwd, ctx.config).nonEntityDirs);
 		const full = await analyzeDomain(targetDir, {
 			nonEntityDirs: projectLayout(ctx.cwd, ctx.config).nonEntityDirs,
 			tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
@@ -1180,7 +1179,7 @@ export class EntityValidateCommand extends Command {
 			printJson({
 				command: 'entity validate',
 				directory: targetDir,
-				valid: quick.valid && errors.length === 0,
+				valid: errors.length === 0,
 				errors: errors.map((e) => ({ entity: e.entity, path: e.path, message: e.message })),
 				warnings: warnings.map((w) => ({
 					entity: w.entity,

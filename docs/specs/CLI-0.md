@@ -55,7 +55,7 @@ Three defects in the generator's own plumbing, found by CAP-1, NAME-0 and NAME-1
   *One rule for which files are entities:* `listEntityYamls(dir, layout.nonEntityDirs)`
   (`src/utils/find-yaml-files.ts`) — the entities root minus the providers, jobs, events, junctions and relationships
   directories. `nonEntityDirs` is a **required** parameter of every caller — `loadEntities`, `loadEntityRegistry`,
-  `loadEntityDefinitions`, `analyzeDomain`, `validateEntities`, the barrel / scope-union / event generators, Studio's
+  `loadEntityDefinitions`, `analyzeDomain`, the barrel / scope-union / event generators, Studio's
   `listFiles` — never an optional exclusion, so a caller that forgets it does not compile (2026-11-15). The pre-flight,
   `entity validate`, `project inspect` / `graph` and every whole-set loader use it, so `paths.entities: definitions` with
   `definitions/providers/` and `definitions/jobs/` beside the entities works. A directory that does not exist is the

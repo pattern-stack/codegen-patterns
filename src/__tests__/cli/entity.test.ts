@@ -163,6 +163,32 @@ describe('entity noun — validate', () => {
 		expect(result).toBe(1);
 	});
 
+	test('--json: exits 1 with valid:false on a schema-invalid entity, 0 with valid:true on a clean set', async () => {
+		const bad = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-validate-bad-'));
+		tempDirs.push(bad);
+		fs.writeFileSync(path.join(bad, 'codegen.config.yaml'), 'paths:\n  entities: entities\n');
+		fs.mkdirSync(path.join(bad, 'entities'));
+		fs.writeFileSync(
+			path.join(bad, 'entities', 'note.yaml'),
+			'entity:\n  name: note\n  plural: notes\nfields:\n  body:\n    type: bogus_type\n'
+		);
+		const good = mkSelfContainedProject();
+		tempDirs.push(good);
+
+		for (const [root, code, valid] of [
+			[bad, 1, false],
+			[good, 0, true],
+		] as const) {
+			const cli = buildCli();
+			const { result, out } = await captureStdoutWrite(() =>
+				cli.run(['entity', 'validate', '--json', '--cwd', root])
+			);
+			setJsonMode(false);
+			expect(result).toBe(code);
+			expect(JSON.parse(out.slice(out.indexOf('{'))).valid).toBe(valid);
+		}
+	});
+
 	test('fails when directory does not exist', async () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-invalid-'));
 		tempDirs.push(root);
