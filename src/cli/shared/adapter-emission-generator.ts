@@ -64,6 +64,7 @@ import {
 import { subsystemsImport, type RuntimeMode } from "./runtime-import";
 import { emittedStem } from '../../config/file-naming.js';
 import { resolveTenancy, type TenantScopedDeclaration } from '../../schema/tenancy.js';
+import { flattenInheritedChild } from '../../schema/inheritance.js';
 import {
   fieldColumnNullable,
   foreignKeyColumnNullable,
@@ -971,9 +972,12 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
     integrationAggregatorsWritten: [],
     skippedAssemblies: [],
   };
-  const entitiesBySurface = collectEntitiesBySurface(opts.entities);
+  // A provider sync has no opinion on the family hierarchy (RFC-0006 S7c): a joined-table child is read as its
+  // flat shape, so every emitter below sees the entity a flat declaration of the same columns would be.
+  const entities = opts.entities.map((e) => flattenInheritedChild(e as never, opts.entities as never) as typeof e);
+  const entitiesBySurface = collectEntitiesBySurface(entities);
   // Index full entity definitions by name for the assembly/sink emission.
-  const entityByName = new Map(opts.entities.map((e) => [e.entity.name, e]));
+  const entityByName = new Map(entities.map((e) => [e.entity.name, e]));
 
   // 'planned' providers are catalog-only roadmap stubs — adapters/assemblies
   // are emitted for active providers only.
