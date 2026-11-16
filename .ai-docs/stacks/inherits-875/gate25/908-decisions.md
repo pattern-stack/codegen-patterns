@@ -1,0 +1,2 @@
+- **D3** (narrow the 63-byte claim; explicit FK names → #921): #921 linked in the C5 comment, the `constraint-name-length` test header and S2's as-built note (4c273822).
+- **D2** (no read-only `match:` column in the output): S2's "Not done" bullet reads "decided: not emitted (D2, §11.3)" (4c273822); the §2.4 sentence is removed in #907.
