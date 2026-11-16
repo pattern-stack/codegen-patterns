@@ -4,6 +4,203 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.34.0] — 2026-11-15
+
+The API surface and joined-table inheritance. The generated backend API is now derived once, in
+`src/derived/api/`, and every entity-backend template prints from that derivation (ADR-046, #876–#898).
+`codegen project surface` and Studio's API tab read the same derivation. Entities can inherit from a base
+entity: one row in each table under one `id` (`inherits:`, RFC-0006, #875, #907–#912). Studio's canvas is
+laid out as a tree that wraps to fit the view (#887, #891, #900). An invalid definition YAML now stops the
+whole run, naming the file (#918). It also ships the test and CLI fixes merged since 0.33.0.
+
+**Breaking: narrowly — no YAML key, DDL or generated API that an existing project uses changes meaning.**
+Phase B's generated backend is byte-identical (#895–#898). The other changes to generated files are byte
+changes with the same behaviour (see *Changed*). A regenerate rewrites those files, and nothing a consumer
+wrote needs to change. Four things can still need action: three inputs that used to get through are now
+refused, and the package's analysis API changed its signatures. Upgrading from 0.33.0:
+
+1. **Fix or delete every invalid definition YAML (#918).** Before, `entity new` skipped an invalid entity,
+   junction or relationship YAML and generated the rest. It wrote the barrels and the relations manifest over
+   a set without that entity, and the run failed later in `tsc`. A single-target `entity new <valid file>`
+   even exited 0 beside an invalid sibling. Now `entity new` (`--all` or a single target), `junction new`,
+   `relationship new` and `project surface` stop at pre-flight, exit 1 and write nothing. They print
+   `<file> — Validation failed for <path>` and one `•` line per schema issue. In `--json` mode the payload is
+   `{ stopped: 'pre-flight', failed: [{ name, file, details }] }`. Fix the named file, or delete it.
+   - That includes the comments-only `entities/example.yaml` an older `codegen init` seeded (the schema
+     reports `Expected object, received null at root`). `codegen init` now seeds `entities/README.md` instead.
+2. **If generation stops on a name over 63 bytes, shorten it (#908).** Every index and constraint name in an
+   entity table's constraint callback is now checked against Postgres's 63-byte identifier limit. A longer
+   name is a generation error, `the name '<name>' (<source>) is <n> bytes; Postgres keeps 63 and would
+   truncate it`, because Postgres truncates such a name without a word. A name starts with the SQL table
+   name, so shorten that with `entity.table:` (TABLE-0), or rename the entity or relationship.
+3. **Frontend (`generate.frontend: true`): delete the mutations of an entity with `generate: { writes: false }`
+   or `api: false` (#912).** The frontend used to emit create / update / delete for such an entity, aimed at
+   routes the backend never generated. It now emits only the mutations whose route the derivation lists. So
+   `useCreate<Class>` / `useUpdate<Class>` / `useDelete<Class>` are no longer re-exported, `<e>Api.create` /
+   `update` / `delete` take `never`, and `capabilities.create` / `update` / `delete` are `false`. A call site
+   becomes a compile error; it could only ever fail at runtime. One limit: `<e>Hooks.useDelete().mutate(…)`
+   still compiles, because `createEntityHooks` has no type parameter for delete.
+4. **Code that imports the package's analysis API (#918, #924):**
+   - `analyzeDomain(entitiesDir, opts)` takes an options object only (the string second argument is gone),
+     and `opts.nonEntityDirs` is required. Pass the definition directories nested under the entities root
+     (providers, jobs, events, junctions, relationships), or `[]`.
+   - `loadEntities(dir, { tablePrefix, nonEntityDirs })`: `excludeDirs` is replaced by the required
+     `nonEntityDirs`.
+   - `validateEntities` is deleted. Call `analyzeDomain` and keep the issues whose `severity` is `'error'`,
+     which is what `entity validate` does.
+
+### Added
+
+- **Joined-table inheritance (#875, RFC-0006, #907–#912).** A child entity IS a kind of its base: one row in each
+  table, under one `id`. What a consumer writes:
+
+  ```yaml
+  # payment.yaml — the base
+  entity: { name: payment, plural: payments }
+  tenant_scoped: true
+  discriminator: kind                 # names the base's kind enum field
+  behaviors: [timestamps]
+  fields:
+    tenant_id: { type: uuid, required: true }
+    kind: { type: enum, choices: [card, transfer, cash], required: true }
+    reference: { type: string, required: true }
+  unique_indexes:
+    - fields: [reference]             # tenant_scoped prefixes the tenant column itself
+      natural_key: true               # the upsert's conflict target
+
+  # card_payment.yaml — a child
+  entity: { name: card_payment, plural: card_payments }
+  inherits: { base: payment, as: card }   # or `inherits: payment`; `as` defaults to the entity name
+  fields:
+    last4: { type: string, required: true }
+  ```
+
+  - **Keys** (`src/schema/entity-definition.schema.ts`):
+    - `inherits:` on a child, short or long form;
+    - `discriminator:` on the base;
+    - `match: { <local column>: <target column> }` on a `belongs_to`, for a composite FK onto the target's `(id, …)`;
+    - `natural_key: true` on one `unique_indexes` entry, whose every column must be NOT NULL;
+    - `choices_of: <entity>.<field>` on an enum field, which shares another entity's Postgres enum type.
+
+    One level of inheritance. `timestamps`, `soft_delete`, `user_tracking`, `external_id_tracking` and
+    `tenant_scoped` are declared on the base only, and the base's tenant column is NOT NULL. A rule that fails
+    (R1–R11, M1–M5) names the entities involved; `entity validate` reports them too.
+  - **DDL.** The child's `id` is its primary key and an FK to the base, with no default. Composite FKs
+    `(id, kind)` and `(id, tenant)`, and a `kind` `DEFAULT` + `CHECK`, make the database refuse a child under
+    another kind or tenant. The base carries the `unique(id, …)` targets. A `match:` derives its local column
+    from the target and fills it with a scalar subquery in the insert. A rule such as "a line item of kind `card`
+    sits only under a payment of kind `card`" is `choices_of:` plus `match: { kind: kind }`. There is no
+    user-facing `checks:` key; that stays in #786.
+  - **Reads**, on the READ-1 surface, each one statement:
+    - the base is a relation of the child (`with: { <base>: true }`);
+    - a child is scoped by its own tenant column and its base's lifecycle (`EXISTS`);
+    - `findWithBase` / `findManyWithBase` / `listFlat` return `<Child>Flat`;
+    - the base gets `findAllKinds` (the `<Base>OfKind` union; `OrphanBaseError` on a base row whose child
+      is missing), `findKindById`, `listKind`, `countKind` and `findOrphans`.
+  - **Writes** go through the child's repository and service: base row and child row in one transaction.
+    - A `kind` in an update throws `KindImmutableError`.
+    - Lifecycle events fire under the child's name (flat) and the base's (the base slice).
+    - `upsertByNaturalKey` exists on **every** entity with a `natural_key`, family or not, and returns
+      `{ row, created }`. A child gets it through its base's key, and gets `baseCreated` too. Another kind
+      under the key is `KindMismatchError`.
+  - **HTTP is flat**: `<Child>` DTOs extend the base's, and `kind`, the tenant column and `match:` columns are
+    never client input. The base's `POST` accepts only base-only kinds. A base whose every kind has a child has
+    no create route (`createDisabledBy`). `KindImmutableError` / `KindRequiresChildError` map to `400` and
+    `KindMismatchError` to `409`.
+  - **Frontend**: a child's hop to its base is an inner join, typed without `| undefined`. Every `electric`
+    child gets `<Child>WithBase`, `<plural>WithBase(q)`, `use<Plural>WithBase()` and `use<Child>WithBase(id)`
+    in `graph/<child>.ts`, and its REST client is typed flat (`<Child>WithBase`, `<Child>FlatInput`). Base and
+    children share one sync mode.
+  - **Vendored runtime** (`runtime: vendored`): run `codegen project update` before you generate a family or a
+    `natural_key` entity. Their repositories import the new `@shared/base-classes/inheritance`. Projects that
+    don't use these keys need no runtime update.
+  - Reference: `consumer-skills/entities/yaml-reference.md`; design and as-built notes in
+    `docs/rfcs/RFC-0006-joined-table-inheritance.md`.
+- **The derived API surface (ADR-046 Phase A, #876, #877, #880).** Every method, use case and route the backend
+  generates for an entity is derived once, in `src/derived/api/`, and carries the YAML path that caused it. For
+  example, `findByAccountId` comes from `relationships.account` and shadows `queries[0]`. A parity gate holds the
+  derivation equal to the real generated output, and a golden (`test/api-surface-golden/`) pins its provenance.
+- **`codegen project surface [--entity <name>] [--json]` (#880).** It prints that derivation for the whole
+  project: a table per entity, or `{ command, entities, surface }` with `--json`.
+  - It pairs each relationship with its inverse, and lists junction and `relationship:` definitions as not yet
+    modelled (#679).
+  - It warns (exit 0) when a service method delegates to a repository method its target doesn't emit. One
+    example: a `has_many` whose target's finder is a `queries:` finder, not the FK finder. Another:
+    `eav_value_table: true` without `pattern: Metadata`, which generates and then fails `tsc`.
+  - On failure, `--json` prints the error envelope `{ command, status: 'error', error }` (#886).
+- **Studio: the API tab and the edge view (#881, #882, #886).** Studio serves the derivation at `GET /api/surface`
+  (it shells the CLI). The inspector's **API tab** lists the selected entity's generated repository, service,
+  use cases, HTTP routes and includes. Each entry has an origin chip that opens the YAML at the declaration that
+  caused it, and a shadowed declaration shows under the one that won. Selecting a **line** on the canvas shows
+  what that relationship generates on both ends, and its include keys. When `project surface` fails, the tab
+  shows the generator's own message.
+- **Studio's canvas is a tree (STUDIO-3, #891; #778, #887).**
+  - A `belongs_to` and its inverse draw as **one** line, paired on the foreign key, so two FKs onto one table
+    stay two lines.
+  - Each entity hangs under one **spine** parent, first match wins: its `inherits:` base, then a `belongs_to`
+    with `on_delete: cascade`, then the first declared `belongs_to`. The unique-FK tier STUDIO-3 used until
+    inheritance existed was deleted by #912.
+  - Every other line is **secondary**: drawn lighter, never read by the layout, and labelled with why.
+  - Roots sit on the top row, each parent centred over its children. Each line runs on its own channel, and
+    the header counts entities, junction files, relationship files and lines (spine / secondary).
+- **Studio fits the view (STUDIO-4, #900).**
+  - Disconnected trees wrap into rows, packed so fit-to-view shows the cards largest at the canvas's measured
+    aspect.
+  - A one-card tree docks under the card that references it, so its place doesn't change with the canvas
+    width.
+  - The inspector can be hidden (**Hide ▸** or `]`), and **Full screen** (`\`) hides the inspector and the
+    drawer together.
+  - Every fit keeps the legend's corner off the cards.
+- **Where the Studio UI runs.** The Studio UI (`tools/studio`) is not in the npm package's `files`, so the canvas
+  runs from a checkout of this repository: `just studio <dir>`. From an installed package, `codegen studio` serves
+  the JSON API on `127.0.0.1:5178`. Its page requests answer `404` (`The Studio UI is not built`) unless
+  `--ui-dir` points at a built UI.
+
+### Changed
+
+- **Every entity-backend template prints from the derivation (ADR-046 Phase B, #888, #895–#898).** The repository,
+  service, controller, search controller, module, index and declarative-query use-case templates loop over
+  `apiSurface` and decide no method name, route or existence themselves. **Generated output is byte-identical**:
+  B1 (#888) pinned byte goldens over the render matrix before any template was edited. The generated *class*
+  names are still built in `entity-locals.js` and held equal to the derivation by the parity gate (#894).
+- **One finder-name rule (#711, #895).** A `queries:` finder's name had three copies held equal by a test. It
+  now has one, `finderName` in `src/derived/api/names.ts`, which `relationship new` and the include builder
+  read too. `src/schema/query-routes.ts` is deleted.
+- **Byte changes to generated files, same behaviour.** A regenerate rewrites these files; nothing a consumer
+  wrote needs to change.
+  - **Lib globals are named as `globalThis.<Name>` in value position, backend and frontend (#926; D15 in
+    #912).** For example `new globalThis.Map()`, `globalThis.Object.entries(…)`, `throw new globalThis.Error(…)`,
+    `globalThis.Symbol(…)` and `.some(globalThis.Boolean)`. `Promise`, `Array` and `Date` stay bare, because
+    validation reserves them as entity names. An entity named `map`, `set` or `error` can therefore no longer
+    shadow the global. Across #926's regenerated snapshots, the 67 changed lines are identical once
+    `globalThis.` is stripped from both sides.
+  - **Enums live in a leaf `<entity>.enums.ts` (#908)**, which imports only `drizzle-orm/pg-core`. The entity
+    file imports and re-exports them, so `import { <x>Enum } from './<entity>.entity'` still works. Importing
+    an owner's enum from its entity file could throw a boot-time `ReferenceError` in an import cycle.
+  - **Every table callback's parameter is `tCols` (#908).**
+  - **A module that uses another entity's repository imports that entity's home module (#910)**, through
+    `forwardRef(() => <Plural>Module)`, instead of providing a second copy of the repository.
+  - **The include-allowlist `400` body adds `statusCode: 400` and `error: 'Bad Request'` (#911)**, matching
+    `ErrorResponseDto`. Its `code`, `path` and `message` are unchanged.
+  - **A search with no filter set calls the list with no `where` (#911)**, so it reads as the plain list in its
+    default order.
+  - **Frontend (#912):** a collection whose table has no date column no longer gets the `Date` parsers.
+- **`codegen init` seeds `entities/README.md`** instead of a comments-only `example.yaml` (#918).
+- **One rule for which files are entities (#918).** `listEntityYamls(dir, nonEntityDirs)` leaves out the
+  providers, jobs, events, junctions and relationships directories for every whole-set loader, the pre-flight,
+  `entity validate`, `project inspect`, `project graph` and Studio. `project graph` reads only the project's
+  relationships directory, so Studio's canvas and the generator see the same relationships.
+- **`entity validate` reads one verdict (#924).** Its `--json` `valid`, its exit code and its success line read the
+  same error list. The old two-check mismatch was latent: no input could reach it.
+
+### Fixed
+
+- **Two concurrent test runs no longer delete each other's temp directories (#923).** The pattern-loader tests
+  each remove only their own `mkdtemp` directory, not every directory with their prefix.
+- **The timestamptz integration test compares `created_at` against `now() ± 1 minute` (#919, closes #916).**
+  `created_at` is stamped by the application clock, so a few milliseconds of skew between the host and the
+  Postgres container failed a strict `<=`. A real time-zone fault (hours off) still fails it.
+
 ## [0.33.0] — 2026-11-12
 
 **Breaking (DDL and generated API).** Tenancy, table naming and the read API: a configurable
