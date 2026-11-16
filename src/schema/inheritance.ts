@@ -420,3 +420,122 @@ export function inheritanceIssues(def: EntityDefinition): InheritanceIssue[] {
 
 	return issues;
 }
+
+/** A declared field / relationship as the raw YAML parses it (what an emitter reads). */
+export type DeclaredField = NonNullable<EntityDefinition['fields']>[string];
+export type DeclaredRelationship = NonNullable<EntityDefinition['relationships']>[string];
+
+/**
+ * The keys of an entity the flat-shape walk reads — the structural input contract of {@link flatChildShape},
+ * {@link flattenInheritedChild} and {@link flatChildOwners}. An emitter's own entity type satisfies it by declaring these
+ * keys (`inherits` and `discriminator` included, so a projection that drops them is a compile error, not a silent no-op).
+ * `F` and `R` are the field and relationship value types: the raw YAML's by default; the parsed model's for the
+ * cross-entity validator, which walks the same shape over `ParsedEntity`.
+ */
+export interface FlatChildInput<F = DeclaredField, R = DeclaredRelationship> {
+	entity: { name: string };
+	inherits?: EntityDefinition['inherits'];
+	discriminator?: EntityDefinition['discriminator'];
+	fields?: Record<string, F>;
+	behaviors?: EntityDefinition['behaviors'];
+	tenant_scoped?: EntityDefinition['tenant_scoped'];
+	relationships?: Record<string, R>;
+}
+
+/** The flat shape of one joined-table child, with the entity that declares each piece (the result of ONE walk). */
+export interface FlatChildShape<F = DeclaredField, R = DeclaredRelationship> {
+	/** The base's name: the entity every `owner` below that is not the child itself resolves against. */
+	base: string;
+	/** Every flat field in order — the base's, less its discriminator, then the child's own — with its declaring entity. */
+	fields: Array<{ name: string; field: F; owner: string }>;
+	/** Every flat relationship in order — the base's, then the child's own — with its declaring entity. */
+	relationships: Array<{ name: string; relationship: R; owner: string }>;
+	/** The base's behaviours first, then the child's own, one per name. */
+	behaviors: NonNullable<EntityDefinition['behaviors']>;
+	/** The base's `tenant_scoped` (R5 keeps it off the child); `undefined` when the base declares none. */
+	tenantScoped: EntityDefinition['tenant_scoped'] | undefined;
+}
+
+/**
+ * The ONE walk of a joined-table child's flat shape (RFC-0006 §3.4, S7): the base's declared fields (less the
+ * discriminator, which a sync never writes — the child's kind is fixed), then the child's own; the base's behaviours and
+ * `tenant_scoped`, which R5 keeps off the child; the base's relationships under the child's. Each field and relationship
+ * carries the entity that declares it, so a consumer that resolves against the declaring entity (a base enum, a base
+ * foreign key) reads the owner here and never walks the family again. `null` when `def` is not a child, or its base is not
+ * in `definitions` (the validator refuses that).
+ *
+ * R4 refuses a child field or relationship that shadows the base's, so the order cannot matter.
+ */
+export function flatChildShape<F, R>(
+	def: FlatChildInput<F, R>,
+	definitions: Iterable<FlatChildInput<F, R>>,
+): FlatChildShape<F, R> | null {
+	const decl = inheritsOf(def);
+	if (decl === null) return null;
+	const base = [...definitions].find((d) => d.entity.name === decl.base);
+	if (base === undefined) return null;
+
+	const fields: FlatChildShape<F, R>['fields'] = [];
+	for (const [name, field] of Object.entries(base.fields ?? {})) {
+		if (name !== base.discriminator) fields.push({ name, field, owner: base.entity.name });
+	}
+	for (const [name, field] of Object.entries(def.fields ?? {})) fields.push({ name, field, owner: def.entity.name });
+
+	const relationships: FlatChildShape<F, R>['relationships'] = [];
+	for (const [name, relationship] of Object.entries(base.relationships ?? {})) {
+		relationships.push({ name, relationship, owner: base.entity.name });
+	}
+	for (const [name, relationship] of Object.entries(def.relationships ?? {})) {
+		relationships.push({ name, relationship, owner: def.entity.name });
+	}
+
+	const seen = new Set<string>();
+	const behaviors = [...(base.behaviors ?? []), ...(def.behaviors ?? [])].filter((b) => {
+		const name = normalizeBehaviorConfig(b).name;
+		if (seen.has(name)) return false;
+		seen.add(name);
+		return true;
+	});
+
+	return { base: base.entity.name, fields, relationships, behaviors, tenantScoped: base.tenant_scoped };
+}
+
+/**
+ * A joined-table child as the plain entity a flat declaration of the same columns would parse to: no `inherits:` key
+ * survives. The integration layer reads this, so a provider sync sees the same entity whether or not it sits in a family.
+ * Not a child, or a child whose base is not in `definitions`, comes back unchanged. S7b and S7c both read it; the walk is
+ * {@link flatChildShape}'s, and {@link flatChildOwners} is its other view.
+ */
+export function flattenInheritedChild<T extends FlatChildInput>(def: T, definitions: Iterable<FlatChildInput>): T {
+	const shape = flatChildShape(def, definitions);
+	if (shape === null) return def;
+
+	const { inherits: _inherits, ...own } = def;
+	const fields = Object.fromEntries(shape.fields.map((f) => [f.name, f.field]));
+	const relationships = Object.fromEntries(shape.relationships.map((r) => [r.name, r.relationship]));
+	// `T` is the caller's entity type; the spread keeps every key it declares and replaces only the five the walk owns.
+	return {
+		...own,
+		fields,
+		behaviors: shape.behaviors,
+		...(shape.tenantScoped !== undefined ? { tenant_scoped: shape.tenantScoped } : {}),
+		...(Object.keys(relationships).length > 0 ? { relationships } : {}),
+	} as unknown as T;
+}
+
+/**
+ * Which entity declares each flat field and each flat relationship of a child — the other view of
+ * {@link flatChildShape}. `null` when `def` is not a child (or its base is absent).
+ */
+export function flatChildOwners<F, R>(
+	def: FlatChildInput<F, R>,
+	definitions: Iterable<FlatChildInput<F, R>>,
+): { base: string; fields: Record<string, string>; relationships: Record<string, string> } | null {
+	const shape = flatChildShape(def, definitions);
+	if (shape === null) return null;
+	return {
+		base: shape.base,
+		fields: Object.fromEntries(shape.fields.map((f) => [f.name, f.owner])),
+		relationships: Object.fromEntries(shape.relationships.map((r) => [r.name, r.owner])),
+	};
+}

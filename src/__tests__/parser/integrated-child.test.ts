@@ -268,3 +268,31 @@ describe('R11 — the natural key over the behavior columns', () => {
 		expect(msg).not.toContain('Integrated');
 	});
 });
+
+describe('integration.sink.exclude_fields on a child reads the flat shape (S7a)', () => {
+	const sinkOf = (excluded: string[]) => (r: Record<string, any>) => {
+		r.integration = { providers: {}, sink: { exclude_fields: excluded } };
+	};
+
+	it('a child may exclude a field of its base (the single-file check skips a child)', () => {
+		const fixtureIssues = schemaIssues(raw('mail_message', sinkOf(['title'])));
+		expect(fixtureIssues).toEqual([]);
+		expect(errorMessages({ mail_message: sinkOf(['title']) })).toEqual([]);
+	});
+
+	it('a name in neither entity fails, with the flat field list in the message', () => {
+		const msgs = errorMessages({ mail_message: sinkOf(['nope']) });
+		expect(msgs).toEqual([
+			"exclude_fields: 'nope' is not a declared field. Declared fields: tenant_id, title, subject, sent_at",
+		]);
+	});
+
+	it("the base's foreign key column is refused on a child, as on its flat twin", () => {
+		expect(errorMessages({ mail_message: sinkOf(['mailbox_id']) }).length).toBe(1);
+	});
+
+	it('a non-child keeps the single-file check', () => {
+		const r = raw('mailbox', (x) => (x.integration = { providers: {}, sink: { exclude_fields: ['nope'] } }));
+		expect(joined(schemaIssues(r))).toContain("exclude_fields: 'nope' is not a declared field. Declared fields: address");
+	});
+});

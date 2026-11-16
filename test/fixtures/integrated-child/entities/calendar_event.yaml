@@ -15,3 +15,13 @@ fields:
   ends_at:
     type: datetime
     nullable: true
+
+integration:
+  providers:
+    google:
+      remote_entity: event
+      direction: inbound
+  sink:
+    delete: soft
+    exclude_fields: [title]
+    emit_changes: true

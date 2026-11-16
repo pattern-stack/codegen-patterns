@@ -25,14 +25,17 @@
  * them. Every message names the entities (and fields) involved.
  */
 
-import type { AnalysisIssue, ParsedEntity, ParsedRelationship } from '../analyzer/types.js';
+import type { AnalysisIssue, ParsedEntity, ParsedField, ParsedRelationship } from '../analyzer/types.js';
 import { getBehavior } from '../behaviors/index.js';
 import { declaredPatternNames } from '../patterns/compose.js';
 import { getPattern } from '../patterns/registry.js';
 import { resolveImpliedBehaviors } from '../patterns/implied-behaviors.js';
+import { excludeFieldIssues } from '../schema/entity-definition.schema.js';
 import { foreignKeyColumnNullable } from '../schema/field-nullability.js';
 import {
 	declaresExternalIdTracking,
+	flatChildShape,
+	type FlatChildInput,
 	enumChoices,
 	inheritanceCounterpartNames,
 	INTEGRATED_NATURAL_KEY,
@@ -207,6 +210,17 @@ function declaresColumn(e: ParsedEntity, column: string): 'field' | 'foreign key
 		if (rel.type === 'belongs_to' && rel.foreignKey === column) return 'foreign key column';
 	}
 	return undefined;
+}
+
+/** A parsed entity as the flat-shape walk reads it: the same keys the raw YAML has, over the parsed model's maps. */
+function flatInput(e: ParsedEntity): FlatChildInput<ParsedField, ParsedRelationship> {
+	return {
+		entity: { name: e.name },
+		...(e.inherits !== undefined ? { inherits: e.inherits } : {}),
+		...(e.discriminator !== undefined ? { discriminator: e.discriminator } : {}),
+		fields: Object.fromEntries(e.fields),
+		relationships: Object.fromEntries(e.relationships),
+	};
 }
 
 /** Cross-validate the whole entity set. Never throws. */
@@ -580,6 +594,23 @@ export function validateInheritance(
 				}
 				claimed.set(local, { rel: relName, target: rel.target, col: targetCol, type });
 			}
+		}
+	}
+
+	// ---- integration.sink.exclude_fields on a child is checked against its FLAT shape (base + own, S7a): a provider sync
+	// has no opinion on the family hierarchy, so a child may exclude whatever its flat twin could. The single-file check
+	// in the entity schema skips a child; this is the other half.
+	const flatInputs = entities.map(flatInput);
+	for (const e of entities) {
+		const excluded = e.integration?.sinkExcludeFields;
+		if (e.inherits === undefined || excluded === undefined || excluded.length === 0) continue;
+		const shape = flatChildShape(flatInput(e), flatInputs);
+		if (shape === null) continue; // the base is absent: R-base reports it
+		const fkColumns = shape.relationships.flatMap(({ relationship }) =>
+			relationship.type === 'belongs_to' ? [relationship.foreignKey] : [],
+		);
+		for (const issue of excludeFieldIssues(excluded, shape.fields.map((f) => f.name), fkColumns)) {
+			error(e, 'exclude_fields_invalid', issue.message, excluded[issue.index]);
 		}
 	}
 

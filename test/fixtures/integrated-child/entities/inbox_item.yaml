@@ -28,3 +28,10 @@ fields:
 unique_indexes:
   - fields: [provider, external_id]
     natural_key: true
+
+relationships:
+  mailbox:
+    type: belongs_to
+    target: mailbox
+    foreign_key: mailbox_id
+    nullable: true

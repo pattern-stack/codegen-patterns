@@ -14,7 +14,7 @@ import { EntityDefinitionSchema } from '../../schema/entity-definition.schema';
 import { findYamlFiles } from '../../utils/find-yaml-files';
 
 export const FAMILY_DIR = join(import.meta.dir, '../../../test/fixtures/inheritance/entities');
-/** The integrated family (S7, #917): a base, two Integrated children and a base-only kind. Validation tests only; no emitting set holds it. */
+/** The integrated family (S7, #917): a base, two Integrated children, a base-only kind and a generic `mailbox` the base points at. Read by the validation tests and by the integration-emit family-blind gate (S7c). */
 export const INTEGRATED_FAMILY_DIR = join(import.meta.dir, '../../../test/fixtures/integrated-child/entities');
 
 // biome-ignore lint/suspicious/noExplicitAny: raw YAML in a test mutator

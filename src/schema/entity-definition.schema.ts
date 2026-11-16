@@ -957,6 +957,31 @@ const SinkPolicySchema = z.object({
 export type SinkPolicy = z.infer<typeof SinkPolicySchema>;
 
 /**
+ * `integration.sink.exclude_fields` — every name must be a declared copy-through scalar field: not a FK column and not
+ * `user_id`. Author errors that silently corrupt the write surface, so they are rejected loud. The ONE rule: the entity
+ * schema applies it to an entity's own fields, `validateInheritance` to a child's flat fields (base + own).
+ */
+export function excludeFieldIssues(
+  excludeFields: readonly string[],
+  declaredFields: readonly string[],
+  fkColumns: readonly string[],
+): Array<{ index: number; message: string }> {
+  const declared = new Set(declaredFields);
+  const fks = new Set(fkColumns);
+  const issues: Array<{ index: number; message: string }> = [];
+  excludeFields.forEach((name, index) => {
+    if (!declared.has(name)) {
+      issues.push({ index, message: `exclude_fields: '${name}' is not a declared field. Declared fields: ${[...declared].join(', ')}` });
+    } else if (fks.has(name)) {
+      issues.push({ index, message: `exclude_fields: '${name}' is a FK column (belongs_to foreign_key). Excluding FK columns corrupts the FK-resolver path — exclude FK columns is not supported. Declare it in exclude_fields only for copy-through scalars.` });
+    } else if (name === 'user_id') {
+      issues.push({ index, message: `exclude_fields: 'user_id' cannot be excluded. It is used for user-scoping and EAV dual-write; excluding it would break those mechanisms.` });
+    }
+  });
+  return issues;
+}
+
+/**
  * Top-level integration block: Electric SQL + named provider configs
  */
 export const IntegrationConfigSchema = z.object({
@@ -1471,50 +1496,17 @@ export const EntityDefinitionSchema = z
     }
   })
   .superRefine((entity, ctx) => {
-    // Validate integration.sink.exclude_fields: every name must be a declared
-    // copy-through scalar field — not a FK column and not user_id.
-    // Both are author errors that silently corrupt the write surface — reject loud.
+    // Validate integration.sink.exclude_fields against the entity's own fields. A joined-table child is checked against
+    // its FLAT shape instead (base + own), which needs the base: `validateInheritance` does it (RFC-0006 S7a).
+    if (entity.inherits !== undefined) return;
     const excludeFields = entity.integration?.sink?.exclude_fields;
     if (!excludeFields || excludeFields.length === 0) return;
-
-    const declaredFields = new Set(Object.keys(entity.fields ?? {}));
-
-    // Collect FK column names (belongs_to foreign_key values).
-    const fkColumns = new Set<string>();
+    const fkColumns: string[] = [];
     for (const rel of Object.values(entity.relationships ?? {})) {
-      if (rel.type === 'belongs_to' && typeof rel.foreign_key === 'string') {
-        fkColumns.add(rel.foreign_key);
-      }
+      if (rel.type === 'belongs_to' && typeof rel.foreign_key === 'string') fkColumns.push(rel.foreign_key);
     }
-
-    for (let i = 0; i < excludeFields.length; i++) {
-      const name = excludeFields[i];
-
-      if (!declaredFields.has(name)) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['integration', 'sink', 'exclude_fields', i],
-          message: `exclude_fields: '${name}' is not a declared field. Declared fields: ${[...declaredFields].join(', ')}`,
-        });
-        continue;
-      }
-
-      if (fkColumns.has(name)) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['integration', 'sink', 'exclude_fields', i],
-          message: `exclude_fields: '${name}' is a FK column (belongs_to foreign_key). Excluding FK columns corrupts the FK-resolver path — exclude FK columns is not supported. Declare it in exclude_fields only for copy-through scalars.`,
-        });
-        continue;
-      }
-
-      if (name === 'user_id') {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['integration', 'sink', 'exclude_fields', i],
-          message: `exclude_fields: 'user_id' cannot be excluded. It is used for user-scoping and EAV dual-write; excluding it would break those mechanisms.`,
-        });
-      }
+    for (const issue of excludeFieldIssues(excludeFields, Object.keys(entity.fields ?? {}), fkColumns)) {
+      ctx.addIssue({ code: 'custom', path: ['integration', 'sink', 'exclude_fields', issue.index], message: issue.message });
     }
   })
   .superRefine((entity, ctx) => {

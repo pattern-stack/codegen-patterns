@@ -194,6 +194,8 @@ export interface ParsedProviderIntegration {
 export interface ParsedIntegration {
 	electric: boolean;
 	providers?: Record<string, ParsedProviderIntegration>;
+	/** `integration.sink.exclude_fields` as declared, when present — read by the cross-entity check of a child's flat shape. */
+	sinkExcludeFields?: string[];
 }
 
 export interface ParsedEvent {

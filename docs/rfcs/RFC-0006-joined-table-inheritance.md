@@ -1997,9 +1997,27 @@ S7b (emission and the repository) and S7c (the integration emitter).
   fields at load) is exempt from NOT NULL; either column alone, a superset, a non-family entity and a child stay R11 errors, as on
   `main`. `provider_metadata` and every other nullable column stay errors. "At most one natural key" stands; its message names
   both entries, and for a base says an Integrated child's sync upserts on the pair.
-- **Fixture.** `test/fixtures/integrated-child/entities/`: `inbox_item` (base, `[mail_message, calendar_event, note]`),
-  `mail_message` (`surface: mail`) and `calendar_event` (`surface: calendar`). Validation tests only; no baseline, smoke,
-  scaffold or integration-emit set holds it.
+- **Fixture.** `test/fixtures/integrated-child/entities/`: `inbox_item` (base, `[mail_message, calendar_event, note]`, with a
+  `belongs_to` to `mailbox`), `mailbox` (a small generic entity), `mail_message` (`surface: mail`) and `calendar_event`
+  (`surface: calendar`). Both children carry an `integration:` block — `sink: { emit_changes: true, delete: tombstone | soft,
+  exclude_fields: [title] }`, `title` being a **base** field — and `definitions/providers/google.yaml` serves both surfaces, so a
+  gate that renders the integration layer reaches the second child (D3), a base foreign key, the change emitter and both delete
+  policies. It is read by the validation tests and by S7c's family-blind gate (`test/integration-emit/family-blind.test.ts`);
+  S7b copies it into the baseline set.
+- **One owner of a child's flat shape.** `flatChildShape(def, definitions)` (`src/schema/inheritance.ts`) is the one walk: the
+  base's fields less the discriminator, then the child's own; the base's relationships, then the child's; the base's behaviours
+  and `tenant_scoped` (R5 keeps them off the child) — each field and relationship with the entity that declares it. The backend's
+  flat shape is type-level only (`Flattened<…>` in emitted TypeScript, the DTOs' `.omit().extend()`), so nothing could feed a
+  generation-time field list until now. Two views of the walk, never two walks: `flattenInheritedChild(def, definitions)` (the
+  plain entity a flat declaration would parse to, no `inherits:` key; a non-child comes back unchanged) and
+  `flatChildOwners(def, definitions)` (`{ base, fields: name → owner, relationships: name → owner }`, `null` for a non-child). Its
+  input is the structural `FlatChildInput<F, R>` (the keys it reads, `inherits` and `discriminator` included), generic over the
+  field/relationship value types so the cross-entity validator walks it over `ParsedEntity` too. **S7b** (the repository's
+  integration surface) and **S7c** (the integration emitters) consume it; a base enum or base FK is resolved against `owner`.
+- **`integration.sink.exclude_fields` on a child.** It is checked against the **flat** shape, as its flat twin is: the entity
+  schema's single-file check (`excludeFieldIssues`, the one rule) skips a child, and `validateInheritance` applies it to
+  `flatChildShape`'s fields and foreign keys. A child may exclude a base field; a name in neither entity fails with the flat
+  field list in the message. `ParsedIntegration.sinkExcludeFields` carries the list.
 - **Tests.** `src/__tests__/parser/integrated-child.test.ts` (new); assertion changes in `inheritance-schema.test.ts` (the four
   child refusals became acceptances, plus D2 on a base; the R5 "Integrated implies" case) and `inheritance-tenancy.test.ts`.
 - **S7b inherits:** the child's table must not emit `external_id`, `provider` or `provider_metadata` (`resolvedBehaviorNames`

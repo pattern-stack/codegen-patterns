@@ -16,3 +16,13 @@ fields:
   sent_at:
     type: datetime
     nullable: true
+
+integration:
+  providers:
+    google:
+      remote_entity: message
+      direction: inbound
+  sink:
+    delete: tombstone
+    exclude_fields: [title]
+    emit_changes: true
