@@ -2097,8 +2097,9 @@ relationships from the walk (five lines: the `mailboxExternalId` seam and `mailb
   case; the A/B gate is the family's contract. The family's layer is snapshotted in `__snapshots__/family-blind.test.ts.snap`
   (new file, `snapshot.test.ts.snap` unchanged).
 - **S7d inherits:** compiling the family's integration layer against the generated backend (`test-smoke-integration`) needs S7b's
-  repository; the sink's `repository.upsertByNaturalKey` call is printed identically for a child and a plain entity, so S7b's child
-  repository must expose it with the flat write shape the sink builds.
+  repository. The sink's calls (`integrationUpsertOne`, `findByExternalIdProjected`, `softDeleteByExternalId`) are printed
+  identically for a child and a plain entity, and S7b's child repository takes each as-is with the flat write shape the sink
+  builds (no kind).
 
 ### 13.3 Rules for every slice
 
