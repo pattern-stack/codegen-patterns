@@ -11,6 +11,8 @@
  * Rule numbers are the RFC's (§1.2 R1–R11, §2.4 M1–M5, §8 refusals).
  */
 
+import { externalIdTrackingBehavior } from '../behaviors/external-id-tracking.js';
+import { normalizeBehaviorConfig } from '../behaviors/index.js';
 import { declaredPatternNames } from '../patterns/compose.js';
 import type { EntityDefinition } from './entity-definition.schema.js';
 import { fieldColumnNullable, foreignKeyColumnNullable } from './field-nullability.js';
@@ -24,6 +26,25 @@ export interface InheritsDeclaration {
 
 /** The YAML path of a child's `inherits:` — the path every origin and relation id of it is spelled from. */
 export const INHERITS_PATH = ['inherits'] as const;
+
+/**
+ * The natural key a sync of an Integrated child upserts on, and the only nullable columns R11 accepts in a key (S7, D1):
+ * the two `external_id_tracking` columns a provider sync matches on. Read from the behavior's own field list, never
+ * retyped; `provider_metadata` is payload, not identity, so it is not part of the key.
+ */
+export const INTEGRATED_NATURAL_KEY: readonly string[] = ['provider', 'external_id'].filter((n) =>
+	externalIdTrackingBehavior.fields.some((f) => f.name === n),
+);
+
+/** Whether a `behaviors:` list DECLARES `external_id_tracking` (a pattern that implies it does not count). */
+export function declaresExternalIdTracking(behaviors: readonly (string | { name: string })[] | null | undefined): boolean {
+	return (behaviors ?? []).some((b) => normalizeBehaviorConfig(b as never).name === externalIdTrackingBehavior.name);
+}
+
+/** Whether `fields` is exactly {@link INTEGRATED_NATURAL_KEY}, in either order. */
+export function isIntegratedNaturalKey(fields: readonly string[]): boolean {
+	return fields.length === INTEGRATED_NATURAL_KEY.length && INTEGRATED_NATURAL_KEY.every((c) => fields.includes(c));
+}
 
 /**
  * The id of the `inherits` relation of a child — `<child>.inherits`, spelled as REL-1 spells an origin
@@ -305,28 +326,32 @@ export function inheritanceIssues(def: EntityDefinition): InheritanceIssue[] {
 			);
 		}
 
-		// ---- §8: refused on a child in v1.
-		const refuse = (key: string, path: (string | number)[], why: string) =>
-			add(path, `'${name}' is a child of '${child.base}' and declares ${key}. ${why}`);
-		if (declaredPatternNames(def.entity).includes('Integrated')) {
-			refuse(
-				"'pattern: Integrated'",
-				['entity', def.entity.patterns ? 'patterns' : 'pattern'],
-				"The integration upsert's conflict target and write columns are one table's, so 'Integrated' on a child is refused in v1 (RFC-0006 §4.2, S7).",
+		// ---- §8: refused on a child in v1. (`pattern: Integrated`, `surface:`, `integration:` and `detection:` are
+		// accepted since S7a: the child reads and syncs through its base, whose requirements are D1, checked in
+		// `validate-inheritance.ts`.)
+		if (def.eav_value_table === true) {
+			add(
+				['eav_value_table'],
+				`'${name}' is a child of '${child.base}' and declares 'eav_value_table: true'. An EAV value table on a child is refused in v1 (RFC-0006 §8).`,
 			);
 		}
-		if (def.entity.surface !== undefined) {
-			refuse("'surface:'", ['entity', 'surface'], 'Integration surfaces are refused on a child in v1.');
+	}
+
+	// ---- §8 / D2: Integrated on a base is refused (#927).
+	if (isBase) {
+		const refuseBase = (key: string, path: (string | number)[]) =>
+			add(
+				path,
+				`'${name}' is the base of a family (discriminator '${def.discriminator}') and declares ${key}. ` +
+					`Integration on a base is refused until #927: declare it on a child, and give the base ` +
+					`'external_id_tracking' plus a 'natural_key: true' entry over [${INTEGRATED_NATURAL_KEY.join(', ')}] (RFC-0006 §4.2, S7).`,
+			);
+		if (declaredPatternNames(def.entity).includes('Integrated')) {
+			refuseBase("'pattern: Integrated'", ['entity', def.entity.patterns ? 'patterns' : 'pattern']);
 		}
-		if (def.integration !== undefined) {
-			refuse("'integration:'", ['integration'], 'Integration is refused on a child in v1.');
-		}
-		if (def.detection !== undefined) {
-			refuse("'detection:'", ['detection'], 'Change detection is refused on a child in v1.');
-		}
-		if (def.eav_value_table === true) {
-			refuse("'eav_value_table: true'", ['eav_value_table'], 'An EAV value table on a child is refused in v1 (RFC-0006 §8).');
-		}
+		if (def.entity.surface !== undefined) refuseBase("'surface:'", ['entity', 'surface']);
+		if (def.integration !== undefined) refuseBase("'integration:'", ['integration']);
+		if (def.detection !== undefined) refuseBase("'detection:'", ['detection']);
 	}
 
 	// ---- R11: the natural key.
@@ -336,10 +361,13 @@ export function inheritanceIssues(def: EntityDefinition): InheritanceIssue[] {
 	if (naturalKeys.length > 1) {
 		add(
 			['unique_indexes', naturalKeys[1]!.i, 'natural_key'],
-			`R11 — '${name}' marks ${naturalKeys.length} unique_indexes entries 'natural_key: true'. At most one ` +
-				`entry is the ON CONFLICT target of the upsert.`,
+			`R11 — '${name}' marks ${naturalKeys.length} unique_indexes entries 'natural_key: true' ` +
+				`(${naturalKeys.map(({ entry }) => JSON.stringify(entry.fields)).join(' and ')}). At most one ` +
+				`entry is the ON CONFLICT target of the upsert, and an Integrated child's sync upserts its base on ` +
+				`[${INTEGRATED_NATURAL_KEY.join(', ')}], so a base with an Integrated child declares that one and no other.`,
 		);
 	}
+	const declaresTracking = declaresExternalIdTracking(def.behaviors);
 	for (const { entry, i } of naturalKeys) {
 		if (child !== null) {
 			add(
@@ -358,6 +386,9 @@ export function inheritanceIssues(def: EntityDefinition): InheritanceIssue[] {
 		}
 		for (const column of entry.fields) {
 			const notNull = columnNotNull(def, column);
+			// The two `external_id_tracking` columns are nullable by design; a base that DECLARES the behavior
+			// may key on them (S7, D1). The runtime upsert refuses a NULL in the key, so no duplicate can insert.
+			if (notNull === undefined && declaresTracking && INTEGRATED_NATURAL_KEY.includes(column)) continue;
 			if (notNull === undefined) {
 				add(
 					['unique_indexes', i, 'fields'],

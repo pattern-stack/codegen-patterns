@@ -12,6 +12,7 @@
  * An entity declaring `pattern: Integrated` need not re-declare the behavior.
  */
 
+import { externalIdTrackingBehavior } from '../../behaviors/external-id-tracking.js';
 import { definePattern } from '../pattern-definition.js';
 
 export const IntegratedPattern = definePattern({
@@ -30,6 +31,10 @@ export const IntegratedPattern = definePattern({
 		'findById, findByIds, list, count, exists, create, update, delete',
 		'findByExternalId, findManyByExternalIds',
 	],
-	impliedBehaviors: ['external_id_tracking'],
+	impliedBehaviors: [externalIdTrackingBehavior.name],
+	// The columns the integration upsert reads and writes: the behavior's own, never retyped here.
+	columnsRead: () => externalIdTrackingBehavior.fields.map((f) => f.name),
+	// On a child of a joined-table family the base owns them (RFC-0006 §4.2, S7): the child reads through the base.
+	readsThroughBase: [externalIdTrackingBehavior.name],
 	description: 'External CRM/system integration columns and integrationUpsert methods',
 });

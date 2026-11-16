@@ -946,9 +946,8 @@ follow-up.
 - Changing a row's kind.
 - A non-`uuid` or composite key. The generator emits one key shape (`entity.ejs.t:32`).
 - `eav: true` and `pattern: Junction` in a family (R9), and `eav_value_table: true` on a child (a child-only refusal, not R9).
-- `pattern: Integrated`, `surface:`, `integration:` or `detection:` on a child. The integration upsert's conflict
-  target and write columns are one table's (`repository.ejs.t:216-227`). v1 loads a family through
-  `upsertByNaturalKey`; the sink adapter is a follow-up slice (§4.2).
+- `pattern: Integrated`, `surface:`, `integration:` or `detection:` on a **base** (S7, D2). An Integrated child
+  syncs through its base's `[provider, external_id]` natural key (§4.2); Integrated on the base itself is #927.
 - A nullable tenant column on a `tenant_scoped` base (R10).
 - #787's implicit same-tenant FK (OQ-12), and all of #786: the user-facing `checks:` key and `min` / `max` emission.
 - An `on_delete` option, child-declared lifecycle behaviors, and child `queries:` by a base column.
@@ -1081,6 +1080,18 @@ Seventeen items the Gate 2.5 reviews marked `DECISION`. Each was decided as the 
 | D15 | A lib global in value position (`Map`, `URL`) in the emitted frontend. | `globalThis.*` across the emitted frontend; the `values` hygiene rule runs over the whole tree. | S6 |
 | D16 | Where "a kind with a child table is written only with its child row" lives. | Both kind invariants live in the repository, the one owner of the pair write. | S4 |
 | D17 | At S4's tip alone, the base's write routes return the new kind errors as 500s. | No change in S4. S5 settles what HTTP sees (D12), and the stack lands atomically. | — |
+
+#### S7 decisions (Doug, 2026-11-15)
+
+Decided for S7 (#917, `Integrated` on a child). Numbered within S7; they are not the D1–D17 above.
+
+| # | Question | Decision | Landed in |
+|---|---|---|---|
+| D1 | What does the base of an Integrated child declare? | `external_id_tracking` explicitly in `behaviors:` (a pattern implying it does not count), plus `natural_key: true` on a `unique_indexes` entry over exactly `[provider, external_id]`. A child never adds a column to the base. A base that lacks either is an error naming both entities. | S7a |
+| D2 | `pattern: Integrated` on a base. | Stays refused in S7; it is #927. | S7a |
+| D3 | Two Integrated children of one base. | Allowed. They share the base's `(tenant, provider, external_id)` key, and the same external id arriving under another kind is `KindMismatchError`, not an overwrite. | S7b |
+| D4 | The tombstone. | As today: with `soft_delete` on the base it soft-deletes the base row; without it, it nulls `provider` / `external_id` on the base row, so the pair is detached and the child row stays. | S7b |
+| D5 | The Integrated EAV dual-write. | Moot: R9 (no `eav: true` in a family) stays, so no child reaches it. | — |
 
 ## 12. The issue (filed as #875)
 
@@ -1960,8 +1971,38 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   (`generate: { writes: false }`, `api: false`; none in the baseline). The `/api/relationships` inherits write has a test where
   `validateContent` itself refuses (a child declaring its own `timestamps`, R5), so "validates like every Studio write" can fail.
 
-**S7 — `Integrated` on a child. Not in v1.** Described in §4.2. S7 also widens R11 to accept behavior columns in a natural key (§4.2). File it as its own issue when a consumer writes a
-family through the generated sink.
+**S7 — `Integrated` on a child (#917).** Described in §4.2; decisions D1–D5 in §11.3's "S7 decisions". Built as S7a (the schema),
+S7b (emission and the repository) and S7c (the integration emitter).
+
+**S7a — the schema accepts it (as built).** Validation and a fixture only; nothing emits differently.
+
+- **§8 refusals.** `pattern: Integrated`, `surface:`, `integration:` and `detection:` are no longer refused on a child
+  (`src/schema/inheritance.ts`); `eav_value_table: true` still is, and R9 is untouched. **Behaviour change:** the same four on a
+  **base** (an entity with `discriminator:`) are now refused (D2), naming #927. Before S7a a base could declare them; no
+  fixture or test did. The check is single-file, so a `discriminator:` entity with no children is refused too.
+- **D1** (`src/parser/validate-inheritance.ts`, `integratedBaseGaps`). A child that declares `Integrated` needs a base that
+  declares `external_id_tracking` in `behaviors:` and has a `natural_key: true` entry over exactly `provider` and `external_id`
+  (compared as a set, either order). Each missing piece is its own error naming the child, the base and the key to add.
+- **R5.** A child that *declares* `external_id_tracking` is still an R5 error. One only *implied* by `Integrated` is not:
+  `lifecycleBehaviorsDeclared` (`src/schema/tenancy.ts`, the one reader) skips a behavior a declared pattern lists in
+  `readsThroughBase`.
+- **R6.** `IntegratedPattern` states `columnsRead` (`external_id`, `provider`, `provider_metadata`, read from
+  `externalIdTrackingBehavior.fields`) and `readsThroughBase: ['external_id_tracking']`. R6 accepts the columns of a
+  `readsThroughBase` behavior while D1 holds, and keeps failing on every other base column a pattern reads. A property on the
+  pattern definition (`PatternDefinition` and `CapabilityPatternDefinition`, read through `behaviorsReadThroughBase`) rather than
+  a name check in R6: a later pattern that reads through its base states it the same way.
+- **R11.** On a base that *declares* `external_id_tracking`, a `natural_key` entry may name `provider` and `external_id`
+  (`INTEGRATED_NATURAL_KEY`), the two nullable behaviour columns; `provider_metadata` and every other nullable column stay errors.
+  "At most one natural key" stands; its message now names both entries and says a base with an Integrated child declares one.
+- **Fixture.** `test/fixtures/integrated-child/entities/`: `inbox_item` (base, `[mail_message, calendar_event, note]`),
+  `mail_message` (`surface: mail`) and `calendar_event` (`surface: calendar`). Validation tests only; no baseline, smoke,
+  scaffold or integration-emit set holds it.
+- **Tests.** `src/__tests__/parser/integrated-child.test.ts` (new); assertion changes in `inheritance-schema.test.ts` (the four
+  child refusals became acceptances, plus D2 on a base; the R5 "Integrated implies" case) and `inheritance-tenancy.test.ts`.
+- **S7b inherits:** the child's table must not emit `external_id`, `provider` or `provider_metadata` (`resolvedBehaviorNames`
+  still returns `external_id_tracking` for the child, so the child's column derivation must skip a `readsThroughBase` behavior);
+  the base's natural-key entry adopts `external_id_tracking`'s unique constraint, so there is one constraint, not two; the runtime
+  NULL guard on `upsertByNaturalKey`; the child's reads forwarded to the base; and wiring the fixture into an emitting set.
 
 ### 13.3 Rules for every slice
 

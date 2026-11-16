@@ -132,9 +132,20 @@ describe('R5 — lifecycle and tenancy are declared on the base', () => {
 			expect(msg).toContain(`R5 — 'meeting' is a child of 'communication' and declares or implies the '${behavior}' behavior`);
 		});
 	}
-	it('R5: a pattern that implies a lifecycle behavior counts (Integrated implies external_id_tracking)', () => {
-		const msg = joined(schemaIssues(rawFixture('meeting', (r) => (r.entity.pattern = 'Integrated'))));
-		expect(msg).toContain("implies the 'external_id_tracking' behavior");
+	it('R5: external_id_tracking implied by Integrated is not an error (the base supplies the columns, S7)', () => {
+		expect(schemaIssues(rawFixture('meeting', (r) => (r.entity.pattern = 'Integrated')))).toEqual([]);
+	});
+	it('R5: external_id_tracking DECLARED on a child stays an error, with or without Integrated', () => {
+		for (const mutate of [
+			(r: any) => (r.behaviors = ['external_id_tracking']),
+			(r: any) => {
+				r.entity.pattern = 'Integrated';
+				r.behaviors = ['external_id_tracking'];
+			},
+		]) {
+			const msg = joined(schemaIssues(rawFixture('meeting', mutate)));
+			expect(msg).toContain("R5 — 'meeting' is a child of 'communication' and declares or implies the 'external_id_tracking' behavior");
+		}
 	});
 	it('R5: a base may declare them (the family does)', () => {
 		expect(schemaIssues(rawFixture('communication'))).toEqual([]);
@@ -167,18 +178,33 @@ describe('R9 — no EAV or junction in a family', () => {
 });
 
 describe('§8 — refused on a child in v1', () => {
-	const cases: Array<[string, (r: Record<string, any>) => void, string]> = [
-		['pattern: Integrated', (r) => (r.entity.pattern = 'Integrated'), "declares 'pattern: Integrated'"],
-		['surface:', (r) => (r.entity.surface = 'mail'), "declares 'surface:'"],
-		['integration:', (r) => (r.integration = { providers: {} }), "declares 'integration:'"],
-		['detection:', (r) => (r.detection = {}), "declares 'detection:'"],
-		['eav_value_table', (r) => (r.eav_value_table = true), "declares 'eav_value_table: true'"],
-	];
-	for (const [label, mutate, expected] of cases) {
-		it(`a child declaring ${label}`, () => {
-			const msg = joined(schemaIssues(rawFixture('meeting', mutate)));
-			expect(msg).toContain("'meeting' is a child of 'communication'");
-			expect(msg).toContain(expected);
+	it('a child declaring eav_value_table', () => {
+		const msg = joined(schemaIssues(rawFixture('meeting', (r) => (r.eav_value_table = true))));
+		expect(msg).toContain("'meeting' is a child of 'communication'");
+		expect(msg).toContain("declares 'eav_value_table: true'");
+	});
+	// S7a: these four were refused on a child; they are accepted now (the base's requirements are D1, cross-entity).
+	for (const [label, mutate] of [
+		['pattern: Integrated', (r: any) => (r.entity.pattern = 'Integrated')],
+		['surface:', (r: any) => (r.entity.surface = 'mail')],
+		['integration:', (r: any) => (r.integration = { providers: {} })],
+		['detection:', (r: any) => (r.detection = {})],
+	] as const) {
+		it(`a child declaring ${label} is no longer refused`, () => {
+			expect(schemaIssues(rawFixture('meeting', mutate))).toEqual([]);
+		});
+	}
+	// D2: on a BASE they are refused, naming #927.
+	for (const [label, mutate] of [
+		['pattern: Integrated', (r: any) => (r.entity.patterns = ['Activity', 'Integrated'])],
+		['surface:', (r: any) => (r.entity.surface = 'mail')],
+		['integration:', (r: any) => (r.integration = { providers: {} })],
+		['detection:', (r: any) => (r.detection = {})],
+	] as const) {
+		it(`D2: a base declaring ${label} is refused, naming #927`, () => {
+			const msg = joined(schemaIssues(rawFixture('communication', mutate)));
+			expect(msg).toContain(`'communication' is the base of a family (discriminator 'kind') and declares '${label}'`);
+			expect(msg).toContain('#927');
 		});
 	}
 	it('a child declaring an id field (its key is the base row id)', () => {

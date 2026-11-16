@@ -12,7 +12,9 @@
  *   R2  each choice has at most one child; `as:` is one of the base's choices
  *   R3  one level: a base may not itself inherit
  *   R4  no name is declared on both a child and its base
- *   R6  a child declares a pattern only over its own columns
+ *   R6  a child declares a pattern only over its own columns (an Integrated child reads the `external_id_tracking`
+ *       columns through its base, D1)
+ *   D1  an Integrated child's base declares `external_id_tracking` and a `[provider, external_id]` natural key (S7)
  *   R7  a child's `queries:` name only its own columns
  *   R8  base and children share one RESOLVED sync mode
  *   R10 a `tenant_scoped` base declares its tenant column NOT NULL
@@ -27,9 +29,16 @@ import type { AnalysisIssue, ParsedEntity, ParsedRelationship } from '../analyze
 import { getBehavior } from '../behaviors/index.js';
 import { declaredPatternNames } from '../patterns/compose.js';
 import { getPattern } from '../patterns/registry.js';
-import { resolveImpliedBehaviors } from '../patterns/implied-behaviors.js';
+import { behaviorsReadThroughBase, resolveImpliedBehaviors } from '../patterns/implied-behaviors.js';
 import { foreignKeyColumnNullable } from '../schema/field-nullability.js';
-import { enumChoices, inheritanceCounterpartNames, matchPairsOf } from '../schema/inheritance.js';
+import {
+	declaresExternalIdTracking,
+	enumChoices,
+	inheritanceCounterpartNames,
+	INTEGRATED_NATURAL_KEY,
+	isIntegratedNaturalKey,
+	matchPairsOf,
+} from '../schema/inheritance.js';
 import {
 	baseTenantColumnIssue,
 	tenantColumnName,
@@ -113,6 +122,32 @@ function implicitColumns(
 		if (baseTenant !== null) cols.set(baseTenant, `the tenant column '${baseTenant}' the child carries from its base '${base.name}'`);
 	}
 	return cols;
+}
+
+/**
+ * What an Integrated child requires of its base (S7, D1) and the base does not provide — one sentence per missing piece,
+ * `[]` when the base meets them. The ONE statement of the requirement: D1 reports each piece, and R6 accepts the
+ * `external_id_tracking` columns on the child only while this is empty.
+ *
+ * The behavior must be DECLARED in the base's `behaviors:` (a pattern implying it does not count: Integrated on a base is
+ * refused, D2), and the natural key must be over exactly the two columns a provider sync matches on.
+ */
+function integratedBaseGaps(base: ParsedEntity): string[] {
+	const gaps: string[] = [];
+	const key = `[${INTEGRATED_NATURAL_KEY.join(', ')}]`;
+	if (!declaresExternalIdTracking(base.behaviors)) {
+		gaps.push(`declares no 'external_id_tracking' in its 'behaviors:'. Add 'external_id_tracking' to '${base.name}'.`);
+	}
+	const naturalKeys = base.uniqueIndexes.filter((u) => u.natural_key === true);
+	if (naturalKeys.length === 0) {
+		gaps.push(`declares no 'natural_key: true' unique_indexes entry. Add 'unique_indexes: [{ fields: ${key}, natural_key: true }]' to '${base.name}'.`);
+	} else if (!naturalKeys.some((u) => isIntegratedNaturalKey(u.fields))) {
+		gaps.push(
+			`has its natural key on [${naturalKeys[0]!.fields.join(', ')}], not ${key}. ` +
+				`A provider sync matches on ${key}: put 'natural_key: true' on a unique_indexes entry over exactly those columns of '${base.name}'.`,
+		);
+	}
+	return gaps;
 }
 
 /**
@@ -318,6 +353,17 @@ export function validateInheritance(
 		// R6: a child declares a pattern only over the columns it owns.
 		const baseColumns = new Set<string>([...baseOwn.keys(), ...baseImplicit.keys()]);
 		const baseOnly = (col: string) => baseColumns.has(col) && !childOwn.has(col);
+		// An Integrated child reads the `external_id_tracking` columns through its base (S7): accepted only while the base
+		// meets D1, so a base that does not still fails on the column AND on D1.
+		const baseGaps = declaredPatternNames(e).includes('Integrated') ? integratedBaseGaps(base) : [];
+		for (const gap of baseGaps) {
+			error(e, 'inherits_integrated_base', `D1 — '${name}' declares 'pattern: Integrated', and its base '${child.base}' ${gap}`);
+		}
+		const readThroughBase = new Set<string>(
+			baseGaps.length > 0
+				? []
+				: behaviorsReadThroughBase(e).flatMap((b) => (getBehavior(b)?.fields ?? []).map((f) => f.name)),
+		);
 		for (const patternName of declaredPatternNames(e)) {
 			const definition = getPattern(patternName);
 			// Parsed through the pattern's own schema, as composition does: a config that fails it is
@@ -338,7 +384,7 @@ export function validateInheritance(
 			}
 			const read = definition.columnsRead(parsed?.success ? parsed.data : undefined);
 			for (const col of read) {
-				if (baseOnly(col)) {
+				if (baseOnly(col) && !readThroughBase.has(col)) {
 					error(
 						e,
 						'inherits_pattern_config',

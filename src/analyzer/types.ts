@@ -170,6 +170,8 @@ export interface ParsedUniqueIndex {
 	name?: string;
 	where?: string;
 	nulls_not_distinct?: boolean;
+	/** RFC-0006 R11: this entry is the `ON CONFLICT` target of `upsertByNaturalKey`. */
+	natural_key?: boolean;
 }
 
 export interface ParsedQuery {

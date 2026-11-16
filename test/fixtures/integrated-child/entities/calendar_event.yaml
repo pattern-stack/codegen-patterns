@@ -1,0 +1,17 @@
+# The second Integrated child of `inbox_item` (D3): same base key, another kind and another surface.
+
+entity:
+  name: calendar_event
+  plural: calendar_events
+  surface: calendar
+  pattern: Integrated
+
+inherits: inbox_item
+
+fields:
+  starts_at:
+    type: datetime
+    required: true
+  ends_at:
+    type: datetime
+    nullable: true
