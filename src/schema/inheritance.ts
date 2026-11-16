@@ -11,6 +11,8 @@
  * Rule numbers are the RFC's (§1.2 R1–R11, §2.4 M1–M5, §8 refusals).
  */
 
+import { externalIdTrackingBehavior } from '../behaviors/external-id-tracking.js';
+import { normalizeBehaviorConfig } from '../behaviors/index.js';
 import { declaredPatternNames } from '../patterns/compose.js';
 import type { EntityDefinition } from './entity-definition.schema.js';
 import { fieldColumnNullable, foreignKeyColumnNullable } from './field-nullability.js';
@@ -24,6 +26,35 @@ export interface InheritsDeclaration {
 
 /** The YAML path of a child's `inherits:` — the path every origin and relation id of it is spelled from. */
 export const INHERITS_PATH = ['inherits'] as const;
+
+/**
+ * The natural key a sync of an Integrated child upserts on, and the only nullable columns R11 accepts in a key (S7, D1):
+ * the behavior's declared `identityColumns`, never retyped here. `provider_metadata` is payload, not identity, so it is
+ * not part of the key. An identity column the behavior does not declare as a field is a load-time error, not a
+ * silently shorter key.
+ */
+export const INTEGRATED_NATURAL_KEY: readonly string[] = (() => {
+	const identity = externalIdTrackingBehavior.identityColumns;
+	if (identity === undefined || identity.length === 0) {
+		throw new globalThis.Error(`'${externalIdTrackingBehavior.name}' declares no identityColumns`);
+	}
+	for (const column of identity) {
+		if (!externalIdTrackingBehavior.fields.some((f) => f.name === column)) {
+			throw new globalThis.Error(`'${externalIdTrackingBehavior.name}' identityColumns names '${column}', which it does not declare`);
+		}
+	}
+	return identity;
+})();
+
+/** Whether a `behaviors:` list DECLARES `external_id_tracking` (a pattern that implies it does not count). */
+export function declaresExternalIdTracking(behaviors: EntityDefinition['behaviors'] | null | undefined): boolean {
+	return (behaviors ?? []).some((b) => normalizeBehaviorConfig(b).name === externalIdTrackingBehavior.name);
+}
+
+/** Whether `fields` is exactly {@link INTEGRATED_NATURAL_KEY}, in either order. */
+export function isIntegratedNaturalKey(fields: readonly string[]): boolean {
+	return fields.length === INTEGRATED_NATURAL_KEY.length && INTEGRATED_NATURAL_KEY.every((c) => fields.includes(c));
+}
 
 /**
  * The id of the `inherits` relation of a child — `<child>.inherits`, spelled as REL-1 spells an origin
@@ -305,28 +336,32 @@ export function inheritanceIssues(def: EntityDefinition): InheritanceIssue[] {
 			);
 		}
 
-		// ---- §8: refused on a child in v1.
-		const refuse = (key: string, path: (string | number)[], why: string) =>
-			add(path, `'${name}' is a child of '${child.base}' and declares ${key}. ${why}`);
-		if (declaredPatternNames(def.entity).includes('Integrated')) {
-			refuse(
-				"'pattern: Integrated'",
-				['entity', def.entity.patterns ? 'patterns' : 'pattern'],
-				"The integration upsert's conflict target and write columns are one table's, so 'Integrated' on a child is refused in v1 (RFC-0006 §4.2, S7).",
+		// ---- §8: refused on a child in v1. (`pattern: Integrated`, `surface:`, `integration:` and `detection:` are
+		// accepted since S7a: the child reads and syncs through its base, whose requirements are D1, checked in
+		// `validate-inheritance.ts`.)
+		if (def.eav_value_table === true) {
+			add(
+				['eav_value_table'],
+				`'${name}' is a child of '${child.base}' and declares 'eav_value_table: true'. An EAV value table on a child is refused in v1 (RFC-0006 §8).`,
 			);
 		}
-		if (def.entity.surface !== undefined) {
-			refuse("'surface:'", ['entity', 'surface'], 'Integration surfaces are refused on a child in v1.');
+	}
+
+	// ---- §8 / D2: Integrated on a base is refused (#927).
+	if (isBase) {
+		const refuseBase = (key: string, path: (string | number)[]) =>
+			add(
+				path,
+				`'${name}' is the base of a family (discriminator '${def.discriminator}') and declares ${key}. ` +
+					`Integration on a base is refused until #927: declare it on a child, and give the base ` +
+					`'external_id_tracking' plus a 'natural_key: true' entry over [${INTEGRATED_NATURAL_KEY.join(', ')}] (RFC-0006 §4.2, S7).`,
+			);
+		if (declaredPatternNames(def.entity).includes('Integrated')) {
+			refuseBase("'pattern: Integrated'", ['entity', def.entity.patterns ? 'patterns' : 'pattern']);
 		}
-		if (def.integration !== undefined) {
-			refuse("'integration:'", ['integration'], 'Integration is refused on a child in v1.');
-		}
-		if (def.detection !== undefined) {
-			refuse("'detection:'", ['detection'], 'Change detection is refused on a child in v1.');
-		}
-		if (def.eav_value_table === true) {
-			refuse("'eav_value_table: true'", ['eav_value_table'], 'An EAV value table on a child is refused in v1 (RFC-0006 §8).');
-		}
+		if (def.entity.surface !== undefined) refuseBase("'surface:'", ['entity', 'surface']);
+		if (def.integration !== undefined) refuseBase("'integration:'", ['integration']);
+		if (def.detection !== undefined) refuseBase("'detection:'", ['detection']);
 	}
 
 	// ---- R11: the natural key.
@@ -336,10 +371,16 @@ export function inheritanceIssues(def: EntityDefinition): InheritanceIssue[] {
 	if (naturalKeys.length > 1) {
 		add(
 			['unique_indexes', naturalKeys[1]!.i, 'natural_key'],
-			`R11 — '${name}' marks ${naturalKeys.length} unique_indexes entries 'natural_key: true'. At most one ` +
-				`entry is the ON CONFLICT target of the upsert.`,
+			`R11 — '${name}' marks ${naturalKeys.length} unique_indexes entries 'natural_key: true' ` +
+				`(${naturalKeys.map(({ entry }) => JSON.stringify(entry.fields)).join(' and ')}). At most one ` +
+				`entry is the ON CONFLICT target of the upsert.` +
+				(isBase
+					? ` An Integrated child's sync upserts its base on [${INTEGRATED_NATURAL_KEY.join(', ')}], so a base ` +
+						`with an Integrated child declares that one and no other.`
+					: ''),
 		);
 	}
+	const declaresTracking = declaresExternalIdTracking(def.behaviors);
 	for (const { entry, i } of naturalKeys) {
 		if (child !== null) {
 			add(
@@ -358,6 +399,10 @@ export function inheritanceIssues(def: EntityDefinition): InheritanceIssue[] {
 		}
 		for (const column of entry.fields) {
 			const notNull = columnNotNull(def, column);
+			// The `external_id_tracking` identity columns are nullable by design; a BASE that declares the behavior
+			// may key on exactly the pair (S7, D1) — not on either alone, and not on any other entity. The runtime
+			// upsert refuses a NULL in the key, so no duplicate can insert.
+			if (notNull === undefined && isBase && declaresTracking && isIntegratedNaturalKey(entry.fields)) continue;
 			if (notNull === undefined) {
 				add(
 					['unique_indexes', i, 'fields'],
@@ -374,4 +419,123 @@ export function inheritanceIssues(def: EntityDefinition): InheritanceIssue[] {
 	}
 
 	return issues;
+}
+
+/** A declared field / relationship as the raw YAML parses it (what an emitter reads). */
+export type DeclaredField = NonNullable<EntityDefinition['fields']>[string];
+export type DeclaredRelationship = NonNullable<EntityDefinition['relationships']>[string];
+
+/**
+ * The keys of an entity the flat-shape walk reads — the structural input contract of {@link flatChildShape},
+ * {@link flattenInheritedChild} and {@link flatChildOwners}. An emitter's own entity type satisfies it by declaring these
+ * keys (`inherits` and `discriminator` included, so a projection that drops them is a compile error, not a silent no-op).
+ * `F` and `R` are the field and relationship value types: the raw YAML's by default; the parsed model's for the
+ * cross-entity validator, which walks the same shape over `ParsedEntity`.
+ */
+export interface FlatChildInput<F = DeclaredField, R = DeclaredRelationship> {
+	entity: { name: string };
+	inherits?: EntityDefinition['inherits'];
+	discriminator?: EntityDefinition['discriminator'];
+	fields?: Record<string, F>;
+	behaviors?: EntityDefinition['behaviors'];
+	tenant_scoped?: EntityDefinition['tenant_scoped'];
+	relationships?: Record<string, R>;
+}
+
+/** The flat shape of one joined-table child, with the entity that declares each piece (the result of ONE walk). */
+export interface FlatChildShape<F = DeclaredField, R = DeclaredRelationship> {
+	/** The base's name: the entity every `owner` below that is not the child itself resolves against. */
+	base: string;
+	/** Every flat field in order — the base's, less its discriminator, then the child's own — with its declaring entity. */
+	fields: Array<{ name: string; field: F; owner: string }>;
+	/** Every flat relationship in order — the base's, then the child's own — with its declaring entity. */
+	relationships: Array<{ name: string; relationship: R; owner: string }>;
+	/** The base's behaviours first, then the child's own, one per name. */
+	behaviors: NonNullable<EntityDefinition['behaviors']>;
+	/** The base's `tenant_scoped` (R5 keeps it off the child); `undefined` when the base declares none. */
+	tenantScoped: EntityDefinition['tenant_scoped'] | undefined;
+}
+
+/**
+ * The ONE walk of a joined-table child's flat shape (RFC-0006 §3.4, S7): the base's declared fields (less the
+ * discriminator, which a sync never writes — the child's kind is fixed), then the child's own; the base's behaviours and
+ * `tenant_scoped`, which R5 keeps off the child; the base's relationships under the child's. Each field and relationship
+ * carries the entity that declares it, so a consumer that resolves against the declaring entity (a base enum, a base
+ * foreign key) reads the owner here and never walks the family again. `null` when `def` is not a child, or its base is not
+ * in `definitions` (the validator refuses that).
+ *
+ * R4 refuses a child field or relationship that shadows the base's, so the order cannot matter.
+ */
+export function flatChildShape<F, R>(
+	def: FlatChildInput<F, R>,
+	definitions: Iterable<FlatChildInput<F, R>>,
+): FlatChildShape<F, R> | null {
+	const decl = inheritsOf(def);
+	if (decl === null) return null;
+	const base = [...definitions].find((d) => d.entity.name === decl.base);
+	if (base === undefined) return null;
+
+	const fields: FlatChildShape<F, R>['fields'] = [];
+	for (const [name, field] of Object.entries(base.fields ?? {})) {
+		if (name !== base.discriminator) fields.push({ name, field, owner: base.entity.name });
+	}
+	for (const [name, field] of Object.entries(def.fields ?? {})) fields.push({ name, field, owner: def.entity.name });
+
+	const relationships: FlatChildShape<F, R>['relationships'] = [];
+	for (const [name, relationship] of Object.entries(base.relationships ?? {})) {
+		relationships.push({ name, relationship, owner: base.entity.name });
+	}
+	for (const [name, relationship] of Object.entries(def.relationships ?? {})) {
+		relationships.push({ name, relationship, owner: def.entity.name });
+	}
+
+	const seen = new Set<string>();
+	const behaviors = [...(base.behaviors ?? []), ...(def.behaviors ?? [])].filter((b) => {
+		const name = normalizeBehaviorConfig(b).name;
+		if (seen.has(name)) return false;
+		seen.add(name);
+		return true;
+	});
+
+	return { base: base.entity.name, fields, relationships, behaviors, tenantScoped: base.tenant_scoped };
+}
+
+/**
+ * A joined-table child as the plain entity a flat declaration of the same columns would parse to: no `inherits:` key
+ * survives. The integration layer reads this, so a provider sync sees the same entity whether or not it sits in a family.
+ * Not a child, or a child whose base is not in `definitions`, comes back unchanged. S7b and S7c both read it; the walk is
+ * {@link flatChildShape}'s, and {@link flatChildOwners} is its other view.
+ */
+export function flattenInheritedChild<T extends FlatChildInput>(def: T, definitions: Iterable<FlatChildInput>): T {
+	const shape = flatChildShape(def, definitions);
+	if (shape === null) return def;
+
+	const { inherits: _inherits, ...own } = def;
+	const fields = Object.fromEntries(shape.fields.map((f) => [f.name, f.field]));
+	const relationships = Object.fromEntries(shape.relationships.map((r) => [r.name, r.relationship]));
+	// `T` is the caller's entity type; the spread keeps every key it declares and replaces only the five the walk owns.
+	return {
+		...own,
+		fields,
+		behaviors: shape.behaviors,
+		...(shape.tenantScoped !== undefined ? { tenant_scoped: shape.tenantScoped } : {}),
+		...(Object.keys(relationships).length > 0 ? { relationships } : {}),
+	} as unknown as T;
+}
+
+/**
+ * Which entity declares each flat field and each flat relationship of a child — the other view of
+ * {@link flatChildShape}. `null` when `def` is not a child (or its base is absent).
+ */
+export function flatChildOwners<F, R>(
+	def: FlatChildInput<F, R>,
+	definitions: Iterable<FlatChildInput<F, R>>,
+): { base: string; fields: Record<string, string>; relationships: Record<string, string> } | null {
+	const shape = flatChildShape(def, definitions);
+	if (shape === null) return null;
+	return {
+		base: shape.base,
+		fields: Object.fromEntries(shape.fields.map((f) => [f.name, f.owner])),
+		relationships: Object.fromEntries(shape.relationships.map((r) => [r.name, r.owner])),
+	};
 }

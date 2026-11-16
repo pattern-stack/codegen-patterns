@@ -170,6 +170,8 @@ export interface ParsedUniqueIndex {
 	name?: string;
 	where?: string;
 	nulls_not_distinct?: boolean;
+	/** RFC-0006 R11: this entry is the `ON CONFLICT` target of `upsertByNaturalKey`. */
+	natural_key?: boolean;
 }
 
 export interface ParsedQuery {
@@ -192,6 +194,8 @@ export interface ParsedProviderIntegration {
 export interface ParsedIntegration {
 	electric: boolean;
 	providers?: Record<string, ParsedProviderIntegration>;
+	/** `integration.sink.exclude_fields` as declared, when present — read by the cross-entity check of a child's flat shape. */
+	sinkExcludeFields?: string[];
 }
 
 export interface ParsedEvent {

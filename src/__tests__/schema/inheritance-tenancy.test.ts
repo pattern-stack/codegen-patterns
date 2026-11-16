@@ -65,9 +65,17 @@ describe('lifecycleBehaviorsDeclared (R5)', () => {
 		expect(lifecycleBehaviorsDeclared(rawFixture('communication'))).toEqual(['timestamps']);
 		expect(lifecycleBehaviorsDeclared(rawFixture('communication_part'))).toEqual(['soft_delete']);
 	});
-	it('counts a behavior a pattern implies', () => {
-		expect(lifecycleBehaviorsDeclared(rawFixture('meeting', (r) => (r.entity.pattern = 'Integrated')))).toEqual([
-			'external_id_tracking',
-		]);
+	it('does not count a behavior Integrated implies: the base supplies its columns (S7)', () => {
+		expect(lifecycleBehaviorsDeclared(rawFixture('meeting', (r) => (r.entity.pattern = 'Integrated')))).toEqual([]);
+	});
+	it('counts one the child DECLARES, with or without Integrated', () => {
+		expect(
+			lifecycleBehaviorsDeclared(
+				rawFixture('meeting', (r) => {
+					r.entity.pattern = 'Integrated';
+					r.behaviors = ['external_id_tracking'];
+				}),
+			),
+		).toEqual(['external_id_tracking']);
 	});
 });

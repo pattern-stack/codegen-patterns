@@ -45,6 +45,19 @@ export function resolveImpliedBehaviors(entity: PatternDeclaration): string[] {
 }
 
 /**
+ * The behaviors a CHILD of a joined-table family reads through its base because a pattern it declares says so
+ * (`readsThroughBase`, RFC-0006 §4.2 / S7): the base owns their columns, so the child's table gets none and the
+ * behavior the pattern implies on the child is not an R5 error. The ONE reader of the property.
+ */
+export function behaviorsReadThroughBase(entity: PatternDeclaration): string[] {
+	const out = new Set<string>();
+	for (const name of declaredPatternNames(entity)) {
+		for (const b of getPattern(name)?.readsThroughBase ?? []) out.add(b);
+	}
+	return Array.from(out);
+}
+
+/**
  * The behaviors an entity HAS: those it declares (explicit first) plus those its pattern(s) imply, deduped. The ONE
  * derivation of "resolved behaviours": the backend locals builder and the frontend emitter both call it, so a new
  * behaviour source is added here once. (The relations manifest states the same rule with the throwing
