@@ -50,5 +50,5 @@ export { useGraphData } from './hooks/useGraphData.js';
 export type { UseGraphDataResult } from './hooks/useGraphData.js';
 export { useGraphSelection } from './hooks/useGraphSelection.js';
 export type { UseGraphSelectionResult } from './hooks/useGraphSelection.js';
-export { useGraphFilter } from './hooks/useGraphFilter.js';
-export type { GraphFilterOptions, UseGraphFilterResult } from './hooks/useGraphFilter.js';
+export { matchesGraphQuery, useGraphFilter } from './hooks/useGraphFilter.js';
+export type { GraphFilterOptions, GraphQueryTarget, UseGraphFilterResult } from './hooks/useGraphFilter.js';

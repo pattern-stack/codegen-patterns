@@ -89,12 +89,15 @@ strip of the legend's size, whichever keeps the larger zoom (ties to the bottom)
 
 ### Selecting a subset — dbt-style selectors (STUDIO-5, 2026-11-15)
 
-The canvas filter box takes space-separated tokens, and the canvas shows the **union** of what they select. The
-grammar is a pure module, `tools/studio/src/graph/selector.ts` (unit-tested in `__tests__/selector.test.ts`):
+The canvas filter box takes tokens separated by whitespace **or commas**, and the canvas shows the **union** of what
+they select: `a+, b+`, `a+,b+` and `a+ b+` are the same. This diverges from dbt, where a comma is an *intersection*;
+Studio has no intersection, and a comma here only separates. A comma is never part of a token, so a stray one is never
+read as text, and a box holding only commas is no tokens, the same as an empty box. The grammar is a pure module,
+`tools/studio/src/graph/selector.ts` (unit-tested in `__tests__/selector.test.ts`):
 
 | Token | Shows |
 |---|---|
-| `name` (no `+`) | the text filter as before — label, table, group, field and type names, case-insensitive substring |
+| `name` (no `+`) | the text filter as before — label, table, group, field and type names, case-insensitive substring. It is `matchesGraphQuery`, exported by `packages/graph-components` as the one predicate its `useGraphFilter` hook also applies; `__tests__/graph-query.test.tsx` holds the hook and the selector to it |
 | `name+` | the entity and everything that depends on it (its children, transitively) |
 | `+name` | the entity and everything it depends on (its parents, transitively) |
 | `+name+` | both sides — the two walks are separate, never up and then down |
@@ -110,7 +113,8 @@ depends on the parent. A `belongs_to` puts the FK holder at the child end; a **r
 the entity declaring the role depends on the actor; an `inherits` child depends on its base; an unpaired `has_many` /
 `has_one` is oriented by its foreign key the same way. Hops follow **every** line — spine, secondary, `inherits`,
 role. **A junction (first-class relationship) node** is crossed end to end as **one** hop, in either direction (a
-many-to-many has no dependent end), and the junction is shown with the far end; the walk continues from the far end,
+many-to-many has no dependent end; the owner confirmed both ways on 2026-11-15, so `+opportunity` on the demo includes
+contact), and the junction is shown with the far end; the walk continues from the far end,
 not from the junction. Named itself, a junction walks its own lines like any card (`+link` is it and both ends).
 
 **Double-click** a card and the box is set to `1+<name>+1`, visible and editable; Esc in the box, or clearing it,

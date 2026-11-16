@@ -1,11 +1,12 @@
 /**
  * dbt-style selectors for the canvas filter box (STUDIO-5).
  *
- * The box holds space-separated tokens; what is shown is the UNION of what
- * each token selects.
+ * The box holds tokens separated by whitespace or commas; what is shown is
+ * the UNION of what each token selects (`a+, b+` is `a+ b+`; unlike dbt, where
+ * a comma is an intersection).
  *
- *   name        no `+`: today's text filter — label, table, group, field and
- *               type names, case-insensitive substring
+ *   name        no `+`: today's text filter — the component library's own
+ *               `matchesGraphQuery`, the predicate `useGraphFilter` applies
  *   name+       the entity and what depends on it (its children, transitively)
  *   +name       the entity and what it depends on (its parents, transitively)
  *   +name+      both
@@ -31,8 +32,11 @@
  * the walk continues from the far end, not from the junction. Selecting the
  * junction by name walks its own lines like any node (`+link` = it and both ends).
  *
- * Pure: no React, no DOM. Unit-tested in `../__tests__/selector.test.ts`.
+ * Pure: no React, no DOM — its one import is the library's pure text
+ * predicate. Unit-tested in `../__tests__/selector.test.ts`.
  */
+
+import { matchesGraphQuery, type GraphQueryTarget } from '@pattern-stack/graph-components';
 
 /** Unlimited hops — a bare `+`. */
 export const UNLIMITED = Number.POSITIVE_INFINITY;
@@ -67,10 +71,14 @@ export function parseToken(raw: string): SelectorToken {
   return { kind: 'select', raw, name: m[2]!, up, down };
 }
 
-/** The box's text as tokens; whitespace separates, empty input is no tokens. */
+/**
+ * The box's text as tokens. Whitespace and commas both separate, so
+ * `a+, b+` is `a+ b+`; a comma is never part of a token, and empty input is no
+ * tokens. (dbt reads a comma as an intersection; here it is a union.)
+ */
 export function parseSelector(input: string): SelectorToken[] {
   return input
-    .split(/\s+/)
+    .split(/[\s,]+/)
     .filter((t) => t !== '')
     .map(parseToken);
 }
@@ -81,15 +89,10 @@ export function focusSelector(name: string): string {
 }
 
 /** What the selector needs of a node — `GraphNodeData` satisfies it. */
-export interface SelectorNode {
+export interface SelectorNode extends GraphQueryTarget {
   id: string;
-  label: string;
   /** `relationship` is a junction node; any other kind is an ordinary card. */
   kind: string;
-  subtitle?: string;
-  group?: string;
-  fields?: readonly { name: string }[];
-  types?: readonly { name: string }[];
 }
 
 /** What the selector needs of a line — `StudioEdgeData` satisfies it. */
@@ -107,21 +110,6 @@ export interface SelectorResult {
   /** The node ids shown; `null` when the box is empty — nothing is filtered. */
   ids: Set<string> | null;
   messages: SelectorMessage[];
-}
-
-/**
- * The text filter a token without `+` applies — the component library's
- * `useGraphFilter` match, per token. It is restated here because the union
- * needs it once per token and the library exposes it only as a hook.
- */
-export function matchesText(node: SelectorNode, text: string): boolean {
-  const q = text.toLowerCase();
-  if (node.label.toLowerCase().includes(q)) return true;
-  if (node.subtitle?.toLowerCase().includes(q)) return true;
-  if (node.group?.toLowerCase().includes(q)) return true;
-  if (node.fields?.some((f) => f.name.toLowerCase().includes(q))) return true;
-  if (node.types?.some((t) => t.name.toLowerCase().includes(q))) return true;
-  return false;
 }
 
 /** The node a selector token names: its id exactly, else its id or label ignoring case. */
@@ -211,7 +199,7 @@ export function applySelector(
 
   for (const token of tokens) {
     if (token.kind === 'text') {
-      for (const n of nodes) if (matchesText(n, token.raw)) ids.add(n.id);
+      for (const n of nodes) if (matchesGraphQuery(n, token.raw)) ids.add(n.id);
       continue;
     }
     if (token.kind === 'malformed') {

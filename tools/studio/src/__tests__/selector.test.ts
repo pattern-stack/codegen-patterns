@@ -145,6 +145,18 @@ describe('parseToken — the grammar', () => {
     expect(parseSelector('   ')).toEqual([]);
   });
 
+  test('a comma separates tokens like whitespace; it is never part of a token', () => {
+    const spaced = parseSelector('book+ +page');
+    expect(parseSelector('book+, +page')).toEqual(spaced);
+    expect(parseSelector('book+,+page')).toEqual(spaced);
+    expect(parseSelector(' ,book+ ,, +page, ')).toEqual(spaced);
+  });
+
+  test('a comma alone is no tokens: never a text token, so it matches no text', () => {
+    expect(parseSelector(',')).toEqual([]);
+    expect(parseSelector(' , ,')).toEqual([]);
+  });
+
   test('a malformed token shows a message and selects nothing — it is not read as text', () => {
     const result = applySelector('++book', nodes, edges);
     expect([...result.ids!]).toEqual([]);
@@ -203,6 +215,17 @@ describe('applySelector — union', () => {
   test('a text token keeps the text filter, and its matches join the union', () => {
     expect(shown('shel')).toEqual(['shelf']);
     expect(shown('page+ read')).toEqual(['note', 'page', 'reader']);
+  });
+
+  test('a comma is a union too: a+, b+ shows what a+ b+ shows', () => {
+    expect(shown('page+, 1+shelf')).toEqual(shown('page+ 1+shelf'));
+    expect(shown('page+, 1+shelf')).toEqual(['library', 'note', 'page', 'shelf']);
+    expect(shown('page+,read')).toEqual(['note', 'page', 'reader']);
+  });
+
+  test('a comma alone selects nothing and matches no text: the box reads as empty, with no message', () => {
+    expect(applySelector(',', nodes, edges)).toEqual({ ids: null, messages: [] });
+    expect(applySelector(' , ', nodes, edges)).toEqual(applySelector('', nodes, edges));
   });
 
   test('an empty box filters nothing', () => {
