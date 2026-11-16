@@ -2,6 +2,8 @@ import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 import type { GraphNodeData } from '@pattern-stack/graph-components';
+import { BaseChip } from './FloatingBase';
+import type { FloatedBase } from './FloatingBase';
 
 /** How many fields a card shows before it collapses into a count. */
 const VISIBLE_FIELDS = 7;
@@ -16,7 +18,7 @@ const ROLE_GLYPH: Record<string, string> = { pk: '◆', fk: '→' };
  * and nothing overlaps after the first paint.
  */
 export const SchemaNode = memo(function SchemaNode({ data, selected }: NodeProps) {
-  const node = data as unknown as GraphNodeData & { dimmed?: boolean };
+  const node = data as unknown as GraphNodeData & { dimmed?: boolean; floatBase?: FloatedBase };
   const isJunction = node.kind === 'relationship';
   const accent = isJunction ? 'var(--graph-relationship-color)' : 'var(--graph-entity-color)';
   const hidden = node.fields ? node.fields.length - VISIBLE_FIELDS : 0;
@@ -167,6 +169,8 @@ export const SchemaNode = memo(function SchemaNode({ data, selected }: NodeProps
           </div>
         )}
       </div>
+      {/* STUDIO-6 prototype: outside the card's box, so the card keeps its size. */}
+      {node.floatBase != null && <BaseChip floated={node.floatBase} />}
       <Handle type="source" position={Position.Bottom} />
     </>
   );

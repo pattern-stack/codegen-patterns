@@ -3,14 +3,21 @@
  * tree. Every node has at most one SPINE parent; each of its other foreign keys
  * is a SECONDARY line, drawn lighter and never fed to the layout.
  *
- * First match wins:
- *   1. an explicit `inherits:` (#875, RFC-0006) — a child hangs under its base.
- *      Fed by `buildEdges` from `SerializedEntity.inherits`, not from a `belongs_to`.
- *      It replaced the unique-FK tier (a 1:1 `belongs_to` standing in for "is a"): STUDIO-3 recorded that when
- *      #875 landed that inference would be deleted, no shim, and it was — `inherits:` is how an is-a is stated.
- *   2. a `belongs_to` with `on_delete: cascade`;
- *   3. the first declared `belongs_to`.
- * Within a tier, the first declared wins.
+ * First match wins, in the reader's chosen order (STUDIO-6, `SpineOrder`):
+ *
+ *   inheritance first (the default)      ownership first
+ *   1. `inherits:`                        1. `on_delete: cascade`
+ *   2. `on_delete: cascade`               2. `inherits:`
+ *   3. first declared                     3. first declared
+ *
+ * - `inherits:` (#875, RFC-0006) — a child hangs under its base. Fed by `buildEdges` from
+ *   `SerializedEntity.inherits`, not from a `belongs_to`. It replaced the unique-FK tier (a 1:1 `belongs_to`
+ *   standing in for "is a"): STUDIO-3 recorded that when #875 landed that inference would be deleted, no shim,
+ *   and it was — `inherits:` is how an is-a is stated.
+ * - `on_delete: cascade` — an owning `belongs_to`: the child dies with its parent.
+ * - the first declared `belongs_to`.
+ * Within a tier, the first declared wins. The two orders differ only in which of the first two tiers ranks
+ * higher; ownership first lets a child that inherits a shared base hang under the parent that owns it.
  *
  * A self-reference is never a spine (a node cannot hang under itself), and a
  * choice that would close a cycle of spines is dropped — see `chooseSpines`.
@@ -40,12 +47,23 @@ export interface SpineCandidate {
 
 export type SpineTier = 'inherits' | 'cascade' | 'first-declared';
 
-/** The tiers in rule order, each with the words the line shows for it. */
+/** Which tier outranks which (STUDIO-6). The reader picks one in the header. */
+export type SpineOrder = 'inheritance-first' | 'ownership-first';
+
+export const DEFAULT_SPINE_ORDER: SpineOrder = 'inheritance-first';
+
+/** The tiers in the default (inheritance-first) order, each with the words the line shows for it. */
 export const SPINE_TIERS: readonly { tier: SpineTier; reason: string; matches: (s: SpineSignals) => boolean }[] = [
   { tier: 'inherits', reason: 'inherits', matches: (s) => s.inherits },
   { tier: 'cascade', reason: 'on_delete: cascade', matches: (s) => s.cascade },
   { tier: 'first-declared', reason: 'first declared', matches: () => true },
 ];
+
+/** Each order's tier ranking, best first. The one table both orders read; `first-declared` is last in both. */
+export const SPINE_ORDERS: Record<SpineOrder, readonly SpineTier[]> = {
+  'inheritance-first': ['inherits', 'cascade', 'first-declared'],
+  'ownership-first': ['cascade', 'inherits', 'first-declared'],
+};
 
 export interface SpineChoice {
   edgeId: string;
@@ -67,16 +85,21 @@ export function secondaryReason(child: string, spine: SpineChoice | undefined): 
     : `secondary: ${child}'s spine is ${spine.parent} (${spine.reason.replace(/^spine: /, '')})`;
 }
 
-function tierOf(signals: SpineSignals): SpineTier {
-  return SPINE_TIERS.find((t) => t.matches(signals))!.tier;
+function matches(tier: SpineTier, signals: SpineSignals): boolean {
+  return SPINE_TIERS.find((t) => t.tier === tier)!.matches(signals);
 }
 
-function rank(tier: SpineTier): number {
-  return SPINE_TIERS.findIndex((t) => t.tier === tier);
+/** The best tier a candidate's signals reach under `order`. */
+function tierOf(signals: SpineSignals, order: SpineOrder): SpineTier {
+  return SPINE_ORDERS[order].find((tier) => matches(tier, signals))!;
+}
+
+function rank(tier: SpineTier, order: SpineOrder): number {
+  return SPINE_ORDERS[order].indexOf(tier);
 }
 
 /**
- * Each child's spine, keyed by child id.
+ * Each child's spine, keyed by child id, under `order` (inheritance first unless the reader chose otherwise).
  *
  * Per child: the candidate in the best tier, then the first declared. Then the
  * forest is made a forest: a choice that closes a cycle (A's spine is B, B's
@@ -84,7 +107,10 @@ function rank(tier: SpineTier): number {
  * is the cycle member whose choice is the weakest tier, then the last by id, so
  * the answer does not depend on the order the candidates arrive in.
  */
-export function chooseSpines(candidates: readonly SpineCandidate[]): Map<string, SpineChoice> {
+export function chooseSpines(
+  candidates: readonly SpineCandidate[],
+  order: SpineOrder = DEFAULT_SPINE_ORDER,
+): Map<string, SpineChoice> {
   const byChild = new Map<string, SpineCandidate[]>();
   for (const c of candidates) {
     if (c.child === c.parent) continue;
@@ -96,9 +122,9 @@ export function chooseSpines(candidates: readonly SpineCandidate[]): Map<string,
   const chosen = new Map<string, SpineChoice>();
   for (const [child, list] of byChild) {
     const best = [...list].sort(
-      (a, b) => rank(tierOf(a.signals)) - rank(tierOf(b.signals)) || a.order - b.order,
+      (a, b) => rank(tierOf(a.signals, order), order) - rank(tierOf(b.signals, order), order) || a.order - b.order,
     )[0]!;
-    const tier = tierOf(best.signals);
+    const tier = tierOf(best.signals, order);
     chosen.set(child, { edgeId: best.edgeId, parent: best.parent, tier, reason: spineReason(tier) });
   }
 
@@ -115,7 +141,7 @@ export function chooseSpines(candidates: readonly SpineCandidate[]): Map<string,
     if (node == null || !onPath.has(node)) continue;
     const cycle = path.slice(path.indexOf(node));
     const drop = [...cycle].sort(
-      (a, b) => rank(chosen.get(b)!.tier) - rank(chosen.get(a)!.tier) || (a < b ? 1 : a > b ? -1 : 0),
+      (a, b) => rank(chosen.get(b)!.tier, order) - rank(chosen.get(a)!.tier, order) || (a < b ? 1 : a > b ? -1 : 0),
     )[0]!;
     chosen.delete(drop);
   }

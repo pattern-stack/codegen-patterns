@@ -1,0 +1,10 @@
+# STUDIO-6 — owns the text parts.
+
+entity:
+  name: message
+  plural: messages
+
+fields:
+  subject:
+    type: string
+    required: true

@@ -264,7 +264,15 @@ chosen by `chooseSpines` (`tools/studio/src/graph/spine.ts`) from the
 child → base line, never one half of a #778 pair; it replaced the old unique-FK tier, which STUDIO-3 said #875 would
 delete, so `fkUnique` and its rule are gone), a `belongs_to` with
 `on_delete: cascade` (`onDelete`), the first declared; ties go to the first
-declared. A junction row hangs under its `from` end. Every other line is
+declared. That is the default order, **inheritance first**; the header's spine-order
+toggle (STUDIO-6) also offers **ownership first** — `on_delete: cascade` >
+`inherits:` > first declared — so a child that inherits a shared base hangs under
+the parent that owns it. One function, `chooseSpines(candidates, order)`, reads one
+table (`SPINE_ORDERS`); the choice is remembered per browser (`studio.spineOrder`,
+`tools/studio/src/spine-order.ts`). A *prototype* rides on ownership first
+(`graph/FloatingBase.tsx`, flag `FLOAT_INHERITANCE`): a non-spine `inherits` line is
+hidden at rest and the child carries an `is a <Base>` chip that selects and reveals
+the base card (STUDIO-0 § The spine order says how to delete it). A junction row hangs under its `from` end. Every other line is
 **secondary** — drawn lighter (`TREE_ROLE_STYLES` in `graph/edge-kinds.ts`) and
 never read by the layout. The reason rides on the line (`treeReason`) and is
 printed by the edge panel and the line's tooltip. `layout/tree-layout.ts` places

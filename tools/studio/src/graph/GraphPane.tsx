@@ -24,6 +24,8 @@ export interface GraphPaneProps {
    */
   query: string;
   onQueryChange: (query: string) => void;
+  /** Passed through to the canvas (STUDIO-6 prototype, `FloatingBase.tsx`). */
+  floatInheritance?: boolean;
 }
 
 /** Filter chips, derived from the graph so they describe what is actually in it. */
@@ -49,6 +51,7 @@ export function GraphPane({
   fitKey,
   query,
   onQueryChange: setQuery,
+  floatInheritance,
 }: GraphPaneProps) {
   const [active, setActive] = useState<Record<string, boolean>>({});
   const chips = useFilterChips(nodes);
@@ -113,6 +116,7 @@ export function GraphPane({
         fitKey={fitKey}
         subsetKey={subsetKey}
         onNodeFocus={(id) => setQuery(focusSelector(id))}
+        floatInheritance={floatInheritance}
       />
     );
   };

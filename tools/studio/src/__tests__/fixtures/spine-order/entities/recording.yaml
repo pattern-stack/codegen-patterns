@@ -1,0 +1,10 @@
+# STUDIO-6 — owns the audio parts.
+
+entity:
+  name: recording
+  plural: recordings
+
+fields:
+  title:
+    type: string
+    required: true

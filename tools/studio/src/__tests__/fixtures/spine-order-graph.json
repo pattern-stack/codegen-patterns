@@ -1,0 +1,169 @@
+{
+ "graph": {
+  "entities": {
+   "audio_part": {
+    "name": "audio_part",
+    "plural": "audio_parts",
+    "table": "audio_parts",
+    "fields": {
+     "duration_ms": {
+      "name": "duration_ms",
+      "type": "integer",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {
+     "recording": {
+      "name": "recording",
+      "type": "belongs_to",
+      "target": "recording",
+      "foreignKey": "recording_id",
+      "resolved": true,
+      "onDelete": "cascade"
+     }
+    },
+    "behaviors": [],
+    "inherits": {
+     "base": "part",
+     "as": "audio",
+     "relationId": "audio_part.inherits"
+    },
+    "sourcePath": "entities/audio_part.yaml"
+   },
+   "message": {
+    "name": "message",
+    "plural": "messages",
+    "table": "messages",
+    "fields": {
+     "subject": {
+      "name": "subject",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {},
+    "behaviors": [],
+    "sourcePath": "entities/message.yaml"
+   },
+   "part": {
+    "name": "part",
+    "plural": "parts",
+    "table": "parts",
+    "fields": {
+     "kind": {
+      "name": "kind",
+      "type": "enum",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false,
+      "choices": [
+       "audio",
+       "text"
+      ]
+     },
+     "sequence": {
+      "name": "sequence",
+      "type": "integer",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {},
+    "behaviors": [
+     "timestamps"
+    ],
+    "sourcePath": "entities/part.yaml"
+   },
+   "recording": {
+    "name": "recording",
+    "plural": "recordings",
+    "table": "recordings",
+    "fields": {
+     "title": {
+      "name": "title",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {},
+    "behaviors": [],
+    "sourcePath": "entities/recording.yaml"
+   },
+   "text_part": {
+    "name": "text_part",
+    "plural": "text_parts",
+    "table": "text_parts",
+    "fields": {
+     "body": {
+      "name": "body",
+      "type": "string",
+      "required": true,
+      "nullable": false,
+      "unique": false,
+      "index": false
+     }
+    },
+    "relationships": {
+     "message": {
+      "name": "message",
+      "type": "belongs_to",
+      "target": "message",
+      "foreignKey": "message_id",
+      "resolved": true,
+      "onDelete": "cascade"
+     }
+    },
+    "behaviors": [],
+    "inherits": {
+     "base": "part",
+     "as": "text",
+     "relationId": "text_part.inherits"
+    },
+    "sourcePath": "entities/text_part.yaml"
+   }
+  },
+  "relationshipDefinitions": {},
+  "edges": [
+   {
+    "from": "audio_part",
+    "to": "recording",
+    "relationship": {
+     "name": "recording",
+     "type": "belongs_to",
+     "target": "recording",
+     "foreignKey": "recording_id",
+     "resolved": true,
+     "onDelete": "cascade"
+    },
+    "cardinality": "N:1",
+    "bidirectional": false
+   },
+   {
+    "from": "text_part",
+    "to": "message",
+    "relationship": {
+     "name": "message",
+     "type": "belongs_to",
+     "target": "message",
+     "foreignKey": "message_id",
+     "resolved": true,
+     "onDelete": "cascade"
+    },
+    "cardinality": "N:1",
+    "bidirectional": false
+   }
+  ]
+ }
+}
