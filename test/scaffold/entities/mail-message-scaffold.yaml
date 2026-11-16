@@ -1,0 +1,29 @@
+# S7b (#917) — SCAFFOLD-ONLY integrated family (copy of test/fixtures/integrated-child/entities/mail_message.yaml; in no inheritance set).
+# An Integrated child (S7): `pattern: Integrated` over the base's `external_id_tracking` columns, which it reads
+# through `inbox_item`; its own columns are the ones a mail provider fills.
+
+entity:
+  name: mail_message
+  plural: mail_messages
+  surface: mail
+  pattern: Integrated
+
+inherits: inbox_item
+
+fields:
+  subject:
+    type: string
+    required: true
+  sent_at:
+    type: datetime
+    nullable: true
+
+integration:
+  providers:
+    google:
+      remote_entity: message
+      direction: inbound
+  sink:
+    delete: tombstone
+    exclude_fields: [title]
+    emit_changes: true

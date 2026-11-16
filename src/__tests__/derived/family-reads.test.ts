@@ -128,7 +128,7 @@ describe('the derived family reads', () => {
 
 	it('a plain entity carries none of them', () => {
 		for (const [name, s] of surfaces) {
-			if (['email', 'meeting', 'communication'].includes(name)) continue;
+			if (['email', 'meeting', 'communication', 'inbox_item', 'mail_message', 'calendar_event'].includes(name)) continue;
 			expect(s.repository.methods.some((m) => ['with_base', 'all_kinds', 'kind_by_id', 'list_kind', 'count_kind', 'orphans'].includes(m.kind))).toBe(false);
 		}
 	});

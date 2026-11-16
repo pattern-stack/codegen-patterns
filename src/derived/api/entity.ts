@@ -15,6 +15,7 @@
 
 import { entityModuleNaming } from '../../config/module-tree.js';
 import { junctionName } from '../../config/junction-naming.js';
+import { behaviorsReadThroughBase } from '../../patterns/implied-behaviors.js';
 import { baseOnlyKinds, INHERITS_PATH, inheritsOf, naturalKeyIndexOf, type InheritanceBase, type InheritanceChild } from '../../schema/inheritance.js';
 import { deriveRoleRelationships, type RoleDefinition } from '../../roles/derive.js';
 import {
@@ -30,6 +31,7 @@ import {
 	junctionSetPrimaryName,
 	operationId,
 	FAMILY_METHOD,
+	INTEGRATION_METHOD,
 	paramName,
 	queryUseCaseClassName,
 	relationMethodName,
@@ -539,6 +541,24 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 			readOptions: 'none',
 			origin: naturalKeyOrigin(),
 		});
+	}
+
+	// ── An Integrated child reads and writes through its base (RFC-0006 §4.2, S7, #917) ──
+	// `pattern: Integrated` over a base that declares `external_id_tracking`: the child's table holds none of its columns,
+	// so the five methods that touch them are emitted here and forward to the base row, scoped to this child's kind. Their
+	// names are the pattern's own (the sink calls them as it would on a plain entity); `integrationUpsertOne` and
+	// `integrationUpsert` stay inherited and reach the pair through the protected `writeIntegrationRow` hook, which the
+	// template prints beside these (it is not part of the public surface, so parity does not list it).
+	if (inheritsOf(definition) !== null && behaviorsReadThroughBase(definition.entity as never).includes('external_id_tracking')) {
+		const patternOrigin = fromYaml(['entity', 'pattern']);
+		for (const [name, params, returns] of [
+			[INTEGRATION_METHOD.findByExternalId, [{ name: 'externalId' }], 'one'],
+			[INTEGRATION_METHOD.findManyByExternalIds, [{ name: 'externalIds' }], 'many'],
+			[INTEGRATION_METHOD.findByExternalIdProjected, [{ name: 'externalId' }, { name: 'provider' }], 'one'],
+			[INTEGRATION_METHOD.softDeleteByExternalId, [{ name: 'externalId' }, { name: 'provider' }, { name: 'tx' }], 'one'],
+		] as const) {
+			repository.push({ name, kind: 'integration_through_base', emitted: true, params: [...params], returns, readOptions: 'none', origin: patternOrigin });
+		}
 	}
 
 	for (const f of finders) {

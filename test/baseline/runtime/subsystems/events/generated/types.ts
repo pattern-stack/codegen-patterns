@@ -4,6 +4,55 @@
 
 import type { DomainEvent } from '../event-bus.protocol';
 
+export interface CalendarEventCreatedEvent extends DomainEvent {
+	readonly type: 'calendar_event_created';
+	readonly aggregateType: 'calendar_event';
+	readonly payload: {
+		/** Differ's per-field before/after map (same value as integration_run_items.changed_fields). */
+		changedFields: Record<string, unknown> | null;
+		/** Local aggregate id the sink wrote/soft-deleted. */
+		entityId: string;
+		/** Vendor external id the change keyed on. */
+		externalId: string;
+		/** Provider label (e.g. 'slack', 'google'). */
+		provider: string;
+		/** Provenance marker — always 'integration'. A write-back action reads this to avoid echoing the change back to the vendor. */
+		source: string;
+	};
+}
+
+export interface CalendarEventDeletedEvent extends DomainEvent {
+	readonly type: 'calendar_event_deleted';
+	readonly aggregateType: 'calendar_event';
+	readonly payload: {
+		/** Local aggregate id the sink wrote/soft-deleted. */
+		entityId: string;
+		/** Vendor external id the change keyed on. */
+		externalId: string;
+		/** Provider label (e.g. 'slack', 'google'). */
+		provider: string;
+		/** Provenance marker — always 'integration'. A write-back action reads this to avoid echoing the change back to the vendor. */
+		source: string;
+	};
+}
+
+export interface CalendarEventEditedEvent extends DomainEvent {
+	readonly type: 'calendar_event_edited';
+	readonly aggregateType: 'calendar_event';
+	readonly payload: {
+		/** Differ's per-field before/after map (same value as integration_run_items.changed_fields). */
+		changedFields: Record<string, unknown> | null;
+		/** Local aggregate id the sink wrote/soft-deleted. */
+		entityId: string;
+		/** Vendor external id the change keyed on. */
+		externalId: string;
+		/** Provider label (e.g. 'slack', 'google'). */
+		provider: string;
+		/** Provenance marker — always 'integration'. A write-back action reads this to avoid echoing the change back to the vendor. */
+		source: string;
+	};
+}
+
 /** Emitted after a contact row is committed. */
 export interface ContactCreatedEvent extends DomainEvent {
 	readonly type: 'contact_created';
@@ -61,6 +110,55 @@ export interface DealStageChangedEvent extends DomainEvent {
 		dealId: string;
 		newStage: string;
 		oldStage: string;
+	};
+}
+
+export interface MailMessageCreatedEvent extends DomainEvent {
+	readonly type: 'mail_message_created';
+	readonly aggregateType: 'mail_message';
+	readonly payload: {
+		/** Differ's per-field before/after map (same value as integration_run_items.changed_fields). */
+		changedFields: Record<string, unknown> | null;
+		/** Local aggregate id the sink wrote/soft-deleted. */
+		entityId: string;
+		/** Vendor external id the change keyed on. */
+		externalId: string;
+		/** Provider label (e.g. 'slack', 'google'). */
+		provider: string;
+		/** Provenance marker — always 'integration'. A write-back action reads this to avoid echoing the change back to the vendor. */
+		source: string;
+	};
+}
+
+export interface MailMessageDeletedEvent extends DomainEvent {
+	readonly type: 'mail_message_deleted';
+	readonly aggregateType: 'mail_message';
+	readonly payload: {
+		/** Local aggregate id the sink wrote/soft-deleted. */
+		entityId: string;
+		/** Vendor external id the change keyed on. */
+		externalId: string;
+		/** Provider label (e.g. 'slack', 'google'). */
+		provider: string;
+		/** Provenance marker — always 'integration'. A write-back action reads this to avoid echoing the change back to the vendor. */
+		source: string;
+	};
+}
+
+export interface MailMessageEditedEvent extends DomainEvent {
+	readonly type: 'mail_message_edited';
+	readonly aggregateType: 'mail_message';
+	readonly payload: {
+		/** Differ's per-field before/after map (same value as integration_run_items.changed_fields). */
+		changedFields: Record<string, unknown> | null;
+		/** Local aggregate id the sink wrote/soft-deleted. */
+		entityId: string;
+		/** Vendor external id the change keyed on. */
+		externalId: string;
+		/** Provider label (e.g. 'slack', 'google'). */
+		provider: string;
+		/** Provenance marker — always 'integration'. A write-back action reads this to avoid echoing the change back to the vendor. */
+		source: string;
 	};
 }
 
@@ -140,12 +238,18 @@ export interface WebhookOutboundContactSyncEvent extends DomainEvent {
 }
 
 export type AppDomainEvent =
+	| CalendarEventCreatedEvent
+	| CalendarEventDeletedEvent
+	| CalendarEventEditedEvent
 	| ContactCreatedEvent
 	| ContactMarkedChampionEvent
 	| ContactMergedEvent
 	| CrmSyncStartedEvent
 	| DealCreatedEvent
 	| DealStageChangedEvent
+	| MailMessageCreatedEvent
+	| MailMessageDeletedEvent
+	| MailMessageEditedEvent
 	| MessageCreatedEvent
 	| MessageDeletedEvent
 	| MessageEditedEvent

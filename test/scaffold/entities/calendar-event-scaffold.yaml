@@ -1,0 +1,28 @@
+# S7b (#917) — SCAFFOLD-ONLY integrated family (copy of test/fixtures/integrated-child/entities/calendar_event.yaml; in no inheritance set).
+# The second Integrated child of `inbox_item` (D3): same base key, another kind and another surface.
+
+entity:
+  name: calendar_event
+  plural: calendar_events
+  surface: calendar
+  pattern: Integrated
+
+inherits: inbox_item
+
+fields:
+  starts_at:
+    type: datetime
+    required: true
+  ends_at:
+    type: datetime
+    nullable: true
+
+integration:
+  providers:
+    google:
+      remote_entity: event
+      direction: inbound
+  sink:
+    delete: soft
+    exclude_fields: [title]
+    emit_changes: true

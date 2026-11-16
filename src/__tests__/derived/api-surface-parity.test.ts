@@ -74,6 +74,7 @@ describe('api-surface parity — Subject A: the checked-in baseline', () => {
 	it('derives every baseline fixture entity (guards against an empty sweep)', () => {
 		expect([...surfaces.keys()].sort()).toEqual([
 			'account',
+			'calendar_event',
 			'catalog_entry',
 			'communication',
 			'contact',
@@ -81,6 +82,9 @@ describe('api-surface parity — Subject A: the checked-in baseline', () => {
 			'deal_state',
 			'email',
 			'email_thread',
+			'inbox_item',
+			'mail_message',
+			'mailbox',
 			'meeting',
 			'meeting_transcript',
 			'opportunity',

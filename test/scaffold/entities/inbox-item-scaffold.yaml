@@ -1,0 +1,38 @@
+# S7b (#917) — SCAFFOLD-ONLY integrated family (copy of test/fixtures/integrated-child/entities/inbox_item.yaml; in no inheritance set).
+# RFC-0006 §4.2 / S7 (#917) — the base of an integrated family. `mail_message` and `calendar_event` are
+# Integrated children that a provider sync writes; `note` is a base-only kind (no child, a person writes it).
+#
+# What an Integrated child asks of its base (D1): `external_id_tracking` DECLARED here, and a `natural_key: true`
+# entry over exactly [provider, external_id]. The base owns the three behavior columns; the children get none.
+# Integrated on the base itself is refused (D2, #927).
+
+entity:
+  name: inbox_item
+  plural: inbox_items
+
+tenant_scoped: true
+discriminator: kind
+behaviors: [timestamps, soft_delete, external_id_tracking]
+
+fields:
+  tenant_id:
+    type: uuid
+    required: true
+  kind:
+    type: enum
+    choices: [mail_message, calendar_event, note]
+    required: true
+  title:
+    type: string
+    required: true
+
+unique_indexes:
+  - fields: [provider, external_id]
+    natural_key: true
+
+relationships:
+  mailbox:
+    type: belongs_to
+    target: mailbox
+    foreign_key: mailbox_id
+    nullable: true

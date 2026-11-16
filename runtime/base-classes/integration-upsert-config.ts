@@ -54,3 +54,15 @@ export interface IntegrationUpsertConfig {
   /** When true, deletes set `deletedAt`; when false, tombstone-by-clearing external_id/provider. */
   softDelete: boolean;
 }
+
+/**
+ * What `IntegratedEntityRepository.writeIntegrationRow` is handed: the identity, the copy-through columns and the FKs
+ * this run resolved (a `null` for a parent that did not resolve). A joined-table child overrides the hook to write the
+ * pair (RFC-0006 §4.2, S7), so the shape is public.
+ */
+export interface IntegrationRowWrite {
+  externalId: unknown;
+  provider: string;
+  copyThrough: Record<string, unknown>;
+  resolvedFks: Record<string, string | null>;
+}

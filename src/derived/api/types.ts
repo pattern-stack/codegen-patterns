@@ -98,6 +98,8 @@ export interface RepositoryMethod {
 		| 'upsert_through_base'
 		/** A base's `update`, which refuses a `kind` change (`discriminator:`, §4.1). */
 		| 'kind_guard'
+		/** An Integrated child's `findByExternalId` / `findManyByExternalIds` / `findByExternalIdProjected` / `softDeleteByExternalId`, forwarded to its base row and scoped to its kind (`pattern: Integrated` over `inherits:`, §4.2, S7). */
+		| 'integration_through_base'
 		/** A base's `create`, which refuses a kind that has a child table (`KindRequiresChildError`, §4.1). */
 		| 'create_guard'
 		| 'inherited';

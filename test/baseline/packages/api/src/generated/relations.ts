@@ -12,11 +12,14 @@ import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';
 import { hopScope, scopedRoot, tableScope, UNSCOPED, type ScopeConfig } from '@shared/base-classes/scope-filters';
 import * as schema from './schema';
 
+export const CALENDAR_EVENTS_SCOPE = tableScope(schema.calendar_events, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: false, userTracking: false, enforcement: 'strict', baseScope: { table: schema.inbox_items, softDelete: true, userTracking: false } });
 export const CATALOG_ENTRIES_SCOPE = tableScope(schema.catalog_entries, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: true, userTracking: true, enforcement: 'strict' });
 export const COMMUNICATIONS_SCOPE = tableScope(schema.communications, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: false, userTracking: false, enforcement: 'strict' });
 export const CONTACTS_SCOPE = tableScope(schema.contacts, { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' });
 export const DEALS_SCOPE = tableScope(schema.deals, { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' });
 export const EMAILS_SCOPE = tableScope(schema.emails, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: false, userTracking: false, enforcement: 'strict' });
+export const INBOX_ITEMS_SCOPE = tableScope(schema.inbox_items, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: true, userTracking: false, enforcement: 'strict' });
+export const MAIL_MESSAGES_SCOPE = tableScope(schema.mail_messages, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: false, userTracking: false, enforcement: 'strict', baseScope: { table: schema.inbox_items, softDelete: true, userTracking: false } });
 export const MEETINGS_SCOPE = tableScope(schema.meetings, { tenantScoped: true, tenantColumn: 'tenantId', softDelete: false, userTracking: false, enforcement: 'strict' });
 
 /**
@@ -27,6 +30,7 @@ export const MEETINGS_SCOPE = tableScope(schema.meetings, { tenantScoped: true, 
  */
 export const SCOPES = {
 	accounts: tableScope(schema.accounts, UNSCOPED),
+	calendar_events: CALENDAR_EVENTS_SCOPE,
 	catalog_entries: CATALOG_ENTRIES_SCOPE,
 	communications: COMMUNICATIONS_SCOPE,
 	contacts: CONTACTS_SCOPE,
@@ -34,6 +38,9 @@ export const SCOPES = {
 	deals: DEALS_SCOPE,
 	email_threads: tableScope(schema.email_threads, UNSCOPED),
 	emails: EMAILS_SCOPE,
+	inbox_items: INBOX_ITEMS_SCOPE,
+	mail_messages: MAIL_MESSAGES_SCOPE,
+	mailboxes: tableScope(schema.mailboxes, UNSCOPED),
 	meeting_transcripts: tableScope(schema.meeting_transcripts, UNSCOPED),
 	meetings: MEETINGS_SCOPE,
 	opportunities: tableScope(schema.opportunities, UNSCOPED),
@@ -46,6 +53,7 @@ export const SCOPES = {
 /** The ROOT scope of one table, typed to it: AND it into a hand-written `db.query.<table>` root `where`. */
 export const rootScope = {
 	accounts: (owner: string) => scopedRoot(SCOPES.accounts, owner),
+	calendar_events: (owner: string) => scopedRoot(SCOPES.calendar_events, owner),
 	catalog_entries: (owner: string) => scopedRoot(SCOPES.catalog_entries, owner),
 	communications: (owner: string) => scopedRoot(SCOPES.communications, owner),
 	contacts: (owner: string) => scopedRoot(SCOPES.contacts, owner),
@@ -53,6 +61,9 @@ export const rootScope = {
 	deals: (owner: string) => scopedRoot(SCOPES.deals, owner),
 	email_threads: (owner: string) => scopedRoot(SCOPES.email_threads, owner),
 	emails: (owner: string) => scopedRoot(SCOPES.emails, owner),
+	inbox_items: (owner: string) => scopedRoot(SCOPES.inbox_items, owner),
+	mail_messages: (owner: string) => scopedRoot(SCOPES.mail_messages, owner),
+	mailboxes: (owner: string) => scopedRoot(SCOPES.mailboxes, owner),
 	meeting_transcripts: (owner: string) => scopedRoot(SCOPES.meeting_transcripts, owner),
 	meetings: (owner: string) => scopedRoot(SCOPES.meetings, owner),
 	opportunities: (owner: string) => scopedRoot(SCOPES.opportunities, owner),
@@ -63,6 +74,9 @@ export const rootScope = {
 };
 
 export const relations = defineRelations(schema, (r) => ({
+	calendar_events: {
+		inboxItem: r.one.inbox_items({ from: r.calendar_events.id, to: r.inbox_items.id, optional: false, where: { RAW: (t) => hopScope(t, INBOX_ITEMS_SCOPE, 'calendar_events.inboxItem') } }),
+	},
 	communications: {
 		email: r.one.emails({ from: r.communications.id, to: r.emails.id, optional: true, where: { RAW: (t) => hopScope(t, EMAILS_SCOPE, 'communications.email') } }),
 		meeting: r.one.meetings({ from: r.communications.id, to: r.meetings.id, optional: true, where: { RAW: (t) => hopScope(t, MEETINGS_SCOPE, 'communications.meeting') } }),
@@ -82,6 +96,14 @@ export const relations = defineRelations(schema, (r) => ({
 	emails: {
 		communication: r.one.communications({ from: r.emails.id, to: r.communications.id, optional: false, where: { RAW: (t) => hopScope(t, COMMUNICATIONS_SCOPE, 'emails.communication') } }),
 		thread: r.one.email_threads({ from: r.emails.threadId, to: r.email_threads.id, optional: true }),
+	},
+	inbox_items: {
+		calendarEvent: r.one.calendar_events({ from: r.inbox_items.id, to: r.calendar_events.id, optional: true, where: { RAW: (t) => hopScope(t, CALENDAR_EVENTS_SCOPE, 'inbox_items.calendarEvent') } }),
+		mailbox: r.one.mailboxes({ from: r.inbox_items.mailboxId, to: r.mailboxes.id, optional: true }),
+		mailMessage: r.one.mail_messages({ from: r.inbox_items.id, to: r.mail_messages.id, optional: true, where: { RAW: (t) => hopScope(t, MAIL_MESSAGES_SCOPE, 'inbox_items.mailMessage') } }),
+	},
+	mail_messages: {
+		inboxItem: r.one.inbox_items({ from: r.mail_messages.id, to: r.inbox_items.id, optional: false, where: { RAW: (t) => hopScope(t, INBOX_ITEMS_SCOPE, 'mail_messages.inboxItem') } }),
 	},
 	meeting_transcripts: {
 		meeting: r.one.meetings({ from: r.meeting_transcripts.meetingId, to: r.meetings.id, optional: true, where: { RAW: (t) => hopScope(t, MEETINGS_SCOPE, 'meeting_transcripts.meeting') } }),

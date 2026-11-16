@@ -2028,6 +2028,36 @@ S7b (emission and the repository) and S7c (the integration emitter).
   hits on the fixture today while `entity validate` passes it, and the retyped pair at `:2293` / `:2302`, which should read the
   behaviour's `identityColumns`; the child's reads forwarded to the base; and wiring the fixture into an emitting set.
 
+**S7b — the repository writes and reads through the base (as built).**
+
+- **Child table.** `ownsExternalIdColumns` (`entity-locals.js`) is the one owner of "this table holds the `external_id_tracking`
+  columns": false for a child whose pattern lists the behavior in `readsThroughBase`. The child's `entity.ts`, output DTO and
+  constraints carry none; its `<Child>IntegrationWrite` / `Projection` are FLAT (the base's declared columns minus the discriminator,
+  then its own; the tenant column is in the projection, never the write) so the sink passes what it would pass a plain entity.
+  The fields and edges come from S7a's `flatChildShape` (one walk; a base enum or base `belongs_to` resolves against its owner),
+  so a base `belongs_to` is an FK resolver and a `<relationship>ExternalId` write key like any other. `exclude_fields` shrinks the
+  write surface only. The pair `(provider, external_id)` is the behavior's `identityColumns`, never retyped. The 490 contract test
+  holds the repository's and the sink's views of a child equal (`490-sink-knobs-contract.test.ts` (e)).
+- **One constraint.** The base's `natural_key: true` entry over `[provider, external_id]` adopts `external_id_tracking`'s unique
+  (`uq_<table>[_tenant]_provider_external_id`); the behavior's own is skipped. NULLs stay distinct (`nulls_not_distinct` defaults to
+  false for the adopted entry): a base-only kind's row carries no identity and must not collide with another's, and
+  `upsertByNaturalKey` refuses a NULL instead. (A plain Integrated entity keeps its `NULLS NOT DISTINCT` unique.)
+- **NULL guard.** `assertNaturalKeyValues` / `NaturalKeyNullError` (`runtime/base-classes/inheritance.ts`), printed by the
+  `upsert_own` template on the non-tenant key columns before any statement. A child's upsert runs its base's, so it is covered.
+  Every `natural_key` entity gets it (the catalog and communication baselines gained the call).
+- **Design choice (step 4).** The child EXTENDS `IntegratedEntityRepository`. `integrationUpsertOne` is not overridden: the class
+  gained one protected hook, `writeIntegrationRow`, the persist step, and the child overrides only that to call its own
+  `upsertByNaturalKey` (kind guard, `match:` fill, orphan repair for free). FK resolution, the projection and the EAV seam keep one
+  owner. The four identity reads and the tombstone are emitted on the child (`integration_through_base` entries, origin
+  `entity.pattern`): an inner join child → base on `id`, the child's own scope, so a base row of another kind has no row and is never
+  matched or tombstoned. The tombstone goes through the base repository's own `delete` / `update` (D4).
+- **Contract notes.** `findByExternalId` / `findManyByExternalIds` keep the plain signature (no provider), as before. The sink calls the
+  repository, not the service, so a sink write emits no `created` / `updated` event for ANY entity; the pair's two names come from
+  the service's `upsertByNaturalKey`, which the sink does not call (not S7b's; recorded for S7c / a later slice).
+- **Fixtures.** The family (with `mailbox`) is copied into the baseline set and the scaffold set (`*-scaffold.yaml`); a test fails when
+  a copy drifts. The baseline runner calls hygen, not the CLI, so the provider definition is not read there: the integration layer of
+  the family is S7c's gates'. The Docker tier widens the write columns by `title` (the fixture's sink excludes it; the base requires it).
+
 ### 13.3 Rules for every slice
 
 - Report gate output from the run made after the last edit. No filtered error class, no directory carve-out.

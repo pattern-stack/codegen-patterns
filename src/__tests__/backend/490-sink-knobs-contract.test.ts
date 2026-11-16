@@ -396,3 +396,51 @@ describe('#490 buildIntegrationSurface: exclusion scope fence (write-only)', () 
     expect(surface.integrationConfig.softDelete).toBe(false);
   });
 });
+
+// ============================================================================
+// (e) An Integrated CHILD of a joined-table family: the same two derivations, over ONE flat shape (S7b, #917)
+// ============================================================================
+//
+// The repository derives a child's write surface from `flatChildShape`; the sink is handed `flattenInheritedChild` of
+// the same walk. A family-blind sink calls the child's repository as it would a plain entity's, so the two must agree
+// on every field, FK key and exclusion — or the sink writes a column the repository ignores (or the reverse).
+
+import { baselineSet } from '../derived/_inputs';
+import { promptLocals } from '../derived/_render';
+import { buildBackendLocals } from '../../../templates/entity/new/backend/entity-locals.js';
+import { flattenInheritedChild } from '../../schema/inheritance';
+
+describe('#490 contract (e): an Integrated child — repository and sink agree on the flat write surface', () => {
+  const set = baselineSet();
+  for (const name of ['mail_message', 'calendar_event']) {
+    const def = set.entities.find((d) => d.entity.name === name)!;
+    const locals = buildBackendLocals(structuredClone(def), promptLocals(set)) as {
+      integrationConfig: { writeColumns: string[]; projectionColumns: string[] };
+      integrationWriteFields: { camelName: string }[];
+      integrationWriteFkFields: { name: string }[];
+    };
+    const sink = buildSinkInput(
+      flattenInheritedChild(def, set.entities) as Parameters<typeof buildSinkInput>[0],
+      'mail',
+      'google',
+      `../${name}.repository`,
+      'tenant_id',
+    );
+
+    it(`${name}: the write columns are the sink's copy-through fields, in order`, () => {
+      expect(sink.copyThroughFields.map((f) => f.camelName)).toEqual(locals.integrationConfig.writeColumns);
+    });
+
+    it(`${name}: the FK write keys are the sink's external keys (a base belongs_to included)`, () => {
+      expect(sink.fkExternalKeys.map((k) => k.writeKey)).toEqual(locals.integrationWriteFkFields.map((f) => f.name));
+      expect(locals.integrationWriteFkFields.map((f) => f.name)).toContain('mailboxExternalId');
+    });
+
+    it(`${name}: exclude_fields: [title] leaves the write surface of both, and stays in the projection`, () => {
+      expect(locals.integrationConfig.writeColumns).not.toContain('title');
+      expect(sink.copyThroughFields.map((f) => f.camelName)).not.toContain('title');
+      expect(locals.integrationConfig.projectionColumns).toContain('title');
+      expect((sink.viewCopyThroughFields ?? []).map((f) => f.camelName)).toContain('title');
+    });
+  }
+});

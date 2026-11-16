@@ -56,7 +56,7 @@ function readTemplate(rel: string): Template {
 }
 
 /** The locals `templates/entity/new/prompt.js` owns, for a project with no events and no detection. */
-function promptLocals(set: DefinitionSet): Record<string, unknown> {
+export function promptLocals(set: DefinitionSet): Record<string, unknown> {
 	return {
 		generatedBanner: '',
 		runtimeMode: 'vendored',

@@ -1,0 +1,834 @@
+{
+	"entity": "inbox_item",
+	"plural": "inbox_items",
+	"className": "InboxItem",
+	"repository": {
+		"className": "InboxItemRepository",
+		"baseClass": "BaseRepository",
+		"typedInclude": true,
+		"methods": [
+			{
+				"name": "findById",
+				"kind": "find_by_id",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findByIds",
+				"kind": "find_by_ids",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "list",
+				"kind": "list",
+				"emitted": true,
+				"params": [
+					{
+						"name": "query"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "count",
+				"kind": "count",
+				"emitted": true,
+				"params": [
+					{
+						"name": "where"
+					}
+				],
+				"returns": "count",
+				"readOptions": "none",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findAllKinds",
+				"kind": "all_kinds",
+				"emitted": true,
+				"params": [
+					{
+						"name": "query"
+					}
+				],
+				"returns": "many",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: calendar_event, mail_message"
+					}
+				}
+			},
+			{
+				"name": "findKindById",
+				"kind": "kind_by_id",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					}
+				],
+				"returns": "one",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: calendar_event, mail_message"
+					}
+				}
+			},
+			{
+				"name": "listKind",
+				"kind": "list_kind",
+				"emitted": true,
+				"params": [
+					{
+						"name": "kind"
+					},
+					{
+						"name": "query"
+					},
+					{
+						"name": "childWith"
+					}
+				],
+				"returns": "many",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: calendar_event, mail_message"
+					}
+				}
+			},
+			{
+				"name": "countKind",
+				"kind": "count_kind",
+				"emitted": true,
+				"params": [
+					{
+						"name": "kind"
+					},
+					{
+						"name": "where"
+					}
+				],
+				"returns": "count",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: calendar_event, mail_message"
+					}
+				}
+			},
+			{
+				"name": "findOrphans",
+				"kind": "orphans",
+				"emitted": true,
+				"params": [
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: calendar_event, mail_message"
+					}
+				}
+			},
+			{
+				"name": "update",
+				"kind": "kind_guard",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"discriminator"
+						]
+					}
+				}
+			},
+			{
+				"name": "create",
+				"kind": "create_guard",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					},
+					{
+						"name": "via"
+					}
+				],
+				"returns": "one",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"discriminator"
+						]
+					}
+				}
+			},
+			{
+				"name": "upsertByNaturalKey",
+				"kind": "upsert_own",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					},
+					{
+						"name": "via"
+					}
+				],
+				"returns": "one",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"unique_indexes",
+							0,
+							"natural_key"
+						]
+					}
+				}
+			},
+			{
+				"name": "findByMailboxId",
+				"kind": "fk_finder",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id",
+						"field": "mailbox_id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns+with",
+				"limit": true,
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"relationships",
+							"mailbox"
+						]
+					}
+				}
+			},
+			{
+				"name": "exists",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "delete",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "upsertMany",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			}
+		]
+	},
+	"service": {
+		"className": "InboxItemService",
+		"baseClass": "BaseService",
+		"methods": [
+			{
+				"name": "findById",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "inbox_item",
+					"layer": "repository",
+					"method": "findById"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findByIds",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "inbox_item",
+					"layer": "repository",
+					"method": "findByIds"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "list",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "listOptions"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "inbox_item",
+					"layer": "repository",
+					"method": "list"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findAllKinds",
+				"kind": "all_kinds",
+				"emitted": true,
+				"params": [
+					{
+						"name": "query"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "inbox_item",
+					"layer": "repository",
+					"method": "findAllKinds"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: calendar_event, mail_message"
+					}
+				}
+			},
+			{
+				"name": "findKindById",
+				"kind": "kind_by_id",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "inbox_item",
+					"layer": "repository",
+					"method": "findKindById"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: calendar_event, mail_message"
+					}
+				}
+			},
+			{
+				"name": "listKind",
+				"kind": "list_kind",
+				"emitted": true,
+				"params": [
+					{
+						"name": "kind"
+					},
+					{
+						"name": "query"
+					},
+					{
+						"name": "childWith"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "inbox_item",
+					"layer": "repository",
+					"method": "listKind"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: calendar_event, mail_message"
+					}
+				}
+			},
+			{
+				"name": "countKind",
+				"kind": "count_kind",
+				"emitted": true,
+				"params": [
+					{
+						"name": "kind"
+					},
+					{
+						"name": "where"
+					}
+				],
+				"returns": "count",
+				"delegatesTo": {
+					"entity": "inbox_item",
+					"layer": "repository",
+					"method": "countKind"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: calendar_event, mail_message"
+					}
+				}
+			},
+			{
+				"name": "findOrphans",
+				"kind": "orphans",
+				"emitted": true,
+				"params": [
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "inbox_item",
+					"layer": "repository",
+					"method": "findOrphans"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"discriminator"
+						],
+						"note": "kinds with a child table: calendar_event, mail_message"
+					}
+				}
+			},
+			{
+				"name": "upsertByNaturalKey",
+				"kind": "upsert_own",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "inbox_item",
+					"layer": "repository",
+					"method": "upsertByNaturalKey"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"unique_indexes",
+							0,
+							"natural_key"
+						]
+					}
+				}
+			},
+			{
+				"name": "mailbox",
+				"kind": "relation_one",
+				"emitted": true,
+				"params": [
+					{
+						"name": "inboxItemId"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "mailbox",
+					"layer": "repository",
+					"method": "findById"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"relationships",
+							"mailbox"
+						]
+					}
+				}
+			},
+			{
+				"name": "count",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "exists",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "create",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "update",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			},
+			{
+				"name": "delete",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Base"
+				}
+			}
+		]
+	},
+	"useCases": [
+		{
+			"className": "FindInboxItemByIdUseCase",
+			"kind": "find_by_id",
+			"calls": {
+				"entity": "inbox_item",
+				"layer": "service",
+				"method": "findById"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "ListInboxItemsUseCase",
+			"kind": "list",
+			"calls": {
+				"entity": "inbox_item",
+				"layer": "service",
+				"method": "list"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "CreateInboxItemUseCase",
+			"kind": "create",
+			"calls": {
+				"entity": "inbox_item",
+				"layer": "service",
+				"method": "create"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "UpdateInboxItemUseCase",
+			"kind": "update",
+			"calls": {
+				"entity": "inbox_item",
+				"layer": "service",
+				"method": "update"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "DeleteInboxItemUseCase",
+			"kind": "delete",
+			"calls": {
+				"entity": "inbox_item",
+				"layer": "service",
+				"method": "delete"
+			},
+			"origin": {
+				"from": "base"
+			}
+		}
+	],
+	"http": {
+		"enabled": true,
+		"routes": [
+			{
+				"verb": "GET",
+				"path": "/inbox_items",
+				"controller": "InboxItemController",
+				"handler": "getAll",
+				"operationId": "listInboxItems",
+				"useCase": "ListInboxItemsUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "GET",
+				"path": "/inbox_items/:id",
+				"controller": "InboxItemController",
+				"handler": "getById",
+				"operationId": "findInboxItemById",
+				"useCase": "FindInboxItemByIdUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "POST",
+				"path": "/inbox_items",
+				"controller": "InboxItemController",
+				"handler": "create",
+				"operationId": "createInboxItem",
+				"useCase": "CreateInboxItemUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "PATCH",
+				"path": "/inbox_items/:id",
+				"controller": "InboxItemController",
+				"handler": "update",
+				"operationId": "updateInboxItem",
+				"useCase": "UpdateInboxItemUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "DELETE",
+				"path": "/inbox_items/:id",
+				"controller": "InboxItemController",
+				"handler": "remove",
+				"operationId": "deleteInboxItem",
+				"useCase": "DeleteInboxItemUseCase",
+				"origin": {
+					"from": "base"
+				}
+			}
+		],
+		"includeRoutes": [],
+		"includesConst": "INBOX_ITEMS_API_INCLUDES"
+	}
+}

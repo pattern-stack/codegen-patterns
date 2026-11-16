@@ -19,7 +19,7 @@ export const <%= familyChild ? classNames.ownOutputSchema : classNames.outputSch
 <%_ outputDtoFields.forEach(field => { _%>
   <%= field.camelName %>: <%- field.zodChainOutput %>,
 <%_ }) _%>
-<%_ if (hasExternalIdTracking) { _%>
+<%_ if (ownsExternalIdColumns) { _%>
   // external_id_tracking behavior — external_id is the public cross-entity join
   // key (a referenced entity exposes it so consumers can join), so it rides the
   // output DTO read-only. provider / provider_metadata stay internal.

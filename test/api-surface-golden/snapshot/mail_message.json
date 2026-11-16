@@ -1,0 +1,969 @@
+{
+	"entity": "mail_message",
+	"plural": "mail_messages",
+	"className": "MailMessage",
+	"repository": {
+		"className": "MailMessageRepository",
+		"baseClass": "IntegratedEntityRepository",
+		"typedInclude": true,
+		"methods": [
+			{
+				"name": "findById",
+				"kind": "find_by_id",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findByIds",
+				"kind": "find_by_ids",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "list",
+				"kind": "list",
+				"emitted": true,
+				"params": [
+					{
+						"name": "query"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "count",
+				"kind": "count",
+				"emitted": true,
+				"params": [
+					{
+						"name": "where"
+					}
+				],
+				"returns": "count",
+				"readOptions": "none",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findWithBase",
+				"kind": "with_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "findManyWithBase",
+				"kind": "with_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "columns+with",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "listFlat",
+				"kind": "list_flat",
+				"delegatesTo": {
+					"entity": "inbox_item",
+					"layer": "repository",
+					"method": "listKind"
+				},
+				"emitted": true,
+				"params": [
+					{
+						"name": "query"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"readOptions": "with",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "countFlat",
+				"kind": "count_flat",
+				"delegatesTo": {
+					"entity": "inbox_item",
+					"layer": "repository",
+					"method": "countKind"
+				},
+				"emitted": true,
+				"params": [
+					{
+						"name": "where"
+					}
+				],
+				"returns": "count",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "create",
+				"kind": "pair_create",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "update",
+				"kind": "pair_update",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "patch"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "delete",
+				"kind": "pair_delete",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "none",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "upsertByNaturalKey",
+				"kind": "upsert_through_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"unique_indexes",
+							0,
+							"natural_key"
+						],
+						"note": "inbox_item's natural key, through mail_message's inherits"
+					}
+				}
+			},
+			{
+				"name": "findByExternalId",
+				"kind": "integration_through_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "externalId"
+					}
+				],
+				"returns": "one",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"entity",
+							"pattern"
+						]
+					}
+				}
+			},
+			{
+				"name": "findManyByExternalIds",
+				"kind": "integration_through_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "externalIds"
+					}
+				],
+				"returns": "many",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"entity",
+							"pattern"
+						]
+					}
+				}
+			},
+			{
+				"name": "findByExternalIdProjected",
+				"kind": "integration_through_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "externalId"
+					},
+					{
+						"name": "provider"
+					}
+				],
+				"returns": "one",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"entity",
+							"pattern"
+						]
+					}
+				}
+			},
+			{
+				"name": "softDeleteByExternalId",
+				"kind": "integration_through_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "externalId"
+					},
+					{
+						"name": "provider"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"readOptions": "none",
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"entity",
+							"pattern"
+						]
+					}
+				}
+			},
+			{
+				"name": "exists",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Integrated"
+				}
+			},
+			{
+				"name": "upsertMany",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Integrated"
+				}
+			},
+			{
+				"name": "integrationUpsertOne",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Integrated"
+				}
+			},
+			{
+				"name": "integrationUpsert",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"readOptions": "none",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Integrated"
+				}
+			}
+		]
+	},
+	"service": {
+		"className": "MailMessageService",
+		"baseClass": "IntegratedEntityService",
+		"methods": [
+			{
+				"name": "findById",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "findById"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findByIds",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "findByIds"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "list",
+				"kind": "read",
+				"emitted": true,
+				"params": [
+					{
+						"name": "listOptions"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "list"
+				},
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"name": "findWithBase",
+				"kind": "with_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "findWithBase"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "findManyWithBase",
+				"kind": "with_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "ids"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "findManyWithBase"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "listFlat",
+				"kind": "list_flat",
+				"emitted": true,
+				"params": [
+					{
+						"name": "query"
+					},
+					{
+						"name": "opts"
+					}
+				],
+				"returns": "many",
+				"delegatesTo": {
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "listFlat"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "countFlat",
+				"kind": "count_flat",
+				"emitted": true,
+				"params": [
+					{
+						"name": "where"
+					}
+				],
+				"returns": "count",
+				"delegatesTo": {
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "countFlat"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "create",
+				"kind": "pair_create",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "create"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "update",
+				"kind": "pair_update",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "patch"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "update"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "delete",
+				"kind": "pair_delete",
+				"emitted": true,
+				"params": [
+					{
+						"name": "id"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "none",
+				"delegatesTo": {
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "delete"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "mail_message"
+						},
+						"path": [
+							"inherits"
+						]
+					}
+				}
+			},
+			{
+				"name": "upsertByNaturalKey",
+				"kind": "upsert_through_base",
+				"emitted": true,
+				"params": [
+					{
+						"name": "input"
+					},
+					{
+						"name": "tx"
+					}
+				],
+				"returns": "one",
+				"delegatesTo": {
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "upsertByNaturalKey"
+				},
+				"origin": {
+					"from": "yaml",
+					"at": {
+						"doc": {
+							"kind": "entity",
+							"name": "inbox_item"
+						},
+						"path": [
+							"unique_indexes",
+							0,
+							"natural_key"
+						],
+						"note": "inbox_item's natural key, through mail_message's inherits"
+					}
+				}
+			},
+			{
+				"name": "count",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Integrated"
+				}
+			},
+			{
+				"name": "exists",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Integrated"
+				}
+			},
+			{
+				"name": "findByExternalId",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Integrated"
+				}
+			},
+			{
+				"name": "findManyByExternalIds",
+				"kind": "inherited",
+				"emitted": false,
+				"params": [],
+				"returns": "forwarded",
+				"origin": {
+					"from": "pattern",
+					"pattern": "Integrated"
+				}
+			}
+		]
+	},
+	"useCases": [
+		{
+			"className": "FindMailMessageByIdUseCase",
+			"kind": "find_by_id",
+			"calls": {
+				"entity": "mail_message",
+				"layer": "service",
+				"method": "findWithBase"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "ListMailMessagesUseCase",
+			"kind": "list",
+			"calls": {
+				"entity": "mail_message",
+				"layer": "service",
+				"method": "list"
+			},
+			"alsoCalls": [
+				{
+					"entity": "mail_message",
+					"layer": "service",
+					"method": "count"
+				},
+				{
+					"entity": "mail_message",
+					"layer": "service",
+					"method": "listFlat"
+				},
+				{
+					"entity": "mail_message",
+					"layer": "service",
+					"method": "countFlat"
+				}
+			],
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "CreateMailMessageUseCase",
+			"kind": "create",
+			"calls": {
+				"entity": "mail_message",
+				"layer": "service",
+				"method": "create"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "UpdateMailMessageUseCase",
+			"kind": "update",
+			"calls": {
+				"entity": "mail_message",
+				"layer": "service",
+				"method": "update"
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"className": "DeleteMailMessageUseCase",
+			"kind": "delete",
+			"calls": {
+				"entity": "mail_message",
+				"layer": "service",
+				"method": "delete"
+			},
+			"origin": {
+				"from": "base"
+			}
+		}
+	],
+	"http": {
+		"enabled": true,
+		"routes": [
+			{
+				"verb": "GET",
+				"path": "/mail_messages",
+				"controller": "MailMessageController",
+				"handler": "getAll",
+				"operationId": "listMailMessages",
+				"useCase": "ListMailMessagesUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "GET",
+				"path": "/mail_messages/:id",
+				"controller": "MailMessageController",
+				"handler": "getById",
+				"operationId": "findMailMessageById",
+				"useCase": "FindMailMessageByIdUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "POST",
+				"path": "/mail_messages",
+				"controller": "MailMessageController",
+				"handler": "create",
+				"operationId": "createMailMessage",
+				"useCase": "CreateMailMessageUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "PATCH",
+				"path": "/mail_messages/:id",
+				"controller": "MailMessageController",
+				"handler": "update",
+				"operationId": "updateMailMessage",
+				"useCase": "UpdateMailMessageUseCase",
+				"origin": {
+					"from": "base"
+				}
+			},
+			{
+				"verb": "DELETE",
+				"path": "/mail_messages/:id",
+				"controller": "MailMessageController",
+				"handler": "remove",
+				"operationId": "deleteMailMessage",
+				"useCase": "DeleteMailMessageUseCase",
+				"origin": {
+					"from": "base"
+				}
+			}
+		],
+		"includeRoutes": [],
+		"includesConst": "MAIL_MESSAGES_API_INCLUDES"
+	}
+}

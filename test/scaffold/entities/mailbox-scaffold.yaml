@@ -1,0 +1,11 @@
+# S7b (#917) — SCAFFOLD-ONLY integrated family (copy of test/fixtures/integrated-child/entities/mailbox.yaml; in no inheritance set).
+# A small generic entity the family's base points at, so a base `belongs_to` reaches every integration path (S7a fix 2).
+
+entity:
+  name: mailbox
+  plural: mailboxes
+
+fields:
+  address:
+    type: string
+    required: true

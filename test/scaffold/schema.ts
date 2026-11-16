@@ -63,6 +63,12 @@ export * from '@gen/modules/catalog-entries/catalog-entry.entity';
 export * from '@gen/modules/documents/document.entity';
 export * from '@gen/modules/report-documents/report-document.entity';
 
+// S7b (#917): a scaffold-only family whose children are `pattern: Integrated` over the base's external_id_tracking.
+export * from '@gen/modules/mailboxes/mailbox.entity';
+export * from '@gen/modules/inbox-items/inbox-item.entity';
+export * from '@gen/modules/mail-messages/mail-message.entity';
+export * from '@gen/modules/calendar-events/calendar-event.entity';
+
 // Subsystem schemas come from `@shared/*` — i.e. `runtime/subsystems/*`, the
 // real source — NOT from a vendored copy generated into the repo root. One
 // copy, nothing to install, nothing to clean up (GATE-1, #599).
