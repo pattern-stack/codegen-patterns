@@ -1,0 +1,44 @@
+# S7c (#917) — the flat control for the second Integrated child (D3): `calendar_event` with the family child's flat shape.
+
+entity:
+  name: calendar_event
+  plural: calendar_events
+  surface: calendar
+  pattern: Integrated
+
+tenant_scoped: true
+behaviors: [timestamps, soft_delete, external_id_tracking]
+
+fields:
+  tenant_id:
+    type: uuid
+    required: true
+  title:
+    type: string
+    required: true
+  preview:
+    type: string
+    nullable: true
+  starts_at:
+    type: datetime
+    required: true
+  ends_at:
+    type: datetime
+    nullable: true
+
+relationships:
+  mailbox:
+    type: belongs_to
+    target: mailbox
+    foreign_key: mailbox_id
+    nullable: true
+
+integration:
+  providers:
+    google:
+      remote_entity: event
+      direction: inbound
+  sink:
+    delete: soft
+    exclude_fields: [preview]
+    emit_changes: true

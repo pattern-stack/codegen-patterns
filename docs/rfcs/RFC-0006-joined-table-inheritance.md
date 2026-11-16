@@ -2072,6 +2072,35 @@ S7b (emission and the repository) and S7c (the integration emitter).
   a copy drifts. The baseline runner calls hygen, not the CLI, so the provider definition is not read there: the integration layer of
   the family is S7c's gates'. The base has a nullable `preview` that both children's sink excludes; the Docker tier runs the generated config unwidened and asserts a sync update leaves `preview` alone. (`exclude_fields` on a NOT NULL column with no default writes no row at all: #930.)
 
+**S7c — the integration layer is family-blind (as built).** `test/integration-emit/family-blind.test.ts` renders the integration
+layer (provider module, adapter scaffold, sink pair, change sources, read primitive, assembly module, tokens, surface aggregator)
+for **both** Integrated children (`mail_message`, `calendar_event`, D3) twice: as plain `pattern: Integrated` entities carrying
+each child's flat shape (`test/fixtures/integrated-child-flat/`) and as the S7a family's children of `inbox_item`
+(`test/fixtures/integrated-child/`), same provider (`integrated-child/definitions/providers/google.yaml`, serving `calendar` and
+`mail`), and requires the same file set and the same bytes, with no line filtered. The fixture holds a base `belongs_to`
+(`mailbox`), and `integration.sink: { delete, exclude_fields: [title], emit_changes: true }` on each child, so the change emitter
+and the base's foreign key are rendered. Three mutations turn it red: `flattenInheritedChild` a no-op; dropping the base's
+relationships from the walk (five lines: the `mailboxExternalId` seam and `mailboxId` in the view); an `inherits:` branch on the
+`emitChanges` line (the change emitters vanish).
+- **What it caught.** Before any emitter change the family's sink differed from the flat one by five lines: `title` missing from
+  the copy-through write and from the find view, and `tenantId`, `createdAt`, `updatedAt` missing from the view. `buildSinkInput`
+  read the child's *own* YAML, which carries none of the base's fields, behaviors or `tenant_scoped`. Nothing else differed: the
+  adapter, `changeSources`, read primitive, assembly, tokens and aggregator already printed the same bytes.
+- **The fix.** The backend's flat shape existed only as emitted types (the DTOs' `.omit().extend()`, `<Child>Flat`), so nothing
+  could give `buildSinkInput` a field list at generation time; S7a's `flatChildShape` is that one owner and
+  `flattenInheritedChild` (`src/schema/inheritance.ts`) is its projection: the child as the plain entity its flat declaration
+  would be (base fields less the discriminator, then the child's; base behaviors; base `tenant_scoped`; base relationships).
+  `emitAdapters` applies it once, to its whole input, and hands the flattened set to an inner function that has no other in
+  scope, so a later edit cannot read `inherits:` by accident. `EmitAdaptersEntity` declares `inherits` / `discriminator`, so the
+  call is typed, with no cast. S7b's repository half consumes the same shape. A child's `exclude_fields` is checked against it (S7a).
+- **Assembly contract.** `assembly-contract.test.ts` feeds synthetic entities and enumerates no fixture set, so it needed no family
+  case; the A/B gate is the family's contract. The family's layer is snapshotted in `__snapshots__/family-blind.test.ts.snap`
+  (new file, `snapshot.test.ts.snap` unchanged).
+- **S7d inherits:** compiling the family's integration layer against the generated backend (`test-smoke-integration`) needs S7b's
+  repository. The sink's calls (`integrationUpsertOne`, `findByExternalIdProjected`, `softDeleteByExternalId`) are printed
+  identically for a child and a plain entity, and S7b's child repository takes each as-is with the flat write shape the sink
+  builds (no kind).
+
 ### 13.3 Rules for every slice
 
 - Report gate output from the run made after the last edit. No filtered error class, no directory carve-out.

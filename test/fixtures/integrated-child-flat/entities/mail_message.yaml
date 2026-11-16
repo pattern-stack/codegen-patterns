@@ -1,0 +1,47 @@
+# S7c (#917) — the control for the family-blind gate: `mail_message` as a PLAIN `pattern: Integrated` entity whose
+# fields are the family child's flat shape (the base's declared fields plus the child's own), with no `kind` and no
+# `inherits:`. `test/integration-emit/family-blind.test.ts` renders the integration layer from this and from
+# `test/fixtures/integrated-child/` and requires the two trees byte-identical.
+
+entity:
+  name: mail_message
+  plural: mail_messages
+  surface: mail
+  pattern: Integrated
+
+tenant_scoped: true
+behaviors: [timestamps, soft_delete, external_id_tracking]
+
+fields:
+  tenant_id:
+    type: uuid
+    required: true
+  title:
+    type: string
+    required: true
+  preview:
+    type: string
+    nullable: true
+  subject:
+    type: string
+    required: true
+  sent_at:
+    type: datetime
+    nullable: true
+
+relationships:
+  mailbox:
+    type: belongs_to
+    target: mailbox
+    foreign_key: mailbox_id
+    nullable: true
+
+integration:
+  providers:
+    google:
+      remote_entity: message
+      direction: inbound
+  sink:
+    delete: tombstone
+    exclude_fields: [preview]
+    emit_changes: true
