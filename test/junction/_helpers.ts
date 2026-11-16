@@ -365,8 +365,6 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
   const entityFixturesDir = path.join(fixturesDir, 'entities');
   const entitiesDir = path.join(tmpDir, paths.entities);
   fs.mkdirSync(entitiesDir, { recursive: true });
-  const examplePath = path.join(entitiesDir, 'example.yaml');
-  if (fs.existsSync(examplePath)) fs.rmSync(examplePath);
   for (const f of fs.readdirSync(entityFixturesDir)) {
     if (!f.endsWith('.yaml') && !f.endsWith('.yml')) continue;
     fs.copyFileSync(path.join(entityFixturesDir, f), path.join(entitiesDir, f));

@@ -11,6 +11,8 @@ Three gates in `src/cli/commands/entity.ts` (pre-flight validation, cross-valida
 Two-commit, two-pronged:
 
 1. **Flip the default.** `Option.Boolean('--continue-on-error', true)`. The flag name stays; Clipanion's auto-generated `--no-continue-on-error` restores strict behavior for users who want it. Update the inline help/comment.
+_Revised 2026-11-15 (#915): `init` seeds `entities/README.md` and no YAML at all, so the skip-when-populated guard below is gone._
+
 2. **Stop seeding a broken placeholder.** `project init` in `src/cli/shared/init-scaffold.ts` skips creating `entities/example.yaml` when the `entities/` directory already contains another `*.yaml`. Defense in depth — even if a user passes `--no-continue-on-error`, a real project won't get the broken stub.
 
 ## Why both

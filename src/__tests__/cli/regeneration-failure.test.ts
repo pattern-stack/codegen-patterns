@@ -75,12 +75,11 @@ async function run(argv: string[]): Promise<{ code: number; out: string }> {
 }
 
 describe('entity new fails when a barrel cannot be regenerated', () => {
-	// The only entity YAML is invalid, so `--all` generates nothing with hygen
-	// and goes straight to the barrel post-step.
+	// One valid entity: hygen renders it, then the barrel post-step is the one that fails.
 	const project = () => {
 		const root = mkProject('paths:\n  entities: entities\n');
 		fs.mkdirSync(path.join(root, 'entities'));
-		fs.writeFileSync(path.join(root, 'entities', 'example.yaml'), '# placeholder\n');
+		fs.writeFileSync(path.join(root, 'entities', 'note.yaml'), 'entity:\n  name: note\n  plural: notes\nfields:\n  body:\n    type: string\n');
 		return root;
 	};
 
@@ -196,7 +195,7 @@ describe('entity new fails when a post-step cannot regenerate a file the app imp
 	const project = (extra = '') => {
 		const root = mkProject(`paths:\n  entities: entities\n${extra}`);
 		fs.mkdirSync(path.join(root, 'entities'));
-		fs.writeFileSync(path.join(root, 'entities', 'example.yaml'), '# placeholder\n');
+		fs.writeFileSync(path.join(root, 'entities', 'note.yaml'), 'entity:\n  name: note\n  plural: notes\nfields:\n  body:\n    type: string\n');
 		return root;
 	};
 

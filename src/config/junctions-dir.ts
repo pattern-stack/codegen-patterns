@@ -12,6 +12,11 @@
 
 import path from 'node:path';
 
+/** Where a project's relationship YAMLs live: `<cwd>/relationships`, no config key (like {@link junctionsDirFor}). */
+export function relationshipsDirFor(cwd: string): string {
+	return path.resolve(cwd, 'relationships');
+}
+
 export function junctionsDirFor(cwd: string): string {
 	return path.resolve(cwd, 'junctions');
 }

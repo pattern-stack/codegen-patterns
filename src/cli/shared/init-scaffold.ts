@@ -12,7 +12,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
 
-import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import { APP_CONFIG_FILE, buildAppConfigContent } from './app-config-generator.js';
 import type { Context } from './context.js';
 import { scanProject, generateConfig } from '../../scanner/index.js';
@@ -562,26 +561,42 @@ export {};
 `;
 }
 
-function exampleEntityYaml(): string {
-	return `# Example entity definition — delete or rename to get started.
-#
-# entity:
-#   name: account
-#   pattern: Integrated   # Base | Integrated | Activity | Metadata | Knowledge (or app-defined)
-#
-# fields:
-#   name:
-#     type: string
-#     required: true
-#   email:
-#     type: string
-#   status:
-#     type: enum
-#     choices: [active, inactive]
-#
-# queries:
-#   - by: [email]
-#     unique: true
+/**
+ * `<entities>/README.md` — how to add an entity. Not YAML: every whole-set step
+ * reads the entities directory, and a placeholder entity file that fails the
+ * schema is a rejection of the next command (#915), so init seeds a note
+ * instead of a file a loader would read.
+ */
+function entitiesReadme(): string {
+	return `# Entities
+
+One YAML file per entity in this directory; \`codegen entity new <file>.yaml\` (or
+\`codegen entity new --all\`) generates its module.
+
+\`\`\`yaml
+# account.yaml
+entity:
+  name: account
+  plural: accounts
+  pattern: Base   # Base | Integrated | Activity | Metadata | Knowledge (or app-defined)
+
+fields:
+  name:
+    type: string
+    required: true
+  email:
+    type: string
+  status:
+    type: enum
+    choices: [active, inactive]
+
+queries:
+  - by: [email]
+    unique: true
+\`\`\`
+
+\`codegen skills install\` vendors the consumer skill into \`.claude/skills/codegen/SKILL.md\`: the
+entity YAML shape, every config key, and what each command emits.
 `;
 }
 
@@ -1143,38 +1158,15 @@ export async function buildInitPlan(
 		}
 	}
 
-	// 10. <entities>/ + <entities>/example.yaml
+	// 10. <entities>/ + <entities>/README.md (not YAML: no loader reads it)
 	entries.push(dirEntry(cwd, layout.entities));
 	{
-		const entitiesDir = layout.entities;
-		const examplePath = path.join(entitiesDir, 'example.yaml');
-		const hasOtherYamls =
-			fs.existsSync(entitiesDir) &&
-			findYamlFiles(entitiesDir).some(
-				(f) => path.basename(f) !== 'example.yaml',
-			);
-		if (fs.existsSync(examplePath)) {
-			entries.push({
-				path: examplePath,
-				relPath: relOf(cwd, examplePath),
-				action: 'skip',
-				reason: 'already exists',
-			});
-		} else if (hasOtherYamls) {
-			entries.push({
-				path: examplePath,
-				relPath: relOf(cwd, examplePath),
-				action: 'skip',
-				reason: 'other entities present',
-			});
-		} else {
-			entries.push({
-				path: examplePath,
-				relPath: relOf(cwd, examplePath),
-				action: 'create',
-				content: exampleEntityYaml(),
-			});
-		}
+		const readmePath = path.join(layout.entities, 'README.md');
+		entries.push(
+			fs.existsSync(readmePath)
+				? { path: readmePath, relPath: relOf(cwd, readmePath), action: 'skip', reason: 'already exists' }
+				: { path: readmePath, relPath: relOf(cwd, readmePath), action: 'create', content: entitiesReadme() },
+		);
 	}
 
 	// 11. Frontend consumer deps (ADR-038 FE-4). Only when the proposed config

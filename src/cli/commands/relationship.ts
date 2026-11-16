@@ -13,6 +13,7 @@ import type { CommandClass } from 'clipanion';
 
 import { loadRelationshipFromYaml, detectYamlType } from '../../utils/yaml-loader.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
+import { relationshipsDirFor } from '../../config/junctions-dir.js';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { invokeRelationshipNew } from '../shared/hygen.js';
@@ -26,6 +27,8 @@ import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
 import { printError, printInfo, printSuccess, printWarning } from '../ui/output.js';
 import { regenerateRelationsManifest } from '../shared/relations-generator.js';
+import { definitionSetRejections } from '../shared/entity-render.js';
+import { printRejections, reportPreflightStop } from '../shared/run-rejections.js';
 import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
 import { reportRegenerationFailure } from '../shared/generated-file.js';
 import type { PaneOutput } from '../ui/pane.js';
@@ -83,7 +86,7 @@ function padRight(s: string, n: number): string {
 // ---------------------------------------------------------------------------
 
 async function summary(ctx: Context): Promise<PaneOutput> {
-	const relDir = path.resolve(ctx.cwd, 'relationships');
+	const relDir = relationshipsDirFor(ctx.cwd);
 	const files = listRelationshipYamls(relDir);
 
 	if (files.length === 0) {
@@ -172,7 +175,7 @@ export class RelationshipNewCommand extends Command {
 
 		let targets: string[] = [];
 		if (this.all) {
-			const dir = path.resolve(ctx.cwd, 'relationships');
+			const dir = relationshipsDirFor(ctx.cwd);
 			targets = listRelationshipYamls(dir);
 			if (targets.length === 0) {
 				printError(`No relationship YAML files found in ${dir}`);
@@ -185,23 +188,18 @@ export class RelationshipNewCommand extends Command {
 			return 2;
 		}
 
-		// Pre-flight: validate each YAML.
+		// Its post-steps (barrels, relations manifest) read every entity,
+		// relationship and junction definition: a file that fails validation —
+		// a target or not — stops the run in every mode, named (#915).
+		const rejections = definitionSetRejections(ctx, { relationships: targets });
+		if (rejections.length > 0) {
+			printRejections(rejections);
+			return reportPreflightStop('relationship new', rejections);
+		}
 		const validated: Array<{ file: string; name: string }> = [];
-		const invalid: Array<{ file: string; message: string }> = [];
 		for (const file of targets) {
 			const result = loadRelationshipFromYaml(file);
-			if (result.success) {
-				validated.push({ file, name: result.definition.relationship.name });
-			} else {
-				invalid.push({ file, message: result.error });
-			}
-		}
-
-		if (invalid.length > 0) {
-			for (const i of invalid) {
-				printError(`${path.basename(i.file)} — ${i.message}`);
-			}
-			if (!isJsonMode()) return 1;
+			if (result.success) validated.push({ file, name: result.definition.relationship.name });
 		}
 
 		// Git safety
@@ -222,7 +220,7 @@ export class RelationshipNewCommand extends Command {
 					command: 'relationship new',
 					dryRun: true,
 					relationships: validated.map((v) => ({ name: v.name, file: v.file })),
-					totals: { planned: validated.length, invalid: invalid.length },
+					totals: { planned: validated.length },
 				});
 			} else {
 				printInfo(`Dry run — ${validated.length} relationships would be generated:`);
@@ -230,14 +228,12 @@ export class RelationshipNewCommand extends Command {
 					console.log(`  ${theme.muted(icons.arrow)} ${v.name}  ${theme.muted(v.file)}`);
 				}
 			}
-			return invalid.length > 0 ? 1 : 0;
+			return 0;
 		}
 
 		// Invoke Hygen for each validated target.
 		const succeeded: string[] = [];
-		const failed: Array<{ name: string; file: string; message: string }> = [
-			...invalid.map((i) => ({ name: path.basename(i.file), file: i.file, message: i.message })),
-		];
+		const failed: Array<{ name: string; file: string; message: string }> = [];
 		for (const v of validated) {
 			if (!isJsonMode()) {
 				printInfo(`generating ${v.name}`);
@@ -259,7 +255,7 @@ export class RelationshipNewCommand extends Command {
 		// Regenerate barrels so new junction modules land in GENERATED_MODULES
 		// and src/generated/schema.ts. Mirrors what `entity new` does.
 		const entitiesDir = projectLayout(ctx.cwd, ctx.config).entities;
-		const relationshipsDir = path.resolve(ctx.cwd, 'relationships');
+		const relationshipsDir = relationshipsDirFor(ctx.cwd);
 		const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
 		// The app imports both barrels: a failed regeneration fails the command,
 		// naming the file (JOBS-0, #655).
@@ -268,6 +264,7 @@ export class RelationshipNewCommand extends Command {
 			barrelResult = await regenerateBarrels({
 				ctx,
 				entitiesDir,
+				nonEntityDirs: projectLayout(ctx.cwd, ctx.config).nonEntityDirs,
 				relationshipsDir,
 				generatedDir,
 			});
@@ -317,7 +314,7 @@ export class RelationshipNewCommand extends Command {
 				},
 			});
 		} else {
-			const total = validated.length + invalid.length;
+			const total = validated.length;
 			console.log('');
 			if (failed.length === 0) {
 				printSuccess(`${total} relationships · ${succeeded.length} succeeded`);
@@ -358,7 +355,7 @@ export class RelationshipListCommand extends Command {
 			skipDetection: true,
 		});
 
-		const relDir = path.resolve(ctx.cwd, 'relationships');
+		const relDir = relationshipsDirFor(ctx.cwd);
 		const files = listRelationshipYamls(relDir);
 
 		if (files.length === 0) {

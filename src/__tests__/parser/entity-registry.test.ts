@@ -63,13 +63,13 @@ fields:
 	});
 
 	it('keys the registry by entity name with zero issues', () => {
-		const { registry, issues } = loadEntityRegistry(dir, { tablePrefix: '' });
+		const { registry, issues } = loadEntityRegistry(dir, { tablePrefix: '', nonEntityDirs: [] });
 		expect(issues).toEqual([]);
 		expect([...registry.keys()].sort()).toEqual(['deal', 'deal_state']);
 	});
 
 	it('derives pascal/camel casings for a multi-word name', () => {
-		const { registry } = loadEntityRegistry(dir, { tablePrefix: '' });
+		const { registry } = loadEntityRegistry(dir, { tablePrefix: '', nonEntityDirs: [] });
 		const dealState = registry.get('deal_state');
 		expect(dealState).toMatchObject({
 			name: 'deal_state',
@@ -98,7 +98,7 @@ fields:
 `,
 		);
 
-		const { registry } = loadEntityRegistry(dir, { tablePrefix: '' });
+		const { registry } = loadEntityRegistry(dir, { tablePrefix: '', nonEntityDirs: [] });
 		const person = registry.get('person');
 		expect(person?.plural).toBe('people');
 		expect(person?.pluralCamelName).toBe('people');
@@ -132,7 +132,7 @@ fields:
 `,
 		);
 
-		const { registry } = loadEntityRegistry(dir, { tablePrefix: '' });
+		const { registry } = loadEntityRegistry(dir, { tablePrefix: '', nonEntityDirs: [] });
 		expect(registry.get('order')?.sync).toBe('api');
 		expect(registry.get('invoice')?.sync).toBeNull();
 	});
@@ -163,7 +163,7 @@ fields:
 `,
 		);
 
-		const { registry, issues } = loadEntityRegistry(dir, { tablePrefix: '' });
+		const { registry, issues } = loadEntityRegistry(dir, { tablePrefix: '', nonEntityDirs: [] });
 		expect(registry.has('good')).toBe(true);
 		expect(registry.has('broken')).toBe(false);
 		expect(issues.some((i) => i.severity === 'error')).toBe(true);
@@ -171,7 +171,7 @@ fields:
 	});
 
 	it('reports a missing directory as an error, returns an empty registry', () => {
-		const { registry, issues } = loadEntityRegistry(join(dir, 'does-not-exist'), { tablePrefix: '' });
+		const { registry, issues } = loadEntityRegistry(join(dir, 'does-not-exist'), { tablePrefix: '', nonEntityDirs: [] });
 		expect(registry.size).toBe(0);
 		expect(issues.some((i) => i.severity === 'error')).toBe(true);
 	});
@@ -205,7 +205,7 @@ fields:
 	});
 
 	it('`table:` is the SQL table; the plural and casings are untouched', () => {
-		const { registry } = loadEntityRegistry(dir, { tablePrefix: 'app_' });
+		const { registry } = loadEntityRegistry(dir, { tablePrefix: 'app_', nonEntityDirs: [] });
 		const ticket = registry.get('ticket')!;
 		expect(ticket.table).toBe('issues');
 		expect(ticket.plural).toBe('tickets');
@@ -213,13 +213,13 @@ fields:
 	});
 
 	it('the project prefix reaches an entity without `table:`', () => {
-		const { registry } = loadEntityRegistry(dir, { tablePrefix: 'app_' });
+		const { registry } = loadEntityRegistry(dir, { tablePrefix: 'app_', nonEntityDirs: [] });
 		expect(registry.get('deal')!.table).toBe('app_deals');
-		expect(loadEntityRegistry(dir, { tablePrefix: '' }).registry.get('deal')!.table).toBe('deals');
+		expect(loadEntityRegistry(dir, { tablePrefix: '', nonEntityDirs: [] }).registry.get('deal')!.table).toBe('deals');
 	});
 
 	it('the parser agrees: ParsedEntity.table (semantic tableName, analyzer, foreign_key checks) is the SQL name', () => {
-		const { entities } = loadEntities(dir, { tablePrefix: 'app_' });
+		const { entities } = loadEntities(dir, { tablePrefix: 'app_', nonEntityDirs: [] });
 		const byName = new Map(entities.map((e) => [e.name, e]));
 		expect(byName.get('ticket')!.table).toBe('issues');
 		expect(byName.get('ticket')!.plural).toBe('tickets');

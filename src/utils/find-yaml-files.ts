@@ -20,11 +20,25 @@
  * they did around the previous flat `readdirSync` calls.
  */
 
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 function isYaml(name: string): boolean {
 	return name.endsWith('.yaml') || name.endsWith('.yml');
+}
+
+/**
+ * THE rule for "which files are entities" (#915): every `.yaml`/`.yml` under
+ * `dir` except the subtrees of `nonEntityDirs` — the other definition kinds a
+ * project may keep under its entities root (`ProjectLayout.nonEntityDirs`:
+ * providers, jobs, events, junctions, relationships). The pre-flight and every
+ * whole-set loader list entity files through this and nothing else, so they
+ * cannot disagree about the set. A missing `dir` is the empty set; a directory
+ * that exists but cannot be read throws.
+ */
+export function listEntityYamls(dir: string, nonEntityDirs: readonly string[]): string[] {
+	if (!existsSync(dir)) return [];
+	return findYamlFiles(dir, { excludeDirs: [...nonEntityDirs] });
 }
 
 /**

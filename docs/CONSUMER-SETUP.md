@@ -624,7 +624,7 @@ scaffold reads the same resolved value (PATH-0). Three keys default relative to 
 
 `project init` and every `subsystem install` honour them. In a monorepo, write `codegen.config.yaml` with e.g.
 `paths.backend_src: apps/backend/src` **before** `codegen project init`: init then writes `app.module.ts`, `main.ts`,
-`schema.ts`, `shared/**` and the barrels there, `example.yaml` into `paths.entities`, and tsconfig aliases
+`schema.ts`, `shared/**` and the barrels there, `README.md` (how to add an entity — not YAML, so no loader reads it) into `paths.entities`, and tsconfig aliases
 (`@shared/*`, `@modules/*`, `@generated/*`) and `include` pointing at them. The imports in the emitted files are computed
 relative to each file.
 

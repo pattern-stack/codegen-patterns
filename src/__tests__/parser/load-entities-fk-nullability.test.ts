@@ -41,7 +41,7 @@ beforeAll(() => {
 	dir = mkdtempSync(join(tmpdir(), 'fk850-'));
 	writeFileSync(join(dir, 'account.yaml'), ACCOUNT);
 	writeFileSync(join(dir, 'deal.yaml'), DEAL);
-	const { entities, issues } = loadEntities(dir, { tablePrefix: '' });
+	const { entities, issues } = loadEntities(dir, { tablePrefix: '', nonEntityDirs: [] });
 	expect(issues.filter((i) => i.severity === 'error')).toEqual([]);
 	deal = entities.find((e) => e.name === 'deal')!;
 });

@@ -33,7 +33,8 @@ import { resolvePatternComposition } from '../../patterns/resolve-composition.js
 import type { EntityDefinition } from '../../schema/entity-definition.schema.js';
 import { discriminatorKindsOf, inheritanceBaseOf, inheritanceChildrenOf, inheritsOf, inheritsRelationId } from '../../schema/inheritance.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
-import { detectYamlType, loadRelationshipFromYaml } from '../../utils/yaml-loader.js';
+import { loadRelationshipFromYaml } from '../../utils/yaml-loader.js';
+import { invalidDefinitionError, relationshipFileFailure } from '../../utils/definition-invariant.js';
 import {
 	deriveEntityApiSurface,
 	type EntityBlockInput,
@@ -83,9 +84,13 @@ function loadRelationshipNames(dir: string): { name: string }[] {
 	if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
 	const names: { name: string }[] = [];
 	for (const file of findYamlFiles(dir)) {
-		if (detectYamlType(file) !== 'relationship') continue;
 		const result = loadRelationshipFromYaml(file);
-		if (result.success) names.push({ name: result.definition.relationship.name });
+		if (result.success) {
+			names.push({ name: result.definition.relationship.name });
+		} else if (relationshipFileFailure(file, false, result)) {
+			// The same rule the pre-flight and the barrels use for "a relationship file that failed" (#915).
+			throw invalidDefinitionError(result);
+		}
 	}
 	return names.sort((a, b) => a.name.localeCompare(b.name));
 }

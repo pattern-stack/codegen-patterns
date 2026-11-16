@@ -17,9 +17,9 @@ import path from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import type { z } from 'zod';
 
-import { findYamlFiles } from '../../utils/find-yaml-files.js';
+import { findYamlFiles, listEntityYamls } from '../../utils/find-yaml-files.js';
 import { projectLayout } from '../../cli/shared/project-layout.js';
-import { junctionsDirFor } from '../../config/junctions-dir.js';
+import { junctionsDirFor, relationshipsDirFor } from '../../config/junctions-dir.js';
 import { loadProjectConfig } from '../../config/project-config.js';
 import { EntityDefinitionSchema } from '../../schema/entity-definition.schema.js';
 import { JunctionDefinitionSchema } from '../../schema/junction-definition.schema.js';
@@ -39,6 +39,8 @@ export const CONFIG_FILENAME = 'codegen.config.yaml';
  */
 export interface DefinitionDirs {
 	entities: string;
+	/** Every other definition kind that can sit under `entities` (`ProjectLayout.nonEntityDirs`). */
+	nonEntityDirs: string[];
 	providers: string;
 	junctions: string;
 	relationships: string;
@@ -50,16 +52,17 @@ export function definitionDirs(projectDir: string): DefinitionDirs {
 	const layout = projectLayout(root, config);
 	return {
 		entities: layout.entities,
+		nonEntityDirs: layout.nonEntityDirs,
 		providers: layout.providers,
 		junctions: junctionsDirFor(root),
-		relationships: path.resolve(root, 'relationships'),
+		relationships: relationshipsDirFor(root),
 	};
 }
 
-function yamlsIn(dir: string, excludeDirs: string[] = []): string[] {
+function yamlsIn(dir: string): string[] {
 	if (!fs.existsSync(dir)) return [];
 	try {
-		return findYamlFiles(dir, { excludeDirs });
+		return findYamlFiles(dir);
 	} catch {
 		return [];
 	}
@@ -96,9 +99,9 @@ export function listFiles(projectDir: string): StudioFile[] {
 		out.push({ kind, path: toProjectRelative(projectDir, file), name: displayName(file, kind) });
 	};
 
-	// Providers, junctions and relationships may be nested under the entities
-	// root; excluding them keeps each file in exactly one bucket.
-	for (const f of yamlsIn(dirs.entities, [dirs.providers, dirs.junctions, dirs.relationships])) {
+	// Providers, jobs, events, junctions and relationships may be nested under the
+	// entities root; the one entity-listing rule keeps each file in one bucket (#915).
+	for (const f of listEntityYamls(dirs.entities, dirs.nonEntityDirs)) {
 		add(f, 'entity');
 	}
 	for (const f of yamlsIn(dirs.junctions)) add(f, 'junction');
@@ -132,7 +135,8 @@ export function kindForPath(projectDir: string, relPath: string): StudioFileKind
 	if (abs === path.join(realProjectDir(projectDir), CONFIG_FILENAME)) return 'config';
 	if (under(dirs.junctions)) return 'junction';
 	if (under(dirs.relationships)) return 'relationship';
-	if (under(dirs.providers)) return null; // provider YAML is not a Studio surface
+	// Provider / job / event YAML is not a Studio surface — never an entity (#915).
+	if (dirs.nonEntityDirs.some(under)) return null;
 	if (under(dirs.entities)) return 'entity';
 	return null;
 }

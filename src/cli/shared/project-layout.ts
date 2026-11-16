@@ -18,6 +18,7 @@
 
 import path from 'node:path';
 
+import { junctionsDirFor, relationshipsDirFor } from '../../config/junctions-dir.js';
 import { ResolvedPathsSchema, type PathsConfigInput } from '../../schema/codegen-config.schema.js';
 
 export interface ProjectLayout {
@@ -35,6 +36,10 @@ export interface ProjectLayout {
 	jobsDir: string;
 	/** `paths.providers` — integration provider YAML (RFC-0001). */
 	providers: string;
+	/** Every directory of ANOTHER definition kind that can sit under the entities root
+	 *  (providers, jobs, events, junctions, relationships). Entity discovery skips them:
+	 *  `listEntityYamls(layout.entities, layout.nonEntityDirs)` is the one rule (#915). */
+	nonEntityDirs: string[];
 	/** `paths.generated` — codegen-owned cross-entity barrels. */
 	generated: string;
 	/** `paths.modules_dir` — the backend entity module tree (target of
@@ -84,6 +89,13 @@ export function projectLayout(
 		eventsDir: at(paths.events_dir),
 		jobsDir: at(paths.jobs_dir),
 		providers: at(paths.providers),
+		nonEntityDirs: [
+			at(paths.providers),
+			at(paths.jobs_dir),
+			at(paths.events_dir),
+			junctionsDirFor(cwd),
+			relationshipsDirFor(cwd),
+		],
 		generated: at(paths.generated),
 		modules: at(paths.modules_dir),
 		orchestration: at(paths.orchestration_src),

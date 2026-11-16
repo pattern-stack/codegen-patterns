@@ -12,7 +12,9 @@
 import { execSync } from 'node:child_process';
 import { parse as parseYaml } from 'yaml';
 import { entityNewArgs } from '../src/cli/shared/hygen';
-import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, cpSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, cpSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { findYamlFiles } from '../src/utils/find-yaml-files';
 import { resolve, join, relative } from 'node:path';
 // Repo root — one level up from this file's directory (test/ → repo).
 // The legacy three-dots resolution dated back to when this runner lived
@@ -41,6 +43,34 @@ const FIXTURES_DIR = join(TEST_DIR, 'fixtures');
 // The baseline entity set — closed: every cross-entity reference resolves from
 // its target's own YAML here (`paths.entities` in the fixture config, NAME-0).
 const ENTITY_FIXTURES_DIR = join(FIXTURES_DIR, 'entities');
+
+/**
+ * The two directories that hold entity definitions, by name. The event and
+ * scope-union steps read a directory of entity definitions and nothing else
+ * (#915: they throw on a file that is not one), so every YAML in these two is
+ * copied — relative paths under `fixtures/` kept — into one scratch tree. No
+ * content sniffing: a file in either directory that is not a valid entity fails
+ * the step, which is the point.
+ */
+const ENTITY_DIRECTORIES = [
+  ENTITY_FIXTURES_DIR,
+  join(FIXTURES_DIR, 'integration-patterns', 'definitions', 'entities'),
+];
+
+let stagedEntities: string | undefined;
+function stageEntityOnlyFixtures(): string {
+  if (stagedEntities) return stagedEntities;
+  const dir = mkdtempSync(join(tmpdir(), 'baseline-entities-'));
+  process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
+  for (const source of ENTITY_DIRECTORIES) {
+    for (const file of findYamlFiles(source)) {
+      const dest = join(dir, relative(FIXTURES_DIR, file));
+      mkdirSync(resolve(dest, '..'), { recursive: true });
+      cpSync(file, dest);
+    }
+  }
+  return (stagedEntities = dir);
+}
 const BASELINE_DIR = join(TEST_DIR, 'baseline');
 const GEN_DIR = join(TEST_DIR, 'gen');
 const TEST_CONFIG = join(FIXTURES_DIR, 'codegen.config.yaml');
@@ -207,7 +237,7 @@ function runCodegen() {
       `import { regenerateRelationsManifest } from './src/cli/shared/relations-generator.js'; ` +
       `import { loadCodegenConfig } from './src/config/project-config.js'; ` +
       `const ctx = { cwd: '${ROOT}', configPath: '${TEST_CONFIG}', config: loadCodegenConfig('${TEST_CONFIG}'), isInitialized: true, framework: null, installedSubsystems: [], entityCount: 0, json: false, verbose: false }; ` +
-      `await regenerateBarrels({ ctx, entitiesDir: '${ENTITY_FIXTURES_DIR}', generatedDir: '${generatedDir}' }); ` +
+      `await regenerateBarrels({ ctx, entitiesDir: '${ENTITY_FIXTURES_DIR}', nonEntityDirs: [], generatedDir: '${generatedDir}' }); ` +
       `await regenerateRelationsManifest({ ctx, entitiesDir: '${ENTITY_FIXTURES_DIR}', generatedDir: '${generatedDir}' });` +
       `"`,
     { cwd: CODEGEN_DIR, stdio: 'pipe' },
@@ -216,7 +246,7 @@ function runCodegen() {
   // JOB-7: generate ScopeEntityType union from fixtures (mirrors EntityNewCommand post-step).
   console.log('   Generating: scope-entity-type.ts');
   execSync(
-    `bun -e "import { generateScopeEntityType } from './src/cli/shared/scope-entity-type-generator.js'; await generateScopeEntityType({ entitiesDir: '${FIXTURES_DIR}', outputPath: '${join(ROOT, 'runtime/subsystems/jobs/generated/scope-entity-type.ts')}' });"`,
+    `bun -e "import { generateScopeEntityType } from './src/cli/shared/scope-entity-type-generator.js'; await generateScopeEntityType({ entitiesDir: '${stageEntityOnlyFixtures()}', nonEntityDirs: [], outputPath: '${join(ROOT, 'runtime/subsystems/jobs/generated/scope-entity-type.ts')}' });"`,
     { cwd: CODEGEN_DIR, stdio: 'pipe' },
   );
 
@@ -227,7 +257,7 @@ function runCodegen() {
   const eventsFixturesDir = join(FIXTURES_DIR, 'events');
   const eventCodegenOutputDir = join(ROOT, 'runtime/subsystems/events/generated');
   execSync(
-    `bun -e "import { generateEventCodegen } from './src/cli/shared/event-codegen-generator.js'; await generateEventCodegen({ entitiesDir: '${FIXTURES_DIR}', eventsDir: '${eventsFixturesDir}', outputDir: '${eventCodegenOutputDir}' });"`,
+    `bun -e "import { generateEventCodegen } from './src/cli/shared/event-codegen-generator.js'; await generateEventCodegen({ entitiesDir: '${stageEntityOnlyFixtures()}', nonEntityDirs: [], eventsDir: '${eventsFixturesDir}', outputDir: '${eventCodegenOutputDir}' });"`,
     { cwd: CODEGEN_DIR, stdio: 'pipe' },
   );
 

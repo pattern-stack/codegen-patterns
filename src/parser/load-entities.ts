@@ -6,8 +6,9 @@
  */
 
 import { sqlTableName } from '../config/table-naming.js';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { findYamlFiles } from '../utils/find-yaml-files';
+import { findYamlFiles, listEntityYamls } from '../utils/find-yaml-files';
 import {
 	loadEntityFromYaml,
 	loadRelationshipFromYaml,
@@ -345,7 +346,8 @@ export function loadEntities(
 	opts: {
 		/** The project's resolved `tables.prefix` — every `ParsedEntity.table` is the SQL name (TABLE-0). */
 		tablePrefix: string;
-		excludeDirs?: string[];
+		/** Other definition kinds under the entities root (`ProjectLayout.nonEntityDirs`) — required, no default (#915). */
+		nonEntityDirs: readonly string[];
 	},
 ): LoadEntitiesResult {
 	const entities: ParsedEntity[] = [];
@@ -353,12 +355,14 @@ export function loadEntities(
 
 	const resolvedDir = resolve(entitiesDir);
 
-	// Get all YAML files. `excludeDirs` keeps the provider-definitions subtree
+	// Get all YAML files. `nonEntityDirs` keeps the provider-definitions subtree
 	// (`definitions/providers/*.yaml`) out — those validate against
 	// ProviderDefinitionSchema, not the entity loader.
 	let files: string[];
 	try {
-		files = findYamlFiles(resolvedDir, { excludeDirs: opts.excludeDirs });
+		// A missing root is a read failure here, not the empty set `listEntityYamls` returns.
+		if (!existsSync(resolvedDir)) throw new Error('missing');
+		files = listEntityYamls(resolvedDir, opts.nonEntityDirs);
 	} catch (err) {
 		issues.push({
 			severity: 'error',

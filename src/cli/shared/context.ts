@@ -7,7 +7,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { findYamlFiles } from '../../utils/find-yaml-files.js';
+import { listEntityYamls } from '../../utils/find-yaml-files.js';
 import { findConfigUpward, resolveEntitiesDir } from '../../config/entities-dir.js';
 import { configOrDefaults, loadCodegenConfig, type CodegenConfig } from '../../config/project-config.js';
 import { projectLayout } from './project-layout.js';
@@ -45,10 +45,10 @@ export interface LoadContextOptions {
 	skipDetection?: boolean;
 }
 
-function countEntityYamls(entitiesDir: string | null): number {
+function countEntityYamls(entitiesDir: string | null, nonEntityDirs: readonly string[]): number {
 	if (!entitiesDir || !fs.existsSync(entitiesDir)) return 0;
 	try {
-		return findYamlFiles(entitiesDir).length;
+		return listEntityYamls(entitiesDir, nonEntityDirs).length;
 	} catch {
 		return 0;
 	}
@@ -88,7 +88,10 @@ export async function loadContext(overrides: LoadContextOptions = {}): Promise<C
 
 	// `paths.entities`, resolved — callers read it through `projectLayout`
 	// (PATH-0); there is no nullable copy on the context.
-	const entityCount = countEntityYamls(resolveEntitiesDir(cwd, configOrDefaults(config).paths));
+	const entityCount = countEntityYamls(
+		resolveEntitiesDir(cwd, configOrDefaults(config).paths),
+		projectLayout(cwd, config).nonEntityDirs,
+	);
 
 	const isInitialized = Boolean(configPath) || entityCount > 0;
 

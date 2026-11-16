@@ -26,6 +26,7 @@ import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { loadEntityRegistry } from '../../parser/entity-registry';
+import { assertNoInvalidDefinitions } from '../../utils/definition-invariant';
 import { loadEntities } from '../../parser/load-entities';
 import {
 	loadEntityDefinitions,
@@ -39,6 +40,7 @@ import {
 	ResolvedPathsSchema,
 } from '../../schema/codegen-config.schema';
 import { findYamlFiles } from '../../utils/find-yaml-files';
+import { projectLayout } from '../../cli/shared/project-layout';
 import { loadProvidersFromYaml } from '../../utils/yaml-loader';
 import type {
 	EntityRegistryEntry,
@@ -214,7 +216,9 @@ export function loadFrontendEmitContext(
 
 	const emitConfig = mapFrontendEmitConfig(config);
 	const { tablePrefix } = emitConfig;
-	const { registry } = loadEntityRegistry(entitiesDir, { tablePrefix });
+	const { nonEntityDirs } = projectLayout(cwd, config);
+	const { registry, issues: registryIssues } = loadEntityRegistry(entitiesDir, { tablePrefix, nonEntityDirs });
+	assertNoInvalidDefinitions(registryIssues);
 	const entities: EntityRegistryEntry[] = sortEntities([...registry.values()]);
 
 	if (entities.length === 0) {
@@ -223,7 +227,9 @@ export function loadFrontendEmitContext(
 		};
 	}
 
-	const parsedList = loadEntities(entitiesDir, { tablePrefix }).entities;
+	const loadedEntities = loadEntities(entitiesDir, { tablePrefix, nonEntityDirs });
+	assertNoInvalidDefinitions(loadedEntities.issues);
+	const parsedList = loadedEntities.entities;
 	const parsed: Map<string, ParsedEntity> = new Map(
 		parsedList.map((p) => [p.name, p]),
 	);
@@ -240,7 +246,7 @@ export function loadFrontendEmitContext(
 	// set, fed to REL-1's own builder. Loaded through the relations emitter's
 	// loaders — the same functions `relations.ts` is built from — so the client
 	// descriptor and the Drizzle manifest cannot read the YAML differently.
-	const definitions = loadEntityDefinitions(entitiesDir);
+	const definitions = loadEntityDefinitions(entitiesDir, nonEntityDirs);
 	const junctions = loadJunctionDefinitions(junctionsDir);
 
 	return {

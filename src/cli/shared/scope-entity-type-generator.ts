@@ -20,7 +20,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { loadEntityFromYaml } from '../../utils/yaml-loader.js';
-import { findYamlFiles } from '../../utils/find-yaml-files.js';
+import { invalidDefinitionError } from '../../utils/definition-invariant.js';
+import { listEntityYamls } from '../../utils/find-yaml-files.js';
 import { generating } from '../../utils/generated-file.js';
 
 // ---------------------------------------------------------------------------
@@ -30,6 +31,8 @@ import { generating } from '../../utils/generated-file.js';
 export interface ScopeEntityTypeGeneratorOptions {
 	/** Absolute path to the entities directory. */
 	entitiesDir: string;
+	/** Other definition kinds under the entities root (`ProjectLayout.nonEntityDirs`); skipped by entity discovery. */
+	nonEntityDirs: string[];
 	/** Absolute path of the output file. */
 	outputPath: string;
 	/** If true, compute content but don't write to disk. */
@@ -62,15 +65,13 @@ const HEADER =
  * Walk `entitiesDir`, load each YAML, and return the names of all entities
  * with `scopeable: true`, sorted alphabetically.
  */
-export function collectScopeableNames(entitiesDir: string): string[] {
-	if (!fs.existsSync(entitiesDir)) return [];
-
-	const files = findYamlFiles(entitiesDir);
+export function collectScopeableNames(entitiesDir: string, nonEntityDirs: readonly string[]): string[] {
+	const files = listEntityYamls(entitiesDir, nonEntityDirs);
 
 	const names: string[] = [];
 	for (const file of files) {
 		const result = loadEntityFromYaml(file);
-		if (!result.success) continue;
+		if (!result.success) throw invalidDefinitionError(result);
 		if (result.definition.entity.scopeable === true) {
 			names.push(result.definition.entity.name);
 		}
@@ -126,9 +127,9 @@ export function buildScopeEntityTypeContent(names: string[]): string {
 export async function generateScopeEntityType(
 	opts: ScopeEntityTypeGeneratorOptions,
 ): Promise<ScopeEntityTypeResult> {
-	const { entitiesDir, outputPath, dryRun = false } = opts;
+	const { entitiesDir, outputPath, dryRun = false, nonEntityDirs } = opts;
 
-	const scopeableNames = collectScopeableNames(entitiesDir);
+	const scopeableNames = collectScopeableNames(entitiesDir, nonEntityDirs);
 	const content = buildScopeEntityTypeContent(scopeableNames);
 
 	let written = false;

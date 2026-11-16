@@ -283,11 +283,9 @@ async function main(): Promise<number> {
 		}
 		fs.writeFileSync(cfgPath, cfg);
 
-		// 6. Copy entities (replacing init's example.yaml) + providers.
+		// 6. Copy entities + providers.
 		const entitiesDir = path.join(tmpDir, 'entities');
 		fs.mkdirSync(entitiesDir, { recursive: true });
-		const examplePath = path.join(entitiesDir, 'example.yaml');
-		if (fs.existsSync(examplePath)) fs.rmSync(examplePath);
 		copyDir(path.join(FIXTURE_ROOT, 'entities'), entitiesDir);
 		copyDir(
 			path.join(FIXTURE_ROOT, 'providers'),
