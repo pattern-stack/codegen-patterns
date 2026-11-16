@@ -23,17 +23,30 @@ export function Row({ row, hideOrigin = false, ...link }: { row: SurfaceRow; hid
         gap: 3,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', minWidth: 0 }}>
+      {/* The line wraps: a chip that does not fit beside the signature drops
+          under it rather than squeezing it (a long origin once left the
+          signature one letter per line). */}
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 'var(--sp-1) var(--sp-2)',
+          minWidth: 0,
+        }}
+      >
         <span
           style={{
-            flex: 1,
-            minWidth: 0,
+            flex: '1 1 auto',
+            // Never narrower than this, so a neighbour cannot squeeze it.
+            minWidth: 'min(100%, 20ch)',
             fontFamily: 'var(--font-mono)',
             fontSize: 12,
             color: 'var(--t-primary)',
             // The signature is the row's content — it wraps rather than hide
-            // its result shape behind an ellipsis.
-            overflowWrap: 'anywhere',
+            // its result shape behind an ellipsis, and only between words
+            // (`anywhere` would let its min-content shrink to one letter).
+            overflowWrap: 'break-word',
           }}
         >
           {row.signature}
@@ -99,10 +112,17 @@ export function Chip({ chip, onReveal, canReveal, muted = false }: { chip: Origi
   const tint = chip.edgeKind != null ? edgeColor(edgeStyle(chip.edgeKind)) : undefined;
   const ref = chip.yaml;
   const linked = ref != null && canReveal(ref);
+  // Never wider than its line: a long origin truncates with an ellipsis and
+  // keeps its full text in the tooltip. `text-overflow` needs a block box, so
+  // the chip is inline-block, not inline-flex.
   const style = {
-    flex: '0 0 auto',
-    display: 'inline-flex',
-    alignItems: 'center',
+    flex: '0 1 auto',
+    display: 'inline-block',
+    maxWidth: '100%',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    verticalAlign: 'middle',
+    textAlign: 'left' as const,
     padding: '0 6px',
     borderRadius: 999,
     borderWidth: 1,
@@ -116,7 +136,12 @@ export function Chip({ chip, onReveal, canReveal, muted = false }: { chip: Origi
     whiteSpace: 'nowrap' as const,
   };
 
-  if (!linked) return <span style={style}>{chip.text}</span>;
+  if (!linked)
+    return (
+      <span title={chip.text} style={style}>
+        {chip.text}
+      </span>
+    );
   return (
     <button
       type="button"
@@ -125,7 +150,7 @@ export function Chip({ chip, onReveal, canReveal, muted = false }: { chip: Origi
         e.preventDefault();
         onReveal(ref);
       }}
-      title={`Open the ${ref.doc.kind} ${ref.doc.name} YAML at this declaration`}
+      title={`${chip.text}\nOpen the ${ref.doc.kind} ${ref.doc.name} YAML at this declaration`}
       style={{ ...style, cursor: 'pointer' }}
     >
       {chip.text}
