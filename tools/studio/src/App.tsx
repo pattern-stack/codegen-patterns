@@ -64,6 +64,7 @@ export function App() {
   const [surface, setSurface] = useState<SurfaceState>({ status: 'loading' });
   const [files, setFiles] = useState<StudioFile[]>([]);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [graphQuery, setGraphQuery] = useState('');
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('detail');
   const [inspectorWidth, setInspectorWidth] = useState(420);
   const [dirty, setDirty] = useState(false);
@@ -401,6 +402,8 @@ export function App() {
             onSelect={select}
             onRetry={reload}
             fitKey={panelKey}
+            query={graphQuery}
+            onQueryChange={setGraphQuery}
           />
         </div>
 

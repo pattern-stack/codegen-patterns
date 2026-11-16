@@ -4,6 +4,7 @@ import { useGraphFilter } from '@pattern-stack/graph-components';
 import { SchemaCanvas } from './SchemaCanvas';
 import type { StudioEdgeData } from './edge-kinds';
 import type { Selection } from './selection';
+import { applySelector, focusSelector } from './selector';
 import { Button, EmptyState, ErrorState, LoadingState } from '../ui/primitives';
 
 export interface GraphPaneProps {
@@ -16,6 +17,13 @@ export interface GraphPaneProps {
   onRetry: () => void;
   /** Passed through to the canvas: changes when a panel toggle resizes it. */
   fitKey?: string;
+  /**
+   * The filter box's text — text tokens and dbt-style selectors (`selector.ts`).
+   * Held by the caller so the box is controlled: a double-clicked card sets it
+   * to `1+<name>+1` through `onQueryChange`, and Esc or clearing restores all.
+   */
+  query: string;
+  onQueryChange: (query: string) => void;
 }
 
 /** Filter chips, derived from the graph so they describe what is actually in it. */
@@ -39,12 +47,27 @@ export function GraphPane({
   onSelect,
   onRetry,
   fitKey,
+  query,
+  onQueryChange: setQuery,
 }: GraphPaneProps) {
-  const [query, setQuery] = useState('');
   const [active, setActive] = useState<Record<string, boolean>>({});
   const chips = useFilterChips(nodes);
 
-  const { filteredNodes, filteredEdges } = useGraphFilter(nodes, edges, { query, filters: active });
+  // The box selects a subset (the union of its tokens); the chips narrow that.
+  // The canvas lays the subset out as its own tree — a hidden card is removed
+  // from the layout, not dimmed.
+  const selected = useMemo(() => applySelector(query, nodes, edges), [query, nodes, edges]);
+  const selectedNodes = useMemo(
+    () => (selected.ids == null ? nodes : nodes.filter((n) => selected.ids!.has(n.id))),
+    [nodes, selected],
+  );
+  const { filteredNodes, filteredEdges } = useGraphFilter(selectedNodes, edges, { query: '', filters: active });
+  // A new subset refits the view (the panel toggles' `fitKey` is separate: it
+  // waits for the canvas to be re-measured, and a filter does not resize it).
+  const subsetKey = useMemo(
+    () => `${query.trim()}|${Object.keys(active).filter((k) => active[k]).sort().join(',')}`,
+    [query, active],
+  );
   // `useGraphFilter` narrows edges to the surviving nodes but returns the
   // library's edge type; the Studio kind rides along on the same objects.
   const shownEdges = filteredEdges as StudioEdgeData[];
@@ -88,6 +111,8 @@ export function GraphPane({
         selection={selection}
         onSelect={onSelect}
         fitKey={fitKey}
+        subsetKey={subsetKey}
+        onNodeFocus={(id) => setQuery(focusSelector(id))}
       />
     );
   };
@@ -111,21 +136,35 @@ export function GraphPane({
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter entities, fields, types…"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setQuery('');
+          }}
+          placeholder="Filter, or select: +name+, name+2…"
           aria-label="Filter the graph"
+          aria-describedby={selected.messages.length > 0 ? 'graph-filter-messages' : undefined}
+          aria-invalid={selected.messages.length > 0 || undefined}
           style={{
             width: 230,
             flex: '0 0 auto',
             height: 24,
             padding: '0 var(--sp-2)',
             borderRadius: 'var(--r-md)',
-            border: '1px solid var(--s-line-strong)',
+            border: `1px solid ${selected.messages.length > 0 ? 'var(--warn)' : 'var(--s-line-strong)'}`,
             background: 'var(--s-canvas)',
             color: 'var(--t-primary)',
             fontFamily: 'inherit',
             fontSize: 12,
           }}
         />
+        {selected.messages.length > 0 && (
+          <span
+            id="graph-filter-messages"
+            role="status"
+            style={{ flex: '0 0 auto', fontSize: 11, color: 'var(--warn)', whiteSpace: 'nowrap' }}
+          >
+            {selected.messages.map((m) => m.text).join(' · ')}
+          </span>
+        )}
         {chips.map(([key, count]) => {
           const on = active[key] === true;
           return (

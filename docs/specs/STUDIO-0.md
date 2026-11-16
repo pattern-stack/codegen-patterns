@@ -87,6 +87,39 @@ Studio replaces with its own — goes through `fitAvoidingCorner` (`tools/studio
 plain fit unless it would put a card under the legend's measured box, else the fit that gives up a bottom or right
 strip of the legend's size, whichever keeps the larger zoom (ties to the bottom).
 
+### Selecting a subset — dbt-style selectors (STUDIO-5, 2026-11-15)
+
+The canvas filter box takes space-separated tokens, and the canvas shows the **union** of what they select. The
+grammar is a pure module, `tools/studio/src/graph/selector.ts` (unit-tested in `__tests__/selector.test.ts`):
+
+| Token | Shows |
+|---|---|
+| `name` (no `+`) | the text filter as before — label, table, group, field and type names, case-insensitive substring |
+| `name+` | the entity and everything that depends on it (its children, transitively) |
+| `+name` | the entity and everything it depends on (its parents, transitively) |
+| `+name+` | both sides — the two walks are separate, never up and then down |
+| `name+N` / `N+name` / `N+name+M` | the same, limited to N (M) hops on that side |
+
+A bare `+` is unlimited; a depth is 1 or more. A token with a `+` names one entity, by id or label, ignoring case.
+An unknown name, and a token the grammar cannot read (`+`, `++a`, `a++`, `a+b`, `0+a`), select nothing and each puts
+a message beside the box (`role="status"`) — a malformed token is never read as text, and the canvas is never
+silently empty. The chips narrow the selected subset.
+
+**Direction.** Every line's `parent` / `child` ends come from the adapter, the two the tree layout reads: the child
+depends on the parent. A `belongs_to` puts the FK holder at the child end; a **role** is a `belongs_to` underneath, so
+the entity declaring the role depends on the actor; an `inherits` child depends on its base; an unpaired `has_many` /
+`has_one` is oriented by its foreign key the same way. Hops follow **every** line — spine, secondary, `inherits`,
+role. **A junction (first-class relationship) node** is crossed end to end as **one** hop, in either direction (a
+many-to-many has no dependent end), and the junction is shown with the far end; the walk continues from the far end,
+not from the junction. Named itself, a junction walks its own lines like any card (`+link` is it and both ends).
+
+**Double-click** a card and the box is set to `1+<name>+1`, visible and editable; Esc in the box, or clearing it,
+restores everything. The query is held by `App` and passed to `GraphPane` (controlled), which is what lets
+`__tests__/graph-focus.test.tsx` drive the double-click through the real pane and canvas. The selected subset is laid
+out **as its own tree** — a hidden card is removed from the layout, not dimmed — with the same tree, wrapping and
+docking rules, and a new subset (`subsetKey`) refits through `fitAvoidingCorner` once ReactFlow holds exactly the new
+cards.
+
 ### Theming — one palette table, two columns (2026-10-04)
 
 Studio follows the system appearance and can be pinned to either theme. It shipped dark-only; the light theme was
