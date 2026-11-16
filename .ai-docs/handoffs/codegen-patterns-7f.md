@@ -13,15 +13,14 @@ It does not build. The session closed with all agents stopped. Pick up from here
 - Fixes: #918, #919, #923, #924, #926 (`globalThis.*` in the emitted backend). #929 (API-tab long origin chip) is
   merged after 0.34.0.
 
-## In flight at close: check these first
-- **#933 STUDIO-5** (dbt-style selectors `a+`, `+a`, `N+a+M`; space or comma = union, a divergence from dbt's
-  comma-as-intersection; double-click focuses `1+name+1`; the subset is re-laid out; junctions are crossed both ways
-  (D2, Doug)). The plain-text match reuses graph-components' `matchesGraphQuery`. Approved by Doug; it was being
-  rebased onto main for merge. Merge it if it's green and not yet merged.
-- **#934 STUDIO-6** (spine-order toggle: Inheritance-first default / Ownership-first; the "is a <Base>" floating
-  chip prototype is kept by Doug's decision). Rebase after #933, then merge. Approved.
-- Sign-off pages: STUDIO-5 https://claude.ai/artifact/NriyaVfuAHnvxjCFzKEYzD · STUDIO-6
-  https://claude.ai/artifact/9PMKBEP5FJ3iTPotJiqjuY
+## Merged at close
+- **#933 STUDIO-5** (main 366b8301): dbt-style selectors `a+`, `+a`, `N+a+M`. Space or comma means union, which
+  diverges from dbt, where a comma is an intersection. Double-click focuses `1+name+1`, and the subset is re-laid
+  out. Junctions are crossed both ways (D2, Doug). One owner for the text match (`matchesGraphQuery`).
+- **#934 STUDIO-6** (main b04f1a8a): the spine-order toggle (Inheritance first by default / Ownership first) and
+  the floating "is a <Base>" chip, kept by Doug's decision. A base chip appears only when its base card is in the
+  selected subset.
+- All agents are stopped. No Studio is running.
 
 ## Approved, not started (do next)
 1. **FK rows on cards (dbdiagram-style)** = **ADR-046 slice 2's first piece** (#892). Two PRs, stacked:
