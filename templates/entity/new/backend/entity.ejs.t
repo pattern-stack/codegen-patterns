@@ -61,7 +61,7 @@ export const <%= entityNamePlural %> = pgTable(
 <%_ processedFields.forEach(field => { _%>
     <%= field.camelName %>: <%- field.drizzleChain %>,
 <%_ }) _%>
-<%_ if (hasExternalIdTracking) { _%>
+<%_ if (ownsExternalIdColumns) { _%>
     // external_id_tracking behavior
     externalId: varchar('external_id'),
     provider: varchar('provider'),

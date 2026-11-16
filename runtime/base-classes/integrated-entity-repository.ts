@@ -15,7 +15,7 @@ import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { DrizzleTx } from '../types/drizzle';
 import { BaseRepository } from './base-repository';
 import { column } from './table-columns';
-import type { IntegrationUpsertConfig, IntegrationFkResolver } from './integration-upsert-config';
+import type { IntegrationUpsertConfig, IntegrationFkResolver, IntegrationRowWrite } from './integration-upsert-config';
 
 export abstract class IntegratedEntityRepository<
   TEntity,
@@ -87,52 +87,15 @@ export abstract class IntegratedEntityRepository<
         resolvedFks[fk.column] = await this.resolveFk(db, fk, w[fk.writeKey], provider);
       }
 
-      // 2. Canonical → Drizzle insert-or-update by the conflict target.
-      const now = new Date();
+      // 2. Persist the canonical columns + resolved FKs by the entity's identity (`writeIntegrationRow`).
       const copyThrough: Record<string, unknown> = {};
       for (const col of cfg.writeColumns) copyThrough[col] = w[col];
-
-      // `deriveColumns`: a `match:` column is a copy of a parent's column, filled in this statement (RFC-0006 §2.4).
-      const values: Record<string, unknown> = this.deriveColumns(this.stampTenant({
+      const saved = await this.writeIntegrationRow(db, {
         externalId: w['externalId'],
         provider,
-        ...copyThrough,
-        ...resolvedFks,
-        // `createdAt` is stamped here, not left to the column's `DEFAULT now()`:
-        // on a `timestamp without time zone` column (#845) that default stores
-        // the SESSION zone's wall time, while a JS Date is written as UTC. It is
-        // not in `set`, so a conflicting row keeps its original value.
-        ...(this.behaviors.timestamps ? { createdAt: now, updatedAt: now } : {}),
-      }), 'create');
-
-      // `set` excludes the identity (externalId/provider) AND the tenant column,
-      // which is never in `writeColumns` — a conflicting row's owning tenant is
-      // never rewritten. Resolved FKs are only written when non-null this run — never
-      // clobber a previously resolved parent with null on a later run that
-      // dropped the ref.
-      const written: Record<string, unknown> = {
-        ...copyThrough,
-        ...(this.behaviors.timestamps ? { updatedAt: now } : {}),
-      };
-      for (const fk of cfg.fkResolvers) {
-        if (resolvedFks[fk.column] !== null) written[fk.column] = resolvedFks[fk.column];
-      }
-      // A foreign key this run resolved re-derives the `match:` column that follows it (and only then).
-      const set = this.deriveColumns(written, 'update');
-      // Belt-and-braces (#715): whatever a hand-written config lists, the
-      // upsert `set` never carries the tenant column.
-      if (this.behaviors.tenantScoped) delete set[this.tenantColumn];
-
-      const rows = await db
-        .insert(this.tableRef)
-        .values(values)
-        .onConflictDoUpdate({
-          target: this.conflictTarget(cfg.conflictTarget),
-          set,
-        })
-        .returning();
-
-      const saved = rows[0] as Record<string, unknown>;
+        copyThrough,
+        resolvedFks,
+      });
 
       // 3. EAV dual-write seam — same tx. No-op unless the entity opts in.
       const fields = w['fields'] as Record<string, unknown> | undefined;
@@ -149,6 +112,60 @@ export abstract class IntegratedEntityRepository<
     };
 
     return tx ? run(tx) : this.db.transaction((t) => run(t));
+  }
+
+  /**
+   * The persist step of `integrationUpsertOne`: insert-or-update ONE row by `(tenant, provider, external_id)` and
+   * return it. The default writes this table with `onConflictDoUpdate` on `conflictTarget`. A joined-table child
+   * (RFC-0006 §4.2, S7) overrides it to write the pair through `upsertByNaturalKey` — FK resolution, the projection and
+   * the EAV seam stay HERE, so the sink cannot tell a child from a plain entity.
+   */
+  protected async writeIntegrationRow(
+    db: DrizzleTx,
+    row: IntegrationRowWrite,
+  ): Promise<Record<string, unknown>> {
+    const cfg = this.integrationConfig;
+    const { copyThrough, resolvedFks, provider } = row;
+
+    // `deriveColumns`: a `match:` column is a copy of a parent's column, filled in this statement (RFC-0006 §2.4).
+    const now = new Date();
+    const values: Record<string, unknown> = this.deriveColumns(this.stampTenant({
+      externalId: row.externalId,
+      provider,
+      ...copyThrough,
+      ...resolvedFks,
+      // `createdAt` is stamped here, not left to the column's `DEFAULT now()`:
+      // on a `timestamp without time zone` column (#845) that default stores
+      // the SESSION zone's wall time, while a JS Date is written as UTC. It is
+      // not in `set`, so a conflicting row keeps its original value.
+      ...(this.behaviors.timestamps ? { createdAt: now, updatedAt: now } : {}),
+    }), 'create');
+
+    // `set` excludes the identity (externalId/provider) AND the tenant column, which is never in `writeColumns` — a
+    // conflicting row's owning tenant is never rewritten. Resolved FKs are only written when non-null this run — never
+    // clobber a previously resolved parent with null on a later run that dropped the ref.
+    const written: Record<string, unknown> = {
+      ...copyThrough,
+      ...(this.behaviors.timestamps ? { updatedAt: now } : {}),
+    };
+    for (const fk of cfg.fkResolvers) {
+      if (resolvedFks[fk.column] !== null) written[fk.column] = resolvedFks[fk.column];
+    }
+    // A foreign key this run resolved re-derives the `match:` column that follows it (and only then).
+    const set = this.deriveColumns(written, 'update');
+    // Belt-and-braces (#715): whatever a hand-written config lists, the upsert `set` never carries the tenant column.
+    if (this.behaviors.tenantScoped) delete set[this.tenantColumn];
+
+    const rows = await db
+      .insert(this.tableRef)
+      .values(values)
+      .onConflictDoUpdate({
+        target: this.conflictTarget(cfg.conflictTarget),
+        set,
+      })
+      .returning();
+
+    return rows[0] as Record<string, unknown>;
   }
 
   /**

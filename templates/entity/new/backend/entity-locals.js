@@ -29,7 +29,7 @@ import {
 // prompt.js via loadAppPatterns() against `codegen.config.yaml patterns:`
 // globs before this helper runs — we only read the registry here, through
 // `resolvePatternComposition`.
-import { discriminatorKindsOf, inheritanceBaseOf, inheritsOf, naturalKeyIndexOf } from '../../../../src/schema/inheritance.js';
+import { discriminatorKindsOf, flatChildShape, inheritanceBaseOf, inheritsOf, INTEGRATED_NATURAL_KEY, isIntegratedNaturalKey, naturalKeyIndexOf } from '../../../../src/schema/inheritance.js';
 import { detectMethodCollisions } from '../../../../src/patterns/compose.js';
 import { resolvePatternComposition } from '../../../../src/patterns/resolve-composition.js';
 import '../../../../src/patterns/library/index.js';
@@ -46,7 +46,7 @@ import {
   relationMethodName,
 } from '../../../../src/derived/api/names.js';
 import { camelCase, emittedStem } from '../../../../src/config/file-naming.js';
-import { resolvedBehaviorNames as resolveBehaviorNames } from '../../../../src/patterns/implied-behaviors.js';
+import { behaviorsReadThroughBase, resolvedBehaviorNames as resolveBehaviorNames } from '../../../../src/patterns/implied-behaviors.js';
 import {
   fieldColumnNullable,
   foreignKeyColumnNullable,
@@ -1094,6 +1094,22 @@ function processUniqueIndexes(
   });
 }
 
+/**
+ * The index of the `natural_key: true` entry that IS `external_id_tracking`'s unique (S7, D1): over exactly
+ * the behavior's `identityColumns`, either order. -1 when the entity has no such entry. Reads `naturalKeyIndexOf` — the one
+ * reader of which entry is the natural key.
+ */
+function adoptedExternalIdKeyIndex(definition) {
+  const i = naturalKeyIndexOf(definition);
+  if (i < 0) return -1;
+  return isIntegratedNaturalKey(definition.unique_indexes?.[i]?.fields ?? []) ? i : -1;
+}
+
+/** The name of the identity pair's unique constraint — one spelling, adopted or the behavior's own. */
+function identityConstraintName(tableName, tenanted) {
+  return `uq_${tableName}${tenanted ? '_tenant' : ''}_${INTEGRATED_NATURAL_KEY.join('_')}`;
+}
+
 /** Postgres keeps 63 bytes of an identifier and truncates the rest without a word. */
 export const PG_IDENTIFIER_MAX_BYTES = 63;
 
@@ -1582,6 +1598,38 @@ export function buildIntegrationSurface(patternName, processedFields, belongsTo,
  */
 function resolvedBehaviorNames(def) {
   return resolveBehaviorNames(def.behaviors ?? [], def.entity);
+}
+
+/**
+ * An Integrated child's integration surface inputs, from ONE `flatChildShape` walk: the flat scalar fields (a base enum
+ * resolves against the base), the flat `belongs_to` edges (a base's included, so the sink's write keys and the repository's
+ * FK resolvers agree), and the BASE's lifecycle — the pair is the row the sink writes, projects and tombstones.
+ */
+function flatIntegrationInputs({ shape, definition, entityName, entityLookup, modulesDir, ownNaming, targetNaming }) {
+  const owners = Object.fromEntries(shape.fields.map((f) => [f.name, f.owner]));
+  const rels = Object.fromEntries(shape.relationships.map((r) => [r.name, r.relationship]));
+  const flatFields = Object.fromEntries(shape.fields.map((f) => [f.name, f.field]));
+  const belongsTo = processBelongsTo(rels, targetNaming, flatFields);
+  const fkColumns = new Set(belongsTo.map((r) => r.field));
+  const processed = [];
+  for (const owner of new Set(shape.fields.map((f) => f.owner))) {
+    const own = Object.fromEntries(shape.fields.filter((f) => f.owner === owner).map((f) => [f.name, f.field]));
+    processed.push(
+      ...processFields(own, owner, (fieldName, field) =>
+        resolveEnumField({ lookup: entityLookup, modulesDir, fromNaming: ownNaming, entityName: owners[fieldName] ?? entityName, fieldName, field }),
+      ),
+    );
+  }
+  // Flat order: the base's fields, then the child's own (`shape.fields` order), not the owner grouping above.
+  const byName = new Map(processed.map((f) => [f.name, f]));
+  const fields = shape.fields.map((f) => byName.get(f.name)).filter((f) => f && !fkColumns.has(f.name));
+  const behaviorNames = resolveBehaviorNames(shape.behaviors, definition.entity);
+  return {
+    fields,
+    belongsTo,
+    hasTimestamps: behaviorNames.includes('timestamps'),
+    hasSoftDelete: behaviorNames.includes('soft_delete'),
+  };
 }
 
 /**
@@ -2085,6 +2133,12 @@ export function buildBackendLocals(definition, baseLocals) {
   const inheritedChild = inheritance.child;
   const isChild = inheritedChild !== null;
 
+  // S7 (#917): `external_id_tracking` is a behavior this entity HAS, but its columns and its unique live on the entity
+  // that DECLARES it. An Integrated child reads them through its base (`readsThroughBase`), so its table, its output
+  // DTO and its constraints carry none — the base's do. The ONE owner of "does this table hold the columns".
+  const ownsExternalIdColumns = hasExternalIdTracking
+    && !(isChild && behaviorsReadThroughBase(definition.entity ?? {}).includes('external_id_tracking'));
+
   // RFC-0006 §3, §6 (S3): the READ half of a family. A child's reads are scoped
   // by its base's tenant column and (through `baseScope`) the base's
   // `soft_delete` / `user_tracking`, which the child does not declare (R5); a
@@ -2199,16 +2253,30 @@ export function buildBackendLocals(definition, baseLocals) {
   const tableColumns = entityTableColumns({
     belongsTo,
     nonFkFields,
-    hasExternalIdTracking,
+    hasExternalIdTracking: ownsExternalIdColumns,
     tenancy,
     hasTimestamps,
     hasSoftDelete,
     extraColumns: [...inheritedKeyColumns, ...matchDerivedColumns].map((c) => ({ column: c.column, prop: c.prop })),
   });
+  // S7 (#917, D1): a base's `natural_key: true` entry over exactly [provider, external_id] IS `external_id_tracking`'s
+  // unique — one constraint, not two. The entry adopts the behavior's name, and its NULLs stay distinct (default
+  // `nulls_not_distinct: false`): `provider` / `external_id` are nullable on the base, so a base-only kind's row (and a
+  // detached one, D4) must not collide with another of its tenant. `upsertByNaturalKey` refuses a NULL key value instead.
+  const adoptedNaturalKeyIndex = ownsExternalIdColumns ? adoptedExternalIdKeyIndex(definition) : -1;
   const uniqueIndexExpressions = processUniqueIndexes(
     [
       ...fieldUniqueEntries(fields, tenancy),
-      ...(definition.unique_indexes ?? []).map((ui, i) => ({ ...ui, source: `unique_indexes[${i}]` })),
+      ...(definition.unique_indexes ?? []).map((ui, i) => ({
+        ...ui,
+        ...(i === adoptedNaturalKeyIndex
+          ? {
+              name: ui.name ?? identityConstraintName(entityTableName, tenancy),
+              nulls_not_distinct: ui.nulls_not_distinct ?? false,
+            }
+          : {}),
+        source: `unique_indexes[${i}]`,
+      })),
     ],
     { entityName, tableName: entityTableName, tenancy, tableColumns },
   );
@@ -2272,7 +2340,10 @@ export function buildBackendLocals(definition, baseLocals) {
       source: 'tenant_scoped',
     });
   }
-  if (hasExternalIdTracking) {
+  if (ownsExternalIdColumns && adoptedNaturalKeyIndex < 0) {
+    // The identity pair is the behavior's own (`identityColumns`), never retyped here.
+    const identityName = identityConstraintName(entityTableName, tenantScoped);
+    const identityProps = INTEGRATED_NATURAL_KEY.map((c) => `${T}.${camelCase(c)}`);
     tableConstraints.push(
       tenantScoped
         ? {
@@ -2284,22 +2355,20 @@ export function buildBackendLocals(definition, baseLocals) {
             // insert a duplicate row for null-tenant work instead of updating.
             comment:
               'external_id_tracking + tenant_scoped — per-tenant ON CONFLICT target for integrationUpsert',
-            expr:
-              `unique('uq_${entityTableName}_tenant_provider_external_id')` +
-              `.on(${T}.${tenancy.prop}, ${T}.provider, ${T}.externalId).nullsNotDistinct()`,
-            name: `uq_${entityTableName}_tenant_provider_external_id`,
+            expr: `unique('${identityName}').on(${T}.${tenancy.prop}, ${identityProps.join(', ')}).nullsNotDistinct()`,
+            name: identityName,
             builder: 'unique',
             partial: false,
-            columns: [tenancy.column, 'provider', 'external_id'],
+            columns: [tenancy.column, ...INTEGRATED_NATURAL_KEY],
             source: 'external_id_tracking',
           }
         : {
             comment: 'external_id_tracking behavior — ON CONFLICT target for integrationUpsert',
-            expr: `uniqueIndex('uq_${entityTableName}_provider_external_id').on(${T}.provider, ${T}.externalId)`,
-            name: `uq_${entityTableName}_provider_external_id`,
+            expr: `uniqueIndex('${identityName}').on(${identityProps.join(', ')})`,
+            name: identityName,
             builder: 'uniqueIndex',
             partial: false,
-            columns: ['provider', 'external_id'],
+            columns: [...INTEGRATED_NATURAL_KEY],
             source: 'external_id_tracking',
           },
     );
@@ -2477,7 +2546,7 @@ export function buildBackendLocals(definition, baseLocals) {
     drizzleType: c.drizzleType,
     enumImport: c.enumImport,
   }));
-  const drizzleEntityImports = collectDrizzleImports([...processedFields, ...inheritanceColumnFields], belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraDrizzleImports);
+  const drizzleEntityImports = collectDrizzleImports([...processedFields, ...inheritanceColumnFields], belongsTo, hasTimestamps, hasSoftDelete, ownsExternalIdColumns, extraDrizzleImports);
 
   // ADR-046 — the generated API surface, derived once (`src/derived/api/`). Every
   // method name the repository prints, and whether it is emitted at all, comes
@@ -2606,7 +2675,7 @@ export function buildBackendLocals(definition, baseLocals) {
   const isTenantColumn = (name) => tenantScoped && name === tenancy.column;
   const createDtoFields = nonFkFields.filter(
     (f) => !BEHAVIOR_MANAGED_FIELDS.has(f.name)
-        && !(hasExternalIdTracking && EXTERNAL_ID_TRACKING_FIELDS.has(f.name))
+        && !(ownsExternalIdColumns && EXTERNAL_ID_TRACKING_FIELDS.has(f.name))
         && !isTenantColumn(f.name),
   );
 
@@ -2640,7 +2709,7 @@ export function buildBackendLocals(definition, baseLocals) {
   // Build zodChain for each output DTO field (all non-FK fields).
   // When external_id_tracking is enabled, its fields are injected into the
   // entity table but do not appear in the output DTO (they're metadata).
-  const outputDtoSource = hasExternalIdTracking
+  const outputDtoSource = ownsExternalIdColumns
     ? nonFkFields.filter((f) => !EXTERNAL_ID_TRACKING_FIELDS.has(f.name))
     : nonFkFields;
   const outputDtoFields = outputDtoSource.map((f) => ({
@@ -2660,15 +2729,34 @@ export function buildBackendLocals(definition, baseLocals) {
   // Pass sinkPolicy (#490) so the delete knob and exclude_fields knob are applied
   // at this derivation (repo config) as well as buildSinkInput (sink derivation).
   const sinkPolicy = definition.integration?.sink ?? null;
+  // S7 (#917): an Integrated CHILD's write and projection are FLAT — the base's declared columns (minus the
+  // discriminator, which the child fixes) then its own — and its lifecycle is the base's, because the row the sink
+  // writes, projects and tombstones is the pair. The sink is family-blind: it passes exactly what it would pass a plain
+  // entity of that flat shape. R9 keeps EAV out of a family, so no child reaches the dual-write seam.
+  const integratedChild = isChild && patternName === 'Integrated';
+  if (integratedChild && eavEnabled) {
+    throw new Error(`[codegen] '${entityName}': an Integrated child cannot use the EAV dual-write (R9) — it has no custom-field bag.`);
+  }
+  // The child's flat shape is `flatChildShape`'s (`src/schema/inheritance.ts`) — the ONE walk; each field and relationship
+  // carries its declaring entity, so a base enum or a base `belongs_to` resolves against the base. No second list here.
+  const flat = integratedChild
+    ? flatIntegrationInputs({ shape: flatChildShape(definition, entityLookup.definitions()), definition, entityName, entityLookup, modulesDir, ownNaming, targetNaming })
+    : null;
+  const integrationFields = flat ? flat.fields : nonFkFields;
+  const integrationBelongsTo = flat ? flat.belongsTo : belongsTo;
+  const integrationTimestamps = flat ? flat.hasTimestamps : hasTimestamps;
+  const integrationSoftDelete = flat ? flat.hasSoftDelete : hasSoftDelete;
   const integrationSurface = buildIntegrationSurface(
     patternName,
-    nonFkFields,
-    belongsTo,
-    hasTimestamps,
+    integrationFields,
+    integrationBelongsTo,
+    integrationTimestamps,
     eavEnabled,
-    hasSoftDelete,
+    integrationSoftDelete,
     sinkPolicy,
-    tenancy,
+    // A child declares no tenancy of its own: its tenant column is the base's, stamped by the base repository, so it
+    // is in the projection and never in the write.
+    integratedChild ? (inheritedChild.tenant ?? null) : tenancy,
   );
 
   // ── ADR-041 emission ──────────────────────────────────────────────────────
@@ -2882,6 +2970,7 @@ export function buildBackendLocals(definition, baseLocals) {
     softDeleteWithTimezone,
     hasUserTracking,
     hasExternalIdTracking,
+    ownsExternalIdColumns,
 
     // Tenant scoping (ADR-042 / TEN-1; configurable column, #791)
     tenantScoped,

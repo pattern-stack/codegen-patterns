@@ -1,6 +1,94 @@
 {
 	"relations": [
 		{
+			"id": "calendar_event.inherits",
+			"from": "calendar_event",
+			"to": "inbox_item",
+			"kind": "inherits",
+			"generates": [
+				{
+					"entity": "calendar_event",
+					"layer": "repository",
+					"method": "findWithBase"
+				},
+				{
+					"entity": "calendar_event",
+					"layer": "repository",
+					"method": "findManyWithBase"
+				},
+				{
+					"entity": "calendar_event",
+					"layer": "repository",
+					"method": "listFlat"
+				},
+				{
+					"entity": "calendar_event",
+					"layer": "repository",
+					"method": "countFlat"
+				},
+				{
+					"entity": "calendar_event",
+					"layer": "repository",
+					"method": "create"
+				},
+				{
+					"entity": "calendar_event",
+					"layer": "repository",
+					"method": "update"
+				},
+				{
+					"entity": "calendar_event",
+					"layer": "repository",
+					"method": "delete"
+				},
+				{
+					"entity": "calendar_event",
+					"layer": "service",
+					"method": "findWithBase"
+				},
+				{
+					"entity": "calendar_event",
+					"layer": "service",
+					"method": "findManyWithBase"
+				},
+				{
+					"entity": "calendar_event",
+					"layer": "service",
+					"method": "listFlat"
+				},
+				{
+					"entity": "calendar_event",
+					"layer": "service",
+					"method": "countFlat"
+				},
+				{
+					"entity": "calendar_event",
+					"layer": "service",
+					"method": "create"
+				},
+				{
+					"entity": "calendar_event",
+					"layer": "service",
+					"method": "update"
+				},
+				{
+					"entity": "calendar_event",
+					"layer": "service",
+					"method": "delete"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "calendar_events",
+					"key": "inboxItem"
+				},
+				{
+					"table": "inbox_items",
+					"key": "calendarEvent"
+				}
+			]
+		},
+		{
 			"id": "contact.relationships.account",
 			"from": "contact",
 			"to": "account",
@@ -249,6 +337,118 @@
 				{
 					"table": "emails",
 					"key": "thread"
+				}
+			]
+		},
+		{
+			"id": "inbox_item.relationships.mailbox",
+			"from": "inbox_item",
+			"to": "mailbox",
+			"kind": "belongs_to",
+			"generates": [
+				{
+					"entity": "inbox_item",
+					"layer": "repository",
+					"method": "findByMailboxId"
+				},
+				{
+					"entity": "inbox_item",
+					"layer": "service",
+					"method": "mailbox"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "inbox_items",
+					"key": "mailbox"
+				}
+			]
+		},
+		{
+			"id": "mail_message.inherits",
+			"from": "mail_message",
+			"to": "inbox_item",
+			"kind": "inherits",
+			"generates": [
+				{
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "findWithBase"
+				},
+				{
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "findManyWithBase"
+				},
+				{
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "listFlat"
+				},
+				{
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "countFlat"
+				},
+				{
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "create"
+				},
+				{
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "update"
+				},
+				{
+					"entity": "mail_message",
+					"layer": "repository",
+					"method": "delete"
+				},
+				{
+					"entity": "mail_message",
+					"layer": "service",
+					"method": "findWithBase"
+				},
+				{
+					"entity": "mail_message",
+					"layer": "service",
+					"method": "findManyWithBase"
+				},
+				{
+					"entity": "mail_message",
+					"layer": "service",
+					"method": "listFlat"
+				},
+				{
+					"entity": "mail_message",
+					"layer": "service",
+					"method": "countFlat"
+				},
+				{
+					"entity": "mail_message",
+					"layer": "service",
+					"method": "create"
+				},
+				{
+					"entity": "mail_message",
+					"layer": "service",
+					"method": "update"
+				},
+				{
+					"entity": "mail_message",
+					"layer": "service",
+					"method": "delete"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "inbox_items",
+					"key": "mailMessage"
+				},
+				{
+					"table": "mail_messages",
+					"key": "inboxItem"
 				}
 			]
 		},

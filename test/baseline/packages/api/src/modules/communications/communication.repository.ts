@@ -11,7 +11,7 @@ import type { DrizzleClient, DrizzleTx } from '@shared/types/drizzle';
 import type { ColumnsOf, IncludeOf, Relations, ResultOf } from '../../generated/relations';
 import { ActivityEntityRepository } from '@shared/base-classes/activity-entity-repository';
 import type { BehaviorConfig, ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';
-import { asKind, assertBaseOnlyKind, flattenBase, KindImmutableError, KindMismatchError, upsertSet, type Flattened, type PairWrite } from '@shared/base-classes/inheritance';
+import { asKind, assertBaseOnlyKind, assertNaturalKeyValues, flattenBase, KindImmutableError, KindMismatchError, upsertSet, type Flattened, type PairWrite } from '@shared/base-classes/inheritance';
 import { communications, type Communication } from './communication.entity';
 import { emails, type Email } from '../emails/email.entity';
 import { meetings, type Meeting } from '../meetings/meeting.entity';
@@ -126,6 +126,9 @@ const COMMUNICATION_CHILD_CREATE_PATH = {
 
 /** The conflict target of `upsertByNaturalKey`: the declared `natural_key`, tenant-prefixed as its unique index is. */
 const COMMUNICATION_NATURAL_KEY = ['tenantId', 'source', 'externalId'] as const;
+
+/** The key columns the CALLER supplies: all but the tenant's, which the repository stamps. A NULL or absent one refuses the upsert. */
+const COMMUNICATION_NATURAL_KEY_INPUT = ['source', 'externalId'] as const;
 
 /** What an upsert's `DO UPDATE` never rewrites: the key, the kind, the tenant, the natural key's columns, `createdAt`. */
 const COMMUNICATION_UPSERT_NEVER: globalThis.ReadonlySet<string> = new globalThis.Set([
@@ -380,6 +383,7 @@ export class CommunicationRepository extends ActivityEntityRepository<Communicat
   ): Promise<{ row: Communication; created: boolean }> {
     assertBaseOnlyKind('communication', input.kind, COMMUNICATION_CHILD_CREATE_PATH, via);
     const carried = input as globalThis.Record<string, unknown>;
+    assertNaturalKeyValues('communication', carried, COMMUNICATION_NATURAL_KEY_INPUT);
     const values = this.deriveColumns(this.stampTenant(this.withTimestamps(carried, 'create')), 'create');
     const set = this.deriveColumns(this.withTimestamps(upsertSet(carried, COMMUNICATION_UPSERT_NEVER), 'update'), 'update');
     const conflictWhere = and(

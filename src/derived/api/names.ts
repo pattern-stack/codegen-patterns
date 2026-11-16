@@ -308,3 +308,13 @@ export const FAMILY_METHOD = {
 	/** `natural_key: true`: the entity's own, or a child's through its base's. */
 	upsertByNaturalKey: 'upsertByNaturalKey',
 } as const;
+
+/** The methods of `IntegratedEntityRepository` an Integrated CHILD re-emits to reach its base row (S7, #917). */
+export const INTEGRATION_METHOD = {
+	findByExternalId: 'findByExternalId',
+	findManyByExternalIds: 'findManyByExternalIds',
+	findByExternalIdProjected: 'findByExternalIdProjected',
+	softDeleteByExternalId: 'softDeleteByExternalId',
+	/** The protected persist step an Integrated child overrides to write through its base. */
+	writeIntegrationRow: 'writeIntegrationRow',
+} as const;

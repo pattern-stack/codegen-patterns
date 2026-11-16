@@ -5,6 +5,29 @@
 import { z } from 'zod';
 import type { EventTypeName } from './types';
 
+export const calendarEventCreatedPayloadSchema = z.object({
+	changedFields: z.record(z.unknown()).nullable(),
+	entityId: z.string().uuid(),
+	externalId: z.string(),
+	provider: z.string(),
+	source: z.string(),
+}).strict();
+
+export const calendarEventDeletedPayloadSchema = z.object({
+	entityId: z.string().uuid(),
+	externalId: z.string(),
+	provider: z.string(),
+	source: z.string(),
+}).strict();
+
+export const calendarEventEditedPayloadSchema = z.object({
+	changedFields: z.record(z.unknown()).nullable(),
+	entityId: z.string().uuid(),
+	externalId: z.string(),
+	provider: z.string(),
+	source: z.string(),
+}).strict();
+
 export const contactCreatedPayloadSchema = z.object({
 	accountId: z.string().uuid().nullable(),
 	contactId: z.string().uuid(),
@@ -37,6 +60,29 @@ export const dealStageChangedPayloadSchema = z.object({
 	dealId: z.string().uuid(),
 	newStage: z.string(),
 	oldStage: z.string(),
+}).strict();
+
+export const mailMessageCreatedPayloadSchema = z.object({
+	changedFields: z.record(z.unknown()).nullable(),
+	entityId: z.string().uuid(),
+	externalId: z.string(),
+	provider: z.string(),
+	source: z.string(),
+}).strict();
+
+export const mailMessageDeletedPayloadSchema = z.object({
+	entityId: z.string().uuid(),
+	externalId: z.string(),
+	provider: z.string(),
+	source: z.string(),
+}).strict();
+
+export const mailMessageEditedPayloadSchema = z.object({
+	changedFields: z.record(z.unknown()).nullable(),
+	entityId: z.string().uuid(),
+	externalId: z.string(),
+	provider: z.string(),
+	source: z.string(),
 }).strict();
 
 export const messageCreatedPayloadSchema = z.object({
@@ -77,12 +123,18 @@ export const webhookOutboundContactSyncPayloadSchema = z.object({
 }).strict();
 
 export const eventPayloadSchemas = {
+	'calendar_event_created': calendarEventCreatedPayloadSchema,
+	'calendar_event_deleted': calendarEventDeletedPayloadSchema,
+	'calendar_event_edited': calendarEventEditedPayloadSchema,
 	'contact_created': contactCreatedPayloadSchema,
 	'contact_marked_champion': contactMarkedChampionPayloadSchema,
 	'contact_merged': contactMergedPayloadSchema,
 	'crm_sync_started': crmSyncStartedPayloadSchema,
 	'deal_created': dealCreatedPayloadSchema,
 	'deal_stage_changed': dealStageChangedPayloadSchema,
+	'mail_message_created': mailMessageCreatedPayloadSchema,
+	'mail_message_deleted': mailMessageDeletedPayloadSchema,
+	'mail_message_edited': mailMessageEditedPayloadSchema,
 	'message_created': messageCreatedPayloadSchema,
 	'message_deleted': messageDeletedPayloadSchema,
 	'message_edited': messageEditedPayloadSchema,

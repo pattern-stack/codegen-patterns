@@ -182,6 +182,34 @@ export class OutOfScopeWriteError extends Error {
 }
 
 /**
+ * An `upsertByNaturalKey` input left a natural-key column NULL or absent (RFC-0006 §4.2, S7). A NULL never conflicts in
+ * Postgres, so `ON CONFLICT` would insert a second row instead of updating the first: the upsert is refused before any
+ * statement runs. The columns are the key's own, never the tenant's (the repository stamps that).
+ */
+export class NaturalKeyNullError extends Error {
+  constructor(
+    readonly entity: string,
+    readonly columns: readonly string[],
+  ) {
+    super(`${entity}: upsertByNaturalKey needs a value for ${columns.map((c) => `'${c}'`).join(', ')} (null or absent). Nothing was written.`);
+    this.name = 'NaturalKeyNullError';
+  }
+}
+
+/**
+ * The ONE owner of the NULL guard: throws `NaturalKeyNullError` naming every key column the input leaves null or
+ * absent. A child's upsert runs its base's, so the guard covers both without a second copy.
+ */
+export function assertNaturalKeyValues(
+  entity: string,
+  input: Record<string, unknown>,
+  keyProps: readonly string[],
+): void {
+  const missing = keyProps.filter((k) => input[k] === null || input[k] === undefined);
+  if (missing.length > 0) throw new NaturalKeyNullError(entity, missing);
+}
+
+/**
  * Split a flat input into the base's slice and the child's. Pure.
  *
  * `baseKeys` are the base table's column keys. A key the base owns goes to

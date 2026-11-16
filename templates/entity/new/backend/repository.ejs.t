@@ -36,7 +36,10 @@ const _isRead = (m) => m.kind === 'count' || m.kind === 'with_base' || m.kind ==
 // The write kinds (S4) close the same run: the `queries:` banner comes after the last of them.
 const _PAIR = ['pair_create', 'pair_update', 'pair_delete'];
 const _isPair = (m) => _PAIR.includes(m.kind);
-const _isWrite = (m) => _isPair(m) || m.kind === 'kind_guard' || m.kind === 'create_guard' || m.kind === 'upsert_own' || m.kind === 'upsert_through_base';
+const _THROUGH_BASE = ['integration_find', 'integration_find_many', 'integration_find_projected', 'integration_tombstone'];
+const _persistHook = apiSurface.repository.persistHook !== undefined;
+const _isThroughBase = (m) => _THROUGH_BASE.includes(m.kind);
+const _isWrite = (m) => _isPair(m) || m.kind === 'kind_guard' || m.kind === 'create_guard' || m.kind === 'upsert_own' || m.kind === 'upsert_through_base' || _isThroughBase(m);
 const _child = _methods.some((m) => m.kind === 'with_base') ? familyChild : null;
 const _base = _methods.some(_isAcross) ? familyBase : null;
 const _listName = _methods.find((x) => x.kind === 'list').name;
@@ -59,11 +62,12 @@ const _baseWrites = _methods.some((m) => m.kind === 'kind_guard');
 // A base with a child table refuses a write that names a kind owned by a child (the one owner of `KindRequiresChildError`, D16).
 const _createGuard = _methods.some((m) => m.kind === 'create_guard');
 const _discProp = familyBase ? familyBase.discriminatorProp : null;
+const _integrationThroughBase = _methods.some(_isThroughBase);
 const _upsertGuarded = _upsert && (_discProp !== null || hasUserTracking);
 // Every drizzle-orm name this file imports, in ONE set printed as ONE import (a second import of a name is TS2300).
 const _orm = [...new Set([
   'eq', 'inArray',
-  ...(hasMultiFieldQuery || _base || _upsertGuarded ? ['and'] : []),
+  ...(hasMultiFieldQuery || _base || _upsertGuarded || _integrationThroughBase ? ['and'] : []),
   ...(_needsOrderFns ? ['desc', 'asc'] : []),
   ...(_base ? ['notExists', 'or'] : []),
   ...(eavValueTable || _base || _childUpsert || _upsert ? ['sql'] : []),
@@ -73,20 +77,24 @@ const _orm = [...new Set([
 const _inhValues = [...new Set([
   ...(_pairWrite ? ['flattenBase', 'inTransaction', 'KindImmutableError', 'KindMismatchError', 'PAIR_WRITE', 'splitByOwner'] : []),
   ...(_childUpsert ? ['PAIR_WRITE', 'upsertSet'] : []),
+  ...(_integrationThroughBase ? ['inTransaction'] : []),
   ...(_createGuard ? ['assertBaseOnlyKind'] : []),
   ...(_base ? ['asKind', 'flattenBase'] : []),
   ...(_baseWrites ? ['KindImmutableError'] : []),
-  ...(_upsert ? ['upsertSet', ...(_discProp ? ['KindMismatchError'] : []), ...(hasUserTracking ? ['OutOfScopeWriteError'] : [])] : []),
+  ...(_upsert ? ['assertNaturalKeyValues', 'upsertSet', ...(_discProp ? ['KindMismatchError'] : []), ...(hasUserTracking ? ['OutOfScopeWriteError'] : [])] : []),
   ...(_derived ? ['fillDerivedColumns'] : []),
 ])].sort((a, b) => a.localeCompare(b, 'en'));
 const _inhTypes = [...(_child || _base ? ['Flattened'] : []), ...(_createGuard ? ['PairWrite'] : []), ...(_derived ? ['DerivedColumn'] : [])].sort();
-const _needsTx = eavValueTable || hasIntegrationSurface || _child || _baseWrites || _createGuard || _upsert;
+const _needsTx = _integrationThroughBase || eavValueTable || hasIntegrationSurface || _child || _baseWrites || _createGuard || _upsert;
 // Parent tables a derived column is read from, not already imported by the entity / family blocks.
 const _tableAlready = new Set([entityNamePlural, ...(_child ? [_child.baseTable] : []), ...(_base ? _base.children.map((c) => c.plural) : [])]);
 const _parentImports = [...new Map(matchFills.flatMap((f) => f.sources).filter((x) => !_tableAlready.has(x.parentTable)).map((x) => [x.parentTable, x])).values()];
 _%>
 <%# READ-1: `eq` / `inArray` are unconditional — `findById` / `findByIds` use them. %>
 import { <%- _orm.join(', ') %> } from 'drizzle-orm';
+<% if (_integrationThroughBase) { -%>
+import type { SQL } from 'drizzle-orm';
+<% } -%>
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient<% if (_needsTx) { %>, DrizzleTx<% } %> } from '<%= drizzleTypeImport %>';
 // REL-2 (#587): the generated relation graph. `Relations` binds the repository's
@@ -103,7 +111,7 @@ import { <%= cap.mixin %> } from '<%= cap.importPath %>';
 <%_ }) _%>
 <%_ } _%>
 <% if (hasIntegrationSurface) { -%>
-import type { IntegrationUpsertConfig } from '<%= integrationUpsertConfigImport %>';
+import type { <% if (_integrationThroughBase) { %>IntegrationRowWrite, <% } %>IntegrationUpsertConfig } from '<%= integrationUpsertConfigImport %>';
 <% } -%>
 import type { <% if (hasTimestamps || hasSoftDelete || hasUserTracking || scopeTenantScoped || _child?.baseScope) { %>BehaviorConfig, <% } %>ListOptions, ReadOptions, RowFilter } from '<%= baseRepositoryImport %>';
 <% if (_inhValues.length > 0) { -%>
@@ -342,6 +350,9 @@ const <%= _C('DERIVED') %>: readonly DerivedColumn[] = [
 <%_ if (_upsert) { _%>
 /** The conflict target of `upsertByNaturalKey`: the declared `natural_key`, tenant-prefixed as its unique index is. */
 const <%= _C('NATURAL_KEY') %> = [<%- naturalKey.props.map((p) => `'${p}'`).join(', ') %>] as const;
+
+/** The key columns the CALLER supplies: all but the tenant's, which the repository stamps. A NULL or absent one refuses the upsert. */
+const <%= _C('NATURAL_KEY_INPUT') %> = [<%- naturalKey.props.filter((p) => p !== tenantColumnProp).map((p) => `'${p}'`).join(', ') %>] as const;
 
 /** What an upsert's `DO UPDATE` never rewrites: the key, the kind, the tenant, the natural key's columns, `createdAt`. */
 const <%= _C('UPSERT_NEVER') %>: globalThis.ReadonlySet<string> = new globalThis.Set([
@@ -891,6 +902,82 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
       return { row: this.flat(childRow as <%= E %>, baseRow), created: upsertCreated, baseCreated };
     });
   }
+<%_ } else if (_isThroughBase(m)) { _%>
+<%_ const _p = m.params.map((x) => x.name); const _bt = _C('BASE'); /* the module const, not the table export: a function that reads a table export declares only camelCase bindings (#813) */ _%>
+<%_ if (_methods.find(_isThroughBase) === m) { _%>
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // The integration identity lives on the BASE row (RFC-0006 §4.2, S7, #917): `pattern: Integrated` reads
+  // `external_id_tracking` through <%= _child.baseName %>, so this table has no `external_id` / `provider` column. These
+  // methods match the base row on its identity and return this kind's flat row; a base row of another kind has no row in
+  // THIS table, so the join never sees it. Scope is this repository's own (tenant column, the base's lifecycle).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /** The flat rows of this kind whose base row satisfies `where`. `softDelete: false` still sees a soft-deleted base (the differ must). */
+  private async rowsThroughBase(where: SQL, softDelete: boolean, tx?: DrizzleTx): Promise<<%= E %>Flat[]> {
+    const hits = await this.runner(tx)
+      .select({ own: this.table, base: <%= _bt %> })
+      .from(this.table)
+      .innerJoin(<%= _bt %>, eq(<%= _bt %>.id, this.table.id))
+      .where(this.scopeAnd(where, softDelete ? { softDelete: true } : undefined));
+    return hits.map((r) => this.flat(r.own as <%= E %>, r.base as <%= _child.baseClass %>));
+  }
+<%_ } _%>
+<%_ if (m.kind === 'integration_find') { _%>
+
+  /** The base row's `external_id` match, scoped to this kind. */
+  override async <%= m.name %>(<%= _p[0] %>: string): Promise<<%= E %>Flat | null> {
+    const [row] = await this.rowsThroughBase(eq(<%= _bt %>.externalId, <%= _p[0] %>), true);
+    return row ?? null;
+  }
+<%_ } else if (m.kind === 'integration_find_many') { _%>
+
+  override async <%= m.name %>(<%= _p[0] %>: string[]): Promise<<%= E %>Flat[]> {
+    if (<%= _p[0] %>.length === 0) return [];
+    return this.rowsThroughBase(inArray(<%= _bt %>.externalId, <%= _p[0] %>), true);
+  }
+<%_ } else if (m.kind === 'integration_find_projected') { _%>
+
+  /** Provider-scoped, and WITHOUT the lifecycle guard: the differ must still see a soft-deleted row. */
+  override async <%= m.name %>(<%= _p[0] %>: string, <%= _p[1] %>: string): Promise<<%= E %>IntegrationProjection | null> {
+    const [row] = await this.rowsThroughBase(and(eq(<%= _bt %>.provider, <%= _p[1] %>), eq(<%= _bt %>.externalId, <%= _p[0] %>))!, false);
+    return row ? this.toProjection(row) : null;
+  }
+<%_ } else if (m.kind === 'integration_tombstone') { _%>
+
+  /**
+   * The tombstone acts on the BASE row (D4), and only when that row is THIS kind's: with `soft_delete` on the base
+   * it soft-deletes it (the child leaves scope through the `EXISTS`); without, it nulls `provider` / `external_id`
+   * there, so the pair is detached and this row stays. Another kind's row under the same id is never touched.
+   */
+  override async <%= m.name %>(<%= _p[0] %>: string, <%= _p[1] %>: string, <%= _p[2] %>?: DrizzleTx): Promise<{ id: string } | null> {
+    this.assertTenantWritable('<%= m.name %>');
+    return inTransaction(this.db, <%= _p[2] %>, async (txClient) => {
+      const [hit] = await this.rowsThroughBase(and(eq(<%= _bt %>.provider, <%= _p[1] %>), eq(<%= _bt %>.externalId, <%= _p[0] %>))!, false, txClient);
+      if (hit === undefined) return null;
+      if (this.integrationConfig.softDelete) await this.baseRepo.delete(hit.id, txClient);
+      else await this.baseRepo.update(hit.id, { externalId: null, provider: null }, txClient);
+      return { id: hit.id };
+    });
+  }
+<%_ } _%>
+<%_ if (_persistHook && _methods.filter(_isThroughBase).at(-1) === m) { _%>
+
+  /**
+   * The persist step of `integrationUpsertOne` for a pair: `upsertByNaturalKey` — so the kind guard
+   * (`KindMismatchError`), the `match:` fill, orphan repair and the NULL guard are THE upsert's, not a copy. FK
+   * resolution and the projection stay `IntegratedEntityRepository`'s. A parent that did not resolve is left out, so
+   * a later run never clears a parent an earlier one resolved.
+   */
+  protected override async writeIntegrationRow(db: DrizzleTx, row: IntegrationRowWrite): Promise<globalThis.Record<string, unknown>> {
+    const resolved = globalThis.Object.fromEntries(globalThis.Object.entries(row.resolvedFks).filter(([, v]) => v !== null));
+    const { row: written } = await this.upsertByNaturalKey(
+      { ...row.copyThrough, ...resolved, externalId: row.externalId, provider: row.provider } as <%= E %>Create,
+      db,
+    );
+    return written as unknown as globalThis.Record<string, unknown>;
+  }
+<%_ } _%>
 <%_ } else if (m.kind === 'upsert_own') { _%>
 <%_ const _p = m.params.map((x) => x.name); _%>
 
@@ -921,6 +1008,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
     assertBaseOnlyKind('<%= entityName %>', <%= _p[0] %>.<%= _discProp %>, <%= _C('CHILD_CREATE_PATH') %>, <%= _p[2] %>);
 <%_ } _%>
     const carried = <%= _p[0] %> as globalThis.Record<string, unknown>;
+    assertNaturalKeyValues('<%= entityName %>', carried, <%= _C('NATURAL_KEY_INPUT') %>);
     const values = this.deriveColumns(this.stampTenant(this.withTimestamps(carried, 'create')), 'create');
     const set = this.deriveColumns(this.withTimestamps(upsertSet(carried, <%= _C('UPSERT_NEVER') %>), 'update'), 'update');
 <%_ if (_upsertGuarded) { _%>
