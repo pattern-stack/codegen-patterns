@@ -125,14 +125,41 @@ describe('R5 — external_id_tracking on an Integrated child', () => {
 	});
 });
 
-describe('R6 — an Integrated child reads the base columns only under D1', () => {
-	it('passes under D1 (the clean family above) and fails on the same columns once the key is gone', () => {
-		const msgs = errorMessages({ inbox_item: (r) => delete r.unique_indexes });
-		for (const col of ['external_id', 'provider', 'provider_metadata']) {
-			expect(joined(msgs)).toContain(
-				`R6 — 'mail_message' declares pattern 'Integrated', which reads the column '${col}', and its base 'inbox_item' owns that column`,
-			);
+describe('R6 — an Integrated child reads the base columns through the base', () => {
+	it('a base that fails D1 yields only the D1 errors, never R6 on the three columns', () => {
+		for (const mutate of [
+			(r: any) => delete r.unique_indexes,
+			(r: any) => (r.unique_indexes = [{ fields: ['title'], natural_key: true }]),
+		]) {
+			const msgs = errorMessages({ inbox_item: mutate });
+			expect(msgs.length).toBe(2);
+			for (const m of msgs) expect(m).toStartWith('D1 — ');
+			expect(joined(msgs)).not.toContain('R6');
 		}
+	});
+
+	it('D1 wants exactly the pair: a superset is not the key, and the schema refuses it first (R11)', async () => {
+		const { isIntegratedNaturalKey } = await import('../../schema/inheritance');
+		expect(isIntegratedNaturalKey(['external_id', 'provider'])).toBe(true);
+		expect(isIntegratedNaturalKey(['provider', 'external_id', 'title'])).toBe(false);
+		expect(isIntegratedNaturalKey(['provider'])).toBe(false);
+		const msg = joined(
+			schemaIssues(
+				raw('inbox_item', (r) => (r.unique_indexes = [{ fields: ['provider', 'external_id', 'title'], natural_key: true }])),
+			),
+		);
+		expect(msg).toContain("natural_key column 'provider' is not a declared field");
+	});
+
+	it('the exemption is the declaring pattern\'s own: Activity reading a base column is still R6', () => {
+		const msgs = errorMessages({
+			mail_message: (r) => {
+				delete r.entity.pattern;
+				r.entity.patterns = ['Integrated', 'Activity'];
+				r.entity.config = { Activity: { occurredAt: 'provider' } };
+			},
+		});
+		expect(joined(msgs)).toContain("'mail_message' declares pattern 'Activity', which reads the column 'provider'");
 	});
 
 	it('another pattern that reads a base column still fails', () => {
@@ -174,7 +201,39 @@ describe('R11 — the natural key over the behavior columns', () => {
 			),
 		);
 		expect(msg).toContain("R11 — 'inbox_item': natural_key column 'thread' is nullable");
-		expect(msg).not.toContain("'provider' is");
+		// Not the exact pair, so no exemption: provider is refused too.
+		expect(msg).toContain("natural_key column 'provider' is not a declared field");
+	});
+	it('a key on external_id alone is refused, even on a base that declares the behavior', () => {
+		const msg = joined(schemaIssues(raw('inbox_item', (r) => (r.unique_indexes = [{ fields: ['external_id'], natural_key: true }]))));
+		expect(msg).toContain("natural_key column 'external_id' is not a declared field");
+	});
+	it('a non-family entity may not key on the behavior columns (as on main)', () => {
+		const msg = joined(
+			schemaIssues({
+				entity: { name: 'widget', plural: 'widgets' },
+				behaviors: ['timestamps', 'external_id_tracking'],
+				fields: { title: { type: 'string', required: true } },
+				unique_indexes: [{ fields: ['provider', 'external_id'], natural_key: true }],
+			} as any),
+		);
+		expect(msg).toContain("natural_key column 'external_id' is not a declared field");
+		const alone = joined(
+			schemaIssues({
+				entity: { name: 'widget', plural: 'widgets' },
+				behaviors: ['timestamps', 'external_id_tracking'],
+				fields: { title: { type: 'string', required: true } },
+				unique_indexes: [{ fields: ['external_id'], natural_key: true }],
+			} as any),
+		);
+		expect(alone).toContain("natural_key column 'external_id' is not a declared field");
+	});
+	it('the identity columns are fields the behavior declares', async () => {
+		const { externalIdTrackingBehavior: b } = await import('../../behaviors/external-id-tracking');
+		const { INTEGRATED_NATURAL_KEY } = await import('../../schema/inheritance');
+		expect(b.identityColumns).toEqual(['provider', 'external_id']);
+		for (const c of b.identityColumns ?? []) expect(b.fields.map((f) => f.name)).toContain(c);
+		expect([...INTEGRATED_NATURAL_KEY]).toEqual(b.identityColumns);
 	});
 	it('provider_metadata is payload, not identity: it is not accepted in a key', () => {
 		const msg = joined(
@@ -192,6 +251,20 @@ describe('R11 — the natural key over the behavior columns', () => {
 		);
 		expect(msg).toContain("R11 — 'inbox_item' marks 2 unique_indexes entries 'natural_key: true'");
 		expect(msg).toContain('["provider","external_id"] and ["title"]');
-		expect(msg).toContain("an Integrated child's sync upserts its base on [provider, external_id]");
+		expect(msg).toContain("An Integrated child's sync upserts its base on [provider, external_id]");
+	});
+	it('the "at most one" message names Integrated children only for a base', () => {
+		const msg = joined(
+			schemaIssues({
+				entity: { name: 'widget', plural: 'widgets' },
+				fields: { a: { type: 'string', required: true }, b: { type: 'string', required: true } },
+				unique_indexes: [
+					{ fields: ['a'], natural_key: true },
+					{ fields: ['b'], natural_key: true, name: 'second' },
+				],
+			} as any),
+		);
+		expect(msg).toContain("R11 — 'widget' marks 2 unique_indexes entries");
+		expect(msg).not.toContain('Integrated');
 	});
 });

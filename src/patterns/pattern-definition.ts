@@ -124,7 +124,8 @@ export interface PatternDefinition<TConfig = unknown> {
 	 * Behaviors whose columns a CHILD that declares this pattern reads through its BASE (RFC-0006 §4.2, S7, #917):
 	 * the base declares the behavior and owns the columns, the child's table gets none, and the generated child
 	 * forwards the reads to the base. For such a behavior R5 does not count the one this pattern implies, and R6
-	 * accepts the columns it contributes (both only while the base meets the pattern's base requirements, D1).
+	 * accepts the columns it contributes, for this pattern's own reads only. Whether the base can serve them is
+	 * the pattern's base requirements' to report (D1), not R6's.
 	 * A behavior the child DECLARES itself stays an R5 error.
 	 */
 	readsThroughBase?: string[];

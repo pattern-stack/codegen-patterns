@@ -29,7 +29,7 @@ import type { AnalysisIssue, ParsedEntity, ParsedRelationship } from '../analyze
 import { getBehavior } from '../behaviors/index.js';
 import { declaredPatternNames } from '../patterns/compose.js';
 import { getPattern } from '../patterns/registry.js';
-import { behaviorsReadThroughBase, resolveImpliedBehaviors } from '../patterns/implied-behaviors.js';
+import { resolveImpliedBehaviors } from '../patterns/implied-behaviors.js';
 import { foreignKeyColumnNullable } from '../schema/field-nullability.js';
 import {
 	declaresExternalIdTracking,
@@ -353,17 +353,12 @@ export function validateInheritance(
 		// R6: a child declares a pattern only over the columns it owns.
 		const baseColumns = new Set<string>([...baseOwn.keys(), ...baseImplicit.keys()]);
 		const baseOnly = (col: string) => baseColumns.has(col) && !childOwn.has(col);
-		// An Integrated child reads the `external_id_tracking` columns through its base (S7): accepted only while the base
-		// meets D1, so a base that does not still fails on the column AND on D1.
+		// An Integrated child reads the `external_id_tracking` columns through its base (S7). R6 always accepts them;
+		// a base that falls short is reported once, by D1, not again as three R6 errors.
 		const baseGaps = declaredPatternNames(e).includes('Integrated') ? integratedBaseGaps(base) : [];
 		for (const gap of baseGaps) {
 			error(e, 'inherits_integrated_base', `D1 — '${name}' declares 'pattern: Integrated', and its base '${child.base}' ${gap}`);
 		}
-		const readThroughBase = new Set<string>(
-			baseGaps.length > 0
-				? []
-				: behaviorsReadThroughBase(e).flatMap((b) => (getBehavior(b)?.fields ?? []).map((f) => f.name)),
-		);
 		for (const patternName of declaredPatternNames(e)) {
 			const definition = getPattern(patternName);
 			// Parsed through the pattern's own schema, as composition does: a config that fails it is
@@ -383,6 +378,10 @@ export function validateInheritance(
 				continue;
 			}
 			const read = definition.columnsRead(parsed?.success ? parsed.data : undefined);
+			// Only the pattern that DECLARES the read-through behavior reads its columns through the base.
+			const readThroughBase = new Set<string>(
+				(definition.readsThroughBase ?? []).flatMap((b) => (getBehavior(b)?.fields ?? []).map((f) => f.name)),
+			);
 			for (const col of read) {
 				if (baseOnly(col) && !readThroughBase.has(col)) {
 					error(

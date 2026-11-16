@@ -65,6 +65,8 @@ export const externalIdTrackingBehavior: BehaviorDefinition = {
 		},
 	],
 
+	identityColumns: ['provider', 'external_id'],
+
 	drizzleImports: ['varchar', 'jsonb', 'index'],
 
 	configKey: 'externalIdTracking',

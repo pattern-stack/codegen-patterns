@@ -29,16 +29,26 @@ export const INHERITS_PATH = ['inherits'] as const;
 
 /**
  * The natural key a sync of an Integrated child upserts on, and the only nullable columns R11 accepts in a key (S7, D1):
- * the two `external_id_tracking` columns a provider sync matches on. Read from the behavior's own field list, never
- * retyped; `provider_metadata` is payload, not identity, so it is not part of the key.
+ * the behavior's declared `identityColumns`, never retyped here. `provider_metadata` is payload, not identity, so it is
+ * not part of the key. An identity column the behavior does not declare as a field is a load-time error, not a
+ * silently shorter key.
  */
-export const INTEGRATED_NATURAL_KEY: readonly string[] = ['provider', 'external_id'].filter((n) =>
-	externalIdTrackingBehavior.fields.some((f) => f.name === n),
-);
+export const INTEGRATED_NATURAL_KEY: readonly string[] = (() => {
+	const identity = externalIdTrackingBehavior.identityColumns;
+	if (identity === undefined || identity.length === 0) {
+		throw new globalThis.Error(`'${externalIdTrackingBehavior.name}' declares no identityColumns`);
+	}
+	for (const column of identity) {
+		if (!externalIdTrackingBehavior.fields.some((f) => f.name === column)) {
+			throw new globalThis.Error(`'${externalIdTrackingBehavior.name}' identityColumns names '${column}', which it does not declare`);
+		}
+	}
+	return identity;
+})();
 
 /** Whether a `behaviors:` list DECLARES `external_id_tracking` (a pattern that implies it does not count). */
-export function declaresExternalIdTracking(behaviors: readonly (string | { name: string })[] | null | undefined): boolean {
-	return (behaviors ?? []).some((b) => normalizeBehaviorConfig(b as never).name === externalIdTrackingBehavior.name);
+export function declaresExternalIdTracking(behaviors: EntityDefinition['behaviors'] | null | undefined): boolean {
+	return (behaviors ?? []).some((b) => normalizeBehaviorConfig(b).name === externalIdTrackingBehavior.name);
 }
 
 /** Whether `fields` is exactly {@link INTEGRATED_NATURAL_KEY}, in either order. */
@@ -363,8 +373,11 @@ export function inheritanceIssues(def: EntityDefinition): InheritanceIssue[] {
 			['unique_indexes', naturalKeys[1]!.i, 'natural_key'],
 			`R11 — '${name}' marks ${naturalKeys.length} unique_indexes entries 'natural_key: true' ` +
 				`(${naturalKeys.map(({ entry }) => JSON.stringify(entry.fields)).join(' and ')}). At most one ` +
-				`entry is the ON CONFLICT target of the upsert, and an Integrated child's sync upserts its base on ` +
-				`[${INTEGRATED_NATURAL_KEY.join(', ')}], so a base with an Integrated child declares that one and no other.`,
+				`entry is the ON CONFLICT target of the upsert.` +
+				(isBase
+					? ` An Integrated child's sync upserts its base on [${INTEGRATED_NATURAL_KEY.join(', ')}], so a base ` +
+						`with an Integrated child declares that one and no other.`
+					: ''),
 		);
 	}
 	const declaresTracking = declaresExternalIdTracking(def.behaviors);
@@ -386,9 +399,10 @@ export function inheritanceIssues(def: EntityDefinition): InheritanceIssue[] {
 		}
 		for (const column of entry.fields) {
 			const notNull = columnNotNull(def, column);
-			// The two `external_id_tracking` columns are nullable by design; a base that DECLARES the behavior
-			// may key on them (S7, D1). The runtime upsert refuses a NULL in the key, so no duplicate can insert.
-			if (notNull === undefined && declaresTracking && INTEGRATED_NATURAL_KEY.includes(column)) continue;
+			// The `external_id_tracking` identity columns are nullable by design; a BASE that declares the behavior
+			// may key on exactly the pair (S7, D1) — not on either alone, and not on any other entity. The runtime
+			// upsert refuses a NULL in the key, so no duplicate can insert.
+			if (notNull === undefined && isBase && declaresTracking && isIntegratedNaturalKey(entry.fields)) continue;
 			if (notNull === undefined) {
 				add(
 					['unique_indexes', i, 'fields'],

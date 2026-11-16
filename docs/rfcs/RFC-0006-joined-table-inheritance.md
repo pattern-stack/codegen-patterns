@@ -133,13 +133,13 @@ defaults to `entity.name` and must be one of the base's discriminator choices.
 | R2 | Each choice has at most one child. A choice with no child is a **base-only kind** (`message` above). | Doug's draft lists three kinds and two child tables. |
 | R3 | A child may not declare `discriminator:`. A base may not declare `inherits:`. | One level (§8). |
 | R4 | A child's field, FK column or relation key may not reuse a name the base declares, and the reverse. | DTOs and flat rows merge the two. |
-| R5 | `tenant_scoped`, `timestamps`, `soft_delete`, `user_tracking`, `external_id_tracking` are declared on the base. Declaring one on a child is an error naming the base. | One owner for lifecycle and scope (§2.3). |
+| R5 | `tenant_scoped`, `timestamps`, `soft_delete`, `user_tracking`, `external_id_tracking` are declared on the base. Declaring one on a child is an error naming the base; `external_id_tracking` merely *implied* by a child's `pattern: Integrated` is not (S7a: the pattern reads it through the base). | One owner for lifecycle and scope (§2.3). |
 | R6 | A pattern or capability is declared on the table that owns its columns. | See 1.3. |
 | R7 | A child's `queries:` may name only its own columns. | A finder by a base column is a base read (§3). |
 | R8 | Base and children share one `entity.sync` mode. | An `electric` root reaching a non-`electric` target is already a generation error (FE-REL). |
 | R9 | `eav: true` and `pattern: Junction` are refused anywhere in a family in v1. | Their compound writes would need merging with the pair write. |
 | R10 | A `tenant_scoped` base declares its tenant column itself, NOT NULL: a `type: uuid, required: true` field, or a `belongs_to` whose FK is not `nullable`. | The column `tenant_scoped` emits on its own is nullable (`entity.ejs.t:51-57`), and a composite FK is not checked for a NULL. An adopted column keeps its own declaration (`src/schema/tenancy.ts:126-166`). |
-| R11 | At most one `unique_indexes` entry per entity carries `natural_key: true`, and every column in it is NOT NULL. A child declares none. | It is the `ON CONFLICT` target of the upsert, and a NULL in it never conflicts. |
+| R11 | At most one `unique_indexes` entry per entity carries `natural_key: true`, and every column in it is NOT NULL, with one exception: a base that declares `external_id_tracking` may key on exactly its identity pair `[provider, external_id]` (S7a; the upsert refuses a NULL in it at runtime). A child declares none. | It is the `ON CONFLICT` target of the upsert, and a NULL in it never conflicts. |
 
 R1 to R3, R5, R9, R10 and R11 are schema or cross-entity checks. The single-file ones (R5, R9, R11, R1's and R3's
 own-file halves) are a Zod refinement in `src/schema/inheritance.ts`. The cross-entity ones are in
@@ -702,11 +702,11 @@ carries". #780 keeps the batch form and the update policies (overwrite, coalesce
 | EAV, projection, tombstone | yes (`integrated-entity-repository.ts:75-148`) | no |
 | Caller | the generated sink (RFC-0002) | a hand-written pivot or use case |
 
-**`Integrated` on a child** stays refused in this build, and is no longer blocked by design. Once
+**`Integrated` on a child** is accepted by the schema since S7a (#917); S7b emits it. Once
 `upsertByNaturalKey` exists, a child's `integrationUpsertOne` is a thin adapter: resolve the FKs, then delegate.
 It needs the base to carry `external_id_tracking` with `(provider, external_id)` as its natural key (R11 as built
-in S1 accepts only declared fields and `belongs_to` foreign key columns in a natural key, so S7 must extend it to
-accept the behavior columns `provider` and `external_id`), and
+in S1 accepted only declared fields and `belongs_to` foreign key columns in a natural key; S7a extends it to
+accept exactly the pair `provider`, `external_id` on a base that declares the behavior), and
 `findByExternalIdProjected` / `softDeleteByExternalId` to forward to the base. That is one follow-up slice (§13,
 S7), left out of v1 because the first consumer writes through the pivot, not the sink.
 
@@ -1987,13 +1987,16 @@ S7b (emission and the repository) and S7c (the integration emitter).
   `lifecycleBehaviorsDeclared` (`src/schema/tenancy.ts`, the one reader) skips a behavior a declared pattern lists in
   `readsThroughBase`.
 - **R6.** `IntegratedPattern` states `columnsRead` (`external_id`, `provider`, `provider_metadata`, read from
-  `externalIdTrackingBehavior.fields`) and `readsThroughBase: ['external_id_tracking']`. R6 accepts the columns of a
-  `readsThroughBase` behavior while D1 holds, and keeps failing on every other base column a pattern reads. A property on the
+  `externalIdTrackingBehavior.fields`) and `readsThroughBase: ['external_id_tracking']`. R6 always accepts the columns of
+  a `readsThroughBase` behavior, for the pattern that declares it only, and keeps failing on every other base column a pattern
+  reads; a base that falls short is reported by D1 alone (no R6 noise on top). A property on the
   pattern definition (`PatternDefinition` and `CapabilityPatternDefinition`, read through `behaviorsReadThroughBase`) rather than
   a name check in R6: a later pattern that reads through its base states it the same way.
-- **R11.** On a base that *declares* `external_id_tracking`, a `natural_key` entry may name `provider` and `external_id`
-  (`INTEGRATED_NATURAL_KEY`), the two nullable behaviour columns; `provider_metadata` and every other nullable column stay errors.
-  "At most one natural key" stands; its message now names both entries and says a base with an Integrated child declares one.
+- **R11.** On a **base** that *declares* `external_id_tracking`, a `natural_key` entry whose fields are exactly the behaviour's
+  `identityColumns` (`INTEGRATED_NATURAL_KEY`, `['provider', 'external_id']`, declared on the behaviour and checked against its
+  fields at load) is exempt from NOT NULL; either column alone, a superset, a non-family entity and a child stay R11 errors, as on
+  `main`. `provider_metadata` and every other nullable column stay errors. "At most one natural key" stands; its message names
+  both entries, and for a base says an Integrated child's sync upserts on the pair.
 - **Fixture.** `test/fixtures/integrated-child/entities/`: `inbox_item` (base, `[mail_message, calendar_event, note]`),
   `mail_message` (`surface: mail`) and `calendar_event` (`surface: calendar`). Validation tests only; no baseline, smoke,
   scaffold or integration-emit set holds it.
@@ -2002,7 +2005,10 @@ S7b (emission and the repository) and S7c (the integration emitter).
 - **S7b inherits:** the child's table must not emit `external_id`, `provider` or `provider_metadata` (`resolvedBehaviorNames`
   still returns `external_id_tracking` for the child, so the child's column derivation must skip a `readsThroughBase` behavior);
   the base's natural-key entry adopts `external_id_tracking`'s unique constraint, so there is one constraint, not two; the runtime
-  NULL guard on `upsertByNaturalKey`; the child's reads forwarded to the base; and wiring the fixture into an emitting set.
+  NULL guard on `upsertByNaturalKey`; replacing the "Declare it once" guard (`templates/entity/new/backend/entity-locals.js:1132`,
+  "unique_indexes[0] and external_id_tracking declare the same unique over (tenant_id, provider, external_id)"), which `entity new`
+  hits on the fixture today while `entity validate` passes it, and the retyped pair at `:2293` / `:2302`, which should read the
+  behaviour's `identityColumns`; the child's reads forwarded to the base; and wiring the fixture into an emitting set.
 
 ### 13.3 Rules for every slice
 
