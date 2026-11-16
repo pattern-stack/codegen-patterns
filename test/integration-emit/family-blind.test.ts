@@ -1,9 +1,9 @@
 /**
  * S7c (#917) — a provider sync has no opinion on an entity's family hierarchy.
  *
- * Renders the integration layer for `mail_message` twice, same provider, same surface, same entity name:
- *   A. a plain `pattern: Integrated` entity carrying the child's flat shape (`fixtures/integrated-child-flat`);
- *   B. the S7a family, where it is a joined-table child of `inbox_item` (`fixtures/integrated-child`).
+ * Renders the integration layer for both Integrated children (`mail_message`, `calendar_event`) twice, same provider, same surface, same entity name:
+ *   A. plain `pattern: Integrated` entities carrying each child's flat shape (`fixtures/integrated-child-flat`);
+ *   B. the S7a family, where they are joined-table children of `inbox_item` (`fixtures/integrated-child`).
  * The two trees must be byte-identical, file for file. No line is filtered.
  */
 import { describe, expect, test } from 'bun:test';
@@ -30,8 +30,6 @@ function emitLayer(entitiesDir: string): string {
 
   const tmp = mkdtempSync(join(tmpdir(), 'cgp-s7c-'));
   const root = join(tmp, 'src', 'integrations');
-  // The CLI hands the emitters the whole set; `only` narrows what is compared, not what is passed.
-  const surfaced = entities;
   const providerResult = generateProviderModules({
     providersDir: PROVIDERS,
     outputRoot: join(root, 'providers'),
@@ -42,7 +40,7 @@ function emitLayer(entitiesDir: string): string {
   if (providerResult.issues.length) throw new Error(providerResult.issues.map((i) => i.message).join('; '));
   emitAdapters({
     providers: providerLoads.successes.map((p) => ({ definition: p.definition, filePath: p.filePath })),
-    entities: surfaced,
+    entities,
     outputRoot: root,
     backendSrcAbs: join(tmp, 'src'),
     modulesAbs: join(tmp, 'src', 'modules'),
@@ -70,6 +68,10 @@ describe('S7c — the integration layer is family-blind', () => {
   test('the layer is not empty (the gate has a subject)', () => {
     expect([...flat.keys()].some((k) => k.endsWith('mail-message.sink.generated.ts'))).toBe(true);
     expect([...flat.keys()].some((k) => k.endsWith('mail-message-integration.module.ts'))).toBe(true);
+    // D3: the second Integrated child, a base `belongs_to` and `emit_changes` are all rendered.
+    expect([...flat.keys()].some((k) => k.endsWith('calendar-event.sink.generated.ts'))).toBe(true);
+    expect([...flat.keys()].some((k) => /change-emitter/.test(k))).toBe(true);
+    expect([...flat.values()].some((v) => v.includes('mailboxId'))).toBe(true);
   });
 
   test('same file set', () => {

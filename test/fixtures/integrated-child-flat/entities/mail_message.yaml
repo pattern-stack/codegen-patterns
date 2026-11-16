@@ -25,3 +25,20 @@ fields:
   sent_at:
     type: datetime
     nullable: true
+
+relationships:
+  mailbox:
+    type: belongs_to
+    target: mailbox
+    foreign_key: mailbox_id
+    nullable: true
+
+integration:
+  providers:
+    google:
+      remote_entity: message
+      direction: inbound
+  sink:
+    delete: tombstone
+    exclude_fields: [title]
+    emit_changes: true

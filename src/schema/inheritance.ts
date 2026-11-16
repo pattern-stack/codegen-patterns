@@ -16,7 +16,7 @@ import { normalizeBehaviorConfig } from '../behaviors/index.js';
 import { declaredPatternNames } from '../patterns/compose.js';
 import type { EntityDefinition } from './entity-definition.schema.js';
 import { fieldColumnNullable, foreignKeyColumnNullable } from './field-nullability.js';
-import { BASE_ONLY_BEHAVIORS, isTenantScoped, lifecycleBehaviorsDeclared } from './tenancy.js';
+import { BASE_ONLY_BEHAVIORS, isTenantScoped, lifecycleBehaviorsDeclared, type TenantScopedDeclaration } from './tenancy.js';
 
 export interface InheritsDeclaration {
 	base: string;
@@ -438,7 +438,7 @@ export interface FlatChildInput<F = DeclaredField, R = DeclaredRelationship> {
 	discriminator?: EntityDefinition['discriminator'];
 	fields?: Record<string, F>;
 	behaviors?: EntityDefinition['behaviors'];
-	tenant_scoped?: EntityDefinition['tenant_scoped'];
+	tenant_scoped?: TenantScopedDeclaration;
 	relationships?: Record<string, R>;
 }
 
@@ -453,7 +453,7 @@ export interface FlatChildShape<F = DeclaredField, R = DeclaredRelationship> {
 	/** The base's behaviours first, then the child's own, one per name. */
 	behaviors: NonNullable<EntityDefinition['behaviors']>;
 	/** The base's `tenant_scoped` (R5 keeps it off the child); `undefined` when the base declares none. */
-	tenantScoped: EntityDefinition['tenant_scoped'] | undefined;
+	tenantScoped: TenantScopedDeclaration | undefined;
 }
 
 /**
@@ -506,7 +506,10 @@ export function flatChildShape<F, R>(
  * Not a child, or a child whose base is not in `definitions`, comes back unchanged. S7b and S7c both read it; the walk is
  * {@link flatChildShape}'s, and {@link flatChildOwners} is its other view.
  */
-export function flattenInheritedChild<T extends FlatChildInput>(def: T, definitions: Iterable<FlatChildInput>): T {
+export function flattenInheritedChild<T extends FlatChildInput<F, R>, F = DeclaredField, R = DeclaredRelationship>(
+	def: T,
+	definitions: Iterable<FlatChildInput<F, R>>,
+): T {
 	const shape = flatChildShape(def, definitions);
 	if (shape === null) return def;
 

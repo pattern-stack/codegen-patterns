@@ -64,7 +64,7 @@ import {
 import { subsystemsImport, type RuntimeMode } from "./runtime-import";
 import { emittedStem } from '../../config/file-naming.js';
 import { resolveTenancy, type TenantScopedDeclaration } from '../../schema/tenancy.js';
-import { flattenInheritedChild } from '../../schema/inheritance.js';
+import { flattenInheritedChild, type FlatChildInput } from '../../schema/inheritance.js';
 import {
   fieldColumnNullable,
   foreignKeyColumnNullable,
@@ -848,7 +848,14 @@ function jsKey(key: string): string {
  * - `entity.plural` / `entity.context` drive the entity repo/module import paths.
  * - `fields` → sink copy-through scalars; `relationships` (belongs_to) → FK keys.
  */
+type EmitField = NonNullable<EmitAdaptersEntity['fields']>[string];
+type EmitRelationship = NonNullable<EmitAdaptersEntity['relationships']>[string];
+
 export interface EmitAdaptersEntity {
+  /** `inherits:` / `discriminator:` — read by `flattenInheritedChild` (RFC-0006 S7c); declared so a projection that
+   *  drops them is a compile error rather than a silent no-op flatten. */
+  inherits?: FlatChildInput['inherits'];
+  discriminator?: FlatChildInput['discriminator'];
   entity: {
     name: string;
     surface?: string;
@@ -960,6 +967,14 @@ export interface EmitAdaptersResult {
  * else is re-emitted byte-identically.
  */
 export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
+  // A provider sync has no opinion on the family hierarchy (RFC-0006 S7c): a joined-table child is read as its
+  // flat shape, so every emitter below sees the entity a flat declaration of the same columns would be. The raw
+  // set stops here: `emitFlatAdapters` is handed the flattened one and has no other in scope.
+  const flattened = opts.entities.map((e) => flattenInheritedChild<EmitAdaptersEntity, EmitField, EmitRelationship>(e, opts.entities));
+  return emitFlatAdapters({ ...opts, entities: flattened });
+}
+
+function emitFlatAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
   const mode: RuntimeMode = opts.mode ?? "package";
   const result: EmitAdaptersResult = {
     written: [],
@@ -972,9 +987,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
     integrationAggregatorsWritten: [],
     skippedAssemblies: [],
   };
-  // A provider sync has no opinion on the family hierarchy (RFC-0006 S7c): a joined-table child is read as its
-  // flat shape, so every emitter below sees the entity a flat declaration of the same columns would be.
-  const entities = opts.entities.map((e) => flattenInheritedChild(e as never, opts.entities as never) as typeof e);
+  const entities = opts.entities;
   const entitiesBySurface = collectEntitiesBySurface(entities);
   // Index full entity definitions by name for the assembly/sink emission.
   const entityByName = new Map(entities.map((e) => [e.entity.name, e]));
