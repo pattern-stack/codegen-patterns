@@ -117,7 +117,9 @@ node is selected (as `relate` does). The tab is `inspector/ApiTab.tsx`; the pure
 - **Origin chip**: `← relationships.account`, `← queries[1]`, `base`, `pattern Integrated`, `capability Actor`,
   `junction opportunity_contact`. Uniqueness is a row flag, not chip text: a chip appends a `YamlRef.note` only when
   the derivation sets one. A relation-sourced chip takes its edge kind's colour (`edge-kinds.ts`), so the chip and
-  the line it explains match.
+  the line it explains match. The chip sits beside the signature when both fit; otherwise it drops onto its own line
+  under it, and it is never wider than that line: a longer chip ends in an ellipsis, with its full text in the
+  tooltip. The signature never shrinks to make room, and wraps only between words (`surface-row-layout.test.tsx`).
 - **Shadowing**: a declaration that lost to another of the same name is shown under the winning row with its own
   chip — the demo's `contact` shows "shadows ← queries[0] — resolved to the same name and lost" under
   `findByAccountId`.
