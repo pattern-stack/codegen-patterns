@@ -1,0 +1,19 @@
+# STUDIO-6 — is a part (inherits) and is owned by a recording (cascade).
+
+entity:
+  name: audio_part
+  plural: audio_parts
+
+inherits: { base: part, as: audio }
+
+fields:
+  duration_ms:
+    type: integer
+    required: true
+
+relationships:
+  recording:
+    type: belongs_to
+    target: recording
+    foreign_key: recording_id
+    on_delete: cascade

@@ -1,0 +1,17 @@
+# STUDIO-6 — the shared base. Two kinds, each with a child that a different parent owns.
+
+entity:
+  name: part
+  plural: parts
+
+discriminator: kind
+behaviors: [timestamps]
+
+fields:
+  kind:
+    type: enum
+    choices: [audio, text]
+    required: true
+  sequence:
+    type: integer
+    required: true

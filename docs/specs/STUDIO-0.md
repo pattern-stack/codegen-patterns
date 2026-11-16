@@ -124,6 +124,29 @@ out **as its own tree** — a hidden card is removed from the layout, not dimmed
 docking rules, and a new subset (`subsetKey`) refits through `fitAvoidingCorner` once ReactFlow holds exactly the new
 cards.
 
+### The spine order (STUDIO-6, 2026-11-15)
+
+The spine rule has two orders, picked in the header (`Inheritance first` / `Ownership first`) and remembered per
+browser (`localStorage`, `studio.spineOrder`; absent, throwing or anything else reads as inheritance first —
+`tools/studio/src/spine-order.ts`). **Inheritance first** is the default and STUDIO-3's rule: `inherits:` > `on_delete:
+cascade` > first declared. **Ownership first** swaps the first two: an owning `belongs_to` with `on_delete: cascade` >
+`inherits:` > first declared. (There is no unique-FK tier in either: #875 deleted it.) The rule is still one function,
+`chooseSpines(candidates, order)` in `graph/spine.ts`, reading one table (`SPINE_ORDERS`); `buildEdges` /
+`adaptDomainGraph` take the order and the app re-adapts the graph it already holds when the order changes, with no
+request. `treeReason` names whichever tier won, so a line reads correctly under both. The order changes only which
+line is a spine; secondary lines stay out of the layout either way.
+
+The case it is for: a shared base whose children each have an owner (`part`; `audio_part` inherits it and is owned
+by `recording`, `text_part` inherits it and is owned by `message`). Inheritance first hangs both children under
+`part` and makes the ownership lines secondary; ownership first hangs each child under its owner.
+
+**Prototype — floating inheritance (ownership first only; keep or delete at sign-off).** Under ownership first an
+`inherits` line that is not its child's spine is hidden at rest (drawn again while its child, its base or the line
+itself is selected), and the child shows a chip on its top edge, `is a Part`; clicking it selects the base card and
+pans to it. The base card is drawn once, where its own spine puts it. The chip sits outside the card's box, so card
+sizes and the layout are unchanged. All of it is `tools/studio/src/graph/FloatingBase.tsx` behind
+`FLOAT_INHERITANCE`, plus the lines in `SchemaCanvas.tsx`, `SchemaNode.tsx`, `GraphPane.tsx` and `App.tsx` that name it.
+
 ### Theming — one palette table, two columns (2026-10-04)
 
 Studio follows the system appearance and can be pinned to either theme. It shipped dark-only; the light theme was
