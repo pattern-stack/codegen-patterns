@@ -121,10 +121,15 @@ d('timestamptz columns under a non-UTC process and session (#796)', () => {
   });
 
   test('T4: a database-side comparison under a non-UTC session agrees', async () => {
+    // `createdAt` is stamped by the APPLICATION clock (withTimestamps), `now()` is the
+    // DATABASE's: they can differ by clock skew, so the window is centred on `now()`.
+    // A zone fault is 4-5.5 h, orders of magnitude outside it, so the property holds.
     const created = await repo.create({ title: 'db-side', startsAt: new Date() });
     const r = await nonUtc.query(
       `select count(*)::int as n from appointments
-        where id = $1 and created_at <= now() and created_at > now() - interval '1 minute'`,
+        where id = $1
+          and created_at <= now() + interval '1 minute'
+          and created_at > now() - interval '1 minute'`,
       [created.id],
     );
     expect(r.rows[0].n).toBe(1);
