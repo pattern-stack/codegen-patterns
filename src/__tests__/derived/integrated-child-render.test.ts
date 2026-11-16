@@ -28,7 +28,7 @@ describe('an Integrated child owns none of external_id_tracking', () => {
 	it('its flat write and projection carry the base columns (and its base belongs_to), less exclude_fields', () => {
 		const repo = text('mail-message.repository.ts');
 		expect(repo).toMatch(/interface MailMessageIntegrationWrite \{[^}]*readonly mailboxExternalId\?: string \| null;/s);
-		expect(repo).not.toMatch(/interface MailMessageIntegrationWrite \{[^}]*readonly title/s); // exclude_fields: [title]
+		expect(repo).not.toMatch(/interface MailMessageIntegrationWrite \{[^}]*readonly preview/s); // exclude_fields: [preview]
 		expect(repo).toMatch(/interface MailMessageIntegrationProjection \{[^}]*readonly externalId: string;/s);
 	});
 });
@@ -87,20 +87,25 @@ describe('the child repository reaches the base row', () => {
 	it('derives each as an entry with its YAML provenance (ADR-046)', () => {
 		const surface = deriveSet(set).get('mail_message')!;
 		const byName = new Map(surface.repository.methods.map((m) => [m.name, m]));
-		for (const n of ['findByExternalId', 'findManyByExternalIds', 'findByExternalIdProjected', 'softDeleteByExternalId']) {
-			expect(byName.get(n)?.kind).toBe('integration_through_base');
+		const KIND = {
+			findByExternalId: 'integration_find',
+			findManyByExternalIds: 'integration_find_many',
+			findByExternalIdProjected: 'integration_find_projected',
+			softDeleteByExternalId: 'integration_tombstone',
+		} as const;
+		for (const [n, kind] of Object.entries(KIND)) {
+			expect(byName.get(n)?.kind).toBe(kind);
 			expect(byName.get(n)?.emitted).toBe(true);
 			expect(byName.get(n)?.origin).toMatchObject({ from: 'yaml', at: { path: ['entity', 'pattern'] } });
 		}
-		// The persist hook is protected, so it is not API surface (parity lists public methods).
-		expect(byName.has('writeIntegrationRow')).toBe(false);
 		// `integrationUpsertOne` stays the pattern's: FK resolution and the projection have one owner.
 		expect(byName.get('integrationUpsertOne')?.kind).toBe('inherited');
 	});
 
 	it('a plain Integrated entity has none of them', () => {
 		const surface = deriveSet(set).get('contact')!;
-		expect(surface.repository.methods.some((m) => m.kind === 'integration_through_base')).toBe(false);
+		expect(surface.repository.methods.some((m) => m.kind.startsWith('integration_'))).toBe(false);
+		expect(surface.repository.persistHook).toBeUndefined();
 	});
 });
 
@@ -109,7 +114,7 @@ describe('the integrated-child fixture copies agree', () => {
 	const { readFileSync } = require('node:fs') as typeof import('node:fs');
 	const { join } = require('node:path') as typeof import('node:path');
 	const root = join(import.meta.dir, '../../..');
-	for (const [name, scaffold] of [['inbox_item', 'inbox-item'], ['mail_message', 'mail-message'], ['calendar_event', 'calendar-event']] as const) {
+	for (const [name, scaffold] of [['inbox_item', 'inbox-item'], ['mailbox', 'mailbox'], ['mail_message', 'mail-message'], ['calendar_event', 'calendar-event']] as const) {
 		it(`${name}: baseline and scaffold copies equal the source`, () => {
 			const source = readFileSync(join(root, `test/fixtures/integrated-child/entities/${name}.yaml`), 'utf-8');
 			expect(readFileSync(join(root, `test/fixtures/entities/${name}.yaml`), 'utf-8')).toBe(source);

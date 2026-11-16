@@ -5,6 +5,7 @@ export const CreateInboxItemSchema = z.object({
   mailboxId: z.string().uuid().nullable().optional(),
   kind: z.enum(['note']),
   title: z.string(),
+  preview: z.string().nullable().optional(),
 });
 
 export type CreateInboxItemDto = z.infer<typeof CreateInboxItemSchema>;

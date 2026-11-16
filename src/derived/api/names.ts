@@ -315,4 +315,6 @@ export const INTEGRATION_METHOD = {
 	findManyByExternalIds: 'findManyByExternalIds',
 	findByExternalIdProjected: 'findByExternalIdProjected',
 	softDeleteByExternalId: 'softDeleteByExternalId',
+	/** The protected persist step an Integrated child overrides to write through its base. */
+	writeIntegrationRow: 'writeIntegrationRow',
 } as const;

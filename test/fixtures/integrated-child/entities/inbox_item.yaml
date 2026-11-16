@@ -24,6 +24,9 @@ fields:
   title:
     type: string
     required: true
+  preview:
+    type: string
+    nullable: true
 
 unique_indexes:
   - fields: [provider, external_id]

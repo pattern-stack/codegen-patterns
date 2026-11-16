@@ -304,7 +304,7 @@
 			},
 			{
 				"name": "findByExternalId",
-				"kind": "integration_through_base",
+				"kind": "integration_find",
 				"emitted": true,
 				"params": [
 					{
@@ -329,7 +329,7 @@
 			},
 			{
 				"name": "findManyByExternalIds",
-				"kind": "integration_through_base",
+				"kind": "integration_find_many",
 				"emitted": true,
 				"params": [
 					{
@@ -354,7 +354,7 @@
 			},
 			{
 				"name": "findByExternalIdProjected",
-				"kind": "integration_through_base",
+				"kind": "integration_find_projected",
 				"emitted": true,
 				"params": [
 					{
@@ -382,7 +382,7 @@
 			},
 			{
 				"name": "softDeleteByExternalId",
-				"kind": "integration_through_base",
+				"kind": "integration_tombstone",
 				"emitted": true,
 				"params": [
 					{
@@ -459,7 +459,23 @@
 					"pattern": "Integrated"
 				}
 			}
-		]
+		],
+		"persistHook": {
+			"name": "writeIntegrationRow",
+			"origin": {
+				"from": "yaml",
+				"at": {
+					"doc": {
+						"kind": "entity",
+						"name": "mail_message"
+					},
+					"path": [
+						"entity",
+						"pattern"
+					]
+				}
+			}
+		}
 	},
 	"service": {
 		"className": "MailMessageService",

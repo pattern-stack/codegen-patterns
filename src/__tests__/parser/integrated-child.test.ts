@@ -275,15 +275,15 @@ describe('integration.sink.exclude_fields on a child reads the flat shape (S7a)'
 	};
 
 	it('a child may exclude a field of its base (the single-file check skips a child)', () => {
-		const fixtureIssues = schemaIssues(raw('mail_message', sinkOf(['title'])));
+		const fixtureIssues = schemaIssues(raw('mail_message', sinkOf(['preview'])));
 		expect(fixtureIssues).toEqual([]);
-		expect(errorMessages({ mail_message: sinkOf(['title']) })).toEqual([]);
+		expect(errorMessages({ mail_message: sinkOf(['preview']) })).toEqual([]);
 	});
 
 	it('a name in neither entity fails, with the flat field list in the message', () => {
 		const msgs = errorMessages({ mail_message: sinkOf(['nope']) });
 		expect(msgs).toEqual([
-			"exclude_fields: 'nope' is not a declared field. Declared fields: tenant_id, title, subject, sent_at",
+			"exclude_fields: 'nope' is not a declared field. Declared fields: tenant_id, title, preview, subject, sent_at",
 		]);
 	});
 

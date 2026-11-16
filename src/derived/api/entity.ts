@@ -547,18 +547,21 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 	// `pattern: Integrated` over a base that declares `external_id_tracking`: the child's table holds none of its columns,
 	// so the five methods that touch them are emitted here and forward to the base row, scoped to this child's kind. Their
 	// names are the pattern's own (the sink calls them as it would on a plain entity); `integrationUpsertOne` and
-	// `integrationUpsert` stay inherited and reach the pair through the protected `writeIntegrationRow` hook, which the
-	// template prints beside these (it is not part of the public surface, so parity does not list it).
+	// `integrationUpsert` stay inherited and reach the pair through the protected `writeIntegrationRow` hook, which is
+	// derived here as `repository.persistHook` (protected, so not a method: parity lists public ones): its existence is the
+	// derivation's call, not a branch of another method.
+	let persistHook: { name: string; origin: Origin } | undefined;
 	if (inheritsOf(definition) !== null && behaviorsReadThroughBase(definition.entity as never).includes('external_id_tracking')) {
 		const patternOrigin = fromYaml(['entity', 'pattern']);
-		for (const [name, params, returns] of [
-			[INTEGRATION_METHOD.findByExternalId, [{ name: 'externalId' }], 'one'],
-			[INTEGRATION_METHOD.findManyByExternalIds, [{ name: 'externalIds' }], 'many'],
-			[INTEGRATION_METHOD.findByExternalIdProjected, [{ name: 'externalId' }, { name: 'provider' }], 'one'],
-			[INTEGRATION_METHOD.softDeleteByExternalId, [{ name: 'externalId' }, { name: 'provider' }, { name: 'tx' }], 'one'],
+		for (const [name, kind, params, returns] of [
+			[INTEGRATION_METHOD.findByExternalId, 'integration_find', [{ name: 'externalId' }], 'one'],
+			[INTEGRATION_METHOD.findManyByExternalIds, 'integration_find_many', [{ name: 'externalIds' }], 'many'],
+			[INTEGRATION_METHOD.findByExternalIdProjected, 'integration_find_projected', [{ name: 'externalId' }, { name: 'provider' }], 'one'],
+			[INTEGRATION_METHOD.softDeleteByExternalId, 'integration_tombstone', [{ name: 'externalId' }, { name: 'provider' }, { name: 'tx' }], 'one'],
 		] as const) {
-			repository.push({ name, kind: 'integration_through_base', emitted: true, params: [...params], returns, readOptions: 'none', origin: patternOrigin });
+			repository.push({ name, kind, emitted: true, params: [...params], returns, readOptions: 'none', origin: patternOrigin });
 		}
+		persistHook = { name: INTEGRATION_METHOD.writeIntegrationRow, origin: patternOrigin };
 	}
 
 	for (const f of finders) {
@@ -1053,6 +1056,7 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 			baseClass: composition.repositoryBaseClass,
 			typedInclude,
 			methods: repository,
+			...(persistHook !== undefined ? { persistHook } : {}),
 		},
 		service: { className: serviceClassName(entityName), baseClass: composition.serviceBaseClass, methods: service },
 		useCases,

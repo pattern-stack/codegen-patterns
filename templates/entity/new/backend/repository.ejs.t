@@ -36,7 +36,9 @@ const _isRead = (m) => m.kind === 'count' || m.kind === 'with_base' || m.kind ==
 // The write kinds (S4) close the same run: the `queries:` banner comes after the last of them.
 const _PAIR = ['pair_create', 'pair_update', 'pair_delete'];
 const _isPair = (m) => _PAIR.includes(m.kind);
-const _isThroughBase = (m) => m.kind === 'integration_through_base';
+const _THROUGH_BASE = ['integration_find', 'integration_find_many', 'integration_find_projected', 'integration_tombstone'];
+const _persistHook = apiSurface.repository.persistHook !== undefined;
+const _isThroughBase = (m) => _THROUGH_BASE.includes(m.kind);
 const _isWrite = (m) => _isPair(m) || m.kind === 'kind_guard' || m.kind === 'create_guard' || m.kind === 'upsert_own' || m.kind === 'upsert_through_base' || _isThroughBase(m);
 const _child = _methods.some((m) => m.kind === 'with_base') ? familyChild : null;
 const _base = _methods.some(_isAcross) ? familyBase : null;
@@ -900,14 +902,14 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
       return { row: this.flat(childRow as <%= E %>, baseRow), created: upsertCreated, baseCreated };
     });
   }
-<%_ } else if (m.kind === 'integration_through_base') { _%>
+<%_ } else if (_isThroughBase(m)) { _%>
 <%_ const _p = m.params.map((x) => x.name); const _bt = _C('BASE'); /* the module const, not the table export: a function that reads a table export declares only camelCase bindings (#813) */ _%>
-<%_ if (m.name === 'findByExternalId') { _%>
+<%_ if (_methods.find(_isThroughBase) === m) { _%>
 
   // ═══════════════════════════════════════════════════════════════════════
   // The integration identity lives on the BASE row (RFC-0006 §4.2, S7, #917): `pattern: Integrated` reads
   // `external_id_tracking` through <%= _child.baseName %>, so this table has no `external_id` / `provider` column. These
-  // four match the base row on its identity and return this kind's flat row; a base row of another kind has no row in
+  // methods match the base row on its identity and return this kind's flat row; a base row of another kind has no row in
   // THIS table, so the join never sees it. Scope is this repository's own (tenant column, the base's lifecycle).
   // ═══════════════════════════════════════════════════════════════════════
 
@@ -920,26 +922,28 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
       .where(this.scopeAnd(where, softDelete ? { softDelete: true } : undefined));
     return hits.map((r) => this.flat(r.own as <%= E %>, r.base as <%= _child.baseClass %>));
   }
+<%_ } _%>
+<%_ if (m.kind === 'integration_find') { _%>
 
   /** The base row's `external_id` match, scoped to this kind. */
   override async <%= m.name %>(<%= _p[0] %>: string): Promise<<%= E %>Flat | null> {
     const [row] = await this.rowsThroughBase(eq(<%= _bt %>.externalId, <%= _p[0] %>), true);
     return row ?? null;
   }
-<%_ } else if (m.name === 'findManyByExternalIds') { _%>
+<%_ } else if (m.kind === 'integration_find_many') { _%>
 
   override async <%= m.name %>(<%= _p[0] %>: string[]): Promise<<%= E %>Flat[]> {
     if (<%= _p[0] %>.length === 0) return [];
     return this.rowsThroughBase(inArray(<%= _bt %>.externalId, <%= _p[0] %>), true);
   }
-<%_ } else if (m.name === 'findByExternalIdProjected') { _%>
+<%_ } else if (m.kind === 'integration_find_projected') { _%>
 
   /** Provider-scoped, and WITHOUT the lifecycle guard: the differ must still see a soft-deleted row. */
   override async <%= m.name %>(<%= _p[0] %>: string, <%= _p[1] %>: string): Promise<<%= E %>IntegrationProjection | null> {
     const [row] = await this.rowsThroughBase(and(eq(<%= _bt %>.provider, <%= _p[1] %>), eq(<%= _bt %>.externalId, <%= _p[0] %>))!, false);
     return row ? this.toProjection(row) : null;
   }
-<%_ } else if (m.name === 'softDeleteByExternalId') { _%>
+<%_ } else if (m.kind === 'integration_tombstone') { _%>
 
   /**
    * The tombstone acts on the BASE row (D4), and only when that row is THIS kind's: with `soft_delete` on the base
@@ -956,6 +960,8 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
       return { id: hit.id };
     });
   }
+<%_ } _%>
+<%_ if (_persistHook && _methods.filter(_isThroughBase).at(-1) === m) { _%>
 
   /**
    * The persist step of `integrationUpsertOne` for a pair: `upsertByNaturalKey` — so the kind guard

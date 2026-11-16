@@ -23,5 +23,5 @@ integration:
       direction: inbound
   sink:
     delete: soft
-    exclude_fields: [title]
+    exclude_fields: [preview]
     emit_changes: true

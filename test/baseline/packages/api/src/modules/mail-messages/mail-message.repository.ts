@@ -27,6 +27,7 @@ import { mailboxes } from '../mailboxes/mailbox.entity';
  */
 export interface MailMessageIntegrationWrite {
   readonly externalId: string;
+  readonly title: string;
   readonly subject: string;
   readonly sentAt: Date | null;
   readonly mailboxExternalId?: string | null;
@@ -44,6 +45,7 @@ export interface MailMessageIntegrationProjection {
   readonly externalId: string;
   readonly tenantId: string;
   readonly title: string;
+  readonly preview: string | null;
   readonly subject: string;
   readonly sentAt: Date | null;
   readonly mailboxId: string | null;
@@ -168,11 +170,11 @@ export class MailMessageRepository extends IntegratedEntityRepository<
   // resolvers carry LIVE Drizzle table handles ('self' → this.table).
   protected readonly integrationConfig: IntegrationUpsertConfig = {
     conflictTarget: ['tenantId', 'provider', 'externalId'],
-    writeColumns: ['subject', 'sentAt'],
+    writeColumns: ['title', 'subject', 'sentAt'],
     fkResolvers: [
       { column: 'mailboxId', writeKey: 'mailboxExternalId', refTable: mailboxes },
     ],
-    projectionColumns: ['id', 'externalId', 'tenantId', 'title', 'subject', 'sentAt', 'mailboxId', 'createdAt', 'updatedAt'],
+    projectionColumns: ['id', 'externalId', 'tenantId', 'title', 'preview', 'subject', 'sentAt', 'mailboxId', 'createdAt', 'updatedAt'],
     eav: false,
     softDelete: false,
   };
@@ -451,7 +453,7 @@ export class MailMessageRepository extends IntegratedEntityRepository<
   // ═══════════════════════════════════════════════════════════════════════
   // The integration identity lives on the BASE row (RFC-0006 §4.2, S7, #917): `pattern: Integrated` reads
   // `external_id_tracking` through inbox_item, so this table has no `external_id` / `provider` column. These
-  // four match the base row on its identity and return this kind's flat row; a base row of another kind has no row in
+  // methods match the base row on its identity and return this kind's flat row; a base row of another kind has no row in
   // THIS table, so the join never sees it. Scope is this repository's own (tenant column, the base's lifecycle).
   // ═══════════════════════════════════════════════════════════════════════
 

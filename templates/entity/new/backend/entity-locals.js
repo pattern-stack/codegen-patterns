@@ -29,7 +29,7 @@ import {
 // prompt.js via loadAppPatterns() against `codegen.config.yaml patterns:`
 // globs before this helper runs — we only read the registry here, through
 // `resolvePatternComposition`.
-import { discriminatorKindsOf, flatChildShape, inheritanceBaseOf, inheritsOf, INTEGRATED_NATURAL_KEY, naturalKeyIndexOf } from '../../../../src/schema/inheritance.js';
+import { discriminatorKindsOf, flatChildShape, inheritanceBaseOf, inheritsOf, INTEGRATED_NATURAL_KEY, isIntegratedNaturalKey, naturalKeyIndexOf } from '../../../../src/schema/inheritance.js';
 import { detectMethodCollisions } from '../../../../src/patterns/compose.js';
 import { resolvePatternComposition } from '../../../../src/patterns/resolve-composition.js';
 import '../../../../src/patterns/library/index.js';
@@ -1102,9 +1102,12 @@ function processUniqueIndexes(
 function adoptedExternalIdKeyIndex(definition) {
   const i = naturalKeyIndexOf(definition);
   if (i < 0) return -1;
-  const cols = [...(definition.unique_indexes?.[i]?.fields ?? [])].sort();
-  const identity = [...INTEGRATED_NATURAL_KEY].sort();
-  return cols.length === identity.length && cols.every((c, k) => c === identity[k]) ? i : -1;
+  return isIntegratedNaturalKey(definition.unique_indexes?.[i]?.fields ?? []) ? i : -1;
+}
+
+/** The name of the identity pair's unique constraint — one spelling, adopted or the behavior's own. */
+function identityConstraintName(tableName, tenanted) {
+  return `uq_${tableName}${tenanted ? '_tenant' : ''}_${INTEGRATED_NATURAL_KEY.join('_')}`;
 }
 
 /** Postgres keeps 63 bytes of an identifier and truncates the rest without a word. */
@@ -2268,7 +2271,7 @@ export function buildBackendLocals(definition, baseLocals) {
         ...ui,
         ...(i === adoptedNaturalKeyIndex
           ? {
-              name: ui.name ?? `uq_${entityTableName}${tenancy ? '_tenant' : ''}_${INTEGRATED_NATURAL_KEY.join('_')}`,
+              name: ui.name ?? identityConstraintName(entityTableName, tenancy),
               nulls_not_distinct: ui.nulls_not_distinct ?? false,
             }
           : {}),
@@ -2339,7 +2342,7 @@ export function buildBackendLocals(definition, baseLocals) {
   }
   if (ownsExternalIdColumns && adoptedNaturalKeyIndex < 0) {
     // The identity pair is the behavior's own (`identityColumns`), never retyped here.
-    const identityName = `uq_${entityTableName}${tenantScoped ? '_tenant' : ''}_${INTEGRATED_NATURAL_KEY.join('_')}`;
+    const identityName = identityConstraintName(entityTableName, tenantScoped);
     const identityProps = INTEGRATED_NATURAL_KEY.map((c) => `${T}.${camelCase(c)}`);
     tableConstraints.push(
       tenantScoped
@@ -2953,8 +2956,6 @@ export function buildBackendLocals(definition, baseLocals) {
     // template hand-emits the integrationConfig literal (live refTable handles) +
     // TIntegrationWrite/TIntegrationProjection from these.
     hasIntegrationSurface: integrationSurface !== null,
-    // S7: an Integrated child writes, reads and tombstones through its base (`readsThroughBase`).
-    integrationThroughBase: integratedChild,
     integrationConfig: integrationSurface?.integrationConfig ?? null,
     integrationFkResolvers: integrationSurface?.fkResolvers ?? [],
     integrationWriteFields: integrationSurface?.writeFields ?? [],

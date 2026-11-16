@@ -29,6 +29,7 @@ export const inbox_items = pgTable(
     tenantId: uuid('tenant_id').notNull(),
     kind: inboxItemKindEnum('kind').notNull(),
     title: text('title').notNull(),
+    preview: text('preview'),
     // external_id_tracking behavior
     externalId: varchar('external_id'),
     provider: varchar('provider'),

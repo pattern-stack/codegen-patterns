@@ -25,5 +25,5 @@ integration:
       direction: inbound
   sink:
     delete: tombstone
-    exclude_fields: [title]
+    exclude_fields: [preview]
     emit_changes: true

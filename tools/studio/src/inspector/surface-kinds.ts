@@ -94,7 +94,11 @@ export const REPOSITORY_KINDS: Record<RepositoryKind, KindDescriptor> = {
   upsert_through_base: { label: 'upsert through base', section: 'repository', order: 20 },
   kind_guard: { label: 'kind guard', section: 'repository', order: 21 },
   create_guard: { label: 'create guard', section: 'repository', order: 22 },
-  inherited: { label: 'inherited', section: 'repository', order: 23 },
+  integration_find: { label: 'sync find', section: 'repository', order: 23 },
+  integration_find_many: { label: 'sync find many', section: 'repository', order: 24 },
+  integration_find_projected: { label: 'sync projection', section: 'repository', order: 25 },
+  integration_tombstone: { label: 'sync tombstone', section: 'repository', order: 26 },
+  inherited: { label: 'inherited', section: 'repository', order: 27 },
 };
 
 export const SERVICE_KINDS: Record<ServiceKind, KindDescriptor> = {

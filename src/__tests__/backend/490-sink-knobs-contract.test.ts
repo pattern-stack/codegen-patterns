@@ -436,11 +436,12 @@ describe('#490 contract (e): an Integrated child — repository and sink agree o
       expect(locals.integrationWriteFkFields.map((f) => f.name)).toContain('mailboxExternalId');
     });
 
-    it(`${name}: exclude_fields: [title] leaves the write surface of both, and stays in the projection`, () => {
-      expect(locals.integrationConfig.writeColumns).not.toContain('title');
-      expect(sink.copyThroughFields.map((f) => f.camelName)).not.toContain('title');
-      expect(locals.integrationConfig.projectionColumns).toContain('title');
-      expect((sink.viewCopyThroughFields ?? []).map((f) => f.camelName)).toContain('title');
+    it(`${name}: exclude_fields: [preview] leaves the write surface of both, and stays in the projection; title (required) stays writable`, () => {
+      expect(locals.integrationConfig.writeColumns).not.toContain('preview');
+      expect(locals.integrationConfig.writeColumns).toContain('title');
+      expect(sink.copyThroughFields.map((f) => f.camelName)).not.toContain('preview');
+      expect(locals.integrationConfig.projectionColumns).toContain('preview');
+      expect((sink.viewCopyThroughFields ?? []).map((f) => f.camelName)).toContain('preview');
     });
   }
 });

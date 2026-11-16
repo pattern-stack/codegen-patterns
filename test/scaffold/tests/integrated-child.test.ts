@@ -58,15 +58,9 @@ const count = async (table: string, where = 'true') =>
   Number((await rows(`SELECT count(*)::int AS n FROM ${table} WHERE ${where}`))[0].n);
 
 const inboxRepo = () => new InboxItemRepository(db());
-// The fixture's sink excludes `title` from the write (S7a, `exclude_fields`) while the base requires it, so a write
-// here widens the write columns by it — the one deviation from the generated config.
-const withTitle = <T>(repo: T): T => {
-  const r = repo as any;
-  r.integrationConfig = { ...r.integrationConfig, writeColumns: [...r.integrationConfig.writeColumns, 'title'] };
-  return repo;
-};
-const mailRepo = () => withTitle(new MailMessageRepository(db(), inboxRepo()));
-const calRepo = () => withTitle(new CalendarEventRepository(db(), inboxRepo()));
+// The repositories run exactly as generated: no widened write columns (the fixture excludes the nullable `preview`).
+const mailRepo = () => new MailMessageRepository(db(), inboxRepo());
+const calRepo = () => new CalendarEventRepository(db(), inboxRepo());
 
 const mailWrite = (over: Record<string, unknown> = {}) => ({
   externalId: 'ext-1',
@@ -100,6 +94,16 @@ d('integrationUpsertOne on an Integrated child', () => {
     expect(await count('mail_messages')).toBe(1);
     expect((await rows(`SELECT subject FROM mail_messages`))[0].subject).toBe('edited');
     expect((await rows(`SELECT title FROM inbox_items`))[0].title).toBe('edited');
+  });
+
+  test('exclude_fields: a sync update that carries the excluded base field leaves it unchanged', async () => {
+    const created = await asA(() => mailRepo().integrationUpsertOne(mailWrite({ preview: 'from the sync' }), 'google'));
+    // the create did not write it either
+    expect((await rows(`SELECT preview FROM inbox_items`))[0].preview).toBeNull();
+    await db().execute(sql`UPDATE inbox_items SET preview = 'set by a person' WHERE id = ${created.id}`);
+    await asA(() => mailRepo().integrationUpsertOne(mailWrite({ subject: 'again', preview: 'from the sync' }), 'google'));
+    expect((await rows(`SELECT preview FROM inbox_items`))[0].preview).toBe('set by a person');
+    expect((await rows(`SELECT subject FROM mail_messages`))[0].subject).toBe('again');
   });
 
   test('the same external id under the other child is KindMismatchError and writes nothing', async () => {

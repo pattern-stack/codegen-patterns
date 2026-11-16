@@ -7,6 +7,7 @@ export const InboxItemOutputSchema = z.object({
   tenantId: z.string().uuid(),
   kind: z.enum(['mail_message', 'calendar_event', 'note']),
   title: z.string(),
+  preview: z.string().nullable(),
   // external_id_tracking behavior — external_id is the public cross-entity join
   // key (a referenced entity exposes it so consumers can join), so it rides the
   // output DTO read-only. provider / provider_metadata stay internal.

@@ -98,8 +98,14 @@ export interface RepositoryMethod {
 		| 'upsert_through_base'
 		/** A base's `update`, which refuses a `kind` change (`discriminator:`, §4.1). */
 		| 'kind_guard'
-		/** An Integrated child's `findByExternalId` / `findManyByExternalIds` / `findByExternalIdProjected` / `softDeleteByExternalId`, forwarded to its base row and scoped to its kind (`pattern: Integrated` over `inherits:`, §4.2, S7). */
-		| 'integration_through_base'
+		/** An Integrated child's `findByExternalId`, forwarded to its base row and scoped to its kind (`pattern: Integrated` over `inherits:`, §4.2, S7); the next four kinds are its siblings. */
+		| 'integration_find'
+		/** `findManyByExternalIds` through the base row. */
+		| 'integration_find_many'
+		/** `findByExternalIdProjected` through the base row (no lifecycle guard: the differ sees a tombstone). */
+		| 'integration_find_projected'
+		/** `softDeleteByExternalId` on the base row, only when it is this kind's (D4). */
+		| 'integration_tombstone'
 		/** A base's `create`, which refuses a kind that has a child table (`KindRequiresChildError`, §4.1). */
 		| 'create_guard'
 		| 'inherited';
@@ -205,7 +211,14 @@ export interface EntityApiSurface {
 	entity: string;
 	plural: string;
 	className: string;
-	repository: { className: string; baseClass: string; typedInclude: boolean; methods: RepositoryMethod[] };
+	repository: {
+		className: string;
+		baseClass: string;
+		typedInclude: boolean;
+		methods: RepositoryMethod[];
+		/** An Integrated child's protected `writeIntegrationRow` override (its persist step is the pair's `upsertByNaturalKey`). Protected, so not a method: parity lists public ones. */
+		persistHook?: { name: string; origin: Origin };
+	};
 	service: { className: string; baseClass: string; methods: ServiceMethod[] };
 	useCases: UseCase[];
 	/**

@@ -2048,15 +2048,29 @@ S7b (emission and the repository) and S7c (the integration emitter).
 - **Design choice (step 4).** The child EXTENDS `IntegratedEntityRepository`. `integrationUpsertOne` is not overridden: the class
   gained one protected hook, `writeIntegrationRow`, the persist step, and the child overrides only that to call its own
   `upsertByNaturalKey` (kind guard, `match:` fill, orphan repair for free). FK resolution, the projection and the EAV seam keep one
-  owner. The four identity reads and the tombstone are emitted on the child (`integration_through_base` entries, origin
-  `entity.pattern`): an inner join child → base on `id`, the child's own scope, so a base row of another kind has no row and is never
+  owner. The four identity reads and the tombstone, and the `writeIntegrationRow` override, are emitted on the child — four derived
+  entries (`integration_find`, `integration_find_many`, `integration_find_projected`, `integration_tombstone`; origin
+  `entity.pattern`) plus `repository.persistHook` (a flag, because the hook is protected and parity lists public methods), so the template picks no body by method name and the hook's existence is the
+  derivation's call: an inner join child → base on `id`, the child's own scope, so a base row of another kind has no row and is never
   matched or tombstoned. The tombstone goes through the base repository's own `delete` / `update` (D4).
-- **Contract notes.** `findByExternalId` / `findManyByExternalIds` keep the plain signature (no provider), as before. The sink calls the
-  repository, not the service, so a sink write emits no `created` / `updated` event for ANY entity; the pair's two names come from
-  the service's `upsertByNaturalKey`, which the sink does not call (not S7b's; recorded for S7c / a later slice).
+- **Contract notes.** `findByExternalId` / `findManyByExternalIds` keep the plain signature (no provider), as before.
+  - **Events (pending Doug, S7-D6).** The sink calls the repository, not the service, so no service lifecycle event
+    (`<entity>.created` / `.updated`) fires for ANY entity, plain or child. With `emit_changes: true` the orchestrator publishes
+    `<entity>_created` / `_edited` / `_deleted` under the **child's** name only; no base-named event is published. Whether a child's
+    sync should also publish under the base's name is open and pending Doug (S7-D6); nothing is built for it.
+  - **Mailbox FK resolver.** A base `belongs_to` onto a non-Integrated parent gets the `<relationship>ExternalId` resolver that looks
+    for `provider` / `external_id` on the parent, exactly as every plain Integrated entity's does. Supplying `mailboxExternalId`
+    throws; leaving it out writes `null`. That is #779's, not S7's: S7c / S7d must not treat `mailboxExternalId` as a working path.
+  - **The tombstone** (soft mode) goes through the base repository's `delete`, which sets `deleted_at` and not `updated_at`; a plain
+    entity's tombstone sets both. Left as built: a base's `delete` has one meaning and the sink cannot be told apart by it.
+  - **The NULL guard** refuses an absent natural-key column even when it has a column `default:`; a natural key is caller-supplied.
+  - **The inherited batch `integrationUpsert`** takes `Partial<TEntity>` rows and returns child-table rows, so it is not usable on a
+    child; it is out of S7 (nothing calls it). `integrationUpsertOne` is the sync's path.
+  - **Inherited comments.** The child's `// Inherited from <Base>:` lines still list the four methods it now overrides (#893's named
+    expectation).
 - **Fixtures.** The family (with `mailbox`) is copied into the baseline set and the scaffold set (`*-scaffold.yaml`); a test fails when
   a copy drifts. The baseline runner calls hygen, not the CLI, so the provider definition is not read there: the integration layer of
-  the family is S7c's gates'. The Docker tier widens the write columns by `title` (the fixture's sink excludes it; the base requires it).
+  the family is S7c's gates'. The base has a nullable `preview` that both children's sink excludes; the Docker tier runs the generated config unwidened and asserts a sync update leaves `preview` alone. (`exclude_fields` on a NOT NULL column with no default writes no row at all: #930.)
 
 ### 13.3 Rules for every slice
 

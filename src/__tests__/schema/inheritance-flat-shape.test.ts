@@ -37,7 +37,7 @@ describe('flattenInheritedChild', () => {
 	it('keeps no inherits: key and no discriminator, and reads the base from the set it is given', () => {
 		const flat = flattenInheritedChild(calendar, family);
 		expect('inherits' in flat).toBe(false);
-		expect(Object.keys(flat.fields)).toEqual(['tenant_id', 'title', 'starts_at', 'ends_at']);
+		expect(Object.keys(flat.fields)).toEqual(['tenant_id', 'title', 'preview', 'starts_at', 'ends_at']);
 		expect(flat.tenant_scoped).toBe(true);
 		expect(flat.behaviors).toEqual(['timestamps', 'soft_delete', 'external_id_tracking']);
 	});
@@ -53,7 +53,7 @@ describe('flatChildOwners — the same walk, as owners', () => {
 	it('names the declaring entity of each field', () => {
 		expect(flatChildOwners(mail, family)).toEqual({
 			base: 'inbox_item',
-			fields: { tenant_id: 'inbox_item', title: 'inbox_item', subject: 'mail_message', sent_at: 'mail_message' },
+			fields: { tenant_id: 'inbox_item', title: 'inbox_item', preview: 'inbox_item', subject: 'mail_message', sent_at: 'mail_message' },
 			relationships: { mailbox: 'inbox_item' },
 		});
 	});
