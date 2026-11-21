@@ -20,7 +20,7 @@ plan:
   type: batch
   repo: pattern-stack/codegen-patterns
   milestone: "codegen 0.33.0"   # informational. Create it on sync or drop it; nothing depends on it.
-  workstream: W2
+  workstream: W9   # Framework (hq PLAN.md workstreams)
   priority: P2                  # #829 and #828 override to P1
   size: L
   epic_title: "Gaps batch 2: unique constraints at runtime, reserved names, behavior and pipeline gaps"
