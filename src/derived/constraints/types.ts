@@ -4,13 +4,15 @@
  *
  * Types only: zero runtime imports (type imports only).
  *
- * Deliberately NOT here: source text of any kind — no builder call (`index('…').on(…)`, `.references(…)`), no SQL
- * keyword syntax, no table-callback parameter. A fact names tables, columns and properties; a constraint renderer
- * (`src/targets/<orm>/<database>/constraints.ts`) writes them in its pair's syntax. Each fact is added when its
+ * Deliberately NOT here: ORM or builder text — no builder call (`index('…').on(…)`, `.references(…)`), no
+ * template-literal syntax, no table-callback parameter. A fact names tables, columns and properties; a constraint
+ * renderer (`src/targets/<orm>/<database>/constraints.ts`) writes them in its pair's syntax. SQL that every SQL pair
+ * shares IS a fact: a referential action's spelling (`'set null'`), and the text of a predicate or CHECK expression
+ * (`IS NULL OR …`), carried as segments around the column references a renderer writes in its own syntax. Each fact is added when its
  * constraint's text moves behind the target, never ahead of it.
  */
 
-import type { OnDeleteAction } from './on-delete.js';
+import type { ReferentialAction } from './on-delete.js';
 import type { PredicateSegment } from './predicate.js';
 
 /**
@@ -21,10 +23,15 @@ import type { PredicateSegment } from './predicate.js';
 export interface ColumnReferenceFact {
 	/** The referenced table's generated export — its `plural`, NOT its SQL name (TABLE-0). */
 	readonly targetExport: string;
-	/** The referenced column, as the YAML names it. */
-	readonly targetColumn: string;
+	/**
+	 * The referenced column's property on the target export. `id` for a `belongs_to` / junction endpoint. For a field
+	 * `foreign_key: <table>.<column>` it is the column as the YAML writes it, which is the property only while that
+	 * column is a single word (`id`) — the pre-TGT-1 behaviour, kept byte-identical; a snake_case target column is a
+	 * known gap, not changed here.
+	 */
+	readonly targetProp: string;
 	/** The referential action, when the relationship declares one (`belongs_to`, junction endpoints). */
-	readonly onDelete?: OnDeleteAction;
+	readonly onDelete?: ReferentialAction;
 }
 
 /** A plain (non-unique) index over columns of this table. */
@@ -64,7 +71,7 @@ export interface ForeignKeyFact {
 	readonly targetExport: string;
 	/** The TypeScript properties of the referenced columns, in the same order. */
 	readonly targetProps: readonly string[];
-	readonly onDelete: OnDeleteAction;
+	readonly onDelete: ReferentialAction;
 }
 
 /** A CHECK over this table's columns: a boolean SQL expression, tokenized. */

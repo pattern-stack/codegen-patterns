@@ -52,7 +52,7 @@ entity-locals.js and the junction prompt compose facts + text into the SAME reco
 | What | Where | Why | When |
 |---|---|---|---|
 | `external_id_tracking` unique (`uq_<table>_[tenant_]provider_external_id`) | `entity-locals.js`, table-constraints block | the open #917 stack (s7b) rewrites this block | **TGT-1b**, after #917 lands |
-| `builder` names on the records (`index`, `unique`, `uniqueIndex`, `foreignKey`, `check`) | read by C3–C5 (`assertDistinctConstraints`) and the Drizzle import set | they are Drizzle's import names; per-pair imports come with the second pair | TGT-2b |
+| `builder` names on the records (`index`, `unique`, `uniqueIndex`, `foreignKey`, `check`) | read by C4 (`assertDistinctConstraints`, which also checks every record has one) and the Drizzle import set | they are Drizzle's import names; per-pair imports come with the second pair | TGT-2b |
 | `PG_IDENTIFIER_MAX_BYTES` (C5, 63 bytes) | `entity-locals.js` | a Postgres fact; becomes per-database with the sqlite pair | TGT-2a |
 | The relationship pipeline's constraints (its `ON_DELETE_MAP`, the field `foreign_key` with no FK, the `table.` callback parameter) | `templates/relationship/new/` | that pipeline's copy is cut whole (TGT-0 § Next 2, #679, #942–#944) | with that cut |
 | The junction's `primaryKey(…)`; the inherited / `match`-derived column lines | junction template; `entity-locals.js` | column text, not constraints | the behavior-columns TGT-N |
@@ -64,7 +64,8 @@ entity-locals.js and the junction prompt compose facts + text into the SAME reco
 - No pinned output changed: the TGT-0 golden-directory `git diff --stat` against the base is empty.
 - New tests that can fail on their own subject:
   - `drizzle-postgres-constraints.test.ts`: every reference, index, unique (plain, NULLS NOT DISTINCT, partial,
-    referenced, tenant notes), composite FK and check shape, as exact text;
+    referenced), composite FK and check shape as exact text, the tenant notes by their key phrase, and the refusal of
+    a partial NULLS NOT DISTINCT;
   - `processFieldFeatures` throws without a renderer;
   - `predicate.test.ts`: every case of the old renderer, unchanged, through the tokenizer and renderer, plus segment
     cases;
@@ -72,10 +73,32 @@ entity-locals.js and the junction prompt compose facts + text into the SAME reco
 
 ## Differs from the plan
 
+- **`processFieldFeatures` composes; it does not return facts.** The plan had it return facts for a later
+  composition step. It takes the renderer instead and returns the same rendered records as before, because nothing
+  yet reads the facts apart from their text, and a key nothing reads is deleted (CLAUDE.md). Its facts are built
+  and handed to the renderer in place.
 - **C4 still reads `builder`**, not a neutral `kind`. The builder names stay on the records for the import set
-  anyway, and moving C3–C5 to facts belongs with per-pair imports.
-- **The renderer owns the rc.4 decision that a partial unique is never NULLS NOT DISTINCT.** The facts carry the
-  requested `nullsNotDistinct` and the `where`; the renderer applies the limit.
-- **The kind CHECK's value is now escaped** for a template literal, like every predicate text segment. Enum choices
-  hold no backtick, backslash or `${`, so the bytes are the same. A value that did hold one would now compile
-  instead of breaking the generated file.
+  anyway, and moving C4 to facts belongs with per-pair imports.
+- **A partial unique is never NULLS NOT DISTINCT**, decided in the composer as before, so the fact says what the
+  database enforces. The drizzle/postgres renderer refuses the combination (rc.4 can't write one) rather than
+  silently dropping it.
+- **The kind CHECK's value is now escaped** for a template literal, like every predicate text segment. The bytes
+  can't change: the value is `inherits.as` or the entity name, both snake_case by schema
+  (`entity-definition.schema.ts`, `SNAKE_NAME_PATTERN`).
+- **No fixture round-trip of every `where:`.** The old renderer's unit cases moved unchanged, and the goldens and the
+  column-feature / tenant-scoping text tests pin every `where:` the fixtures use.
+- **`constraintRendererFor`'s refusals are tested through `renderersFor`** (via `columnRendererFor`, the same
+  function); it has no refusal test of its own.
+
+## Review (2026-11-26, /sdlc:review, Gate 2.5)
+
+Joined verdict **PASS_WITH_NOTES**, 0 blockers. Adherence: PASS_WITH_NOTES (3 notes, 7 nits), with byte identity
+confirmed by the unit suite at the base, every intermediate commit and the head. Quality: PASS_WITH_NOTES (5 notes,
+8 nits). Fixed in the same PR: the partial-unique fact, `ColumnReferenceFact.targetProp` (it is printed as a
+property), the on-delete map keyed by the schema's `OnDelete` enum (the SQL type renamed `ReferentialAction`),
+`types.ts`'s rule on SQL text, a predicate test that asserted nothing, and stale mentions. Left by name:
+- the junction prompt's `on_delete_left` / `on_delete_right` read (the junction schema is strict and declares
+  neither, so both are always `restrict`; a separate change adds the keys or deletes the read);
+- a field `foreign_key:` to a snake_case target column prints the column as a property (pre-existing; above);
+- nits on the renderer interface's shape (`predicate` is used only through `unique` / `check` and tests, index
+  names are built at four sites) — for the second pair to shape (ADR-047 decision 8).

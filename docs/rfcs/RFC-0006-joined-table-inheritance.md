@@ -1356,7 +1356,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   absent from the create and update DTOs and from the entity's own `processedFields`; it is in the table type.
   M2's exception derives nothing and the FK uses the declared discriminator column.
 - **The extra-config callback parameter is `tCols` for every entity table and junction**, from one constant
-  (`templates/_shared/table-callback.mjs`) that every builder reads, `renderSqlPredicate` included. A composite FK
+  (`templates/_shared/table-callback.mjs`) that every builder reads, the predicate renderer included (`constraints.predicate`, TGT-1). A composite FK
   reads the other table's export inside the callback, and the emitted-name hygiene rule (#813) forbids a
   plural-shaped binding in such a function. (The first S2 build rewrote `t.` to `tCols.` in finished text for the
   tables that had one; that also rewrote a string literal in a user's predicate.)

@@ -115,3 +115,8 @@ carried it (0.34.0 predates #940), so there is no shim: `data:` is an unknown ke
   `COLUMN_RENDERERS` is gone; `renderersFor(target, caller)` holds the refusals.
 - **Constraints are behind the target.** Their facts are in `src/derived/constraints/`, and the text is each pair's
   `constraints.ts` (`docs/specs/TGT-1.md`). The `external_id_tracking` unique follows in TGT-1b.
+- **Decision 8 holds for constraints too.** `ConstraintRenderer` is what drizzle/postgres needs and the templates
+  print (`columnReference`, `index`, `unique` → `{ expr, builder, comment }`, `foreignKey`, `check`, `predicate`); it
+  is not generalised until a second pair's renderer shows what the two share. Decision 4's facts/text line is
+  unchanged: SQL every SQL pair shares (a referential action's spelling, a predicate's text) is a fact; builder and
+  template syntax is text.

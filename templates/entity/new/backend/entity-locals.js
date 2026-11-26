@@ -722,7 +722,7 @@ export function processFieldFeatures(renderedFields, fields, naming, ownedTables
           }
         }
         // Every FK callback is annotated (#631): see `hasFk`. The suffix is the target's text (TGT-1).
-        pf.drizzleChain += constraints.columnReference({ targetExport: relatedExport, targetColumn: fkColumn });
+        pf.drizzleChain += constraints.columnReference({ targetExport: relatedExport, targetProp: fkColumn });
         hasFieldFk = true;
       }
       // else: host-owned target — plain column, no FK, no import. `index: true`
@@ -801,7 +801,8 @@ function entityTableColumns({
  * drizzle-orm 1.0.0-rc.4, so a partial entry does not. An author `name` is kept
  * verbatim. Generation errors: C1 (unknown column), C2 (the tenant column
  * listed, or a repeated field), and the `where:` scanner errors
- * (`tokenizePredicate`). The `where:` body is the target's text (`constraints.predicate`, TGT-1).
+ * (`tokenizePredicate`). The rules above are decided here, as facts; the builder and its text are the target's
+ * (`constraints.unique`, TGT-1).
  *
  * `tenancy` is `resolveTenancy`'s result (#791) — `null` when the entity is not
  * tenant_scoped; its `column` is the prefix (`tenant_id` by default).
@@ -847,7 +848,9 @@ function processUniqueIndexes(
         name,
         props: cols.map((c) => propByColumn.get(c)),
         where,
-        nullsNotDistinct: ui.nulls_not_distinct ?? tenantScoped,
+        // A partial unique is never NULLS NOT DISTINCT: the generator's rule (drizzle rc.4 can't write one), decided
+        // here so the fact says what the database enforces.
+        nullsNotDistinct: partial ? false : (ui.nulls_not_distinct ?? tenantScoped),
         referenced: false,
         tenantScoped,
       },
@@ -1699,7 +1702,7 @@ export function buildBackendLocals(definition, baseLocals) {
       .filter((rel) => !rel.match)
       .map((rel) => [
         rel.field,
-        constraints.columnReference({ targetExport: rel.relatedTable, targetColumn: 'id', onDelete: rel.onDelete }),
+        constraints.columnReference({ targetExport: rel.relatedTable, targetProp: 'id', onDelete: rel.onDelete }),
       ]),
   );
 

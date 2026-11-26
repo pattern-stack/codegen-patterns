@@ -506,8 +506,8 @@ export default {
 
       // On-delete
       // TGT-1: the endpoints' `.references(…, { onDelete })` suffixes are the target's text.
-      leftReference: constraints.columnReference({ targetExport: leftTable, targetColumn: "id", onDelete: onDeleteLeft }),
-      rightReference: constraints.columnReference({ targetExport: rightTable, targetColumn: "id", onDelete: onDeleteRight }),
+      leftReference: constraints.columnReference({ targetExport: leftTable, targetProp: "id", onDelete: onDeleteLeft }),
+      rightReference: constraints.columnReference({ targetExport: rightTable, targetProp: "id", onDelete: onDeleteRight }),
 
       // Custom fields
       processedCustomFields,

@@ -19,7 +19,7 @@ The record is now composed from two parts, and a config key picks the second:
 
 ```
 YAML field ──► deriveFieldFacts()                src/derived/columns/fields.ts   (pure: no Drizzle, no Zod)
-                  ├─► columnRendererFor(target)        src/targets/columns.ts (COLUMN_RENDERERS, from TARGET_PAIRS)
+                  ├─► columnRendererFor(target)        src/targets/columns.ts (COLUMN_RENDERERS, from TARGET_PAIRS; TGT-1: TARGET_RENDERERS)
                   │      └─ 'drizzle/postgres' → drizzleType, drizzleChain, tsType, importFor
                   │                                     src/targets/drizzle/postgres/columns.ts
                   └─► zodValueFor(facts)               entity-locals.js (Zod is shared by every target)
@@ -31,7 +31,7 @@ processFields(fields, { entityName, enumResolver, columns }) = facts + render(fa
 |---|---|---|
 | `FieldFacts` (`src/derived/columns/types.ts`) | `name`, `camelName`, `type`, `elementType`, `isArray`, `nullable`, `required`, `hasDefault`, `default`, `withTimezone`, `choices`, `hasChoices`, `enumName`, `enumDbName`, `enumImport`, `minLength`, `maxLength` | builder text, Zod chains, TypeScript type strings, SQL |
 | `drizzlePostgresColumns` (`src/targets/drizzle/postgres/columns.ts`) | the type maps, `buildDrizzleChain`, `renderColumnDefault`, `varcharColumn`, the select-model `tsType`, and `importFor(builder)` (the `pg-core` import a builder needs, read by `collectDrizzleImports`) | facts it could derive itself |
-| `TARGET_PAIRS` (`src/targets/pairs.ts`) | the supported `(orm, database)` pairs, each with its descriptions and renderer — the one list | a pair without a renderer |
+| `TARGET_PAIRS` (`src/targets/pairs.ts`) | the supported `(orm, database)` pairs, each with its descriptions and renderer (TGT-1: rows only; renderers bound in `TARGET_RENDERERS`) — the one list | a pair without a renderer |
 | `target:` (`codegen.config.yaml`) | `{ database: postgres, orm: drizzle }`, the default and only supported pair | `http`, `wiring`, `runtime` or a driver (ADR-047 §5–6) |
 
 - **`tsType` is rendered by the target.** It is TypeScript, but its values are the data layer's: `decimal` is
@@ -45,7 +45,7 @@ processFields(fields, { entityName, enumResolver, columns }) = facts + render(fa
     `src/derived/api/names.ts`, which `templates/_shared/inheritance.mjs` imports.
   - The relationship prompt imports `renderColumnDefault` / `varcharColumn` from the renderer.
 - **One table of pairs.** `TargetConfigSchema` is a union of strict per-pair objects derived from `TARGET_PAIRS`,
-  with each key's literal described for editors. `COLUMN_RENDERERS` is built from the same rows. Both the schema and
+  with each key's literal described for editors. `COLUMN_RENDERERS` is built from the same rows (TGT-1 replaced it with `TARGET_RENDERERS`). Both the schema and
   `columnRendererFor` refuse a pair the table lacks, naming the supported pairs. A written `target:` needs both keys;
   a missing one says so. `src/__tests__/targets/target-pairs-docs.test.ts` holds the "Supported pairs:" lists in the
   README, the consumer setup guide and the codegen skill to the table.

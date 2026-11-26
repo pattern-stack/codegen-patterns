@@ -29,8 +29,9 @@
  * its own `timezone:`).
  *
  * Readers: the entity schema (option validation), and the entity, junction and
- * relationship hygen prompts (imported as `src/schema/field-timestamp.js`).
- * Nothing else spells the options literal.
+ * relationship hygen prompts (imported as `src/schema/field-timestamp.js`). The
+ * column text itself is the target's (`timestampColumn`, the drizzle/postgres
+ * column renderer, TGT-1).
  *
  * Kept dependency-free: the hygen prompts import it straight from the shipped
  * `src/` tree.

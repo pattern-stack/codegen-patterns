@@ -41,7 +41,7 @@ function predicate(segments: readonly PredicateSegment[], tableParam: string): s
  */
 function columnReference(reference: ColumnReferenceFact): string {
 	const action = reference.onDelete === undefined ? '' : `, { onDelete: '${reference.onDelete}' }`;
-	return `.references((): AnyPgColumn => ${reference.targetExport}.${reference.targetColumn}${action})`;
+	return `.references((): AnyPgColumn => ${reference.targetExport}.${reference.targetProp}${action})`;
 }
 
 const on = (props: readonly string[], tableParam: string) => props.map((p) => `${tableParam}.${p}`).join(', ');
@@ -52,7 +52,7 @@ function index(fact: IndexFact, tableParam: string): string {
 
 /**
  * - partial (`where`) → `uniqueIndex(name).on(…).where(sql\`…\`)`. A partial index cannot be NULLS NOT DISTINCT on
- *   drizzle-orm 1.0.0-rc.4, so a partial entry never is;
+ *   drizzle-orm 1.0.0-rc.4, so that fact is refused (the composer never states it);
  * - a referenced unique → `unique(name).on(…)`: a UNIQUE constraint, the target of a composite FK;
  * - NULLS NOT DISTINCT → `unique(name).on(…).nullsNotDistinct()`: only the table-constraint builder carries it on rc.4;
  * - otherwise → `uniqueIndex(name).on(…)`.
@@ -60,6 +60,9 @@ function index(fact: IndexFact, tableParam: string): string {
 function unique(fact: UniqueFact, tableParam: string): RenderedConstraint {
 	const cols = on(fact.props, tableParam);
 	if (fact.where !== null) {
+		if (fact.nullsNotDistinct) {
+			throw new Error(`unique '${fact.name}': drizzle/postgres cannot write a partial unique NULLS NOT DISTINCT (rc.4).`);
+		}
 		return {
 			builder: 'uniqueIndex',
 			expr: `uniqueIndex('${fact.name}').on(${cols}).where(sql\`${predicate(fact.where, tableParam)}\`)`,

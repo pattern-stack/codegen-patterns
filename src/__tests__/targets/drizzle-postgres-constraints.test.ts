@@ -16,11 +16,11 @@ describe('drizzle/postgres constraints', () => {
 	});
 
 	it('a column reference is an annotated .references callback (#631)', () => {
-		expect(pg.columnReference({ targetExport: 'accounts', targetColumn: 'id' })).toBe(
+		expect(pg.columnReference({ targetExport: 'accounts', targetProp: 'id' })).toBe(
 			'.references((): AnyPgColumn => accounts.id)',
 		);
 		// belongs_to and junction endpoints carry the referential action (ADR-021).
-		expect(pg.columnReference({ targetExport: 'accounts', targetColumn: 'id', onDelete: 'set null' })).toBe(
+		expect(pg.columnReference({ targetExport: 'accounts', targetProp: 'id', onDelete: 'set null' })).toBe(
 			".references((): AnyPgColumn => accounts.id, { onDelete: 'set null' })",
 		);
 	});
@@ -44,13 +44,14 @@ describe('drizzle/postgres uniques, foreign keys and checks', () => {
 		expect(pg.unique({ ...base, nullsNotDistinct: true }, 't').expr).toBe("unique('n').on(t.tenantId, t.title).nullsNotDistinct()");
 	});
 
-	it('partial → uniqueIndex(…).where(sql`…`), never NULLS NOT DISTINCT', () => {
+	it('partial → uniqueIndex(…).where(sql`…`); a partial NULLS NOT DISTINCT is refused', () => {
 		const r = pg.unique(
-			{ ...base, nullsNotDistinct: true, tenantScoped: true, where: [{ column: 'deleted_at', prop: 'deletedAt' }, { text: ' IS NULL' }] },
+			{ ...base, tenantScoped: true, where: [{ column: 'deleted_at', prop: 'deletedAt' }, { text: ' IS NULL' }] },
 			't',
 		);
 		expect(r.expr).toBe("uniqueIndex('n').on(t.tenantId, t.title).where(sql`${t.deletedAt} IS NULL`)");
 		expect(r.comment).toContain('partial, so NULL-tenant rows never conflict');
+		expect(() => pg.unique({ ...base, nullsNotDistinct: true, where: [{ text: 'true' }] }, 't')).toThrow(/partial unique NULLS NOT DISTINCT/);
 	});
 
 	it('a referenced unique (a composite FK target) → unique(…) without NULLS NOT DISTINCT', () => {

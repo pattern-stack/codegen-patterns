@@ -105,10 +105,15 @@ describe('tokenizePredicate: facts, no target text', () => {
     ]);
   });
 
-  it('holds no template-literal or Drizzle syntax', () => {
-    for (const s of tokenizePredicate("lower(name) <> '${x}' AND date::text = col", cols)) {
-      if ('text' in s) expect(s.text).not.toContain('${t.');
-    }
+  it('keeps quoted text as written (the renderer escapes it), and cuts out only real column references', () => {
+    expect(tokenizePredicate("lower(name) <> '${x}' AND date::text = col", cols)).toEqual([
+      { text: 'lower(' },
+      { column: 'name', prop: 'name' },
+      { text: ") <> '${x}' AND " },
+      { column: 'date', prop: 'date' },
+      { text: '::text = ' },
+      { column: 'col', prop: 'col' },
+    ]);
   });
 
   it('the renderer requires the table parameter', () => {
