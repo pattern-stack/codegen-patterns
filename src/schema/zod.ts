@@ -26,4 +26,11 @@ z.config({
 	},
 });
 
+/**
+ * What an editor should see for a schema whose JSON Schema `z.toJSONSchema` cannot derive, or derives too loosely:
+ * `schema.register(editorHints, { jsonSchema })`. Read only by `editorJsonSchema`; the parse never sees it. Each hint
+ * is derived from its owner (the behavior registry, a runtime schema), never restated.
+ */
+export const editorHints = z.registry<{ jsonSchema: Record<string, unknown> }>();
+
 export { z };

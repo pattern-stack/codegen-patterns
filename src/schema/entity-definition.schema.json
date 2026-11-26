@@ -436,15 +436,53 @@
       "items": {
         "anyOf": [
           {
-            "type": "string"
+            "type": "string",
+            "anyOf": [
+              {
+                "const": "timestamps",
+                "description": "Adds created_at and updated_at timestamp fields"
+              },
+              {
+                "const": "soft_delete",
+                "description": "Adds deleted_at field for soft delete functionality"
+              },
+              {
+                "const": "user_tracking",
+                "description": "Adds created_by and updated_by user reference fields"
+              },
+              {
+                "const": "external_id_tracking",
+                "description": "Adds external_id, provider, and provider_metadata fields for external system sync tracking"
+              }
+            ]
           },
           {
             "type": "object",
             "properties": {
               "name": {
-                "type": "string"
+                "description": "Behavior name",
+                "type": "string",
+                "anyOf": [
+                  {
+                    "const": "timestamps",
+                    "description": "Adds created_at and updated_at timestamp fields"
+                  },
+                  {
+                    "const": "soft_delete",
+                    "description": "Adds deleted_at field for soft delete functionality"
+                  },
+                  {
+                    "const": "user_tracking",
+                    "description": "Adds created_by and updated_by user reference fields"
+                  },
+                  {
+                    "const": "external_id_tracking",
+                    "description": "Adds external_id, provider, and provider_metadata fields for external system sync tracking"
+                  }
+                ]
               },
               "options": {
+                "description": "Behavior options",
                 "type": "object",
                 "propertyNames": {
                   "type": "string"
@@ -704,7 +742,26 @@
       "propertyNames": {
         "type": "string"
       },
-      "additionalProperties": {}
+      "additionalProperties": {
+        "description": "Change detection for this provider: 'mode: poll' (with a 'poll:' cursor block) or 'mode: webhook', and 'mapping:' from provider fields onto the canonical record (ADR-033.1)",
+        "type": "object",
+        "properties": {
+          "mode": {
+            "enum": [
+              "poll",
+              "webhook"
+            ]
+          },
+          "poll": {},
+          "mapping": {},
+          "filters": {},
+          "webhook": {}
+        },
+        "required": [
+          "mode",
+          "mapping"
+        ]
+      }
     },
     "events": {
       "type": "array",

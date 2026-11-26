@@ -1,4 +1,4 @@
-import { z } from "./zod.js";
+import { editorHints, z } from "./zod.js";
 import { TENANT_COLUMN_PATTERN } from "./tenancy.js";
 import { inheritanceIssues } from "./inheritance.js";
 import { TABLE_NAME_IS_NOT_A_KEY, TABLE_NAME_PATTERN, TABLE_PREFIX_PATTERN } from "../config/table-naming.js";
@@ -16,7 +16,7 @@ import {
   behaviorTimezoneOptionError,
   timezoneOnNonDatetime,
 } from "./field-timestamp.js";
-import { timestampBehaviorNames } from "../behaviors/index.js";
+import { getAllBehaviorNames, getBehavior, timestampBehaviorNames } from "../behaviors/index.js";
 import { DetectionConfigSchema as DetectionConfigSchemaZod3 } from "../../runtime/subsystems/integration";
 import { fromZod3 } from "./zod3-schema";
 
@@ -664,12 +664,21 @@ export type RolesBlock = z.infer<typeof RolesSchema>;
  * for this entity, overriding the project's `behaviors.timezone`. The rule is
  * `behaviorWithTimezone` in `src/schema/field-timestamp.ts`.
  */
+/**
+ * The behavior names an editor offers: the behavior registry's own names and descriptions (`src/behaviors/`). The
+ * parse itself takes any string; this is an editor hint only.
+ */
+const behaviorNameHint = {
+  type: "string",
+  anyOf: getAllBehaviorNames().map((name) => ({ const: name, description: getBehavior(name)!.description })),
+};
+
 const BehaviorConfigSchema = z
   .union([
-    z.string(),
+    z.string().register(editorHints, { jsonSchema: behaviorNameHint }),
     z.object({
-      name: z.string(),
-      options: z.record(z.string(), z.unknown()).optional(),
+      name: z.string().register(editorHints, { jsonSchema: { description: "Behavior name", ...behaviorNameHint } }),
+      options: z.record(z.string(), z.unknown()).optional().describe("Behavior options"),
     }),
   ])
   .superRefine((declaration, ctx) => {
@@ -1313,7 +1322,15 @@ export const EntityDefinitionSchema = z
     // Within-file cross-check (ADR-033.1 §6): every key here must also
     // appear in `integration.providers` — see the superRefine on
     // `EntityDefinitionSchema` below.
-    detection: z.record(z.string(), fromZod3(DetectionConfigSchemaZod3)).optional(),
+    detection: z
+      .record(
+        z.string(),
+        fromZod3(
+          DetectionConfigSchemaZod3,
+          "Change detection for this provider: 'mode: poll' (with a 'poll:' cursor block) or 'mode: webhook', and 'mapping:' from provider fields onto the canonical record (ADR-033.1)",
+        ),
+      )
+      .optional(),
 
     // NOTE: `surface:` and `context:` moved INTO EntityConfigSchema (the
     // `entity:` block) in 0.12.2 — consumers write them next to
