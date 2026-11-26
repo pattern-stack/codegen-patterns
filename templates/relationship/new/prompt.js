@@ -38,7 +38,7 @@ import {
   timezoneOnNonDatetime,
 } from "../../../src/schema/field-timestamp.js";
 import { fieldLengthIssues, stringLengthBounds } from "../../../src/schema/field-length.js";
-import { renderColumnDefault, varcharColumn } from "../../../src/targets/drizzle-pg/columns.js";
+import { renderColumnDefault, varcharColumn } from "../../../src/targets/drizzle/postgres/columns.js";
 import { zodLengthChecks } from "../../entity/new/backend/entity-locals.js";
 
 // ============================================================================

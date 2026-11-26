@@ -300,8 +300,9 @@ key and the file, exit 1 (CFG-0, #640). Open maps only: `jobs.pools.<name>`, `fr
 
 Top-level keys: `runtime`, `target`, `paths`, `generate`, `patterns`, `locations`, `frontend`, `auth`, `tenancy`,
 `tables`, `behaviors`, `dev`, `subsystems`, `events`, `jobs`, `bridge`, `integration`, `observability`, `openapi`,
-`cache`, `storage` (`naming:` and `database:` were deleted by ARCH-1). `target: { data: drizzle-pg }` is the
-generation target: one key per axis, `drizzle-pg` its only value (ADR-047, TGT-0).
+`cache`, `storage` (`naming:` and `database:` were deleted by ARCH-1). `target: { database, orm }` is the
+generation target's data layer, a pair from the one table `TARGET_PAIRS` (`src/targets/pairs.ts`). Supported pairs:
+`{ database: postgres, orm: drizzle }` (ADR-047, TGT-0).
 
 **Adding a key:** declare it in the schema with a comment naming its reader, and read it off the parsed config —
 never `yaml.parse` the file. `src/__tests__/config/config-census.test.ts` greps every `paths.<key>` and top-level

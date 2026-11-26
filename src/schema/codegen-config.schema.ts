@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_TARGET_PAIR, supportedTargetPairs, TARGET_PAIRS } from '../targets/pairs.js';
 import { DEFAULT_TENANT_COLUMN, TENANT_COLUMN_PATTERN } from "./tenancy.js";
 import { TABLE_PREFIX_PATTERN } from "../config/table-naming.js";
 import { poolOverrideIssues } from "../../runtime/subsystems/jobs/pool-config.js";
@@ -219,29 +220,55 @@ export type RuntimeMode = z.infer<typeof RuntimeModeSchema>;
 // Generation Target (TGT-0, ADR-047)
 // ============================================================================
 
-/**
- * The data-access target: what the generated tables, columns and repositories are written in.
- *
- * - `drizzle-pg` (DEFAULT, and the only value) — Drizzle ORM on Postgres (`drizzle-orm/pg-core`).
- *
- * A value is added when a second data-access target exists and passes the same gates (ADR-047).
- */
-export const DataTargetSchema = z.enum(['drizzle-pg']);
-
-export type DataTarget = z.infer<typeof DataTargetSchema>;
+/** What every rejected `target:` says: the supported pairs, read from the one table. */
+function unsupportedTargetMessage(): string {
+  return `not a supported (database, orm) pair; supported: ${supportedTargetPairs().join(', ')}`;
+}
 
 /**
- * `target:` — what the generator writes the app in, one key per axis (ADR-047). Only the data-access axis
- * exists: an axis gets its key when it gets its second value, never before, so `composition`, `http` and
- * `runtime` are unknown keys today. Strict: a misspelled axis is an error naming it.
+ * One supported pair as a strict object: each key a literal, described for editors. Built from a row of
+ * `TARGET_PAIRS` (`src/targets/pairs.ts`); a wrong value names the supported pairs.
  */
-export const TargetConfigSchema = z
-  .object({
-    data: DataTargetSchema.default('drizzle-pg'),
-  })
-  .strict();
+function targetPairSchema(pair: (typeof TARGET_PAIRS)[number]) {
+  const errorMap: z.ZodErrorMap = (_issue, ctx) => ({
+    message:
+      ctx.data === undefined
+        ? `required: write both database and orm; supported: ${supportedTargetPairs().join(', ')}`
+        : unsupportedTargetMessage(),
+  });
+  return z
+    .object({
+      database: z.literal(pair.database, { errorMap }).describe(pair.databaseDescription),
+      orm: z.literal(pair.orm, { errorMap }).describe(pair.ormDescription),
+    })
+    .strict();
+}
+
+const [FIRST_TARGET_PAIR, ...OTHER_TARGET_PAIRS] = TARGET_PAIRS.map(targetPairSchema);
+
+/**
+ * `target:` — what the generator writes the app in: one object, one key per choice (ADR-047). The data layer is two
+ * keys, `database` and `orm`, that vary separately; the column text is the PAIR's, so the schema is a union of the
+ * supported pairs, DERIVED from `TARGET_PAIRS` (`src/targets/pairs.ts`) — the same table the column renderers and
+ * the refusal read. An unsupported pair is refused naming the supported ones; when written, both keys are required.
+ * `http`, `wiring` and `runtime` join when their second value exists; until then they are unknown keys. The
+ * database driver (node-postgres, bun:sqlite, …) follows from `database` + `runtime` and has no key.
+ */
+export const TargetConfigSchema =
+  OTHER_TARGET_PAIRS.length === 0
+    ? FIRST_TARGET_PAIR
+    : z.union([FIRST_TARGET_PAIR, ...OTHER_TARGET_PAIRS] as unknown as [
+        typeof FIRST_TARGET_PAIR,
+        typeof FIRST_TARGET_PAIR,
+      ]);
 
 export type TargetConfig = z.infer<typeof TargetConfigSchema>;
+
+/** `target:` when the file has none: the first row of `TARGET_PAIRS`. */
+export const DEFAULT_TARGET: TargetConfig = {
+  database: DEFAULT_TARGET_PAIR.database,
+  orm: DEFAULT_TARGET_PAIR.orm,
+};
 
 // ============================================================================
 // Frontend Config (ADR-038, FE-4)
@@ -827,7 +854,7 @@ export const StorageConfigSchema = z
 export const CodegenConfigObjectSchema = z
   .object({
     runtime: RuntimeModeSchema,
-    target: TargetConfigSchema.default({}),
+    target: TargetConfigSchema.default(DEFAULT_TARGET),
     paths: ResolvedPathsSchema.default({}),
     generate: GenerateConfigSchema.default({}),
     patterns: PatternsConfigSchema,

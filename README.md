@@ -566,9 +566,9 @@ tables:
                                  # `table:` (verbatim) or `table_prefix:`. Only the SQL name changes —
                                  # the Drizzle export, db.query key and module folder stay on `plural`
 
-target:
-  data: drizzle-pg               # default, and the only value: what tables and columns are written in.
-                                 # One key per axis, added when that axis has a second value (ADR-047)
+target:                          # the data layer, as a (database, orm) pair. Supported pairs: `{ database: postgres, orm: drizzle }`
+  database: postgres             # default
+  orm: drizzle                   # default. An unsupported pair is an error naming the supported ones (ADR-047)
 
 behaviors:
   timezone: true                 # default; `false` emits the timestamps / soft_delete columns as

@@ -309,28 +309,41 @@ describe('jobs.backend: memory cannot run a standalone worker (JOBS-0, #656)', (
 	});
 });
 
-describe('target: — one key per axis, data-access only (TGT-0, ADR-047)', () => {
-	it('absent → { data: drizzle-pg }, the schema-owned default', () => {
-		expect(parseCodegenConfig({}, 'x.yaml').target).toEqual({ data: 'drizzle-pg' });
-		expect(parseCodegenConfig({ target: {} }, 'x.yaml').target).toEqual({ data: 'drizzle-pg' });
+describe('target: — the (database, orm) pair, derived from TARGET_PAIRS (TGT-0, ADR-047)', () => {
+	const SUPPORTED = 'supported: { database: postgres, orm: drizzle }';
+
+	it('absent → { database: postgres, orm: drizzle }, the first row of the table', () => {
+		expect(parseCodegenConfig({}, 'x.yaml').target).toEqual({ database: 'postgres', orm: 'drizzle' });
 	});
 
-	it('target.data: drizzle-pg parses', () => {
-		expect(parseCodegenConfig({ target: { data: 'drizzle-pg' } }, 'x.yaml').target).toEqual({ data: 'drizzle-pg' });
+	it('{ database: postgres, orm: drizzle } parses', () => {
+		expect(parseCodegenConfig({ target: { database: 'postgres', orm: 'drizzle' } }, 'x.yaml').target).toEqual({
+			database: 'postgres',
+			orm: 'drizzle',
+		});
 	});
 
-	it('an unknown data-access target is an error naming the allowed values', () => {
-		const err = errorOf(() => parseCodegenConfig({ target: { data: 'drizzle-sqlite' } }, 'x.yaml'));
-		expect(err.issues[0]).toMatch(/^target\.data: .*'drizzle-pg'/);
+	it('a pair the table lacks is refused, naming the supported pairs', () => {
+		const err = errorOf(() => parseCodegenConfig({ target: { database: 'sqlite', orm: 'drizzle' } }, 'x.yaml'));
+		expect(err.issues).toEqual([`target.database: not a supported (database, orm) pair; ${SUPPORTED}`]);
+		const orm = errorOf(() => parseCodegenConfig({ target: { database: 'postgres', orm: 'kysely' } }, 'x.yaml'));
+		expect(orm.issues).toEqual([`target.orm: not a supported (database, orm) pair; ${SUPPORTED}`]);
 	});
 
-	it('an axis with no second value yet is an unknown key, not a silently ignored one', () => {
-		const err = errorOf(() => parseCodegenConfig({ target: { data: 'drizzle-pg', composition: 'nest' } }, 'x.yaml'));
-		expect(err.issues[0]).toStartWith('target.composition: unknown key (expected one of: data)');
+	it('written, both keys are required', () => {
+		const err = errorOf(() => parseCodegenConfig({ target: { database: 'postgres' } }, 'x.yaml'));
+		expect(err.issues).toEqual([`target.orm: required: write both database and orm; ${SUPPORTED}`]);
+	});
+
+	it('a key with no second value yet (http, wiring, runtime) is an unknown key, not a silently ignored one', () => {
+		const err = errorOf(() =>
+			parseCodegenConfig({ target: { database: 'postgres', orm: 'drizzle', http: 'hono' } }, 'x.yaml'),
+		);
+		expect(err.issues).toEqual(['target.http: unknown key (expected one of: database, orm)']);
 	});
 
 	it('a bare string is not a target', () => {
-		const err = errorOf(() => parseCodegenConfig({ target: 'nest-drizzle-pg' }, 'x.yaml'));
+		const err = errorOf(() => parseCodegenConfig({ target: 'drizzle-postgres' }, 'x.yaml'));
 		expect(err.issues[0]).toStartWith('target:');
 	});
 });
