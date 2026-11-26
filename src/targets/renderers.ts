@@ -11,16 +11,19 @@
 
 import type { TargetConfig } from '../schema/codegen-config.schema.js';
 import type { ColumnRenderer } from './columns.js';
+import type { ConstraintRenderer } from './constraints.js';
 import { drizzlePostgresColumns } from './drizzle/postgres/columns.js';
+import { drizzlePostgresConstraints } from './drizzle/postgres/constraints.js';
 import { supportedTargetPairs, type TargetPair } from './pairs.js';
 
 /** What one pair renders with. A renderer joins as its text moves behind the target (TGT-N). */
 export interface PairRenderers {
 	readonly columns: ColumnRenderer;
+	readonly constraints: ConstraintRenderer;
 }
 
 export const TARGET_RENDERERS: { readonly [P in TargetPair]: PairRenderers } = {
-	'drizzle/postgres': { columns: drizzlePostgresColumns },
+	'drizzle/postgres': { columns: drizzlePostgresColumns, constraints: drizzlePostgresConstraints },
 };
 
 /**

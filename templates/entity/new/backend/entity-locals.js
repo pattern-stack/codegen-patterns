@@ -14,7 +14,6 @@ import {
   relativeModuleDir,
 } from '../../../_shared/entity-naming.mjs';
 import { junctionFanOutFor, junctionNaming } from '../../../_shared/junction-fan-out.mjs';
-import { renderSqlPredicate } from '../../../_shared/sql-predicate.mjs';
 import { TABLE_CALLBACK_PARAM as T } from '../../../_shared/table-callback.mjs';
 import {
   familyReads,
@@ -35,6 +34,8 @@ import '../../../../src/patterns/library/index.js';
 import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
 import { arrayElementType, deriveFieldFacts, isArrayType } from '../../../../src/derived/columns/fields.js';
 import { columnRendererFor } from '../../../../src/targets/columns.js';
+import { constraintRendererFor } from '../../../../src/targets/constraints.js';
+import { tokenizePredicate } from '../../../../src/derived/constraints/predicate.js';
 import { onDeleteAction } from '../../../../src/derived/constraints/on-delete.js';
 import {
   familyConstName,
@@ -794,14 +795,14 @@ function entityTableColumns({
  * drizzle-orm 1.0.0-rc.4, so a partial entry does not. An author `name` is kept
  * verbatim. Generation errors: C1 (unknown column), C2 (the tenant column
  * listed, or a repeated field), and the `where:` scanner errors
- * (renderSqlPredicate).
+ * (`tokenizePredicate`). The `where:` body is the target's text (`constraints.predicate`, TGT-1).
  *
  * `tenancy` is `resolveTenancy`'s result (#791) — `null` when the entity is not
  * tenant_scoped; its `column` is the prefix (`tenant_id` by default).
  */
 function processUniqueIndexes(
   entries,
-  { entityName, tableName, tenancy = null, tableColumns },
+  { entityName, tableName, tenancy = null, tableColumns, constraints },
 ) {
   const tenantScoped = tenancy !== null;
   if (!Array.isArray(entries)) return [];
@@ -835,7 +836,7 @@ function processUniqueIndexes(
     if (partial) {
       let body;
       try {
-        body = renderSqlPredicate(ui.where, lowerColumns, T);
+        body = constraints.predicate(tokenizePredicate(ui.where, lowerColumns), T);
       } catch (err) {
         throw new Error(`${label} where: ${err.message}`);
       }
@@ -1370,6 +1371,8 @@ export function buildBackendLocals(definition, baseLocals) {
   // (`src/targets/columns.ts`). Required: prompt.js reads `target` from the
   // parsed config, whose schema owns the default (ADR-047).
   const columns = columnRendererFor(baseLocals.target, `buildBackendLocals(${entity.name})`);
+  // TGT-1: and its constraints (`src/targets/constraints.ts`).
+  const constraints = constraintRendererFor(baseLocals.target, `buildBackendLocals(${entity.name})`);
   // ADR-043 §6 `api: false` and REL-2 §2.5's typed include are decided once, in
   // the derivation (`apiEnabled` / `hasTypedInclude`, `src/derived/api/
   // entity.ts`); the templates read its answers as `apiSurface.http.enabled` /
@@ -1986,7 +1989,7 @@ export function buildBackendLocals(definition, baseLocals) {
       ...fieldUniqueEntries(fields, tenancy),
       ...(definition.unique_indexes ?? []).map((ui, i) => ({ ...ui, source: `unique_indexes[${i}]` })),
     ],
-    { entityName, tableName: entityTableName, tenancy, tableColumns },
+    { entityName, tableName: entityTableName, tenancy, tableColumns, constraints },
   );
 
   // RFC-0006 §2.4 (S4): the columns this table DERIVES from a parent row, and the parents each is read from — in
