@@ -33,6 +33,7 @@ import {
 import { loadRuntimeMode, runtimeImport } from "../../../src/config/runtime-mode.mjs";
 import { processFieldFeatures, processFields } from "../../entity/new/backend/entity-locals.js";
 import { columnRendererFor } from "../../../src/targets/columns.js";
+import { onDeleteAction } from "../../../src/derived/constraints/on-delete.js";
 import { loadOwnedTableNames } from "../../entity/new/prompt.js";
 import { configOrDefaults, loadProjectConfig } from "../../../src/config/project-config.js";
 import { TABLE_CALLBACK_PARAM } from "../../_shared/table-callback.mjs";
@@ -64,17 +65,6 @@ const pascalCase = (s) => capitalize(camelCase(s));
 // file parses raw YAML, but `codegen junction new` validates every file through
 // the `.strict()` JunctionDefinitionSchema — which declares neither `name` nor
 // `table` — before handing it to hygen (GATE-1, #599).
-
-// ============================================================================
-// On-Delete Action Mapping
-// ============================================================================
-
-const ON_DELETE_MAP = {
-  restrict: "restrict",
-  cascade: "cascade",
-  set_null: "set null",
-  no_action: "no action",
-};
 
 // ============================================================================
 // Drizzle Import Set
@@ -248,8 +238,8 @@ export default {
 
     const onDeleteLeftRaw = config.on_delete_left ?? "restrict";
     const onDeleteRightRaw = config.on_delete_right ?? "restrict";
-    const onDeleteLeft = ON_DELETE_MAP[onDeleteLeftRaw] ?? "restrict";
-    const onDeleteRight = ON_DELETE_MAP[onDeleteRightRaw] ?? "restrict";
+    const onDeleteLeft = onDeleteAction(onDeleteLeftRaw);
+    const onDeleteRight = onDeleteAction(onDeleteRightRaw);
 
     // ======================================================================
     // Custom fields (fields other than `role`)

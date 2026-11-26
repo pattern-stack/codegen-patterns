@@ -65,6 +65,7 @@
     "src/derived/api/entity.ts",
     "src/derived/columns/types.ts",
     "src/derived/columns/fields.ts",
+    "src/derived/constraints/on-delete.ts",
     "src/targets/columns.ts",
     "src/targets/pairs.ts",
     "src/targets/renderers.ts",

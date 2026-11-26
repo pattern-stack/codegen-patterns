@@ -35,6 +35,7 @@ import '../../../../src/patterns/library/index.js';
 import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
 import { arrayElementType, deriveFieldFacts, isArrayType } from '../../../../src/derived/columns/fields.js';
 import { columnRendererFor } from '../../../../src/targets/columns.js';
+import { onDeleteAction } from '../../../../src/derived/constraints/on-delete.js';
 import {
   familyConstName,
   familyHelperName,
@@ -391,22 +392,6 @@ export function processFields(fields, { entityName, enumResolver, columns }) {
 }
 
 /**
- * Map YAML on_delete value to the Drizzle onDelete option string.
- *
- * ADR-021 uses snake_case values in YAML (set_null, no_action) while
- * Drizzle expects the SQL keyword form with a space ('set null', 'no action').
- */
-function mapOnDelete(onDelete) {
-  const map = {
-    restrict: 'restrict',
-    cascade: 'cascade',
-    set_null: 'set null',
-    no_action: 'no action',
-  };
-  return map[onDelete] ?? 'restrict';
-}
-
-/**
  * Process has_many relationships into HasManyRelation[].
  *
  * Mirrors processBelongsTo. The `foreign_key` declared on a has_many
@@ -546,7 +531,7 @@ function processBelongsTo(relationships, naming, fields = {}) {
 
     // on_delete defaults to 'restrict' per ADR-021
     const onDeleteYaml = rel.on_delete ?? 'restrict';
-    const onDelete = mapOnDelete(onDeleteYaml);
+    const onDelete = onDeleteAction(onDeleteYaml);
 
     // Relation key — names this edge's per-relationship members (the
     // service's parent-fetch method, the Integrated write key
