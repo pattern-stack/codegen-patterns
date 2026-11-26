@@ -10,7 +10,8 @@
 
 import { describe, expect, it } from 'bun:test';
 import { deriveFieldFacts } from '../../../derived/columns/fields';
-import { COLUMN_RENDERERS, columnRendererFor } from '../../../targets/columns';
+import { columnRendererFor } from '../../../targets/columns';
+import { TARGET_RENDERERS } from '../../../targets/renderers';
 import { TARGET_PAIRS } from '../../../targets/pairs';
 import { TargetConfigSchema } from '../../../schema/codegen-config.schema';
 import { processFields } from '../../../../templates/entity/new/backend/entity-locals.js';
@@ -121,7 +122,7 @@ describe('the drizzle/postgres column renderer', () => {
 
 describe('the target selects the renderer, and is required', () => {
 	it('drizzle/postgres is the one supported pair, and the default', () => {
-		expect(Object.keys(COLUMN_RENDERERS)).toEqual(['drizzle/postgres']);
+		expect(Object.keys(TARGET_RENDERERS)).toEqual(['drizzle/postgres']);
 		expect(DEFAULT_CODEGEN_CONFIG.target).toEqual({ database: 'postgres', orm: 'drizzle' });
 		expect(drizzlePostgres.pair).toBe('drizzle/postgres');
 	});

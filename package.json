@@ -67,6 +67,7 @@
     "src/derived/columns/fields.ts",
     "src/targets/columns.ts",
     "src/targets/pairs.ts",
+    "src/targets/renderers.ts",
     "src/targets/drizzle/postgres/columns.ts",
     "src/config/entities-dir.ts",
     "src/config/junctions-dir.ts",
