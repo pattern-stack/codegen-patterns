@@ -1,7 +1,11 @@
 
 import { z } from 'zod';
-import { CreateSeaFreightSchema } from './create-sea-freight.dto';
+import { UpdateShipmentSchema } from '../../shipments/dto/update-shipment.dto';
 
-export const UpdateSeaFreightSchema = CreateSeaFreightSchema.partial();
+// RFC-0006 §5: the base's update is the owner of every base field; this child extends it with its own fields, each
+// optional and without a default, so a PATCH leaves an omitted field as it is (ZOD-1a).
+export const UpdateSeaFreightSchema = UpdateShipmentSchema.extend({
+  vessel: z.string().optional(),
+});
 
 export type UpdateSeaFreightDto = z.infer<typeof UpdateSeaFreightSchema>;

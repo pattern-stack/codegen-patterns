@@ -1,0 +1,1852 @@
+{
+	"case": "matrix-update-defaults",
+	"covers": "boolean `default:` fields and the update DTO: the create applies the default, every update (plain, family base, family child) restates the field without it",
+	"entities": {
+		"shelf": {
+			"entity": "shelf",
+			"plural": "shelves",
+			"className": "Shelf",
+			"repository": {
+				"className": "ShelfRepository",
+				"baseClass": "BaseRepository",
+				"typedInclude": false,
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "find_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "find_by_ids",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "list",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "count",
+						"kind": "count",
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "upsertMany",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"service": {
+				"className": "ShelfService",
+				"baseClass": "BaseService",
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "shelf",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "shelf",
+							"layer": "repository",
+							"method": "findByIds"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "listOptions"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "shelf",
+							"layer": "repository",
+							"method": "list"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "count",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"useCases": [
+				{
+					"className": "FindShelfByIdUseCase",
+					"kind": "find_by_id",
+					"calls": {
+						"entity": "shelf",
+						"layer": "service",
+						"method": "findById"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "ListShelvesUseCase",
+					"kind": "list",
+					"calls": {
+						"entity": "shelf",
+						"layer": "service",
+						"method": "list"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "CreateShelfUseCase",
+					"kind": "create",
+					"calls": {
+						"entity": "shelf",
+						"layer": "service",
+						"method": "create"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "UpdateShelfUseCase",
+					"kind": "update",
+					"calls": {
+						"entity": "shelf",
+						"layer": "service",
+						"method": "update"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "DeleteShelfUseCase",
+					"kind": "delete",
+					"calls": {
+						"entity": "shelf",
+						"layer": "service",
+						"method": "delete"
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"http": {
+				"enabled": true,
+				"routes": [
+					{
+						"verb": "GET",
+						"path": "/shelves",
+						"controller": "ShelfController",
+						"handler": "getAll",
+						"operationId": "listShelfs",
+						"useCase": "ListShelvesUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "GET",
+						"path": "/shelves/:id",
+						"controller": "ShelfController",
+						"handler": "getById",
+						"operationId": "findShelfById",
+						"useCase": "FindShelfByIdUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "POST",
+						"path": "/shelves",
+						"controller": "ShelfController",
+						"handler": "create",
+						"operationId": "createShelf",
+						"useCase": "CreateShelfUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "PATCH",
+						"path": "/shelves/:id",
+						"controller": "ShelfController",
+						"handler": "update",
+						"operationId": "updateShelf",
+						"useCase": "UpdateShelfUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "DELETE",
+						"path": "/shelves/:id",
+						"controller": "ShelfController",
+						"handler": "remove",
+						"operationId": "deleteShelf",
+						"useCase": "DeleteShelfUseCase",
+						"origin": {
+							"from": "base"
+						}
+					}
+				],
+				"includeRoutes": [],
+				"includesConst": "SHELVES_API_INCLUDES"
+			}
+		},
+		"tote": {
+			"entity": "tote",
+			"plural": "totes",
+			"className": "Tote",
+			"repository": {
+				"className": "ToteRepository",
+				"baseClass": "BaseRepository",
+				"typedInclude": true,
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "find_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "find_by_ids",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "list",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "count",
+						"kind": "count",
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findAllKinds",
+						"kind": "all_kinds",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "tote"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: bin"
+							}
+						}
+					},
+					{
+						"name": "findKindById",
+						"kind": "kind_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							}
+						],
+						"returns": "one",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "tote"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: bin"
+							}
+						}
+					},
+					{
+						"name": "listKind",
+						"kind": "list_kind",
+						"emitted": true,
+						"params": [
+							{
+								"name": "kind"
+							},
+							{
+								"name": "query"
+							},
+							{
+								"name": "childWith"
+							}
+						],
+						"returns": "many",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "tote"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: bin"
+							}
+						}
+					},
+					{
+						"name": "countKind",
+						"kind": "count_kind",
+						"emitted": true,
+						"params": [
+							{
+								"name": "kind"
+							},
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "tote"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: bin"
+							}
+						}
+					},
+					{
+						"name": "findOrphans",
+						"kind": "orphans",
+						"emitted": true,
+						"params": [
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "tote"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: bin"
+							}
+						}
+					},
+					{
+						"name": "update",
+						"kind": "kind_guard",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "input"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "one",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "tote"
+								},
+								"path": [
+									"discriminator"
+								]
+							}
+						}
+					},
+					{
+						"name": "create",
+						"kind": "create_guard",
+						"emitted": true,
+						"params": [
+							{
+								"name": "input"
+							},
+							{
+								"name": "tx"
+							},
+							{
+								"name": "via"
+							}
+						],
+						"returns": "one",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "tote"
+								},
+								"path": [
+									"discriminator"
+								]
+							}
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "upsertMany",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"service": {
+				"className": "ToteService",
+				"baseClass": "BaseService",
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "tote",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "tote",
+							"layer": "repository",
+							"method": "findByIds"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "listOptions"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "tote",
+							"layer": "repository",
+							"method": "list"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findAllKinds",
+						"kind": "all_kinds",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "tote",
+							"layer": "repository",
+							"method": "findAllKinds"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "tote"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: bin"
+							}
+						}
+					},
+					{
+						"name": "findKindById",
+						"kind": "kind_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "tote",
+							"layer": "repository",
+							"method": "findKindById"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "tote"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: bin"
+							}
+						}
+					},
+					{
+						"name": "listKind",
+						"kind": "list_kind",
+						"emitted": true,
+						"params": [
+							{
+								"name": "kind"
+							},
+							{
+								"name": "query"
+							},
+							{
+								"name": "childWith"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "tote",
+							"layer": "repository",
+							"method": "listKind"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "tote"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: bin"
+							}
+						}
+					},
+					{
+						"name": "countKind",
+						"kind": "count_kind",
+						"emitted": true,
+						"params": [
+							{
+								"name": "kind"
+							},
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"delegatesTo": {
+							"entity": "tote",
+							"layer": "repository",
+							"method": "countKind"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "tote"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: bin"
+							}
+						}
+					},
+					{
+						"name": "findOrphans",
+						"kind": "orphans",
+						"emitted": true,
+						"params": [
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "tote",
+							"layer": "repository",
+							"method": "findOrphans"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "tote"
+								},
+								"path": [
+									"discriminator"
+								],
+								"note": "kinds with a child table: bin"
+							}
+						}
+					},
+					{
+						"name": "count",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "create",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "update",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"useCases": [
+				{
+					"className": "FindToteByIdUseCase",
+					"kind": "find_by_id",
+					"calls": {
+						"entity": "tote",
+						"layer": "service",
+						"method": "findById"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "ListTotesUseCase",
+					"kind": "list",
+					"calls": {
+						"entity": "tote",
+						"layer": "service",
+						"method": "list"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "CreateToteUseCase",
+					"kind": "create",
+					"calls": {
+						"entity": "tote",
+						"layer": "service",
+						"method": "create"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "UpdateToteUseCase",
+					"kind": "update",
+					"calls": {
+						"entity": "tote",
+						"layer": "service",
+						"method": "update"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "DeleteToteUseCase",
+					"kind": "delete",
+					"calls": {
+						"entity": "tote",
+						"layer": "service",
+						"method": "delete"
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"http": {
+				"enabled": true,
+				"routes": [
+					{
+						"verb": "GET",
+						"path": "/totes",
+						"controller": "ToteController",
+						"handler": "getAll",
+						"operationId": "listTotes",
+						"useCase": "ListTotesUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "GET",
+						"path": "/totes/:id",
+						"controller": "ToteController",
+						"handler": "getById",
+						"operationId": "findToteById",
+						"useCase": "FindToteByIdUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "POST",
+						"path": "/totes",
+						"controller": "ToteController",
+						"handler": "create",
+						"operationId": "createTote",
+						"useCase": "CreateToteUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "PATCH",
+						"path": "/totes/:id",
+						"controller": "ToteController",
+						"handler": "update",
+						"operationId": "updateTote",
+						"useCase": "UpdateToteUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "DELETE",
+						"path": "/totes/:id",
+						"controller": "ToteController",
+						"handler": "remove",
+						"operationId": "deleteTote",
+						"useCase": "DeleteToteUseCase",
+						"origin": {
+							"from": "base"
+						}
+					}
+				],
+				"includeRoutes": [],
+				"includesConst": "TOTES_API_INCLUDES"
+			}
+		},
+		"bin": {
+			"entity": "bin",
+			"plural": "bins",
+			"className": "Bin",
+			"repository": {
+				"className": "BinRepository",
+				"baseClass": "BaseRepository",
+				"typedInclude": true,
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "find_by_id",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "find_by_ids",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "list",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "count",
+						"kind": "count",
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findWithBase",
+						"kind": "with_base",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "bin"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "findManyWithBase",
+						"kind": "with_base",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "columns+with",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "bin"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "listFlat",
+						"kind": "list_flat",
+						"delegatesTo": {
+							"entity": "tote",
+							"layer": "repository",
+							"method": "listKind"
+						},
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"readOptions": "with",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "bin"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "countFlat",
+						"kind": "count_flat",
+						"delegatesTo": {
+							"entity": "tote",
+							"layer": "repository",
+							"method": "countKind"
+						},
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "bin"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "create",
+						"kind": "pair_create",
+						"emitted": true,
+						"params": [
+							{
+								"name": "input"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "one",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "bin"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "update",
+						"kind": "pair_update",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "patch"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "one",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "bin"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "pair_delete",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "none",
+						"readOptions": "none",
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "bin"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "upsertMany",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"readOptions": "none",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"service": {
+				"className": "BinService",
+				"baseClass": "BaseService",
+				"methods": [
+					{
+						"name": "findById",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "bin",
+							"layer": "repository",
+							"method": "findById"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findByIds",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "bin",
+							"layer": "repository",
+							"method": "findByIds"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "list",
+						"kind": "read",
+						"emitted": true,
+						"params": [
+							{
+								"name": "listOptions"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "bin",
+							"layer": "repository",
+							"method": "list"
+						},
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"name": "findWithBase",
+						"kind": "with_base",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "bin",
+							"layer": "repository",
+							"method": "findWithBase"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "bin"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "findManyWithBase",
+						"kind": "with_base",
+						"emitted": true,
+						"params": [
+							{
+								"name": "ids"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "bin",
+							"layer": "repository",
+							"method": "findManyWithBase"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "bin"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "listFlat",
+						"kind": "list_flat",
+						"emitted": true,
+						"params": [
+							{
+								"name": "query"
+							},
+							{
+								"name": "opts"
+							}
+						],
+						"returns": "many",
+						"delegatesTo": {
+							"entity": "bin",
+							"layer": "repository",
+							"method": "listFlat"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "bin"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "countFlat",
+						"kind": "count_flat",
+						"emitted": true,
+						"params": [
+							{
+								"name": "where"
+							}
+						],
+						"returns": "count",
+						"delegatesTo": {
+							"entity": "bin",
+							"layer": "repository",
+							"method": "countFlat"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "bin"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "create",
+						"kind": "pair_create",
+						"emitted": true,
+						"params": [
+							{
+								"name": "input"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "bin",
+							"layer": "repository",
+							"method": "create"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "bin"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "update",
+						"kind": "pair_update",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "patch"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "one",
+						"delegatesTo": {
+							"entity": "bin",
+							"layer": "repository",
+							"method": "update"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "bin"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "delete",
+						"kind": "pair_delete",
+						"emitted": true,
+						"params": [
+							{
+								"name": "id"
+							},
+							{
+								"name": "tx"
+							}
+						],
+						"returns": "none",
+						"delegatesTo": {
+							"entity": "bin",
+							"layer": "repository",
+							"method": "delete"
+						},
+						"origin": {
+							"from": "yaml",
+							"at": {
+								"doc": {
+									"kind": "entity",
+									"name": "bin"
+								},
+								"path": [
+									"inherits"
+								]
+							}
+						}
+					},
+					{
+						"name": "count",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					},
+					{
+						"name": "exists",
+						"kind": "inherited",
+						"emitted": false,
+						"params": [],
+						"returns": "forwarded",
+						"origin": {
+							"from": "pattern",
+							"pattern": "Base"
+						}
+					}
+				]
+			},
+			"useCases": [
+				{
+					"className": "FindBinByIdUseCase",
+					"kind": "find_by_id",
+					"calls": {
+						"entity": "bin",
+						"layer": "service",
+						"method": "findWithBase"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "ListBinsUseCase",
+					"kind": "list",
+					"calls": {
+						"entity": "bin",
+						"layer": "service",
+						"method": "list"
+					},
+					"alsoCalls": [
+						{
+							"entity": "bin",
+							"layer": "service",
+							"method": "count"
+						},
+						{
+							"entity": "bin",
+							"layer": "service",
+							"method": "listFlat"
+						},
+						{
+							"entity": "bin",
+							"layer": "service",
+							"method": "countFlat"
+						}
+					],
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "CreateBinUseCase",
+					"kind": "create",
+					"calls": {
+						"entity": "bin",
+						"layer": "service",
+						"method": "create"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "UpdateBinUseCase",
+					"kind": "update",
+					"calls": {
+						"entity": "bin",
+						"layer": "service",
+						"method": "update"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"className": "DeleteBinUseCase",
+					"kind": "delete",
+					"calls": {
+						"entity": "bin",
+						"layer": "service",
+						"method": "delete"
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"http": {
+				"enabled": true,
+				"routes": [
+					{
+						"verb": "GET",
+						"path": "/bins",
+						"controller": "BinController",
+						"handler": "getAll",
+						"operationId": "listBins",
+						"useCase": "ListBinsUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "GET",
+						"path": "/bins/:id",
+						"controller": "BinController",
+						"handler": "getById",
+						"operationId": "findBinById",
+						"useCase": "FindBinByIdUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "POST",
+						"path": "/bins",
+						"controller": "BinController",
+						"handler": "create",
+						"operationId": "createBin",
+						"useCase": "CreateBinUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "PATCH",
+						"path": "/bins/:id",
+						"controller": "BinController",
+						"handler": "update",
+						"operationId": "updateBin",
+						"useCase": "UpdateBinUseCase",
+						"origin": {
+							"from": "base"
+						}
+					},
+					{
+						"verb": "DELETE",
+						"path": "/bins/:id",
+						"controller": "BinController",
+						"handler": "remove",
+						"operationId": "deleteBin",
+						"useCase": "DeleteBinUseCase",
+						"origin": {
+							"from": "base"
+						}
+					}
+				],
+				"includeRoutes": [],
+				"includesConst": "BINS_API_INCLUDES"
+			}
+		}
+	}
+}
