@@ -9,6 +9,7 @@
  */
 
 import type { PredicateSegment } from '../../../derived/constraints/predicate.js';
+import type { ColumnReferenceFact, IndexFact } from '../../../derived/constraints/types.js';
 import type { ConstraintRenderer } from '../../constraints.js';
 
 /** Escape text for a JS template literal. */
@@ -28,7 +29,21 @@ function predicate(segments: readonly PredicateSegment[], tableParam: string): s
 	return segments.map((s) => ('text' in s ? escapeTemplate(s.text) : '${' + tableParam + '.' + s.prop + '}')).join('');
 }
 
+/**
+ * `.references(…)` on the column. The callback is annotated `AnyPgColumn` on every FK (#631): a self-reference, or a
+ * cycle through another table, otherwise makes the table's type refer to itself.
+ */
+function columnReference(reference: ColumnReferenceFact): string {
+	return `.references((): AnyPgColumn => ${reference.targetExport}.${reference.targetColumn})`;
+}
+
+function index(fact: IndexFact, tableParam: string): string {
+	return `index('${fact.name}').on(${fact.props.map((p) => `${tableParam}.${p}`).join(', ')})`;
+}
+
 export const drizzlePostgresConstraints: ConstraintRenderer = {
 	pair: 'drizzle/postgres',
 	predicate,
+	columnReference,
+	index,
 };

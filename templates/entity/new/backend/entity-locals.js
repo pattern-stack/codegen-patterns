@@ -658,8 +658,13 @@ function collectRepositoryDeps(belongsTo, existingHasMany) {
  *   (#511) leads with the column, or they are the adopted tenant column (the
  *   tenant index is that index). Absent or empty → suppress nothing: an extra index is harmless, a
  *   silently dropped one is not.
+ * @param {object}   constraints     the target's constraint renderer (`constraintRendererFor`, TGT-1): writes the
+ *   `.references(…)` suffix and the index entry from their facts. Required.
  */
-export function processFieldFeatures(renderedFields, fields, naming, ownedTables, suppressedIndexNames) {
+export function processFieldFeatures(renderedFields, fields, naming, ownedTables, suppressedIndexNames, constraints) {
+  if (!constraints) {
+    throw new Error(`processFieldFeatures(${naming?.entityName}): the target's constraint renderer is required (TGT-1).`);
+  }
   // TABLE-0: a `foreign_key: <table>.<column>` names a SQL TABLE, and index
   // names are SQL identifiers — both read `entityTableName`. The `.references()`
   // callback and the import name the target's Drizzle EXPORT (its `plural`),
@@ -716,8 +721,8 @@ export function processFieldFeatures(renderedFields, fields, naming, ownedTables
             });
           }
         }
-        // Every FK callback is annotated (#631): see `hasFk`.
-        pf.drizzleChain += `.references((): AnyPgColumn => ${relatedExport}.${fkColumn})`;
+        // Every FK callback is annotated (#631): see `hasFk`. The suffix is the target's text (TGT-1).
+        pf.drizzleChain += constraints.columnReference({ targetExport: relatedExport, targetColumn: fkColumn });
         hasFieldFk = true;
       }
       // else: host-owned target — plain column, no FK, no import. `index: true`
@@ -726,10 +731,11 @@ export function processFieldFeatures(renderedFields, fields, naming, ownedTables
 
     // --- index: true (#355) ---
     if (field.index === true && !(suppressedIndexNames && suppressedIndexNames.has(pf.name))) {
+      const name = `${entityTableName}_${pf.name}_idx`;
       indexExpressions.push({
         comment: null,
-        expr: `index('${entityTableName}_${pf.name}_idx').on(${T}.${pf.camelName})`,
-        name: `${entityTableName}_${pf.name}_idx`,
+        expr: constraints.index({ name, props: [pf.camelName] }, T),
+        name,
         builder: 'index',
         source: `field '${pf.name}' (index: true)`,
       });
@@ -1829,6 +1835,7 @@ export function buildBackendLocals(definition, baseLocals) {
     targetNaming,
     baseLocals?.ownedTableNames,
     suppressedIndexNames,
+    constraints,
   );
   const belongsToTables = new Set(belongsTo.map((r) => r.relatedTable));
   const fieldFkImports = fieldFeatures.fkImports.filter(
