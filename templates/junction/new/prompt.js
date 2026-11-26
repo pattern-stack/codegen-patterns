@@ -17,7 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { emittedStem } from '../../../src/config/file-naming.js';
 import yaml from "yaml";
-import { behaviorWithTimezone, timestampColumn } from "../../../src/schema/field-timestamp.js";
+import { behaviorWithTimezone } from "../../../src/schema/field-timestamp.js";
 import { JunctionDefinitionSchema, hasIdentityRole } from "../../../src/schema/junction-definition.schema.js";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 import {
@@ -258,14 +258,15 @@ export default {
     const otherFields = { ...fields };
     if (hasRole) delete otherFields.role; // the identity role is the role enum above
     const entityLookup = projectEntityLookup(cwd);
+    // TGT-0 (ADR-047): the project's data-access target renders the payload columns and the time columns.
+    const columns = columnRendererFor(config_.target, `junction new (${junctionName})`);
     const payload = processPayloadFields(
       otherFields,
       junctionName,
       // TABLE-0: a payload index / self-FK names the junction's SQL table.
       { entityName: junctionName, ownNaming: junction, entityTableName: tableName, modulesDir, entityLookup },
       Array.from(loadOwnedTableNames(cwd, { tablePrefix: config_.tables.prefix })),
-      // TGT-0 (ADR-047): the project's data-access target renders the payload columns.
-      columnRendererFor(config_.target, `junction new (${junctionName})`),
+      columns,
     );
     const processedCustomFields = payload.processed;
     const hasCustomFields = processedCustomFields.length > 0;
@@ -518,7 +519,7 @@ export default {
 
       // Custom fields
       processedCustomFields,
-      timestampColumn,
+      timestampColumn: columns.timestampColumn,
       generatedTimeWithTimezone,
       hasCustomFields,
       payloadIndexes,

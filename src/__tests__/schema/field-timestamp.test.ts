@@ -3,10 +3,10 @@ import { EntityDefinitionSchema } from '../../schema/entity-definition.schema';
 import {
 	TIMEZONE_ON_NON_DATETIME_MESSAGE,
 	fieldWithTimezone,
-	timestampColumn,
 	timezoneNotBoolean,
 	timezoneOnNonDatetime,
 } from '../../schema/field-timestamp';
+import { timestampColumn } from '../../targets/drizzle/postgres/columns';
 
 describe('field-timestamp rule (#796)', () => {
 	it('fieldWithTimezone: datetime is tz unless timezone:false', () => {
@@ -24,7 +24,7 @@ describe('field-timestamp rule (#796)', () => {
 		expect(timezoneOnNonDatetime({ type: 'string', timezone: null })).toBe(false);
 	});
 
-	it('timestampColumn', () => {
+	it('timestampColumn (the drizzle/postgres renderer\'s text for the column the rule decides, TGT-1)', () => {
 		expect(timestampColumn('created_at', true)).toBe(
 			"timestamp('created_at', { withTimezone: true, mode: 'date' })",
 		);

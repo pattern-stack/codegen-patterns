@@ -31,6 +31,11 @@ export interface ColumnRenderer {
 	render(field: FieldFacts): RenderedColumn;
 	/** The module import a column builder (a {@link RenderedColumn.drizzleType}) needs; `undefined` when it needs none. */
 	importFor(drizzleType: string): string | undefined;
+	/**
+	 * A timestamp column's builder call, `withTimezone` decided by the caller (`fieldWithTimezone` /
+	 * `behaviorWithTimezone`) — the behavior and junction time columns the templates print directly (TGT-1).
+	 */
+	timestampColumn(column: string, withTimezone: boolean): string;
 }
 
 /** Every supported pair's column renderer, built from {@link TARGET_PAIRS} — the one table (never a second list). */

@@ -49,7 +49,7 @@ import {
 import { camelCase, emittedStem } from '../../../../src/config/file-naming.js';
 import { resolvedBehaviorNames as resolveBehaviorNames } from '../../../../src/patterns/implied-behaviors.js';
 import { foreignKeyColumnNullable } from '../../../../src/schema/field-nullability.js';
-import { behaviorWithTimezone, timestampColumn } from '../../../../src/schema/field-timestamp.js';
+import { behaviorWithTimezone } from '../../../../src/schema/field-timestamp.js';
 import { resolveTenancy } from '../../../../src/schema/tenancy.js';
 import { matchPairsOf } from '../../../../src/schema/inheritance.js';
 import { sqlTableName } from '../../../../src/config/table-naming.js';
@@ -2641,8 +2641,9 @@ export function buildBackendLocals(definition, baseLocals) {
     hasPatternConfig,
     patternConfig: patternConfigBlock,
     renderPatternConfigLiteral,
-    // The one place a timestamp column's options are spelled (#796) — entity.ejs.t's behavior columns.
-    timestampColumn,
+    // The one place a timestamp column's options are spelled (#796) — entity.ejs.t's behavior columns. The target's
+    // text (TGT-1), so it comes from the pair's renderer.
+    timestampColumn: columns.timestampColumn,
     ...patternConfigClasses,
 
     // Capability composition (ADR-041). `capabilityMixins` is empty for every
