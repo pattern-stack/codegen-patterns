@@ -21,20 +21,9 @@
 
 import { camelCase, emittedStem } from '../../src/config/file-naming.js';
 import { resolveChildTenancy, resolveTenancy } from '../../src/schema/tenancy.js';
-import { dtoFileStem, dtoSchemaNames, entityClassName, FAMILY_METHOD, repositoryClassName, serviceClassName } from '../../src/derived/api/names.js';
+import { dtoFileStem, dtoSchemaNames, entityClassName, enumTypeNames, FAMILY_METHOD, repositoryClassName, serviceClassName } from '../../src/derived/api/names.js';
 import { baseOnlyKinds, enumChoices, familyRelationKey, inheritanceChildrenOf, inheritsOf, matchPairsOf } from '../../src/schema/inheritance.js';
 import { entityModuleNaming, relativeModuleDir } from './entity-naming.mjs';
-
-/**
- * The pg type name and the exported `pgEnum` const of an enum field —
- * namespaced by the OWNING entity so two entities' same-named enums never
- * collide (`communication_kind` / `communicationKindEnum`). `processFields` and
- * every importer of an enum read this one rule.
- */
-export function enumTypeNames(entityName, fieldName) {
-  const dbName = entityName ? `${entityName}_${fieldName}` : fieldName;
-  return { dbName, enumName: `${camelCase(dbName)}Enum` };
-}
 
 function requireDefinition(lookup, name, why) {
   const def = lookup?.definition ? lookup.definition(name) : null;

@@ -1,0 +1,3 @@
+[test]
+# One React for the whole run, before any test file loads (see the file).
+preload = ["./src/__tests__/_single-react.ts"]

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { GraphNodeData } from '@pattern-stack/graph-components';
-import type { HealthResponse, RunStepName, StudioFile } from '@studio-shared';
+import type { HealthResponse, RunStepName, SerializedDomainGraph, StudioFile } from '@studio-shared';
 
 import { api, streamRun } from './api/client';
 import { describeError } from './api/describe-error';
@@ -9,6 +9,9 @@ import type { AdaptedGraph } from './adapters/schema-adapter';
 import type { StudioEdgeData } from './graph/edge-kinds';
 import type { Selection } from './graph/selection';
 import { GraphPane } from './graph/GraphPane';
+import { FLOAT_INHERITANCE } from './graph/FloatingBase';
+import type { SpineOrder } from './graph/spine';
+import { SPINE_ORDER_OPTIONS, loadSpineOrder, storeSpineOrder } from './spine-order';
 import { Inspector } from './inspector/Inspector';
 import { InspectorRail } from './inspector/InspectorRail';
 import type { InspectorTab } from './inspector/Inspector';
@@ -41,7 +44,8 @@ const browserStorage = (): Storage | undefined => (typeof window === 'undefined'
 const EMPTY_GRAPH: AdaptedGraph = { nodes: [], edges: [] };
 
 interface GraphState {
-  data: AdaptedGraph;
+  /** The server's graph as it came; adapted for the canvas under the reader's spine order. */
+  raw: SerializedDomainGraph | null;
   counts: { entities: number; junctions: number; relationships: number } | null;
   loading: boolean;
   error?: { title: string; detail?: string };
@@ -60,7 +64,7 @@ interface GraphState {
 export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
-  const [graph, setGraph] = useState<GraphState>({ data: EMPTY_GRAPH, counts: null, loading: true });
+  const [graph, setGraph] = useState<GraphState>({ raw: null, counts: null, loading: true });
   const [surface, setSurface] = useState<SurfaceState>({ status: 'loading' });
   const [files, setFiles] = useState<StudioFile[]>([]);
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -83,6 +87,8 @@ export function App() {
   const [drawerTab, setDrawerTab] = useState<'log' | 'diff'>('log');
   const [drawerHeight, setDrawerHeight] = useState(240);
   const [themePreference, setThemePreference] = useThemePreference();
+  const [spineOrder, setSpineOrder] = useState<SpineOrder>(() => loadSpineOrder(browserStorage));
+  useEffect(() => storeSpineOrder(browserStorage, spineOrder), [spineOrder]);
 
   const unsubscribe = useRef<(() => void) | null>(null);
 
@@ -121,13 +127,13 @@ export function App() {
       .graph()
       .then((res) => {
         setGraph({
-          data: adaptDomainGraph(res.graph),
+          raw: res.graph,
           counts: { entities: res.entities, junctions: res.junctions, relationships: res.relationships },
           loading: false,
         });
       })
       .catch((err: unknown) => {
-        setGraph({ data: EMPTY_GRAPH, counts: null, loading: false, error: describeError(err, 'Could not load the model') });
+        setGraph({ raw: null, counts: null, loading: false, error: describeError(err, 'Could not load the model') });
       });
   }, []);
 
@@ -165,7 +171,7 @@ export function App() {
       .catch((err: unknown) => {
         const described = describeError(err, 'Could not reach the Studio server');
         setHealthError(described.title);
-        setGraph({ data: EMPTY_GRAPH, counts: null, loading: false, error: described });
+        setGraph({ raw: null, counts: null, loading: false, error: described });
         setSurface({ status: 'error', error: described });
       });
   }, [reload]);
@@ -222,24 +228,31 @@ export function App() {
 
   // ── Derived ──────────────────────────────────────────────────────────────
 
+  // The spine rule runs here, once per graph and order (`graph/spine.ts`), so
+  // switching the order re-trees the canvas without a round trip.
+  const graphData: AdaptedGraph = useMemo(
+    () => (graph.raw != null ? adaptDomainGraph(graph.raw, spineOrder) : EMPTY_GRAPH),
+    [graph.raw, spineOrder],
+  );
+
   const selectedNode: GraphNodeData | null = useMemo(
-    () => (selection?.kind === 'node' ? (graph.data.nodes.find((n) => n.id === selection.id) ?? null) : null),
-    [graph.data.nodes, selection],
+    () => (selection?.kind === 'node' ? (graphData.nodes.find((n) => n.id === selection.id) ?? null) : null),
+    [graphData.nodes, selection],
   );
 
   const selectedEdge: StudioEdgeData | null = useMemo(
-    () => (selection?.kind === 'edge' ? (graph.data.edges.find((e) => e.id === selection.id) ?? null) : null),
-    [graph.data.edges, selection],
+    () => (selection?.kind === 'edge' ? (graphData.edges.find((e) => e.id === selection.id) ?? null) : null),
+    [graphData.edges, selection],
   );
 
   const lines = useMemo(() => {
-    const spine = graph.data.edges.filter((e) => e.treeRole === 'spine').length;
-    return { spine, secondary: graph.data.edges.length - spine };
-  }, [graph.data.edges]);
+    const spine = graphData.edges.filter((e) => e.treeRole === 'spine').length;
+    return { spine, secondary: graphData.edges.length - spine };
+  }, [graphData.edges]);
 
   const entityNames = useMemo(
-    () => graph.data.nodes.filter((n) => n.kind === 'entity').map((n) => n.id).sort(),
-    [graph.data.nodes],
+    () => graphData.nodes.filter((n) => n.kind === 'entity').map((n) => n.id).sort(),
+    [graphData.nodes],
   );
 
   // Selecting a node is a request to look at it; the inspector follows.
@@ -303,6 +316,8 @@ export function App() {
             color: 'var(--t-muted)',
             fontFamily: 'var(--font-mono)',
             minWidth: 0,
+            // A crowded header shrinks this span to nothing; its contents must not paint over the counts.
+            overflow: 'hidden',
           }}
         >
           <Dot color={healthError != null ? 'var(--danger)' : health != null ? 'var(--ok)' : 'var(--warn)'} />
@@ -359,6 +374,11 @@ export function App() {
 
         {/* Only the project path gives way when the header is short of room. */}
         <div style={{ marginLeft: 'auto', flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-3)' }}>
+          {/* The active spine order (STUDIO-6): "Spine first: Inheritance | Ownership". */}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-1)', fontSize: 11.5, color: 'var(--t-muted)' }}>
+            Spine first:
+            <Segmented options={SPINE_ORDER_OPTIONS} value={spineOrder} onChange={setSpineOrder} label="Spine order" />
+          </span>
           <Segmented options={THEME_OPTIONS} value={themePreference} onChange={setThemePreference} label="Theme" />
           {RUN_STEPS.map((step) => (
             <Toggle
@@ -394,8 +414,8 @@ export function App() {
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <GraphPane
-            nodes={graph.data.nodes}
-            edges={graph.data.edges}
+            nodes={graphData.nodes}
+            edges={graphData.edges}
             loading={graph.loading}
             error={graph.error}
             selection={selection}
@@ -404,6 +424,7 @@ export function App() {
             fitKey={panelKey}
             query={graphQuery}
             onQueryChange={setGraphQuery}
+            floatInheritance={FLOAT_INHERITANCE && spineOrder === 'ownership-first'}
           />
         </div>
 

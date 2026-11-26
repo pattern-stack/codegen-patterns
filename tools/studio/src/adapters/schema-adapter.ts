@@ -18,8 +18,8 @@ import type { GraphNodeData } from '@pattern-stack/graph-components';
 import type { SerializedDomainGraph } from '@studio-shared';
 import { pairedLabel } from '../graph/edge-kinds';
 import type { StudioEdgeData, StudioEdgeKind } from '../graph/edge-kinds';
-import { NO_SIGNALS, chooseSpines, secondaryReason } from '../graph/spine';
-import type { SpineCandidate, SpineSignals } from '../graph/spine';
+import { DEFAULT_SPINE_ORDER, NO_SIGNALS, chooseSpines, secondaryReason } from '../graph/spine';
+import type { SpineCandidate, SpineOrder, SpineSignals } from '../graph/spine';
 import { RELATIONSHIPS_KEY, ROLES_KEY } from '../inspector/surface-kinds';
 
 type Entities = SerializedDomainGraph['entities'];
@@ -217,7 +217,8 @@ function foreignKeyOf(edge: SerializedEdge): string | undefined {
  * it declares (a junction row: its two halves, `from` first) — and every other
  * line is secondary: drawn lighter and never read by the layout. The reason
  * rides on the line as `treeReason`, so the panel and the tooltip print it
- * rather than re-deriving it.
+ * rather than re-deriving it. Which tier wins is the reader's `order` (STUDIO-6,
+ * `SpineOrder`): inheritance first by default, ownership first on request.
  *
  * An inline edge carries `relationId`, the key the edge panel looks its
  * methods up by — for a paired line, the `belongs_to`'s, whose `inverseOf` the
@@ -225,7 +226,7 @@ function foreignKeyOf(edge: SerializedEdge): string | undefined {
  * half of a pairing, not a declared relation — and the panel says so rather
  * than showing nothing.
  */
-export function buildEdges(graph: SerializedDomainGraph): StudioEdgeData[] {
+export function buildEdges(graph: SerializedDomainGraph, order: SpineOrder = DEFAULT_SPINE_ORDER): StudioEdgeData[] {
   const edges: UntreedEdge[] = [];
   const candidates: SpineCandidate[] = [];
   /** Per child, how many candidates it has declared so far — the tie-break order. */
@@ -302,9 +303,9 @@ export function buildEdges(graph: SerializedDomainGraph): StudioEdgeData[] {
   // `inherits:` is not a relationship the analyzer draws — a child names its base on the
   // entity itself — so it is its own edge, child → base, from the serialized `inherits`. It is
   // never one half of a #778 pair (it has no inverse `has_many` and no foreign-key column in
-  // the payload: the child's `id` IS the base's), so it stays one line. It is the child's
-  // spine (STUDIO-3's first tier): a child hangs directly under its base, whatever other
-  // `belongs_to`s it declares.
+  // the payload: the child's `id` IS the base's), so it stays one line. Under inheritance first
+  // it is the child's spine (the first tier): a child hangs directly under its base, whatever
+  // other `belongs_to`s it declares; under ownership first an owning cascade outranks it.
   for (const entity of Object.values(graph.entities)) {
     if (!entity.inherits) continue;
     const id = `inherits-${entity.name}-${entity.inherits.base}`;
@@ -352,7 +353,7 @@ export function buildEdges(graph: SerializedDomainGraph): StudioEdgeData[] {
     })) candidate(toId, relDef.name, relDef.to, NO_SIGNALS);
   }
 
-  const spines = chooseSpines(candidates);
+  const spines = chooseSpines(candidates, order);
   const spineIds = new Set([...spines.values()].map((s) => s.edgeId));
   return edges.map((e): StudioEdgeData => {
     const spine = spines.get(e.child);
@@ -382,13 +383,13 @@ export interface AdaptedGraph {
 }
 
 /** Convert a serialized graph to the nodes and edges the canvas renders. */
-export function adaptDomainGraph(graph: SerializedDomainGraph): AdaptedGraph {
+export function adaptDomainGraph(graph: SerializedDomainGraph, order: SpineOrder = DEFAULT_SPINE_ORDER): AdaptedGraph {
   const nodes: GraphNodeData[] = [
     ...Object.values(graph.entities).map(entityToNode),
     ...Object.values(graph.relationshipDefinitions).map(relationshipToNode),
   ];
 
-  return { nodes, edges: buildEdges(graph) };
+  return { nodes, edges: buildEdges(graph, order) };
 }
 
 /**

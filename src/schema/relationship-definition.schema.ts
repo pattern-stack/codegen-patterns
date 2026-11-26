@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from './zod.js';
 import { reservedGlobalFor, reservedNameMessage } from './reserved-entity-names.js';
 
 /**
@@ -94,9 +94,9 @@ export type RelationshipTypes = z.infer<typeof RelationshipTypesSchema>;
 // On-Delete Semantics (ADR-021)
 // ============================================================================
 
-const OnDeleteActionSchema = z
-	.enum(['restrict', 'cascade', 'set_null', 'no_action'])
-	.default('restrict');
+// No `.default()`: both keys are `.optional()` outside it, which Zod 3 read as "absent stays absent", so the
+// default never applied; Zod 4 would apply it. The consumers' `?? 'restrict'` stays the one owner (ZOD-0).
+const OnDeleteActionSchema = z.enum(['restrict', 'cascade', 'set_null', 'no_action']);
 
 export type OnDeleteAction = z.infer<typeof OnDeleteActionSchema>;
 

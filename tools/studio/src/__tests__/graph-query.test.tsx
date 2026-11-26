@@ -5,18 +5,12 @@
  * (`../graph/selector.ts`). These tests pin the predicate, and assert that the
  * hook and the selector both select exactly what it matches.
  */
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { GraphNodeData } from '@pattern-stack/graph-components';
 
-// The library is read from source (tsconfig `paths`), so its `react` import
-// resolves to a second copy under the library's node_modules. Point it at this
-// app's copy, as `graph-focus.test.tsx` does, so the hook has a dispatcher.
-import * as React from 'react';
-import { createRequire } from 'node:module';
-import path from 'node:path';
-const libraryDir = path.resolve(import.meta.dir, '../../../../packages/graph-components/src');
-mock.module(createRequire(path.join(libraryDir, 'index.ts')).resolve('react'), () => React);
+// One React for the run: the library's copy is pointed at this app's by the test preload
+// (`_single-react.ts`, bunfig.toml), before any file loads the library.
 
 const { matchesGraphQuery, useGraphFilter } = await import('@pattern-stack/graph-components');
 const { applySelector } = await import('../graph/selector');

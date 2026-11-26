@@ -13,3 +13,8 @@ Real `codegen project surface --json` payloads of the Studio demo project (`src/
 of the RFC-0006 family (`test/fixtures/inheritance/entities/`, config `runtime: vendored`, `paths.entities: entities`;
 `sourcePath` made project-relative). `schema-adapter.test.ts` reads them to prove an `inherits:` line carries a relation id
 the derived surface lists. Regenerate when either output changes for the family.
+
+`spine-order-graph.json` is the real `codegen project graph --json` payload of `spine-order/entities/` (STUDIO-6): a base
+`part`, `audio_part` and `text_part` inheriting it, each owned (cascade) by `recording` / `message` (config `runtime: vendored`,
+`paths.entities: entities`; `sourcePath` made project-relative). `spine-order.test.ts` reads it to pin the spine choice under
+both orders. Regenerate when the graph output changes for those YAMLs.

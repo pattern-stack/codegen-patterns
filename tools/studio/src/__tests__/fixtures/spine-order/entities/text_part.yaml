@@ -1,0 +1,19 @@
+# STUDIO-6 — is a part (inherits) and is owned by a message (cascade).
+
+entity:
+  name: text_part
+  plural: text_parts
+
+inherits: { base: part, as: text }
+
+fields:
+  body:
+    type: string
+    required: true
+
+relationships:
+  message:
+    type: belongs_to
+    target: message
+    foreign_key: message_id
+    on_delete: cascade

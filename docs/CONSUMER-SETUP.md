@@ -553,6 +553,7 @@ blocks are:
 | Block | What it configures |
 |---|---|
 | `runtime` | `package` (default) \| `vendored` — where generated code imports the runtime from (ADR-037) |
+| `target` | `{ database, orm }` — the data layer the generated tables, columns and repositories are written for. Supported pairs: `{ database: postgres, orm: drizzle }` (the default). An unsupported pair is an error naming the supported ones; when written, both keys are required. `http`, `wiring` and `runtime` join when they have a second value, so any other key under `target:` is an error. The driver follows from the database (and, later, the runtime) and has no key (ADR-047) |
 | `paths` | `backend_src`, `frontend_src`, `entities`, `events_dir`, `jobs_dir`, `providers`, `modules_dir`, `orchestration_src`, `generated` |
 | `generate` | `frontend`, `semantic` |
 | `tables` | `prefix` — prepended to the SQL table name of every entity and junction that does not set `table:` (the literal name, used verbatim) or its own `table_prefix:` (`''` opts out); default `''`. Only SQL-facing names follow it — `pgTable('…')`, index / constraint names, Electric shapes, the semantic model's `tableName`, `foreign_key:` targets. The Drizzle export, `db.query` key, module folder and classes stay on `plural` (`src/config/table-naming.ts`) |
@@ -564,6 +565,30 @@ blocks are:
 | `auth` | `devAllowAnonymous` (ADR-043), `redirect_uri_base` (auth subsystem) |
 | `subsystems` | `install:` — the installed-subsystem list in package mode |
 | `events`, `jobs`, `bridge`, `integration`, `observability`, `openapi`, `cache`, `storage` | written by `codegen subsystem install <name>`; see each subsystem's section |
+
+**Editor completion.** The package ships the same schema as JSON Schema,
+`src/schema/codegen-config.schema.json`, generated from `CodegenConfigObjectSchema` (the file as written, before
+the defaults that depend on another block are filled), so it cannot drift from the parse. Point the
+YAML language server (VS Code's Red Hat YAML extension, JetBrains, Zed, Neovim's `yamlls`) at it, and the editor
+completes every block and key, shows its description, offers only the supported `target:` pairs and underlines
+anything else. Put this first line in `codegen.config.yaml`:
+
+```yaml
+# yaml-language-server: $schema=./node_modules/@pattern-stack/codegen/src/schema/codegen-config.schema.json
+```
+
+or map it once in `.vscode/settings.json`:
+
+```json
+{
+  "yaml.schemas": {
+    "./node_modules/@pattern-stack/codegen/src/schema/codegen-config.schema.json": "codegen.config.yaml"
+  }
+}
+```
+
+The schema checks each key on its own. Rules that span keys (the jobs pool rules, `jobs.backend: memory` with a
+standalone worker) are checked by `codegen` when it parses the file, so the generator stays the gate.
 
 Two maps are open by design: `jobs.pools` (keyed by pool name; each pool's keys are still checked, and so are the
 pool rules — a framework pool may set only `concurrency` / `description`; your own pool needs `queue` +

@@ -108,7 +108,7 @@ const RELATIONSHIP_MODULE_FILE =
 const BAD_FIELD = 'title';
 const BAD_TYPE = 'strng';
 const EXPECTED_ISSUE_PATH = ['fields', BAD_FIELD, 'type'];
-const EXPECTED_ISSUE_CODE = 'invalid_enum_value';
+const EXPECTED_ISSUE_CODE = 'invalid_value';
 
 const RELATIONSHIP_REQUEST: RelationshipRequest = {
 	from: 'contact',
@@ -511,10 +511,10 @@ async function main(): Promise<number> {
 			`422 carries an issue at ${EXPECTED_ISSUE_PATH.join('.')}`,
 			`issues: ${JSON.stringify(rejection.issues)}`,
 		);
-		assertEqual(issue?.code, EXPECTED_ISSUE_CODE, 'the issue code is invalid_enum_value');
+		assertEqual(issue?.code, EXPECTED_ISSUE_CODE, 'the issue code is invalid_value');
 		assertIncludes(
 			issue?.message ?? '',
-			`received '${BAD_TYPE}'`,
+			`received "${BAD_TYPE}"`,
 			'the issue message names the rejected value',
 		);
 

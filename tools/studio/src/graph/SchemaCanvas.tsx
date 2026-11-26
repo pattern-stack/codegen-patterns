@@ -26,6 +26,8 @@ import type { Selection } from './selection';
 import { DEFAULT_TARGET_ASPECT, treeLayout } from '../layout/tree-layout';
 import { fitAvoidingCorner } from './fit-corner';
 import type { Rect } from './fit-corner';
+import { RevealBaseContext, floatedBases, hidesFloatedLine } from './FloatingBase';
+import type { FloatedBase } from './FloatingBase';
 
 const nodeTypes: NodeTypes = { schemaNode: SchemaNode };
 
@@ -49,6 +51,8 @@ const ZOOM = { min: 0.05, max: 2 } as const;
 const FIT_VIEW_LABEL = 'Fit View';
 /** How many frames a fit waits for ReactFlow to measure re-laid-out cards before giving up. */
 const MEASURE_FRAMES = 30;
+/** No child floats its base (STUDIO-6 prototype off, or inheritance first). */
+const NO_FLOATS: ReadonlyMap<string, FloatedBase> = new Map();
 
 export interface SchemaCanvasProps {
   nodes: GraphNodeData[];
@@ -70,6 +74,8 @@ export interface SchemaCanvasProps {
   subsetKey?: string;
   /** A card was double-clicked: the pane sets the box to `1+<id>+1`. */
   onNodeFocus?: (id: string) => void;
+  /** STUDIO-6 prototype (`FloatingBase.tsx`): float each non-spine `inherits` line as a chip on its child. */
+  floatInheritance?: boolean;
 }
 
 /**
@@ -89,6 +95,7 @@ export function SchemaCanvas({
   fitKey = '',
   subsetKey = '',
   onNodeFocus,
+  floatInheritance = false,
 }: SchemaCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -270,6 +277,48 @@ export function SchemaCanvas({
     }));
   }, [edges, selection, selectedEdgeId, lit]);
 
+  // STUDIO-6 prototype: a floated child carries its chip in its data; its
+  // `inherits` line is hidden unless one of its ends is selected. Positions are
+  // the layout's, untouched — the line was secondary, so the layout never read it.
+  const floated = useMemo(
+    () =>
+      floatInheritance
+        ? floatedBases(graphEdges, (id) => graphNodes.find((n) => n.id === id)?.label ?? id)
+        : NO_FLOATS,
+    [floatInheritance, graphEdges, graphNodes],
+  );
+  const drawnNodes = useMemo<Node[]>(
+    () =>
+      floated.size === 0
+        ? shownNodes
+        : shownNodes.map((n) => {
+            const floatBase = floated.get(n.id);
+            return floatBase == null ? n : { ...n, data: { ...n.data, floatBase } };
+          }),
+    [shownNodes, floated],
+  );
+  const drawnEdges = useMemo<Edge[]>(() => {
+    if (floated.size === 0) return shownEdges;
+    const hiddenIds = new Set(
+      graphEdges.filter((e) => hidesFloatedLine(e, floated, selectedNodeId, selectedEdgeId)).map((e) => e.id),
+    );
+    return shownEdges.map((e) => (hiddenIds.has(e.id) ? { ...e, hidden: true } : e));
+  }, [shownEdges, graphEdges, floated, selectedNodeId, selectedEdgeId]);
+  const revealBase = useCallback(
+    (base: string) => {
+      onSelect({ kind: 'node', id: base });
+      const instance = flow.current;
+      const card = instance?.getInternalNode(base);
+      if (instance == null || card == null) return;
+      const { x, y } = card.internals.positionAbsolute;
+      void instance.setCenter(x + (card.measured.width ?? 0) / 2, y + (card.measured.height ?? 0) / 2, {
+        zoom: instance.getZoom(),
+        duration: 300,
+      });
+    },
+    [onSelect],
+  );
+
   const handleNodeClick = useCallback(
     (_: unknown, node: Node) => onSelect(toggleSelection(selection, { kind: 'node', id: node.id })),
     [onSelect, selection],
@@ -317,11 +366,12 @@ export function SchemaCanvas({
         </defs>
       </svg>
 
+      <RevealBaseContext.Provider value={revealBase}>
       <ReactFlow
         // The legend sits bottom-right; keep React Flow's attribution visible beside it.
         attributionPosition="bottom-left"
-        nodes={shownNodes}
-        edges={shownEdges}
+        nodes={drawnNodes}
+        edges={drawnEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
@@ -366,6 +416,7 @@ export function SchemaCanvas({
           />
         )}
       </ReactFlow>
+      </RevealBaseContext.Provider>
 
       <Legend roomy={roomy} boxRef={legend} />
     </div>

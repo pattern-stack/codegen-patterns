@@ -1,4 +1,5 @@
-import { z } from "zod";
+import { z } from "./zod.js";
+import { DEFAULT_TARGET_PAIR, supportedTargetPairs, TARGET_PAIRS } from '../targets/pairs.js';
 import { DEFAULT_TENANT_COLUMN, TENANT_COLUMN_PATTERN } from "./tenancy.js";
 import { TABLE_PREFIX_PATTERN } from "../config/table-naming.js";
 import { poolOverrideIssues } from "../../runtime/subsystems/jobs/pool-config.js";
@@ -75,7 +76,7 @@ export const GenerateConfigSchema = z
      */
     analytics: z
       .never({
-        invalid_type_error:
+        error:
           "'generate.analytics' was removed by SEM-1 (ADR-045) — use 'generate.semantic: true' to emit the semantic model",
       })
       .optional(),
@@ -216,6 +217,97 @@ export const RuntimeModeSchema = z.enum(['package', 'vendored']).default('packag
 export type RuntimeMode = z.infer<typeof RuntimeModeSchema>;
 
 // ============================================================================
+// Generation Target (TGT-0, ADR-047)
+// ============================================================================
+
+/** A row of a pair table, as the schema reads it: the two keys and their descriptions. */
+export interface TargetPairRow {
+  readonly database: string;
+  readonly orm: string;
+  readonly databaseDescription: string;
+  readonly ormDescription: string;
+}
+
+/** `target:` as written: one member per row of `TARGET_PAIRS`, never the cross product of its databases and orms. */
+export type TargetConfig = (typeof TARGET_PAIRS)[number] extends infer R
+  ? R extends { database: infer D; orm: infer O }
+    ? { database: D; orm: O }
+    : never
+  : never;
+
+/**
+ * Why a `target:` value is refused, for a table with more than one row (Zod 3 reports a failed union as one
+ * `invalid_union` issue, so the message is worked out here from the value itself). Says the same things the
+ * one-row schema says per key: a key that doesn't exist, a missing key, or a pair the table lacks — each naming the
+ * supported pairs.
+ */
+function targetUnionMessage(data: unknown, pairs: readonly TargetPairRow[]): string {
+  const supported = `supported: ${supportedTargetPairs(pairs).join(', ')}`;
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    return `write { database, orm }; ${supported}`;
+  }
+  const unknown = Object.keys(data).filter((k) => k !== 'database' && k !== 'orm');
+  if (unknown.length > 0) return `unknown key ${unknown.join(', ')} (expected one of: database, orm)`;
+  const { database, orm } = data as { database?: unknown; orm?: unknown };
+  if (database === undefined || orm === undefined) return `required: write both database and orm; ${supported}`;
+  return `{ database: ${String(database)}, orm: ${String(orm)} } is not a supported (database, orm) pair; ${supported}`;
+}
+
+/**
+ * One supported pair as a strict object: each key a literal, described for editors (so the JSON Schema offers the
+ * values with their descriptions). A wrong value, or a missing key, names the supported pairs.
+ */
+function targetPairSchema(pair: TargetPairRow, pairs: readonly TargetPairRow[]) {
+  const supported = `supported: ${supportedTargetPairs(pairs).join(', ')}`;
+  const error = (issue: { input?: unknown }) =>
+    issue.input === undefined
+      ? `required: write both database and orm; ${supported}`
+      : `not a supported (database, orm) pair; ${supported}`;
+  return z
+    .object({
+      database: z.literal(pair.database, { error }).describe(pair.databaseDescription),
+      orm: z.literal(pair.orm, { error }).describe(pair.ormDescription),
+    })
+    .strict();
+}
+
+/**
+ * The `target:` schema for a pair table: one strict object per row, a union when there is more than one. Exported
+ * for its test, which builds it over a two-row table to hold the union's messages before a second pair exists.
+ *
+ * - One row: the object itself, so each issue lands on its key (`target.database: …`, `target.http: unknown key`).
+ * - More rows: `z.union`, whose one `invalid_union` issue (at `target`) gets {@link targetUnionMessage}, which says
+ *   the same things.
+ */
+export function targetConfigSchemaFor(pairs: readonly TargetPairRow[]): z.ZodType<{ database: string; orm: string }> {
+  const [first, ...rest] = pairs.map((pair) => targetPairSchema(pair, pairs));
+  if (first === undefined) throw new Error('targetConfigSchemaFor: the pair table is empty');
+  if (rest.length === 0) return first;
+  return z.union([first, ...rest] as [typeof first, typeof first, ...(typeof first)[]], {
+    error: (issue) => (issue.code === 'invalid_union' ? targetUnionMessage(issue.input, pairs) : undefined),
+  });
+}
+
+/**
+ * `target:` — what the generator writes the app in: one object, one key per choice (ADR-047). The data layer is two
+ * keys, `database` and `orm`, that vary separately; the column text is the PAIR's, so the schema is a union of the
+ * supported pairs, DERIVED from `TARGET_PAIRS` (`src/targets/pairs.ts`) — the same table the column renderers and
+ * the refusal read. An unsupported pair is refused naming the supported ones; when written, both keys are required.
+ * `http`, `wiring` and `runtime` join when their second value exists; until then they are unknown keys. The
+ * database driver (node-postgres, bun:sqlite, …) follows from `database` + `runtime` and has no key.
+ *
+ * Typed as {@link TargetConfig}: each row's literals are what the runtime schema accepts, which a schema built over
+ * a table can't say in its own type.
+ */
+export const TargetConfigSchema = targetConfigSchemaFor(TARGET_PAIRS) as z.ZodType<TargetConfig>;
+
+/** `target:` when the file has none: the first row of `TARGET_PAIRS`. */
+export const DEFAULT_TARGET: TargetConfig = {
+  database: DEFAULT_TARGET_PAIR.database,
+  orm: DEFAULT_TARGET_PAIR.orm,
+};
+
+// ============================================================================
 // Frontend Config (ADR-038, FE-4)
 // ============================================================================
 
@@ -266,7 +358,7 @@ export const FrontendSyncConfigSchema = z
     apiBaseUrlImport: z.string().nullable().default(null),
     apiUrl: z.string().default('/api'),
   })
-  .default({});
+  .prefault({});
 
 export type FrontendSyncConfig = z.infer<typeof FrontendSyncConfigSchema>;
 
@@ -293,7 +385,7 @@ export const FrontendCatalogConfigSchema = z
 			)
 			.default([]),
 	})
-	.default({});
+	.prefault({});
 
 export type FrontendCatalogConfig = z.infer<typeof FrontendCatalogConfigSchema>;
 
@@ -324,7 +416,7 @@ export const FrontendFieldsConfigSchema = z
     textareaThreshold: z.number().int().positive().nullable().default(500),
   })
   .strict()
-  .default({});
+  .prefault({});
 
 export type FrontendFieldsConfig = z.infer<typeof FrontendFieldsConfigSchema>;
 
@@ -351,14 +443,14 @@ export const FrontendConfigSchema = z
   .object({
     auth: FrontendAuthConfigSchema,
     parsers: z
-      .record(z.string())
+      .record(z.string(), z.string())
       .default({ timestamptz: '(date: string) => new Date(date)' }),
     sync: FrontendSyncConfigSchema,
     catalog: FrontendCatalogConfigSchema,
     fields: FrontendFieldsConfigSchema,
   })
   .strict()
-  .default({});
+  .prefault({});
 
 export type FrontendConfig = z.infer<typeof FrontendConfigSchema>;
 
@@ -392,7 +484,7 @@ export const AuthConfigSchema = z
     redirect_uri_base: z.string().optional(),
   })
   .strict()
-  .default({});
+  .prefault({});
 
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 
@@ -421,7 +513,7 @@ export const TenancyConfigSchema = z
       .default(DEFAULT_TENANT_COLUMN),
   })
   .strict()
-  .default({});
+  .prefault({});
 
 export type TenancyConfig = z.infer<typeof TenancyConfigSchema>;
 
@@ -450,7 +542,7 @@ export const TablesConfigSchema = z
       .default(''),
   })
   .strict()
-  .default({});
+  .prefault({});
 
 export type TablesConfig = z.infer<typeof TablesConfigSchema>;
 
@@ -477,7 +569,7 @@ export const BehaviorsConfigSchema = z
     timezone: z.boolean().default(true),
   })
   .strict()
-  .default({});
+  .prefault({});
 
 export type BehaviorsConfig = z.infer<typeof BehaviorsConfigSchema>;
 
@@ -640,7 +732,7 @@ export const JobsConfigSchema = z
     /** Embedded worker drains every pool (`JobWorkerModule.forRoot({ allPools })`). */
     all_pools: z.boolean().optional(),
     pools: z
-      .record(JobsPoolSchema)
+      .record(z.string(), JobsPoolSchema)
       .superRefine((pools, ctx) => {
         for (const issue of poolOverrideIssues(pools)) {
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: issue.path, message: issue.message });
@@ -799,8 +891,9 @@ export const StorageConfigSchema = z
 export const CodegenConfigObjectSchema = z
   .object({
     runtime: RuntimeModeSchema,
-    paths: ResolvedPathsSchema.default({}),
-    generate: GenerateConfigSchema.default({}),
+    target: TargetConfigSchema.default(DEFAULT_TARGET),
+    paths: ResolvedPathsSchema.prefault({}),
+    generate: GenerateConfigSchema.prefault({}),
     patterns: PatternsConfigSchema,
     locations: LocationsConfigSchema.optional(),
     frontend: FrontendConfigSchema,

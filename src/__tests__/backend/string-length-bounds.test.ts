@@ -1,6 +1,6 @@
 /**
  * `max_length` / `min_length` on a `string` field (#772): one rule
- * (`stringLengthBounds` in entity-locals.js) read by the entity, junction and
+ * (`stringLengthBounds` in src/schema/field-length.ts) read by the entity, junction and
  * relationship pipelines. `max_length` → `varchar(n)` column; both bounds →
  * `.min(n)` / `.max(n)` on the create DTO (the update DTO is its `.partial()`).
  * A junction has no DTOs, so its `max_length` is the column's alone.

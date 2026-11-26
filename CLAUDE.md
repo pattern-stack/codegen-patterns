@@ -91,6 +91,7 @@ The backend uses **hygen templates**; the frontend and integration layers use
 ### Backend Template Pipeline (hygen)
 
 - **`templates/entity/new/backend/`** — the one backend pipeline: per entity, a module folder under `paths.modules_dir` (`<modules_dir>[/<kebab context>]/<kebab plural>/`) holding the entity (Drizzle table), repository, service, controller, module, DTOs and use-cases. `backend/entity-locals.js` builds almost every local; `prompt.js` builds only the four it does not (the `@generated` banner, the runtime-import specifiers, the `detection:` literal and the EVT-7 `emits:` descriptors) and spreads the extension's over them. Every template references its locals unguarded, so a missing local throws (#638).
+- **The generation target (ADR-047, TGT-0).** `target: { database: postgres, orm: drizzle }` in `codegen.config.yaml`: the data layer as a `(database, orm)` pair, because the column text is the pair's. **One table, `TARGET_PAIRS` (`src/targets/pairs.ts`), is the only list of supported pairs**: the config schema is a union derived from it (`TargetConfigSchema`), each row is bound to its renderers in `TARGET_RENDERERS` (`src/targets/renderers.ts`, typed per pair so `tsc` refuses a row without them), and the refusal of an unsupported pair names its rows; a test holds the docs' "Supported pairs:" lines to it. `http`, `wiring` and `runtime` join `target:` when they have a second value; the driver follows from database + runtime and has no key. A field's column **facts** come from `deriveFieldFacts` (`src/derived/columns/`, no source text); its column **text** comes from the pair's renderer (`src/targets/<orm>/<database>/columns.ts`, today `drizzle/postgres`). `processFields` composes the two into the record every template prints. Constraints follow the same split (TGT-1): facts in `src/derived/constraints/` (references, indexes, uniques, composite FKs, checks, tokenized `where:` predicates, `onDeleteAction`), text from the pair's `constraints.ts`; the composers keep the records' shape (`tableConstraints[].{expr,builder,comment}`). Zod rendering is shared by every target. `prompt.js` passes `target`; `buildBackendLocals` and the junction prompt throw without it, and `processFieldFeatures` without the constraint renderer. The `external_id_tracking` unique (TGT-1b, after #917), behavior columns, repositories and base classes are still Drizzle-on-Postgres text outside `src/targets/`; each moves in its own `TGT-N`.
 - There is no architecture choice. The `clean` pipeline (`templates/entity/new/backend/`) and `generate.architecture` were deleted by ARCH-0 (#677, `docs/specs/ARCH-0.md`); writing the key is an unknown-key error. ARCH-1 (#682, `docs/specs/ARCH-1.md`) deleted the rest of the surface only `clean` read — `naming:`, `database:`, `behaviors.strategy` (`behaviors:` itself is live again as `{ timezone }`, #845), the 14 `locations.backend*` names (plus four dead `db*` ones), the entity layout keys (`folder_structure:`, `file_grouping:`, `behavior_strategy:`) and the 69 dead `prompt.js` locals behind them, with `src/config/naming-config.mjs`, `src/config/locations.mjs` and `src/schema/naming-config.schema.ts`. Each deleted key is now an unknown-key error naming the key and the file. `expose:` stays — the frontend emitter reads it.
 
 ### Joined-table inheritance (`inherits:`, RFC-0006, #875)
@@ -193,7 +194,9 @@ src/                    # Generator source code
   formatters/           # Console, JSON, markdown output formatters
   parser/               # YAML loading, cross-reference resolution (+ entity registry)
   scanner/              # Project pattern detection (framework, ORM, naming)
-  schema/               # Zod schemas for entity definitions + codegen config
+  schema/               # Zod schemas for entity definitions + codegen config (Zod 4 via schema/zod.ts; ZOD-0)
+  derived/              # Derived once from the YAML (ADR-046): api/ names + existence, columns/ field facts, constraints/ constraint facts
+  targets/              # Per-target text rendered from derived facts, keyed by `target:` (ADR-047)
   utils/                # YAML and config loaders
   __tests__/            # Unit tests (mirrors src/ structure)
 runtime/                # Code shipped into user's generated project
@@ -264,7 +267,15 @@ chosen by `chooseSpines` (`tools/studio/src/graph/spine.ts`) from the
 child → base line, never one half of a #778 pair; it replaced the old unique-FK tier, which STUDIO-3 said #875 would
 delete, so `fkUnique` and its rule are gone), a `belongs_to` with
 `on_delete: cascade` (`onDelete`), the first declared; ties go to the first
-declared. A junction row hangs under its `from` end. Every other line is
+declared. That is the default order, **inheritance first**; the header's spine-order
+toggle (STUDIO-6) also offers **ownership first** — `on_delete: cascade` >
+`inherits:` > first declared — so a child that inherits a shared base hangs under
+the parent that owns it. One function, `chooseSpines(candidates, order)`, reads one
+table (`SPINE_ORDERS`); the choice is remembered per browser (`studio.spineOrder`,
+`tools/studio/src/spine-order.ts`). A *prototype* rides on ownership first
+(`graph/FloatingBase.tsx`, flag `FLOAT_INHERITANCE`): a non-spine `inherits` line is
+hidden at rest and the child carries an `is a <Base>` chip that selects and reveals
+the base card (STUDIO-0 § The spine order says how to delete it). A junction row hangs under its `from` end. Every other line is
 **secondary** — drawn lighter (`TREE_ROLE_STYLES` in `graph/edge-kinds.ts`) and
 never read by the layout. The reason rides on the line (`treeReason`) and is
 printed by the edge panel and the line's tooltip. `layout/tree-layout.ts` places
@@ -427,9 +438,22 @@ queries:
 
 ### Configuration
 
-Project config in `codegen.config.yaml`. Key sections: `paths`, `locations`, `generate`, `tenancy`, `tables`, `frontend`. See README.md for full reference.
+Project config in `codegen.config.yaml`. Key sections: `runtime`, `target`, `paths`, `locations`, `generate`, `tenancy`, `tables`, `frontend`. See README.md for full reference.
 
 Auto-detect: `just scan` generates a config from project conventions.
+
+### Two Zods (ZOD-0)
+
+Everything that runs inside the generator (`src/**` and the generation-time JS under `templates/`: `prompt.js`,
+`entity-locals.js`, `_shared/*.mjs`) is **Zod 4**: import `z` from `src/schema/zod.ts`, the only importer of the
+`zod4` dependency (an npm alias of `zod@4`). What emitted apps import (`runtime/**`, the `.ejs.t` templates' text)
+stays on the `zod` dependency (Zod 3) until the generated code moves (ZOD-0 step 2, a major, which deletes the
+temporary `zod-boundary.test.ts` that holds this line). Pass `codegenMessages` (from `src/schema/zod.ts`) where you
+report issues to an author; never `z.config`, which Zod 4 shares across every copy in the process. A runtime Zod 3
+schema inside a codegen schema goes through `fromZod3`; a pattern's `configSchema` is structural
+(`PatternConfigSchema`), so consumers' Zod 3 patterns still validate. The editor schemas
+(`entity-definition.schema.json`, `codegen-config.schema.json`) are generated (`just gen-entity-schema`,
+`just gen-config-schema`) and tested for drift. See `docs/specs/ZOD-0.md`.
 
 ### Testing
 

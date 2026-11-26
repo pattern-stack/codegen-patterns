@@ -101,7 +101,7 @@ function expectNothingWritten(root: string): void {
 
 function expectNamesBad(out: string): void {
 	expect(out).toContain('bad.yaml');
-	expect(out).toContain("'config'");
+	expect(out).toContain('Unrecognized key: "config"');
 }
 
 describe('an invalid definition YAML (entity, relationship, junction) is a named run-level rejection (#915)', () => {
@@ -124,7 +124,7 @@ describe('an invalid definition YAML (entity, relationship, junction) is a named
 		expect(payload.failed).toHaveLength(1);
 		expect(payload.failed[0].name).toBe('bad.yaml');
 		expect(payload.failed[0].file).toBe(file);
-		expect(payload.failed[0].details.join('\n')).toContain("'config'");
+		expect(payload.failed[0].details.join('\n')).toContain('Unrecognized key: "config"');
 		expectNothingWritten(root);
 	});
 
@@ -145,7 +145,7 @@ describe('an invalid definition YAML (entity, relationship, junction) is a named
 		const payload = JSON.parse(out);
 		expect(payload.stopped).toBe('pre-flight');
 		expect(payload.failed.map((f: { name: string }) => f.name)).toEqual(['bad.yaml']);
-		expect(payload.failed[0].details.join('\n')).toContain("'config'");
+		expect(payload.failed[0].details.join('\n')).toContain('Unrecognized key: "config"');
 		expectNothingWritten(root);
 	});
 
