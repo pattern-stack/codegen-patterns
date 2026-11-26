@@ -73,7 +73,7 @@ describe('unknown and removed keys are errors naming the key and the file (issue
 
 	it('an unknown top-level block', () => {
 		const err = errorOf(() => parseCodegenConfig({ framework: 'nestjs' }, 'x.yaml'));
-		expect(err.issues[0]).toStartWith('framework: unknown key (expected one of: runtime, paths,');
+		expect(err.issues[0]).toStartWith('framework: unknown key (expected one of: runtime, target, paths,');
 	});
 
 	it('an unknown key inside an open map value — jobs.pools.<name>', () => {
@@ -306,5 +306,31 @@ describe('jobs.backend: memory cannot run a standalone worker (JOBS-0, #656)', (
 		expect(parse({ backend: 'drizzle', worker_mode: 'standalone' })).not.toThrow();
 		expect(parse({ backend: 'bullmq' })).not.toThrow();
 		expect(parse({})).not.toThrow();
+	});
+});
+
+describe('target: — one key per axis, data-access only (TGT-0, ADR-047)', () => {
+	it('absent → { data: drizzle-pg }, the schema-owned default', () => {
+		expect(parseCodegenConfig({}, 'x.yaml').target).toEqual({ data: 'drizzle-pg' });
+		expect(parseCodegenConfig({ target: {} }, 'x.yaml').target).toEqual({ data: 'drizzle-pg' });
+	});
+
+	it('target.data: drizzle-pg parses', () => {
+		expect(parseCodegenConfig({ target: { data: 'drizzle-pg' } }, 'x.yaml').target).toEqual({ data: 'drizzle-pg' });
+	});
+
+	it('an unknown data-access target is an error naming the allowed values', () => {
+		const err = errorOf(() => parseCodegenConfig({ target: { data: 'drizzle-sqlite' } }, 'x.yaml'));
+		expect(err.issues[0]).toMatch(/^target\.data: .*'drizzle-pg'/);
+	});
+
+	it('an axis with no second value yet is an unknown key, not a silently ignored one', () => {
+		const err = errorOf(() => parseCodegenConfig({ target: { data: 'drizzle-pg', composition: 'nest' } }, 'x.yaml'));
+		expect(err.issues[0]).toStartWith('target.composition: unknown key (expected one of: data)');
+	});
+
+	it('a bare string is not a target', () => {
+		const err = errorOf(() => parseCodegenConfig({ target: 'nest-drizzle-pg' }, 'x.yaml'));
+		expect(err.issues[0]).toStartWith('target:');
 	});
 });

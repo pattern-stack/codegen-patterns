@@ -37,13 +37,9 @@ import {
   timezoneNotBoolean,
   timezoneOnNonDatetime,
 } from "../../../src/schema/field-timestamp.js";
-import { fieldLengthIssues } from "../../../src/schema/field-length.js";
-import {
-  renderColumnDefault,
-  stringLengthBounds,
-  varcharColumn,
-  zodLengthChecks,
-} from "../../entity/new/backend/entity-locals.js";
+import { fieldLengthIssues, stringLengthBounds } from "../../../src/schema/field-length.js";
+import { renderColumnDefault, varcharColumn } from "../../../src/targets/drizzle-pg/columns.js";
+import { zodLengthChecks } from "../../entity/new/backend/entity-locals.js";
 
 // ============================================================================
 // Naming Helpers (inlined to avoid import issues with Hygen)

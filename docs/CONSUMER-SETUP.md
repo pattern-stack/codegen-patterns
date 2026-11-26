@@ -553,6 +553,7 @@ blocks are:
 | Block | What it configures |
 |---|---|
 | `runtime` | `package` (default) \| `vendored` — where generated code imports the runtime from (ADR-037) |
+| `target` | `data: drizzle-pg` (default, and the only value) — what the generated tables and columns are written in. One key per axis; an axis appears when it has a second value, so any other key under `target:` is an error (ADR-047) |
 | `paths` | `backend_src`, `frontend_src`, `entities`, `events_dir`, `jobs_dir`, `providers`, `modules_dir`, `orchestration_src`, `generated` |
 | `generate` | `frontend`, `semantic` |
 | `tables` | `prefix` — prepended to the SQL table name of every entity and junction that does not set `table:` (the literal name, used verbatim) or its own `table_prefix:` (`''` opts out); default `''`. Only SQL-facing names follow it — `pgTable('…')`, index / constraint names, Electric shapes, the semantic model's `tableName`, `foreign_key:` targets. The Drizzle export, `db.query` key, module folder and classes stay on `plural` (`src/config/table-naming.ts`) |

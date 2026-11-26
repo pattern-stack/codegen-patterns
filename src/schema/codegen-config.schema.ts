@@ -216,6 +216,34 @@ export const RuntimeModeSchema = z.enum(['package', 'vendored']).default('packag
 export type RuntimeMode = z.infer<typeof RuntimeModeSchema>;
 
 // ============================================================================
+// Generation Target (TGT-0, ADR-047)
+// ============================================================================
+
+/**
+ * The data-access target: what the generated tables, columns and repositories are written in.
+ *
+ * - `drizzle-pg` (DEFAULT, and the only value) — Drizzle ORM on Postgres (`drizzle-orm/pg-core`).
+ *
+ * A value is added when a second data-access target exists and passes the same gates (ADR-047).
+ */
+export const DataTargetSchema = z.enum(['drizzle-pg']);
+
+export type DataTarget = z.infer<typeof DataTargetSchema>;
+
+/**
+ * `target:` — what the generator writes the app in, one key per axis (ADR-047). Only the data-access axis
+ * exists: an axis gets its key when it gets its second value, never before, so `composition`, `http` and
+ * `runtime` are unknown keys today. Strict: a misspelled axis is an error naming it.
+ */
+export const TargetConfigSchema = z
+  .object({
+    data: DataTargetSchema.default('drizzle-pg'),
+  })
+  .strict();
+
+export type TargetConfig = z.infer<typeof TargetConfigSchema>;
+
+// ============================================================================
 // Frontend Config (ADR-038, FE-4)
 // ============================================================================
 
@@ -799,6 +827,7 @@ export const StorageConfigSchema = z
 export const CodegenConfigObjectSchema = z
   .object({
     runtime: RuntimeModeSchema,
+    target: TargetConfigSchema.default({}),
     paths: ResolvedPathsSchema.default({}),
     generate: GenerateConfigSchema.default({}),
     patterns: PatternsConfigSchema,

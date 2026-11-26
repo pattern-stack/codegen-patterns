@@ -17,7 +17,6 @@ import { junctionFanOutFor, junctionNaming } from '../../../_shared/junction-fan
 import { renderSqlPredicate } from '../../../_shared/sql-predicate.mjs';
 import { TABLE_CALLBACK_PARAM as T } from '../../../_shared/table-callback.mjs';
 import {
-  enumTypeNames,
   familyReads,
   inheritanceFor,
   matchColumns,
@@ -34,6 +33,8 @@ import { detectMethodCollisions } from '../../../../src/patterns/compose.js';
 import { resolvePatternComposition } from '../../../../src/patterns/resolve-composition.js';
 import '../../../../src/patterns/library/index.js';
 import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
+import { arrayElementType, deriveFieldFacts, isArrayType } from '../../../../src/derived/columns/fields.js';
+import { columnRendererFor } from '../../../../src/targets/columns.js';
 import {
   familyConstName,
   familyHelperName,
@@ -47,16 +48,8 @@ import {
 } from '../../../../src/derived/api/names.js';
 import { camelCase, emittedStem } from '../../../../src/config/file-naming.js';
 import { resolvedBehaviorNames as resolveBehaviorNames } from '../../../../src/patterns/implied-behaviors.js';
-import {
-  fieldColumnNullable,
-  foreignKeyColumnNullable,
-  hasColumnDefault,
-} from '../../../../src/schema/field-nullability.js';
-import {
-  behaviorWithTimezone,
-  fieldWithTimezone,
-  timestampColumn,
-} from '../../../../src/schema/field-timestamp.js';
+import { foreignKeyColumnNullable } from '../../../../src/schema/field-nullability.js';
+import { behaviorWithTimezone, timestampColumn } from '../../../../src/schema/field-timestamp.js';
 import { resolveTenancy } from '../../../../src/schema/tenancy.js';
 import { matchPairsOf } from '../../../../src/schema/inheritance.js';
 import { sqlTableName } from '../../../../src/config/table-naming.js';
@@ -293,34 +286,6 @@ export { resolvePatternComposition };
 const pluralize = (s) => pluralizePkg.plural(s);
 
 // ============================================================================
-// Drizzle type mapping
-// ============================================================================
-
-const DRIZZLE_TYPE_MAP = {
-  string: 'text',
-  integer: 'integer',
-  decimal: 'numeric',
-  boolean: 'boolean',
-  uuid: 'uuid',
-  date: 'date',
-  datetime: 'timestamp',
-  json: 'jsonb',
-};
-
-// Drizzle import name for each drizzle type
-const DRIZZLE_IMPORT_MAP = {
-  text: 'text',
-  integer: 'integer',
-  numeric: 'numeric',
-  boolean: 'boolean',
-  uuid: 'uuid',
-  date: 'date',
-  timestamp: 'timestamp',
-  jsonb: 'jsonb',
-  varchar: 'varchar',
-};
-
-// ============================================================================
 // Zod type mapping
 // ============================================================================
 
@@ -342,42 +307,17 @@ const ZOD_TYPE_MAP = {
   json: 'z.unknown()',
 };
 
-// TypeScript type mapping
-const TS_TYPE_MAP = {
-  string: 'string',
-  integer: 'number',
-  decimal: 'string',
-  boolean: 'boolean',
-  uuid: 'string',
-  date: 'Date',
-  datetime: 'Date',
-  json: 'unknown',
-};
-
-// Array field types → their ELEMENT type (#281). An array field is its element
-// type wrapped once, in all three vocabularies: a Postgres array column
-// (`text('x').array()`), `z.array(<element>)`, `<element>[]`. With `choices:`
-// the element is the enum, so `string_array` + `choices` is an enum ARRAY —
-// never a single enum column (F4).
-const ARRAY_ELEMENT_TYPE = {
-  string_array: 'string',
-};
-
-/** True when `type` is an array field type. */
-function isArrayType(type) {
-  return Object.prototype.hasOwnProperty.call(ARRAY_ELEMENT_TYPE, type);
-}
-
 /**
  * The Zod schema of a field's VALUE, before nullability/optionality: the enum
  * of its choices or its scalar's schema, wrapped in `z.array()` for an array
- * type. The one place processFields and both DTO chains read it from.
+ * type. The one place processFields and both DTO chains read it from. Zod is
+ * shared by every target (TGT-0): it reads the field's facts, never a target's
+ * column text.
  */
 function zodValueFor({ type, hasChoices, choices }) {
-  const elementType = ARRAY_ELEMENT_TYPE[type] ?? type;
   const element = hasChoices
     ? `z.enum([${choices.map((c) => `'${c}'`).join(', ')}])`
-    : (ZOD_TYPE_MAP[elementType] || 'z.unknown()');
+    : (ZOD_TYPE_MAP[arrayElementType(type)] || 'z.unknown()');
   return isArrayType(type) ? `z.array(${element})` : element;
 }
 
@@ -406,205 +346,48 @@ const EXTERNAL_ID_TRACKING_FIELDS = new Set([
 // Field processors
 // ============================================================================
 
-/**
- * A `string` field's length bounds (#772) — the one rule every pipeline that
- * renders a field column reads (entity, junction payload via `processFields`,
- * relationship `fields:`). `maxLength` makes the column `varchar(n)` instead of
- * `text`; both bounds check the create DTO (and the update DTO, its
- * `.partial()`). Whether the keys are valid is `fieldLengthIssues`
- * (`src/schema/field-length.ts`): `type: string` only, never with `choices:` —
- * refused before this runs, so the guard below is not a silent drop. A
- * junction has no DTOs, so there only the `varchar(n)` column applies.
- */
-export function stringLengthBounds(field, type, hasChoices) {
-  if (type !== 'string' || hasChoices) return { minLength: null, maxLength: null };
-  return {
-    minLength: Number.isInteger(field.min_length) ? field.min_length : null,
-    maxLength: Number.isInteger(field.max_length) ? field.max_length : null,
-  };
-}
-
-/** The `varchar(n)` column a `max_length` string field is (#772). */
-export function varcharColumn(fieldName, maxLength) {
-  return `varchar('${fieldName}', { length: ${maxLength} })`;
-}
-
 /** The Zod checks a field's length bounds add to its write-DTO value (#772). */
 export function zodLengthChecks({ minLength, maxLength }) {
   return (minLength != null ? `.min(${minLength})` : '') + (maxLength != null ? `.max(${maxLength})` : '');
 }
 
 /**
- * Build a Drizzle column chain for a field
- */
-function buildDrizzleChain(fieldName, field, drizzleType, enumName, maxLength) {
-  const hasDefault = hasColumnDefault(field);
-
-  // Drizzle's `date('x')` returns the PgDateString builder by default
-  // (data type: string). Force the Date-typed variant so DTO Zod
-  // schemas using z.coerce.date() align with the entity type.
-  // `datetime` is timestamptz unless `timezone: false` (#796, `field-timestamp.ts`);
-  // its `mode: 'date'` is written out so the TS type does not lean on Drizzle's default.
-  let chain;
-  if (drizzleType === 'enum' && enumName) {
-    // Reference the pgEnum declaration emitted at the top of the entity file.
-    // The column name argument keeps the snake_case YAML field name.
-    chain = `${enumName}('${fieldName}')`;
-  } else if (drizzleType === 'varchar') {
-    chain = varcharColumn(fieldName, maxLength);
-  } else if (drizzleType === 'date') {
-    chain = `${drizzleType}('${fieldName}', { mode: 'date' })`;
-  } else if (field.type === 'datetime') {
-    chain = timestampColumn(fieldName, fieldWithTimezone(field));
-  } else {
-    chain = `${drizzleType}('${fieldName}')`;
-  }
-  // An array type is a Postgres array of its element column (#281).
-  if (isArrayType(field.type)) {
-    chain += '.array()';
-  }
-
-  // NOT NULL by the one nullability rule (`field-nullability.ts`, #736):
-  // `required: true`, or `nullable: false` (which the schema only accepts
-  // with a `default:`, rendered below).
-  if (!fieldColumnNullable(field)) {
-    chain += '.notNull()';
-  }
-
-  // Column defaults (#345). The value is validated upstream (schema `default:`).
-  // Covers every scalar type, enum literals, and the `now` sentinel on
-  // timestamp/date columns — not just booleans.
-  if (hasDefault) {
-    chain += renderColumnDefault(field.default, drizzleType);
-  }
-
-  return chain;
-}
-
-/** A single-quoted, escaped TS string literal. */
-function quoteLiteral(value) {
-  return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
-}
-
-/**
- * Render a Drizzle `.default(...)` (or `.defaultNow()`) suffix for a column.
- *
- * - timestamp/date + a `now`/`now()`/`current_timestamp` sentinel → `.defaultNow()`
- * - numeric (Drizzle returns it as a string) → quoted, even for numeric YAML values
- * - string / enum literal → single-quoted, escaped
- * - number / boolean → bare literal
- * - array of strings (an array column) → array of single-quoted literals
- * - anything else (jsonb object/array default) → JSON literal
- */
-export function renderColumnDefault(value, drizzleType) {
-  if (
-    (drizzleType === 'timestamp' || drizzleType === 'date') &&
-    typeof value === 'string' &&
-    /^(now|now\(\)|current_timestamp)$/i.test(value)
-  ) {
-    return '.defaultNow()';
-  }
-  if (drizzleType === 'numeric') {
-    return `.default('${String(value)}')`;
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return `.default(${value})`;
-  }
-  if (typeof value === 'string') {
-    return `.default(${quoteLiteral(value)})`;
-  }
-  // An array column's default (#281): its elements as literals, the way a
-  // scalar default renders — `.default(['email'])`.
-  if (Array.isArray(value) && value.every((v) => typeof v === 'string')) {
-    return `.default([${value.map(quoteLiteral).join(', ')}])`;
-  }
-  return `.default(${JSON.stringify(value)})`;
-}
-
-/**
- * Process entity fields into ProcessedField[].
+ * Process entity fields into ProcessedField[]: each field's facts
+ * (`deriveFieldFacts`, `src/derived/columns/`), its column as the project's
+ * target renders it (`columns`, `src/targets/columns.ts`), and its Zod value.
+ * One record per field, the shape every backend template reads (TGT-0).
  *
  * `entityName` (snake_case) namespaces enum-typed fields so two entities that
  * each declare an enum field with the SAME name (e.g. `role`, `status`) don't
- * collide. Without it the pg type name AND the exported const were derived from
- * the field name alone, so a second entity with the same enum field produced a
- * duplicate `export const roleEnum` (TS2308) and a duplicate `CREATE TYPE role`
- * at the DB level (a real migration conflict). Namespacing yields
- * `field_config_role` (pg type) / `fieldConfigRoleEnum` (export) instead.
+ * collide (`enumTypeNames`). `enumResolver` resolves a `choices_of:` field to
+ * its owner's enum (RFC-0006 §2.4); `null` where there is no lookup.
  */
-export function processFields(fields, entityName = '', enumResolver = null) {
-  const processed = [];
-
-  for (const [fieldName, field] of Object.entries(fields)) {
-    if (fieldName === 'id') continue;
-
-    const type = field.type || 'string';
-    // The column's nullability, which the read types and DTO chains below
-    // must agree with — the same rule `buildDrizzleChain` emits it by.
-    const nullable = fieldColumnNullable(field);
-    const required = field.required ?? false;
-    const hasDefault = hasColumnDefault(field);
-    // `choices_of: <entity>.<field>` (RFC-0006 §2.4): the column is typed with
-    // ANOTHER entity's pgEnum, which this file imports and never redeclares.
-    const imported = field.choices_of !== undefined && enumResolver ? enumResolver(fieldName, field) : null;
-    const choices = imported ? imported.choices : field.choices;
-    const hasChoices = Array.isArray(choices) && choices.length > 0;
-
-    // Enum-typed fields (or any field with a `choices` list) emit a
-    // Postgres-native pgEnum declaration + column reference, so the
-    // generated `InferSelectModel` type narrows to the literal union
-    // instead of falling back to `string`.
-    const elementType = ARRAY_ELEMENT_TYPE[type] ?? type;
-    const { minLength, maxLength } = stringLengthBounds(field, type, hasChoices);
-    const drizzleType = hasChoices
-      ? 'enum'
-      : maxLength !== null
-        ? 'varchar'
-        : (DRIZZLE_TYPE_MAP[elementType] || 'text');
-    // Namespace the enum const + pg type name by entity so same-named enum
-    // fields on different entities don't collide (TS2308 / duplicate CREATE TYPE).
-    // The COLUMN name keeps the bare snake field name (`role`); only the const
-    // (`fieldConfigRoleEnum`) and pg type (`field_config_role`) are namespaced.
-    const enumDbName = hasChoices
-      ? (imported ? imported.dbName : enumTypeNames(entityName, fieldName).dbName)
-      : null;
-    const enumName = hasChoices
-      ? (imported ? imported.enumName : enumTypeNames(entityName, fieldName).enumName)
-      : null;
-    const elementTsType = hasChoices
-      ? choices.map((c) => `'${c}'`).join(' | ')
-      : (TS_TYPE_MAP[elementType] || 'unknown');
-    const tsType = !isArrayType(type)
-      ? elementTsType
-      : (hasChoices ? `(${elementTsType})[]` : `${elementTsType}[]`);
-    const zodType = zodValueFor({ type, hasChoices, choices });
-
-    const drizzleChain = buildDrizzleChain(fieldName, field, drizzleType, enumName, maxLength);
-
-    processed.push({
-      name: fieldName,
-      camelName: camelCase(fieldName),
-      type,
+export function processFields(fields, { entityName, enumResolver, columns }) {
+  if (!columns) throw new Error(`processFields(${entityName}): columns (the target's column renderer) is required.`);
+  return deriveFieldFacts(fields, entityName, enumResolver).map((f) => {
+    const { drizzleType, drizzleChain, tsType } = columns.render(f);
+    return {
+      name: f.name,
+      camelName: f.camelName,
+      type: f.type,
       drizzleType,
-      zodType,
+      zodType: zodValueFor(f),
       tsType,
-      nullable,
-      required,
-      hasDefault,
+      nullable: f.nullable,
+      required: f.required,
+      hasDefault: f.hasDefault,
       isPrimaryKey: false,
       drizzleChain,
-      choices,
-      hasChoices,
-      enumName,
-      enumDbName,
+      choices: f.choices,
+      hasChoices: f.hasChoices,
+      enumName: f.enumName,
+      enumDbName: f.enumDbName,
       // Set when the pgEnum is another entity's (`choices_of:`): imported, not declared.
-      enumImport: imported ? { enumName: imported.enumName, importPath: imported.importPath } : null,
-      minLength,
-      maxLength,
-    });
-  }
-
-  return processed;
+      enumImport: f.enumImport,
+      minLength: f.minLength,
+      maxLength: f.maxLength,
+    };
+  });
 }
 
 /**
@@ -1158,7 +941,7 @@ function fieldUniqueEntries(fields, tenancy = null) {
 /**
  * Collect drizzle imports needed for entity fields
  */
-function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraImports = []) {
+function collectDrizzleImports(columns, processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraImports = []) {
   const imports = new Set(['pgTable', 'uuid']);
 
   for (const field of processedFields) {
@@ -1168,7 +951,8 @@ function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSof
       // needs no `pgEnum` import of its own.
       continue;
     }
-    const importName = DRIZZLE_IMPORT_MAP[field.drizzleType];
+    // The builder's import is the target's (TGT-0, ADR-047 §5): never a map read here.
+    const importName = columns.importFor(field.drizzleType);
     if (importName) imports.add(importName);
   }
 
@@ -1597,6 +1381,10 @@ export function buildBackendLocals(definition, baseLocals) {
   const relationships = definition.relationships || {};
   const behaviors = definition.behaviors || [];
   const queriesBlock = definition.queries || null;
+  // TGT-0: the project's data-access target renders every field column
+  // (`src/targets/columns.ts`). Required: prompt.js reads `target` from the
+  // parsed config, whose schema owns the default (ADR-047).
+  const columns = columnRendererFor(baseLocals.target, `buildBackendLocals(${entity.name})`);
   // ADR-043 §6 `api: false` and REL-2 §2.5's typed include are decided once, in
   // the derivation (`apiEnabled` / `hasTypedInclude`, `src/derived/api/
   // entity.ts`); the templates read its answers as `apiSurface.http.enabled` /
@@ -1813,9 +1601,12 @@ export function buildBackendLocals(definition, baseLocals) {
   // Process entity fields. Pass the entity name so enum fields namespace their
   // pg type + exported const by entity (prevents same-named enum collisions
   // across entities — TS2308 / duplicate CREATE TYPE).
-  const processedFields = processFields(fields, entityName, (fieldName, field) =>
-    resolveEnumField({ lookup: entityLookup, modulesDir, fromNaming: ownNaming, entityName, fieldName, field }),
-  );
+  const processedFields = processFields(fields, {
+    entityName,
+    enumResolver: (fieldName, field) =>
+      resolveEnumField({ lookup: entityLookup, modulesDir, fromNaming: ownNaming, entityName, fieldName, field }),
+    columns,
+  });
 
   // Behavior flags (re-read from behaviors array for backend use).
   //
@@ -2186,7 +1977,7 @@ export function buildBackendLocals(definition, baseLocals) {
       const { type, max_length, min_length, timezone } = d.field;
       const [pf] = processFields(
         { [d.column]: { type, max_length, min_length, timezone, ...(d.nullable ? {} : { required: true }) } },
-        d.targetEntity,
+        { entityName: d.targetEntity, enumResolver: null, columns },
       );
       drizzleType = pf.drizzleType;
       chain = pf.drizzleChain;
@@ -2477,7 +2268,7 @@ export function buildBackendLocals(definition, baseLocals) {
     drizzleType: c.drizzleType,
     enumImport: c.enumImport,
   }));
-  const drizzleEntityImports = collectDrizzleImports([...processedFields, ...inheritanceColumnFields], belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraDrizzleImports);
+  const drizzleEntityImports = collectDrizzleImports(columns, [...processedFields, ...inheritanceColumnFields], belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraDrizzleImports);
 
   // ADR-046 — the generated API surface, derived once (`src/derived/api/`). Every
   // method name the repository prints, and whether it is emitted at all, comes

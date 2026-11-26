@@ -32,6 +32,7 @@ import {
 } from "../../_shared/entity-naming.mjs";
 import { loadRuntimeMode, runtimeImport } from "../../../src/config/runtime-mode.mjs";
 import { processFieldFeatures, processFields } from "../../entity/new/backend/entity-locals.js";
+import { columnRendererFor } from "../../../src/targets/columns.js";
 import { loadOwnedTableNames } from "../../entity/new/prompt.js";
 import { configOrDefaults, loadProjectConfig } from "../../../src/config/project-config.js";
 import { TABLE_CALLBACK_PARAM } from "../../_shared/table-callback.mjs";
@@ -101,8 +102,8 @@ function buildDrizzleImports(hasRole, processedCustomFields, hasIndexes) {
 // column builder (`processFields` → `drizzleChain`, `processFieldFeatures` →
 // `.references()` + `index: true`) — one owner for nullability, defaults,
 // enums, FKs and indexes. Nothing here re-derives a column.
-function processPayloadFields(fields, junctionName, naming, ownedTables) {
-  const processed = processFields(fields, junctionName);
+function processPayloadFields(fields, junctionName, naming, ownedTables, columns) {
+  const processed = processFields(fields, { entityName: junctionName, enumResolver: null, columns });
   const features = processFieldFeatures(processed, fields, naming, ownedTables, new Set());
   return { processed, ...features };
 }
@@ -263,6 +264,8 @@ export default {
       // TABLE-0: a payload index / self-FK names the junction's SQL table.
       { entityName: junctionName, ownNaming: junction, entityTableName: tableName, modulesDir, entityLookup },
       Array.from(loadOwnedTableNames(cwd, { tablePrefix: config_.tables.prefix })),
+      // TGT-0 (ADR-047): the project's data-access target renders the payload columns.
+      columnRendererFor(config_.target, `junction new (${junctionName})`),
     );
     const processedCustomFields = payload.processed;
     const hasCustomFields = processedCustomFields.length > 0;

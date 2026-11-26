@@ -36,6 +36,16 @@ export function entityClassName(entityName: string): string {
 }
 
 /**
+ * The database type name and the exported const of an enum field — namespaced by the OWNING entity so two entities'
+ * same-named enums never collide (`communication_kind` / `communicationKindEnum`). `deriveFieldFacts` and every
+ * importer of an enum read this one rule. A name only: what declares the enum is the target's renderer.
+ */
+export function enumTypeNames(entityName: string, fieldName: string): { dbName: string; enumName: string } {
+	const dbName = entityName ? `${entityName}_${fieldName}` : fieldName;
+	return { dbName, enumName: `${camelCase(dbName)}Enum` };
+}
+
+/**
  * The Zod schema names a module's DTO files export, and the file stem of each (no folder, no extension) — the one
  * owner of both, so a child's import of its base's schema and the base's own export cannot drift (RFC-0006 §5).
  */
