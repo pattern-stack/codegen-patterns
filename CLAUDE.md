@@ -444,10 +444,13 @@ Auto-detect: `just scan` generates a config from project conventions.
 
 ### Two Zods (ZOD-0)
 
-Codegen's own schemas are **Zod 4**: import `z` from `src/schema/zod.ts`, the only importer of the `zod4` dependency
-(an npm alias of `zod@4`). What emitted apps import — `runtime/**`, `templates/**` — stays on the `zod` dependency
-(Zod 3) until the generated code moves (ZOD-0 step 2, a major). `zod-boundary.test.ts` holds the line. A runtime
-Zod 3 schema inside a codegen schema goes through `fromZod3`; a pattern's `configSchema` is structural
+Everything that runs inside the generator (`src/**` and the generation-time JS under `templates/`: `prompt.js`,
+`entity-locals.js`, `_shared/*.mjs`) is **Zod 4**: import `z` from `src/schema/zod.ts`, the only importer of the
+`zod4` dependency (an npm alias of `zod@4`). What emitted apps import (`runtime/**`, the `.ejs.t` templates' text)
+stays on the `zod` dependency (Zod 3) until the generated code moves (ZOD-0 step 2, a major, which deletes the
+temporary `zod-boundary.test.ts` that holds this line). Pass `codegenMessages` (from `src/schema/zod.ts`) where you
+report issues to an author; never `z.config`, which Zod 4 shares across every copy in the process. A runtime Zod 3
+schema inside a codegen schema goes through `fromZod3`; a pattern's `configSchema` is structural
 (`PatternConfigSchema`), so consumers' Zod 3 patterns still validate. The editor schemas
 (`entity-definition.schema.json`, `codegen-config.schema.json`) are generated (`just gen-entity-schema`,
 `just gen-config-schema`) and tested for drift. See `docs/specs/ZOD-0.md`.

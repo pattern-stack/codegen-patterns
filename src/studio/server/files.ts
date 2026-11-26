@@ -15,7 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import type { z } from '../../schema/zod.js';
+import { codegenMessages, type z } from '../../schema/zod.js';
 
 import { findYamlFiles, listEntityYamls } from '../../utils/find-yaml-files.js';
 import { projectLayout } from '../../cli/shared/project-layout.js';
@@ -176,7 +176,7 @@ export function validateContent(kind: StudioFileKind, content: string): Validati
 		};
 	}
 
-	const result = SCHEMAS[kind].safeParse(parsed);
+	const result = SCHEMAS[kind].safeParse(parsed, { error: codegenMessages });
 	if (result.success) return { ok: true };
 	return {
 		ok: false,

@@ -1119,9 +1119,9 @@ const AnalyticsBlockSchema = z
   })
   .strict()
   .superRefine((block, ctx) => {
-    // E1 — lives here rather than on DerivedMetricSchema because a Zod
-    // discriminated union may not hold a refined (ZodEffects) member, and
-    // because the metric NAME is only in scope at this level.
+    // E1 — lives here rather than on DerivedMetricSchema because the metric
+    // NAME is only in scope at this level. (It was also forced by Zod 3, whose
+    // discriminated union could not hold a refined member; Zod 4's can.)
     for (const [name, metric] of Object.entries(block.metrics ?? {})) {
       if (metric.type === 'derived' && !derivedExprHasRef(metric.expr)) {
         ctx.addIssue({

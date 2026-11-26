@@ -6,8 +6,8 @@
  * keep one owner, the runtime file; codegen hosts them through this bridge rather than restating them on Zod 4:
  *
  * - the value parses with the Zod 3 schema, so its defaults and messages are the runtime parser's own;
- * - each Zod 3 issue is passed up unchanged (code, message, `keys`), so its path joins the outer schema's path the way
- *   a native issue's does.
+ * - each Zod 3 issue is passed up with its code, message, path and `keys` (only `input` is set to the hosted value),
+ *   so its path joins the outer schema's path the way a native issue's does.
  *
  * Today's use: `DetectionConfigSchema` (`runtime/subsystems/integration`) under an entity's `detection:` and a job
  * arm's `read:`. Delete this file when `runtime/` moves to Zod 4.

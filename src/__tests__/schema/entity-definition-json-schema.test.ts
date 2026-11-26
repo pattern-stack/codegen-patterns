@@ -26,18 +26,22 @@ describe('the committed entity JSON Schema is the generated one', () => {
 });
 
 describe('the JSON Schema accepts what the generator accepts', () => {
-	const files = [...new Glob('test/fixtures/**/entities/**/*.yaml').scanSync({ cwd: REPO })].sort();
+	// Every entity YAML in the repo (fixtures, examples, the demo and smoke sets), not only one harness's.
+	const files = [...new Glob('**/entities/**/*.yaml').scanSync({ cwd: REPO })]
+		.filter((file) => !file.includes('node_modules/'))
+		.sort();
 	const accepted = files
 		.map((file) => ({ file, data: parseYaml(fs.readFileSync(path.join(REPO, file), 'utf-8')) as unknown }))
 		.filter(({ data }) => EntityDefinitionSchema.safeParse(data).success);
 
-	it('covers the fixture entities', () => {
-		expect(accepted.length).toBeGreaterThan(20);
+	it('covers the repo\'s entity YAMLs', () => {
+		expect(accepted.length).toBeGreaterThan(100);
 	});
 
 	it.each(accepted.map(({ file, data }) => [file, data] as const))('%s', (_file, data) => {
+		const ok = jsonSchemaAccepts(data);
 		expect(validate.errors ?? []).toEqual([]);
-		expect(jsonSchemaAccepts(data)).toBe(true);
+		expect(ok).toBe(true);
 	});
 });
 

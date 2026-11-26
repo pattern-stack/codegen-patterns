@@ -19,7 +19,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'yaml';
-import { z } from '../schema/zod.js';
+import { codegenMessages, z } from '../schema/zod.js';
 import {
 	CodegenConfigSchema,
 	type CodegenConfig,
@@ -113,7 +113,7 @@ function formatIssues(error: z.ZodError): string[] {
  * Throws {@link CodegenConfigError}.
  */
 export function parseCodegenConfig(raw: unknown, configPath: string): CodegenConfig {
-	const result = CodegenConfigSchema.safeParse(raw ?? {});
+	const result = CodegenConfigSchema.safeParse(raw ?? {}, { error: codegenMessages });
 	if (!result.success) throw new CodegenConfigError(configPath, formatIssues(result.error));
 	return result.data;
 }

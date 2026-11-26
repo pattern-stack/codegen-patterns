@@ -19,6 +19,7 @@ import { emittedStem } from '../../../src/config/file-naming.js';
 import yaml from "yaml";
 import { behaviorWithTimezone } from "../../../src/schema/field-timestamp.js";
 import { JunctionDefinitionSchema, hasIdentityRole } from "../../../src/schema/junction-definition.schema.js";
+import { codegenMessages } from "../../../src/schema/zod.js";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 import {
   junctionName as deriveJunctionName,
@@ -146,7 +147,7 @@ export default {
     // fields included (#740). `codegen junction new` runs it before hygen;
     // running it here too keeps a direct hygen call from rendering a YAML the
     // CLI would refuse. The raw definition is what the locals below read.
-    const parsed = JunctionDefinitionSchema.safeParse(definition);
+    const parsed = JunctionDefinitionSchema.safeParse(definition, { error: codegenMessages });
     if (!parsed.success) {
       const issues = parsed.error.issues.map((issue) => {
         const [head, field] = issue.path;

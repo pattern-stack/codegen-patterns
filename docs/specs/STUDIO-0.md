@@ -402,7 +402,8 @@ cardinality. Nothing filters or loosely pattern-matches, so a regression surface
 3. `GET /api/files` — lists `entities/contact.yaml` with `kind: 'entity'`, `name: 'contact'`.
 4. `GET /api/files/entities%2Fcontact.yaml` — content equals the file on disk.
 5. `PUT` the same path with `contact.title.type` corrupted from `string` to `strng` → **422**, carrying an issue at
-   exactly `['fields','title','type']` with `code: 'invalid_enum_value'` and a message naming `received 'strng'`.
+   exactly `['fields','title','type']` with `code: 'invalid_value'` and a message naming `received "strng"` (Zod 4's
+   code; the refused value is codegen's `codegenMessages` rule, ZOD-0).
 6. The file on disk is **unchanged** — a rejected write must not persist.
 7. The *same valid content* `PUT` with `Origin: https://evil.example` → **403**, and the file is still untouched.
    Every other request in the harness carries the server's own origin, as a browser would: the guard allows a
