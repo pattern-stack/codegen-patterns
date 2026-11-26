@@ -251,6 +251,8 @@ function processFields(fields) {
       nullable,
       required,
       hasDefault,
+      // The declared `default:` value: the create DTO's `.default(…)` prints it (it printed `false` without it).
+      default: field.default,
       isPrimaryKey: false,
       drizzleChain,
       choices,

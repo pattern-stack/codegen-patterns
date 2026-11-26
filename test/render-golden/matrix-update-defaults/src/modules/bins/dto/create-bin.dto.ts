@@ -9,7 +9,7 @@ export const CreateBinSchema = CreateToteSchema
   .omit({ kind: true })
   .extend({
     label: z.string(),
-    sealed: z.boolean().default(false),
+    sealed: z.boolean().default(true),
   });
 
 export type CreateBinDto = z.infer<typeof CreateBinSchema>;

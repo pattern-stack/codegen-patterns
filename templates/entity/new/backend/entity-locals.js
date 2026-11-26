@@ -378,6 +378,8 @@ export function processFields(fields, { entityName, enumResolver, columns }) {
       nullable: f.nullable,
       required: f.required,
       hasDefault: f.hasDefault,
+      // The declared `default:` value: the create DTO's `.default(…)` prints it (it printed `false` without it).
+      default: f.default,
       isPrimaryKey: false,
       drizzleChain,
       choices: f.choices,

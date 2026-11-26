@@ -64,7 +64,8 @@ for (const zod of ZODS) {
 			expect(update.parse({ active: false })).toEqual({ active: false });
 			// Exactly what `Create.partial()` accepted: a defaulted boolean was never nullable on create or update.
 			expect(update.safeParse({ active: null }).success).toBe(false);
-			expect(create.parse({ label: 'B2' })).toHaveProperty('active');
+			// The create applies the YAML's own default (`active: true`, `archived: false`).
+			expect(create.parse({ label: 'B2' })).toEqual({ label: 'B2', active: true, archived: false });
 		});
 
 		it("a family base: the update omits the kind and the base's defaults", async () => {
@@ -98,7 +99,7 @@ describe('relationship update DTOs leave omitted fields alone', () => {
 		const file = path.join(dir, 'def.yaml');
 		fs.writeFileSync(
 			file,
-			'relationship:\n  name: player_team\n  from: player\n  to: team\nfields:\n  captain:\n    type: boolean\n    default: false\n  notes:\n    type: string\n',
+			'relationship:\n  name: player_team\n  from: player\n  to: team\nfields:\n  captain:\n    type: boolean\n    default: true\n  notes:\n    type: string\n',
 		);
 		const cwd = process.cwd();
 		process.chdir(dir);
@@ -113,6 +114,10 @@ describe('relationship update DTOs leave omitted fields alone', () => {
 		const l = await locals();
 		expect(l.updateDefaultOverrides.map((f: { name: string }) => f.name)).toEqual(['captain']);
 		expect(l.updateDefaultOverrides[0].zodChainUpdate).toBe('z.boolean().optional()');
+		// The create applies the YAML's own default value.
+		expect(l.createDtoFields.find((f: { name: string }) => f.name === 'captain').zodChainCreate).toBe(
+			'z.boolean().default(true)',
+		);
 	});
 
 	for (const [name, z] of [

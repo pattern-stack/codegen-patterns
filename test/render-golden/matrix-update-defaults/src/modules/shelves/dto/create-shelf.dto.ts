@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 export const CreateShelfSchema = z.object({
   label: z.string(),
-  active: z.boolean().default(false),
+  active: z.boolean().default(true),
   archived: z.boolean().default(false),
 });
 
