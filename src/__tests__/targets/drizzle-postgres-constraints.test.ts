@@ -33,6 +33,58 @@ describe('drizzle/postgres constraints', () => {
 	});
 });
 
+describe('drizzle/postgres uniques, foreign keys and checks', () => {
+	const base = { name: 'n', props: ['tenantId', 'title'], where: null, nullsNotDistinct: false, referenced: false, tenantScoped: false };
+
+	it('plain → uniqueIndex', () => {
+		expect(pg.unique(base, 't')).toEqual({ builder: 'uniqueIndex', expr: "uniqueIndex('n').on(t.tenantId, t.title)", comment: null });
+	});
+
+	it('NULLS NOT DISTINCT → the unique() table constraint (rc.4: only it carries .nullsNotDistinct())', () => {
+		expect(pg.unique({ ...base, nullsNotDistinct: true }, 't').expr).toBe("unique('n').on(t.tenantId, t.title).nullsNotDistinct()");
+	});
+
+	it('partial → uniqueIndex(…).where(sql`…`), never NULLS NOT DISTINCT', () => {
+		const r = pg.unique(
+			{ ...base, nullsNotDistinct: true, tenantScoped: true, where: [{ column: 'deleted_at', prop: 'deletedAt' }, { text: ' IS NULL' }] },
+			't',
+		);
+		expect(r.expr).toBe("uniqueIndex('n').on(t.tenantId, t.title).where(sql`${t.deletedAt} IS NULL`)");
+		expect(r.comment).toContain('partial, so NULL-tenant rows never conflict');
+	});
+
+	it('a referenced unique (a composite FK target) → unique(…) without NULLS NOT DISTINCT', () => {
+		expect(pg.unique({ ...base, props: ['id', 'kind'], referenced: true }, 't')).toEqual({
+			builder: 'unique',
+			expr: "unique('n').on(t.id, t.kind)",
+			comment: null,
+		});
+	});
+
+	it('a tenant-scoped rule carries the pair\'s note on the NULL tenant', () => {
+		expect(pg.unique({ ...base, tenantScoped: true }, 't').comment).toContain('nulls_not_distinct: false');
+		expect(pg.unique({ ...base, tenantScoped: true, nullsNotDistinct: true }, 't').comment).toContain('one partition');
+	});
+
+	it('a composite foreign key', () => {
+		expect(
+			pg.foreignKey(
+				{ name: 'notes_base_kind_fk', props: ['id', 'kind'], targetExport: 'communications', targetProps: ['id', 'kind'], onDelete: 'cascade' },
+				'tCols',
+			),
+		).toBe(
+			"foreignKey({\n      name: 'notes_base_kind_fk',\n      columns: [tCols.id, tCols.kind],\n" +
+				"      foreignColumns: [communications.id, communications.kind],\n    }).onDelete('cascade')",
+		);
+	});
+
+	it('a check', () => {
+		expect(
+			pg.check({ name: 'c', expression: [{ column: 'kind', prop: 'kind' }, { text: " = 'meeting'" }] }, 'tCols'),
+		).toBe("check('c', sql`${tCols.kind} = 'meeting'`)");
+	});
+});
+
 describe('the composers require the renderer', () => {
 	it('processFieldFeatures without a constraint renderer throws', () => {
 		expect(() =>

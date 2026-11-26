@@ -9,8 +9,14 @@
  */
 
 import type { PredicateSegment } from '../../../derived/constraints/predicate.js';
-import type { ColumnReferenceFact, IndexFact } from '../../../derived/constraints/types.js';
-import type { ConstraintRenderer } from '../../constraints.js';
+import type {
+	CheckFact,
+	ColumnReferenceFact,
+	ForeignKeyFact,
+	IndexFact,
+	UniqueFact,
+} from '../../../derived/constraints/types.js';
+import type { ConstraintRenderer, RenderedConstraint } from '../../constraints.js';
 
 /** Escape text for a JS template literal. */
 function escapeTemplate(text: string): string {
@@ -38,8 +44,63 @@ function columnReference(reference: ColumnReferenceFact): string {
 	return `.references((): AnyPgColumn => ${reference.targetExport}.${reference.targetColumn}${action})`;
 }
 
+const on = (props: readonly string[], tableParam: string) => props.map((p) => `${tableParam}.${p}`).join(', ');
+
 function index(fact: IndexFact, tableParam: string): string {
-	return `index('${fact.name}').on(${fact.props.map((p) => `${tableParam}.${p}`).join(', ')})`;
+	return `index('${fact.name}').on(${on(fact.props, tableParam)})`;
+}
+
+/**
+ * - partial (`where`) → `uniqueIndex(name).on(…).where(sql\`…\`)`. A partial index cannot be NULLS NOT DISTINCT on
+ *   drizzle-orm 1.0.0-rc.4, so a partial entry never is;
+ * - a referenced unique → `unique(name).on(…)`: a UNIQUE constraint, the target of a composite FK;
+ * - NULLS NOT DISTINCT → `unique(name).on(…).nullsNotDistinct()`: only the table-constraint builder carries it on rc.4;
+ * - otherwise → `uniqueIndex(name).on(…)`.
+ */
+function unique(fact: UniqueFact, tableParam: string): RenderedConstraint {
+	const cols = on(fact.props, tableParam);
+	if (fact.where !== null) {
+		return {
+			builder: 'uniqueIndex',
+			expr: `uniqueIndex('${fact.name}').on(${cols}).where(sql\`${predicate(fact.where, tableParam)}\`)`,
+			comment: fact.tenantScoped
+				? 'tenant_scoped — unique per tenant; partial, so NULL-tenant rows never conflict (no NULLS NOT DISTINCT on a partial index in drizzle rc.4)'
+				: null,
+		};
+	}
+	if (fact.referenced) {
+		return { builder: 'unique', expr: `unique('${fact.name}').on(${cols})`, comment: null };
+	}
+	if (fact.nullsNotDistinct) {
+		return {
+			builder: 'unique',
+			expr: `unique('${fact.name}').on(${cols}).nullsNotDistinct()`,
+			comment: fact.tenantScoped
+				? 'tenant_scoped — unique per tenant; NULLS NOT DISTINCT, so the NULL tenant is one partition (ADR-042)'
+				: null,
+		};
+	}
+	return {
+		builder: 'uniqueIndex',
+		expr: `uniqueIndex('${fact.name}').on(${cols})`,
+		comment: fact.tenantScoped
+			? 'tenant_scoped — unique per tenant; nulls_not_distinct: false, so NULL-tenant rows never conflict'
+			: null,
+	};
+}
+
+function foreignKey(fact: ForeignKeyFact, tableParam: string): string {
+	return (
+		`foreignKey({\n` +
+		`      name: '${fact.name}',\n` +
+		`      columns: [${on(fact.props, tableParam)}],\n` +
+		`      foreignColumns: [${on(fact.targetProps, fact.targetExport)}],\n` +
+		`    }).onDelete('${fact.onDelete}')`
+	);
+}
+
+function check(fact: CheckFact, tableParam: string): string {
+	return `check('${fact.name}', sql\`${predicate(fact.expression, tableParam)}\`)`;
 }
 
 export const drizzlePostgresConstraints: ConstraintRenderer = {
@@ -47,4 +108,7 @@ export const drizzlePostgresConstraints: ConstraintRenderer = {
 	predicate,
 	columnReference,
 	index,
+	unique,
+	foreignKey,
+	check,
 };

@@ -10,7 +10,13 @@
  */
 
 import type { PredicateSegment } from '../derived/constraints/predicate.js';
-import type { ColumnReferenceFact, IndexFact } from '../derived/constraints/types.js';
+import type {
+	CheckFact,
+	ColumnReferenceFact,
+	ForeignKeyFact,
+	IndexFact,
+	UniqueFact,
+} from '../derived/constraints/types.js';
 import type { TargetConfig } from '../schema/codegen-config.schema.js';
 import type { TargetPair } from './pairs.js';
 import { renderersFor } from './renderers.js';
@@ -29,6 +35,20 @@ export interface ConstraintRenderer {
 	columnReference(reference: ColumnReferenceFact): string;
 	/** A plain index, as an entry of the table's extra-config callback over `tableParam`. */
 	index(index: IndexFact, tableParam: string): string;
+	/** A uniqueness rule, with the builder it calls and the pair's note on it (`null` when there is nothing to say). */
+	unique(unique: UniqueFact, tableParam: string): RenderedConstraint;
+	/** A composite foreign key, as an entry of the extra-config callback. */
+	foreignKey(foreignKey: ForeignKeyFact, tableParam: string): string;
+	/** A CHECK, as an entry of the extra-config callback. */
+	check(check: CheckFact, tableParam: string): string;
+}
+
+/** One extra-config entry as the pair writes it. */
+export interface RenderedConstraint {
+	readonly expr: string;
+	/** The builder the entry calls — also the key of its import. */
+	readonly builder: string;
+	readonly comment: string | null;
 }
 
 /** The constraint renderer for the project's resolved `target` (`renderersFor`: required; an unsupported pair refused). */
