@@ -5,14 +5,18 @@
   "type": "object",
   "properties": {
     "runtime": {
+      "default": "package",
       "type": "string",
       "enum": [
         "package",
         "vendored"
-      ],
-      "default": "package"
+      ]
     },
     "target": {
+      "default": {
+        "database": "postgres",
+        "orm": "drizzle"
+      },
       "type": "object",
       "properties": {
         "database": {
@@ -30,44 +34,41 @@
         "database",
         "orm"
       ],
-      "additionalProperties": false,
-      "default": {
-        "database": "postgres",
-        "orm": "drizzle"
-      }
+      "additionalProperties": false
     },
     "paths": {
+      "default": {},
       "type": "object",
       "properties": {
         "backend_src": {
+          "default": "src",
           "type": "string",
-          "minLength": 1,
-          "default": "src"
+          "minLength": 1
         },
         "frontend_src": {
+          "default": "apps/frontend/src",
           "type": "string",
-          "minLength": 1,
-          "default": "apps/frontend/src"
+          "minLength": 1
         },
         "entities": {
+          "default": "entities",
           "type": "string",
-          "minLength": 1,
-          "default": "entities"
+          "minLength": 1
         },
         "events_dir": {
+          "default": "events",
           "type": "string",
-          "minLength": 1,
-          "default": "events"
+          "minLength": 1
         },
         "jobs_dir": {
+          "default": "definitions/jobs",
           "type": "string",
-          "minLength": 1,
-          "default": "definitions/jobs"
+          "minLength": 1
         },
         "providers": {
+          "default": "definitions/providers",
           "type": "string",
-          "minLength": 1,
-          "default": "definitions/providers"
+          "minLength": 1
         },
         "modules_dir": {
           "type": "string",
@@ -82,26 +83,25 @@
           "minLength": 1
         }
       },
-      "additionalProperties": false,
-      "default": {}
+      "additionalProperties": false
     },
     "generate": {
+      "default": {},
       "type": "object",
       "properties": {
         "frontend": {
-          "type": "boolean",
-          "default": false
+          "default": false,
+          "type": "boolean"
         },
         "semantic": {
-          "type": "boolean",
-          "default": false
+          "default": false,
+          "type": "boolean"
         },
         "analytics": {
           "not": {}
         }
       },
-      "additionalProperties": false,
-      "default": {}
+      "additionalProperties": false
     },
     "patterns": {
       "type": "array",
@@ -152,82 +152,86 @@
       "additionalProperties": false
     },
     "frontend": {
+      "default": {},
       "type": "object",
       "properties": {
         "auth": {
+          "default": {
+            "function": "getAuthorizationHeader"
+          },
           "type": "object",
           "properties": {
             "function": {
+              "default": "getAuthorizationHeader",
               "type": [
                 "string",
                 "null"
-              ],
-              "default": "getAuthorizationHeader"
+              ]
             }
-          },
-          "additionalProperties": false,
-          "default": {
-            "function": "getAuthorizationHeader"
           }
         },
         "parsers": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          },
           "default": {
             "timestamptz": "(date: string) => new Date(date)"
+          },
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
           }
         },
         "sync": {
+          "default": {},
           "type": "object",
           "properties": {
             "mode": {
+              "default": "electric",
               "type": "string",
               "enum": [
                 "api",
                 "electric"
-              ],
-              "default": "electric"
+              ]
             },
             "shapeUrl": {
-              "type": "string",
-              "default": "/v1/shape"
+              "default": "/v1/shape",
+              "type": "string"
             },
             "useTableParam": {
-              "type": "boolean",
-              "default": true
+              "default": true,
+              "type": "boolean"
             },
             "columnMapper": {
+              "default": "snakeCamelMapper",
               "type": [
                 "string",
                 "null"
-              ],
-              "default": "snakeCamelMapper"
+              ]
             },
             "columnMapperNeedsCall": {
-              "type": "boolean",
-              "default": true
+              "default": true,
+              "type": "boolean"
             },
             "apiBaseUrlImport": {
+              "default": null,
               "type": [
                 "string",
                 "null"
-              ],
-              "default": null
+              ]
             },
             "apiUrl": {
-              "type": "string",
-              "default": "/api"
+              "default": "/api",
+              "type": "string"
             }
-          },
-          "additionalProperties": false,
-          "default": {}
+          }
         },
         "catalog": {
+          "default": {},
           "type": "object",
           "properties": {
             "categories": {
+              "default": [],
               "type": "array",
               "items": {
                 "type": "object",
@@ -239,8 +243,8 @@
                     "type": "string"
                   },
                   "blurb": {
-                    "type": "string",
-                    "default": ""
+                    "default": "",
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -248,91 +252,89 @@
                   "name"
                 ],
                 "additionalProperties": false
-              },
-              "default": []
+              }
             }
-          },
-          "additionalProperties": false,
-          "default": {}
+          }
         },
         "fields": {
+          "default": {},
           "type": "object",
           "properties": {
             "textareaThreshold": {
+              "default": 500,
               "anyOf": [
                 {
                   "type": "integer",
-                  "exclusiveMinimum": 0
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
                 },
                 {
                   "type": "null"
                 }
-              ],
-              "default": 500
+              ]
             }
           },
-          "additionalProperties": false,
-          "default": {}
+          "additionalProperties": false
         }
       },
-      "additionalProperties": false,
-      "default": {}
+      "additionalProperties": false
     },
     "auth": {
+      "default": {},
       "type": "object",
       "properties": {
         "devAllowAnonymous": {
-          "type": "boolean",
-          "default": false
+          "default": false,
+          "type": "boolean"
         },
         "redirect_uri_base": {
           "type": "string"
         }
       },
-      "additionalProperties": false,
-      "default": {}
+      "additionalProperties": false
     },
     "tenancy": {
+      "default": {},
       "type": "object",
       "properties": {
         "column": {
+          "default": "tenant_id",
           "type": "string",
-          "pattern": "^[a-z][a-z0-9_]*$",
-          "default": "tenant_id"
+          "pattern": "^[a-z][a-z0-9_]*$"
         }
       },
-      "additionalProperties": false,
-      "default": {}
+      "additionalProperties": false
     },
     "tables": {
+      "default": {},
       "type": "object",
       "properties": {
         "prefix": {
+          "default": "",
           "type": "string",
-          "pattern": "^([a-z][a-z0-9_]*)?$",
-          "default": ""
+          "pattern": "^([a-z][a-z0-9_]*)?$"
         }
       },
-      "additionalProperties": false,
-      "default": {}
+      "additionalProperties": false
     },
     "behaviors": {
+      "default": {},
       "type": "object",
       "properties": {
         "timezone": {
-          "type": "boolean",
-          "default": true
+          "default": true,
+          "type": "boolean"
         }
       },
-      "additionalProperties": false,
-      "default": {}
+      "additionalProperties": false
     },
     "dev": {
       "type": "object",
       "properties": {
         "port": {
           "type": "integer",
-          "exclusiveMinimum": 0
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "additionalProperties": false
@@ -407,12 +409,12 @@
           "type": "boolean"
         },
         "worker_mode": {
+          "default": "embedded",
           "type": "string",
           "enum": [
             "embedded",
             "standalone"
-          ],
-          "default": "embedded"
+          ]
         },
         "worker_pools": {
           "type": "array",
@@ -425,6 +427,9 @@
         },
         "pools": {
           "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
           "additionalProperties": {
             "type": "object",
             "properties": {
@@ -433,7 +438,8 @@
               },
               "concurrency": {
                 "type": "integer",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
               },
               "reserved": {
                 "type": "boolean"
@@ -456,19 +462,23 @@
                 },
                 "poll_interval_ms": {
                   "type": "integer",
-                  "exclusiveMinimum": 0
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
                 },
                 "stale_threshold_ms": {
                   "type": "integer",
-                  "exclusiveMinimum": 0
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
                 },
                 "stale_sweeper_interval_ms": {
                   "type": "integer",
-                  "exclusiveMinimum": 0
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
                 },
                 "claim_heartbeat_interval_ms": {
                   "type": "integer",
-                  "exclusiveMinimum": 0
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
                 }
               },
               "additionalProperties": false
@@ -570,7 +580,8 @@
                 },
                 "intervalMs": {
                   "type": "integer",
-                  "exclusiveMinimum": 0
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
                 },
                 "windowHours": {
                   "type": "number",
@@ -592,31 +603,31 @@
       "type": "object",
       "properties": {
         "enabled": {
-          "type": "boolean",
-          "default": false
+          "default": false,
+          "type": "boolean"
         },
         "path": {
-          "type": "string",
-          "default": "/docs"
+          "default": "/docs",
+          "type": "string"
         },
         "title": {
-          "type": "string",
-          "default": "API"
+          "default": "API",
+          "type": "string"
         },
         "version": {
-          "type": "string",
-          "default": "0.0.0"
+          "default": "0.0.0",
+          "type": "string"
         },
         "description": {
           "type": "string"
         },
         "auth": {
+          "default": "bearer",
           "type": "string",
           "enum": [
             "bearer",
             "none"
-          ],
-          "default": "bearer"
+          ]
         }
       },
       "additionalProperties": false

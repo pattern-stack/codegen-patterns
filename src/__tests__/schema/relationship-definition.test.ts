@@ -49,7 +49,7 @@ describe('relationship fixtures validate against schema', () => {
 			const data = loadFixture(fixture);
 			const result = RelationshipDefinitionSchema.safeParse(data);
 			if (!result.success) {
-				console.error(`Validation errors for ${fixture}:`, result.error.errors);
+				console.error(`Validation errors for ${fixture}:`, result.error.issues);
 			}
 			expect(result.success).toBe(true);
 		});

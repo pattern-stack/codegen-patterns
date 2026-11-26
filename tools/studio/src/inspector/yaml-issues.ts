@@ -255,19 +255,15 @@ function rootLocation(node: Node, starts: number[], source: string): IssueLocati
 /**
  * The keys named by an `unrecognized_keys` issue.
  *
- * Zod reports the offending keys in `ZodIssue.keys`, which the contract's
- * `ZodIssueLike` does not carry, and puts `path` at the *object* — empty for a
- * key at the top level. The names survive in the message, so read them from
- * there: an author who typed a key that is not in the schema wants the marker
- * on that key, not on the first line of the file.
+ * Zod puts `path` at the *object* — empty for a key at the top level — and the
+ * offending keys in `issue.keys`, which the server passes through
+ * (`ZodIssueLike.keys`). Read them there, never from the message, whose wording
+ * is Zod's and changes between versions (ZOD-0): an author who typed a key that
+ * is not in the schema wants the marker on that key, not on the first line of
+ * the file.
  */
-const UNRECOGNIZED_KEYS = /Unrecognized key(?:\(s\))? in object:\s*(.+)$/;
-
 function unrecognizedKeys(issue: ZodIssueLike): string[] {
-  if (issue.code !== 'unrecognized_keys') return [];
-  const match = UNRECOGNIZED_KEYS.exec(issue.message.trim());
-  if (!match) return [];
-  return [...match[1]!.matchAll(/'([^']+)'|"([^"]+)"/g)].map((m) => m[1] ?? m[2]!);
+  return issue.code === 'unrecognized_keys' ? (issue.keys ?? []) : [];
 }
 
 /**

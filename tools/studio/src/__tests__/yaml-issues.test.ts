@@ -10,6 +10,12 @@ function issue(path: (string | number)[], message = 'Invalid input', code = 'inv
   return { path, message, code };
 }
 
+/** An `unrecognized_keys` issue as the server sends it: Zod's message, and the keys in `keys`. */
+function unknownKeys(path: (string | number)[], keys: string[], code = 'unrecognized_keys'): ZodIssueLike {
+  const message = `Unrecognized key${keys.length > 1 ? 's' : ''}: ${keys.map((k) => `"${k}"`).join(', ')}`;
+  return code === 'unrecognized_keys' ? { path, message, code, keys } : { path, message, code };
+}
+
 /** Line numbers below refer to this document, 1-based. */
 const DOC = [
   'entity:', //                1
@@ -254,10 +260,8 @@ describe('an unrecognized key lands on the key, not on line 1', () => {
     '',
   ].join('\n');
 
-  test('the marker sits on the key the message names', () => {
-    const [located] = locateIssues(WITH_BAD_KEY, [
-      issue([], "Unrecognized key(s) in object: 'not_a_real_key'", 'unrecognized_keys'),
-    ]);
+  test('the marker sits on the key the issue names', () => {
+    const [located] = locateIssues(WITH_BAD_KEY, [unknownKeys([], ['not_a_real_key'])]);
     expect(located!.location?.line).toBe(8);
     expect(located!.fileLevel).toBe(false);
     expect(located!.exact).toBe(true);
@@ -266,28 +270,28 @@ describe('an unrecognized key lands on the key, not on line 1', () => {
 
   test('a key nested under a path resolves beneath that path', () => {
     const [located] = locateIssues(WITH_BAD_KEY, [
-      issue(['entity', 'fields'], "Unrecognized key(s) in object: 'email'", 'unrecognized_keys'),
+      unknownKeys(['entity', 'fields'], ['email']),
     ]);
     expect(located!.location?.line).toBe(6);
   });
 
   test('the first key that exists wins when several are named', () => {
     const [located] = locateIssues(WITH_BAD_KEY, [
-      issue([], "Unrecognized key(s) in object: 'absent', 'not_a_real_key'", 'unrecognized_keys'),
+      unknownKeys([], ['absent', 'not_a_real_key']),
     ]);
     expect(located!.location?.line).toBe(8);
   });
 
-  test('double-quoted key names are read too', () => {
+  test('the keys come from the issue, not its wording', () => {
     const [located] = locateIssues(WITH_BAD_KEY, [
-      issue([], 'Unrecognized key(s) in object: "not_a_real_key"', 'unrecognized_keys'),
+      { path: [], message: 'any wording at all', code: 'unrecognized_keys', keys: ['not_a_real_key'] },
     ]);
     expect(located!.location?.line).toBe(8);
   });
 
   test('a named key that is not in the document is file-level', () => {
     const [located] = locateIssues(WITH_BAD_KEY, [
-      issue([], "Unrecognized key(s) in object: 'gone_already'", 'unrecognized_keys'),
+      unknownKeys([], ['gone_already']),
     ]);
     expect(located!.fileLevel).toBe(true);
     expect(located!.location).toBeUndefined();
@@ -297,14 +301,14 @@ describe('an unrecognized key lands on the key, not on line 1', () => {
     // Another code whose message happens to quote a name must not be dragged
     // onto that key.
     const [located] = locateIssues(WITH_BAD_KEY, [
-      issue([], "Unrecognized key(s) in object: 'not_a_real_key'", 'custom'),
+      unknownKeys([], ['not_a_real_key'], 'custom'),
     ]);
     expect(located!.fileLevel).toBe(true);
   });
 
   test('the message still names the key', () => {
     const [located] = locateIssues(WITH_BAD_KEY, [
-      issue([], "Unrecognized key(s) in object: 'not_a_real_key'", 'unrecognized_keys'),
+      unknownKeys([], ['not_a_real_key']),
     ]);
     expect(issueMessage(located!)).toContain('not_a_real_key');
   });

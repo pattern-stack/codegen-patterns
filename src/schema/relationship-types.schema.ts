@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from './zod';
 
 /**
  * Relationship Types Schema
@@ -77,7 +77,7 @@ export const RelationshipTypeDefSchema = z.object({
 	// Human-readable description
 	description: z.string().optional(),
 	// Optional metadata schema for additional relationship properties
-	metadata_schema: z.record(MetadataPropertySchema).optional(),
+	metadata_schema: z.record(z.string(), MetadataPropertySchema).optional(),
 });
 
 export type RelationshipTypeDef = z.infer<typeof RelationshipTypeDefSchema>;
@@ -93,7 +93,7 @@ export const RelationshipTypesConfigSchema = z.object({
 	// List of valid entity types (for documentation/validation)
 	entity_types: z.array(EntityTypeSchema).optional(),
 	// Map of relationship type name to definition
-	relationship_types: z.record(RelationshipTypeDefSchema),
+	relationship_types: z.record(z.string(), RelationshipTypeDefSchema),
 });
 
 export type RelationshipTypesConfig = z.infer<

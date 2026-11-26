@@ -1289,7 +1289,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
 - **`checks:`** is not a key (OQ-11). The schema is `.strict()`, so writing it is an unknown-key error.
 - **The editor JSON schema.** `src/schema/generate-json-schema.ts` is a hand-kept mirror of the entity schema (it
   did not run: it imported Zod 3's root export, which has no `toJSONSchema`; it now imports `zod/v4`). It gains the
-  five keys and `entity-definition.schema.json` is regenerated from it.
+  five keys and `entity-definition.schema.json` is regenerated from it. (Superseded 2026-11-26 by ZOD-0: the hand-kept mirror is deleted; `entity-definition.schema.json` is generated from the real schema and tested for drift.)
 - **ADR-046 (phase R).** Nothing moved into `src/derived/api/`: S1 emits no generated code (no template, no
   method, use case, route or class name), and a family's refusal is a run-level rejection before hygen. The
   derivation's first consumer is S2. The rebase onto the ADR-046 `main` only reconciled `ParsedRelationship.onDelete`

@@ -12,14 +12,14 @@
  * never a warning, never a silent default.
  *
  * Ships in the package's `files` (the templates import it, `.ts` resolved by
- * bun), so it may import only node built-ins, `yaml`, `zod` and other shipped
- * modules.
+ * bun), so it may import only node built-ins, `yaml`, codegen's Zod
+ * (`src/schema/zod.ts`, the `zod4` dependency) and other shipped modules.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'yaml';
-import { z } from 'zod';
+import { codegenMessages, z } from '../schema/zod.js';
 import {
 	CodegenConfigSchema,
 	type CodegenConfig,
@@ -51,12 +51,17 @@ export class CodegenConfigError extends Error {
 }
 
 /** Strip the wrappers that do not change an object's key set. */
-function unwrap(schema: z.ZodTypeAny): z.ZodTypeAny {
+function unwrap(schema: z.ZodType): z.ZodType {
 	let s = schema;
 	for (;;) {
-		if (s instanceof z.ZodDefault) s = s._def.innerType;
-		else if (s instanceof z.ZodOptional || s instanceof z.ZodNullable) s = s.unwrap();
-		else if (s instanceof z.ZodEffects) s = s.innerType();
+		if (
+			s instanceof z.ZodDefault ||
+			s instanceof z.ZodPrefault ||
+			s instanceof z.ZodOptional ||
+			s instanceof z.ZodNullable
+		) {
+			s = s.unwrap() as z.ZodType;
+		} else if (s instanceof z.ZodPipe) s = s.in as z.ZodType;
 		else return s;
 	}
 }
@@ -65,22 +70,22 @@ function unwrap(schema: z.ZodTypeAny): z.ZodTypeAny {
  * The keys an object schema accepts. A union of objects (`target:` once `TARGET_PAIRS` has two rows) accepts the keys
  * of any option, in first-seen order. Anything else has no key set: `[]`.
  */
-export function objectSchemaKeys(schema: z.ZodTypeAny): string[] {
+export function objectSchemaKeys(schema: z.ZodType): string[] {
 	const s = unwrap(schema);
 	if (s instanceof z.ZodObject) return Object.keys(s.shape);
 	if (s instanceof z.ZodUnion) {
-		return [...new Set((s.options as z.ZodTypeAny[]).flatMap((option) => objectSchemaKeys(option)))];
+		return [...new Set((s.options as readonly z.ZodType[]).flatMap((option) => objectSchemaKeys(option)))];
 	}
 	return [];
 }
 
 /** The keys the schema accepts at `at` (an object path), for the error message. */
-function keysAt(at: (string | number)[]): string[] {
-	let s: z.ZodTypeAny = unwrap(CodegenConfigSchema);
+function keysAt(at: readonly PropertyKey[]): string[] {
+	let s: z.ZodType = unwrap(CodegenConfigSchema);
 	for (const segment of at) {
-		if (s instanceof z.ZodObject) s = unwrap(s.shape[segment] ?? z.never());
-		else if (s instanceof z.ZodRecord) s = unwrap(s.valueSchema);
-		else if (s instanceof z.ZodArray) s = unwrap(s.element);
+		if (s instanceof z.ZodObject) s = unwrap((s.shape as Record<PropertyKey, z.ZodType>)[segment] ?? z.never());
+		else if (s instanceof z.ZodRecord) s = unwrap(s.valueType as z.ZodType);
+		else if (s instanceof z.ZodArray) s = unwrap(s.element as z.ZodType);
 		else return [];
 	}
 	return objectSchemaKeys(s);
@@ -108,7 +113,7 @@ function formatIssues(error: z.ZodError): string[] {
  * Throws {@link CodegenConfigError}.
  */
 export function parseCodegenConfig(raw: unknown, configPath: string): CodegenConfig {
-	const result = CodegenConfigSchema.safeParse(raw ?? {});
+	const result = CodegenConfigSchema.safeParse(raw ?? {}, { error: codegenMessages });
 	if (!result.success) throw new CodegenConfigError(configPath, formatIssues(result.error));
 	return result.data;
 }

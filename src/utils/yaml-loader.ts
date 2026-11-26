@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { parse as parseYaml } from 'yaml';
-import { ZodError } from 'zod';
+import { codegenMessages, z } from '../schema/zod';
 import {
 	type EntityDefinition,
 	EntityDefinitionSchema,
@@ -81,7 +81,7 @@ export function loadEntityFromYaml(filePath: string): LoadEntityResult {
 	}
 
 	// Validate against schema
-	const result = EntityDefinitionSchema.safeParse(parsed);
+	const result = EntityDefinitionSchema.safeParse(parsed, { error: codegenMessages });
 	if (!result.success) {
 		return {
 			success: false,
@@ -101,8 +101,8 @@ export function loadEntityFromYaml(filePath: string): LoadEntityResult {
 /**
  * Format Zod errors into human-readable messages
  */
-function formatZodErrors(error: ZodError): string[] {
-	return error.errors.map((err) => {
+function formatZodErrors(error: z.ZodError): string[] {
+	return error.issues.map((err) => {
 		const path = err.path.join('.');
 		const location = path ? `at '${path}'` : 'at root';
 		return `${err.message} ${location}`;
@@ -204,7 +204,7 @@ export function loadRelationshipFromYaml(
 		};
 	}
 
-	const result = RelationshipDefinitionSchema.safeParse(parsed);
+	const result = RelationshipDefinitionSchema.safeParse(parsed, { error: codegenMessages });
 	if (!result.success) {
 		return {
 			success: false,
@@ -303,7 +303,7 @@ export function loadEventFromYaml(filePath: string): LoadEventResult {
 		};
 	}
 
-	const result = EventDefinitionSchema.safeParse(parsed);
+	const result = EventDefinitionSchema.safeParse(parsed, { error: codegenMessages });
 	if (!result.success) {
 		return {
 			success: false,
@@ -379,7 +379,7 @@ export function loadJobFromYaml(filePath: string): LoadJobResult {
 		};
 	}
 
-	const result = JobDefinitionSchema.safeParse(parsed);
+	const result = JobDefinitionSchema.safeParse(parsed, { error: codegenMessages });
 	if (!result.success) {
 		return {
 			success: false,
@@ -456,7 +456,7 @@ export function loadJunctionFromYaml(filePath: string): LoadJunctionResult {
 		};
 	}
 
-	const result = JunctionDefinitionSchema.safeParse(parsed);
+	const result = JunctionDefinitionSchema.safeParse(parsed, { error: codegenMessages });
 	if (!result.success) {
 		return {
 			success: false,
@@ -556,7 +556,7 @@ export function loadProviderFromYaml(filePath: string): LoadProviderResult {
 		};
 	}
 
-	const result = ProviderDefinitionSchema.safeParse(parsed);
+	const result = ProviderDefinitionSchema.safeParse(parsed, { error: codegenMessages });
 	if (!result.success) {
 		return {
 			success: false,

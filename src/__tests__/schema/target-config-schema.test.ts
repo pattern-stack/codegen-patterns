@@ -1,6 +1,6 @@
 /**
  * TGT-0b (ADR-047): `target:`'s schema is built from a pair table by `targetConfigSchemaFor`. Today's table has one
- * row, so the parse goes through a lone strict object; a second row turns it into a `z.union`, whose failure Zod 3
+ * row, so the parse goes through a lone strict object; a second row turns it into a `z.union`, whose failure Zod
  * reports as one `invalid_union` issue. This builds the schema over a TWO-row table so the union path is held to the
  * same promises before the second pair exists: it accepts exactly the rows, refuses the cross product's other
  * members, names the supported pairs, and its JSON Schema offers exactly the rows to an editor.
@@ -8,9 +8,9 @@
 
 import Ajv from 'ajv';
 import { describe, expect, it } from 'bun:test';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import { objectSchemaKeys } from '../../config/project-config';
 import { targetConfigSchemaFor, type TargetPairRow } from '../../schema/codegen-config.schema';
+import { editorJsonSchema } from '../../schema/editor-json-schema';
 
 const TWO: TargetPairRow[] = [
 	{ database: 'postgres', orm: 'drizzle', databaseDescription: 'pg', ormDescription: 'drizzle' },
@@ -66,7 +66,7 @@ describe('target: over a two-row table (the union path)', () => {
 	});
 
 	it('its JSON Schema offers exactly the rows, and refuses the rest', () => {
-		const json = zodToJsonSchema(schema, { target: 'jsonSchema7', $refStrategy: 'none' }) as {
+		const json = editorJsonSchema(schema, { title: 'target', description: 'two-row table' }) as {
 			anyOf: Array<{ properties: { database: { const: string }; orm: { const: string } } }>;
 		};
 		expect(json.anyOf.map((a) => ({ database: a.properties.database.const, orm: a.properties.orm.const }))).toEqual(

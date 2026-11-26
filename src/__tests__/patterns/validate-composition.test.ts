@@ -5,6 +5,7 @@
 
 import { describe, test, expect, beforeEach, afterAll } from 'bun:test';
 import { z } from 'zod';
+import { z as z4 } from '../../schema/zod';
 
 import type {
 	AnalysisIssue,
@@ -318,13 +319,19 @@ describe('validatePatternComposition — unused config keys', () => {
 // Row: pattern config fails its Zod schema → error
 // ============================================================================
 
-describe('validatePatternComposition — configSchema validation', () => {
+// A pattern's `configSchema` is whatever Zod its author installed: Zod 3 for a consumer's app pattern today, Zod 4
+// for codegen's library patterns (ZOD-0). `PatternConfigSchema` is structural so both validate the same way.
+for (const [zodName, zz] of [
+	['Zod 3 (a consumer pattern)', z],
+	["Zod 4 (codegen's library patterns)", z4],
+] as const) {
+describe(`validatePatternComposition — configSchema validation, ${zodName}`, () => {
 	beforeEach(() => {
 		_resetRegistryForTests();
 		registerLibraryPattern({
 			name: 'CrmEntity',
 			repositoryClass: 'CrmEntityRepository',
-			configSchema: z.object({ entityType: z.string() }),
+			configSchema: zz.object({ entityType: zz.string() }),
 		});
 	});
 
@@ -374,6 +381,7 @@ describe('validatePatternComposition — configSchema validation', () => {
 		expect(validatePatternComposition(entity)).toEqual([]);
 	});
 });
+}
 
 // ============================================================================
 // ADR-041 §2 — `patterns: [Integrated, Activity]` is a HARD ERROR

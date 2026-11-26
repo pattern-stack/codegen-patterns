@@ -273,7 +273,7 @@ a cube-era indirection, not that they were undefined. PLAN is corrected in this 
 
 **Not updated:** `src/schema/generate-json-schema.ts`. It is a hand-written editor-autocomplete subset that already
 omits `analytics:`, `queries:`, `events:`, `integration:` and `patterns:`. Adding one block to a mirror that is
-incomplete by construction buys nothing; it is pre-existing I1 drift, tracked separately from this issue.
+incomplete by construction buys nothing; it is pre-existing I1 drift, tracked separately from this issue. (Superseded 2026-11-26 by ZOD-0: the hand-kept mirror is deleted; `entity-definition.schema.json` is generated from the real schema and tested for drift.)
 
 ## Non-goals
 
@@ -375,7 +375,7 @@ as written.
 **Not found, worth recording:** `src/schema/generate-json-schema.ts` holds a second, hand-written
 `FieldDefinitionSchema` for editor autocomplete. It never mirrored the analytics keys (nor `queries:`, `events:`,
 `integration:`, `patterns:`), so this PR had nothing to update there. It is pre-existing I1 drift; a later unit adding
-a field key will hit the same fork in the road.
+a field key will hit the same fork in the road. (Superseded 2026-11-26 by ZOD-0: the hand-kept mirror is deleted; `entity-definition.schema.json` is generated from the real schema, analytics keys included.)
 
 ## Gate results
 
