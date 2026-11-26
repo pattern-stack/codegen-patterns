@@ -1,7 +1,8 @@
 # ADR-047 — The generation target: `target: { database, orm }`, one table of supported pairs
 
 **Status:** Accepted
-**Date:** 2026-11-25 (revised before merge, 2026-11-26: the pair shape)
+**Date:** 2026-11-25 (revised 2026-11-26 by TGT-0b, after #940 merged with `target: { data: drizzle-pg }`: the pair
+shape, and the config JSON Schema)
 **Owner:** Doug
 **Related:** ADR-046 (derived once, templates print — the `columns/` slot), ADR-037 (runtime mode, the precedent
 for a project-level switch resolved once), ADR-008 (core contract + opt-in extensions), CFG-0 (strict config)
@@ -81,8 +82,18 @@ target it is.
 - The split is incremental. TGT-0 moves only the field column builder and its imports. The constraints (FK
   `.references`, indexes, uniques, checks), behavior columns, relations manifest, semantic model, repositories and base
   classes are still Drizzle-on-Postgres text outside `src/targets/`. Each moves in its own `TGT-N`.
-- Editor completion for `codegen.config.yaml` needs a JSON Schema emitted from `CodegenConfigSchema`. None exists yet
-  (only the entity YAML has one). It is a follow-up, and it inherits the pair union from this schema.
+- **Editor completion reads the same union (TGT-0b).** `src/schema/codegen-config.schema.json` is generated from
+  `CodegenConfigObjectSchema` (`buildCodegenConfigJsonSchema`, `just gen-config-schema`) and ships in the package, so
+  an editor pointed at it offers only the supported pairs, with each key's description, and underlines any other.
+  A unit test fails when the committed file and a fresh build differ, so a new row cannot reach the editor late. Tests
+  run every row, and every off-table pair, through both the Zod schema and the JSON Schema (ajv). The converter is
+  `zod-to-json-schema` while the repo is on Zod 3, and Zod 4's `z.toJSONSchema` once it moves.
+
+## Revision — 2026-11-26 (TGT-0b)
+
+#940 merged the first shape, `target: { data: drizzle-pg }`. TGT-0b replaced it with the pair before any release
+carried it (0.34.0 predates #940), so there is no shim: `data:` is an unknown key, and the same error asks for
+`database` and `orm` and names the supported pairs.
 
 ## Alternatives rejected
 

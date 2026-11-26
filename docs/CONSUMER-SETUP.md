@@ -566,6 +566,29 @@ blocks are:
 | `subsystems` | `install:` — the installed-subsystem list in package mode |
 | `events`, `jobs`, `bridge`, `integration`, `observability`, `openapi`, `cache`, `storage` | written by `codegen subsystem install <name>`; see each subsystem's section |
 
+**Editor completion.** The package ships the same schema as JSON Schema,
+`src/schema/codegen-config.schema.json`, generated from `CodegenConfigSchema` (so it cannot drift from it). Point the
+YAML language server (VS Code's Red Hat YAML extension, JetBrains, Zed, Neovim's `yamlls`) at it, and the editor
+completes every block and key, shows its description, offers only the supported `target:` pairs and underlines
+anything else. Put this first line in `codegen.config.yaml`:
+
+```yaml
+# yaml-language-server: $schema=./node_modules/@pattern-stack/codegen/src/schema/codegen-config.schema.json
+```
+
+or map it once in `.vscode/settings.json`:
+
+```json
+{
+  "yaml.schemas": {
+    "./node_modules/@pattern-stack/codegen/src/schema/codegen-config.schema.json": "codegen.config.yaml"
+  }
+}
+```
+
+The schema checks each key on its own. Rules that span keys (the jobs pool rules, `jobs.backend: memory` with a
+standalone worker) are checked by `codegen` when it parses the file, so the generator stays the gate.
+
 Two maps are open by design: `jobs.pools` (keyed by pool name; each pool's keys are still checked, and so are the
 pool rules — a framework pool may set only `concurrency` / `description`; your own pool needs `queue` +
 `concurrency`) and `frontend.parsers` (keyed by column type).

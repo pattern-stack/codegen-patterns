@@ -539,6 +539,10 @@ detection:
 
 `codegen.config.yaml` in your project root:
 
+Editors complete and check it from the shipped JSON Schema: put
+`# yaml-language-server: $schema=./node_modules/@pattern-stack/codegen/src/schema/codegen-config.schema.json` on its
+first line (`docs/CONSUMER-SETUP.md` › Editor completion).
+
 Definition directories (`entities`, `events_dir`) are discovered
 recursively — a flat `entities/contact.yaml` and a domain-foldered
 `entities/crm/contact.yaml` are both picked up. Group definitions into

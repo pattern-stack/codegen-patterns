@@ -123,5 +123,24 @@ processFields(fields, { entityName, enumResolver, columns }) = facts + render(fa
 3. **A second pair** (`{ database: sqlite, orm: drizzle }`). It needs a row in `TARGET_PAIRS`, its renderer at
    `src/targets/drizzle/sqlite/columns.ts`, and the parts of the repository template and the base classes that are
    typed on `PgTable`.
-4. **A JSON Schema for `codegen.config.yaml`,** emitted from `CodegenConfigSchema`, so editors complete and flag
-   `target:` pairs from the same union.
+4. ~~A JSON Schema for `codegen.config.yaml`~~: done in TGT-0b, below.
+
+## TGT-0b — the pair, and editor completion (2026-11-26)
+
+#940 merged `target: { data: drizzle-pg }`. The pair amendment was written before the merge and landed after it, so
+it ships as its own PR, together with the editor schema:
+
+- **The pair.** `target: { database: postgres, orm: drizzle }`, read from `TARGET_PAIRS` (ADR-047 as revised). No
+  release carried `data:`, so it gets no shim: it is an unknown key, and the same parse error asks for `database` and
+  `orm`, naming the supported pairs (`codegen-config-json-schema.test.ts` refuses it in both schemas).
+- **`src/schema/codegen-config.schema.json`**, generated from `CodegenConfigObjectSchema` by
+  `src/schema/codegen-config.json-schema.ts` (`just gen-config-schema`), shipped in `files` and checked by the tarball
+  smoke. Consumers point `# yaml-language-server: $schema=…` at it (`docs/CONSUMER-SETUP.md` › Editor completion).
+  - It describes the file as written: keys with defaults are optional, and the `patterns` default is not in it.
+    Refinements that span keys (`superRefine`) are not expressible, so the generator's parse stays the gate.
+  - `zod-to-json-schema` (a devDependency) converts while the repo is on Zod 3. The entity schema's generator still
+    restates its shapes by hand on `zod/v4` (#696), which is out of scope here.
+- **Tests.** The committed file equals a fresh build. The `target` alternatives equal the table's rows, with their
+  descriptions. Every row passes both schemas, and every off-table pair fails both. Every config the generator
+  writes (fixtures, subsystem blocks, `project init`, `project scan`) passes the JSON Schema as well as the parse.
+- Byte-identical: no golden or snapshot changes.

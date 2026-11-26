@@ -306,7 +306,9 @@ generation target's data layer, a pair from the one table `TARGET_PAIRS` (`src/t
 
 **Adding a key:** declare it in the schema with a comment naming its reader, and read it off the parsed config —
 never `yaml.parse` the file. `src/__tests__/config/config-census.test.ts` greps every `paths.<key>` and top-level
-read and fails on an undeclared one, and fails on any second loader — with no exceptions.
+read and fails on an undeclared one, and fails on any second loader — with no exceptions. Then run
+`just gen-config-schema`: `src/schema/codegen-config.schema.json` (editor completion, shipped) is generated from the
+schema, and `codegen-config-json-schema.test.ts` fails until the committed file matches (TGT-0b).
 
 **The consumer's app never reads the file (CFG-1, #643).** Keys the app needs at boot — `openapi.*`,
 `auth.devAllowAnonymous`, `jobs.pools` — are validated at generation and written into `<paths.generated>/app-config.ts`

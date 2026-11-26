@@ -199,6 +199,11 @@ check(
 );
 check('templates/entity/new/prompt.js', existsSync(join(installedRoot, 'templates/entity/new/prompt.js')));
 check('consumer-skills/', existsSync(join(installedRoot, 'consumer-skills')));
+// The path CONSUMER-SETUP tells editors to read (`# yaml-language-server: $schema=…`, TGT-0b).
+check(
+  'src/schema/codegen-config.schema.json (editor completion)',
+  existsSync(join(installedRoot, 'src/schema/codegen-config.schema.json')),
+);
 
 console.log(`\n${rootPkg.name} — exports resolve under node:`);
 for (const spec of [

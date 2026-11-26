@@ -30,6 +30,7 @@ import { loadContext } from '../../cli/shared/context';
 import { buildInitPlan } from '../../cli/shared/init-scaffold';
 import { proposedConfigYaml } from '../../cli/commands/project';
 import { generateConfig, scanProject } from '../../scanner/index';
+import { jsonSchemaErrors } from '../schema/_config-json-schema';
 
 const REPO = path.resolve(import.meta.dir, '../../..');
 
@@ -202,12 +203,15 @@ describe('loadProjectConfig', () => {
 	});
 });
 
-describe('the configs the generator writes pass the strict parse', () => {
+describe('the configs the generator writes pass the strict parse, and the editor\'s JSON Schema (TGT-0b)', () => {
 	it('test/fixtures/codegen.config*.yaml', () => {
 		const dir = path.join(REPO, 'test/fixtures');
 		const files = fs.readdirSync(dir).filter((f) => /^codegen\.config.*\.yaml$/.test(f));
 		expect(files.length).toBeGreaterThanOrEqual(1);
-		for (const f of files) expect(() => loadCodegenConfig(path.join(dir, f))).not.toThrow();
+		for (const f of files) {
+			expect(() => loadCodegenConfig(path.join(dir, f))).not.toThrow();
+			expect(jsonSchemaErrors(yaml.parse(fs.readFileSync(path.join(dir, f), 'utf-8')))).toEqual([]);
+		}
 	});
 
 	it('every subsystem config-block injector', () => {
@@ -226,6 +230,7 @@ describe('the configs the generator writes pass the strict parse', () => {
 			const body = fs.readFileSync(file, 'utf-8').split(/^---$/m).slice(2).join('---');
 			expect(body).not.toContain('<%');
 			expect(() => parseCodegenConfig(yaml.parse(body), file)).not.toThrow();
+			expect(jsonSchemaErrors(yaml.parse(body))).toEqual([]);
 		}
 	});
 
@@ -237,6 +242,7 @@ describe('the configs the generator writes pass the strict parse', () => {
 			const entry = plan.entries.find((e) => e.relPath === 'codegen.config.yaml');
 			expect(entry?.content).toBeDefined();
 			expect(() => parseCodegenConfig(yaml.parse(entry!.content!), 'init')).not.toThrow();
+			expect(jsonSchemaErrors(yaml.parse(entry!.content!))).toEqual([]);
 		}
 	});
 
@@ -245,6 +251,7 @@ describe('the configs the generator writes pass the strict parse', () => {
 		const written = proposedConfigYaml(generateConfig(profile));
 		expect(Object.keys(written).sort()).toEqual(['generate', 'paths']);
 		expect(() => parseCodegenConfig(written, 'scan')).not.toThrow();
+		expect(jsonSchemaErrors(written)).toEqual([]);
 	});
 });
 
