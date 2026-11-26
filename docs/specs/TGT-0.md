@@ -140,6 +140,12 @@ it ships as its own PR, together with the editor schema:
     Refinements that span keys (`superRefine`) are not expressible, so the generator's parse stays the gate.
   - `zod-to-json-schema` (a devDependency) converts while the repo is on Zod 3. The entity schema's generator still
     restates its shapes by hand on `zod/v4` (#696), which is out of scope here.
+- **Ready for a second row.** `targetConfigSchemaFor(pairs)` builds `target:` from any pair table: one strict object
+  for one row, or a `z.union` for more, whose single `invalid_union` issue gets a message worked out from the value.
+  The message says the same things the one-row schema says per key: unknown key, both keys required, or not a
+  supported pair, naming the pairs. The loader's `unknown key (expected one of: …)` hint reads a union's keys
+  (`objectSchemaKeys`). `TargetConfig` is one member per row, never the cross product. `target-config-schema.test.ts`
+  holds all of this over a two-row table.
 - **Tests.** The committed file equals a fresh build. The `target` alternatives equal the table's rows, with their
   descriptions. Every row passes both schemas, and every off-table pair fails both. Every config the generator
   writes (fixtures, subsystem blocks, `project init`, `project scan`) passes the JSON Schema as well as the parse.

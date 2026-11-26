@@ -220,21 +220,50 @@ export type RuntimeMode = z.infer<typeof RuntimeModeSchema>;
 // Generation Target (TGT-0, ADR-047)
 // ============================================================================
 
-/** What every rejected `target:` says: the supported pairs, read from the one table. */
-function unsupportedTargetMessage(): string {
-  return `not a supported (database, orm) pair; supported: ${supportedTargetPairs().join(', ')}`;
+/** A row of a pair table, as the schema reads it: the two keys and their descriptions. */
+export interface TargetPairRow {
+  readonly database: string;
+  readonly orm: string;
+  readonly databaseDescription: string;
+  readonly ormDescription: string;
+}
+
+/** `target:` as written: one member per row of `TARGET_PAIRS`, never the cross product of its databases and orms. */
+export type TargetConfig = (typeof TARGET_PAIRS)[number] extends infer R
+  ? R extends { database: infer D; orm: infer O }
+    ? { database: D; orm: O }
+    : never
+  : never;
+
+/**
+ * Why a `target:` value is refused, for a table with more than one row (Zod 3 reports a failed union as one
+ * `invalid_union` issue, so the message is worked out here from the value itself). Says the same things the
+ * one-row schema says per key: a key that doesn't exist, a missing key, or a pair the table lacks — each naming the
+ * supported pairs.
+ */
+function targetUnionMessage(data: unknown, pairs: readonly TargetPairRow[]): string {
+  const supported = `supported: ${supportedTargetPairs(pairs).join(', ')}`;
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    return `write { database, orm }; ${supported}`;
+  }
+  const unknown = Object.keys(data).filter((k) => k !== 'database' && k !== 'orm');
+  if (unknown.length > 0) return `unknown key ${unknown.join(', ')} (expected one of: database, orm)`;
+  const { database, orm } = data as { database?: unknown; orm?: unknown };
+  if (database === undefined || orm === undefined) return `required: write both database and orm; ${supported}`;
+  return `{ database: ${String(database)}, orm: ${String(orm)} } is not a supported (database, orm) pair; ${supported}`;
 }
 
 /**
- * One supported pair as a strict object: each key a literal, described for editors. Built from a row of
- * `TARGET_PAIRS` (`src/targets/pairs.ts`); a wrong value names the supported pairs.
+ * One supported pair as a strict object: each key a literal, described for editors (so the JSON Schema offers the
+ * values with their descriptions). A wrong value, or a missing key, names the supported pairs.
  */
-function targetPairSchema(pair: (typeof TARGET_PAIRS)[number]) {
+function targetPairSchema(pair: TargetPairRow, pairs: readonly TargetPairRow[]) {
+  const supported = `supported: ${supportedTargetPairs(pairs).join(', ')}`;
   const errorMap: z.ZodErrorMap = (_issue, ctx) => ({
     message:
       ctx.data === undefined
-        ? `required: write both database and orm; supported: ${supportedTargetPairs().join(', ')}`
-        : unsupportedTargetMessage(),
+        ? `required: write both database and orm; ${supported}`
+        : `not a supported (database, orm) pair; ${supported}`,
   });
   return z
     .object({
@@ -244,7 +273,24 @@ function targetPairSchema(pair: (typeof TARGET_PAIRS)[number]) {
     .strict();
 }
 
-const [FIRST_TARGET_PAIR, ...OTHER_TARGET_PAIRS] = TARGET_PAIRS.map(targetPairSchema);
+/**
+ * The `target:` schema for a pair table: one strict object per row, a union when there is more than one. Exported
+ * for its test, which builds it over a two-row table to hold the union's messages before a second pair exists.
+ *
+ * - One row: the object itself, so each issue lands on its key (`target.database: …`, `target.http: unknown key`).
+ * - More rows: `z.union`, whose one `invalid_union` issue (at `target`) gets {@link targetUnionMessage}, which says
+ *   the same things.
+ */
+export function targetConfigSchemaFor(pairs: readonly TargetPairRow[]): z.ZodType<{ database: string; orm: string }> {
+  const [first, ...rest] = pairs.map((pair) => targetPairSchema(pair, pairs));
+  if (first === undefined) throw new Error('targetConfigSchemaFor: the pair table is empty');
+  if (rest.length === 0) return first;
+  return z.union([first, ...rest] as [typeof first, typeof first, ...(typeof first)[]], {
+    errorMap: (issue, ctx) => ({
+      message: issue.code === 'invalid_union' ? targetUnionMessage(ctx.data, pairs) : ctx.defaultError,
+    }),
+  });
+}
 
 /**
  * `target:` — what the generator writes the app in: one object, one key per choice (ADR-047). The data layer is two
@@ -253,16 +299,11 @@ const [FIRST_TARGET_PAIR, ...OTHER_TARGET_PAIRS] = TARGET_PAIRS.map(targetPairSc
  * the refusal read. An unsupported pair is refused naming the supported ones; when written, both keys are required.
  * `http`, `wiring` and `runtime` join when their second value exists; until then they are unknown keys. The
  * database driver (node-postgres, bun:sqlite, …) follows from `database` + `runtime` and has no key.
+ *
+ * Typed as {@link TargetConfig}: each row's literals are what the runtime schema accepts, which a schema built over
+ * a table can't say in its own type.
  */
-export const TargetConfigSchema =
-  OTHER_TARGET_PAIRS.length === 0
-    ? FIRST_TARGET_PAIR
-    : z.union([FIRST_TARGET_PAIR, ...OTHER_TARGET_PAIRS] as unknown as [
-        typeof FIRST_TARGET_PAIR,
-        typeof FIRST_TARGET_PAIR,
-      ]);
-
-export type TargetConfig = z.infer<typeof TargetConfigSchema>;
+export const TargetConfigSchema = targetConfigSchemaFor(TARGET_PAIRS) as z.ZodType<TargetConfig>;
 
 /** `target:` when the file has none: the first row of `TARGET_PAIRS`. */
 export const DEFAULT_TARGET: TargetConfig = {

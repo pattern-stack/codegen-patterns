@@ -56,6 +56,7 @@ describe('target: in the JSON Schema is TARGET_PAIRS', () => {
 		...offTable.map((p) => [`${p.orm}/${p.database}`, p] as [string, unknown]),
 		['TGT-0 key, { data: drizzle-pg }', { data: 'drizzle-pg' }],
 		['one key, { database: postgres }', { database: 'postgres' }],
+		['an empty object (written, both keys are required)', {}],
 		['an axis with one value, http', { database: TARGET_PAIRS[0].database, orm: TARGET_PAIRS[0].orm, http: 'hono' }],
 		['a bare string', 'drizzle-postgres'],
 	];

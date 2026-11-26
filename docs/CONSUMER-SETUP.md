@@ -567,7 +567,8 @@ blocks are:
 | `events`, `jobs`, `bridge`, `integration`, `observability`, `openapi`, `cache`, `storage` | written by `codegen subsystem install <name>`; see each subsystem's section |
 
 **Editor completion.** The package ships the same schema as JSON Schema,
-`src/schema/codegen-config.schema.json`, generated from `CodegenConfigSchema` (so it cannot drift from it). Point the
+`src/schema/codegen-config.schema.json`, generated from `CodegenConfigObjectSchema` (the file as written, before
+the defaults that depend on another block are filled), so it cannot drift from the parse. Point the
 YAML language server (VS Code's Red Hat YAML extension, JetBrains, Zed, Neovim's `yamlls`) at it, and the editor
 completes every block and key, shows its description, offers only the supported `target:` pairs and underlines
 anything else. Put this first line in `codegen.config.yaml`:

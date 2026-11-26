@@ -30,7 +30,6 @@ export function buildCodegenConfigJsonSchema(): Record<string, unknown> {
 	const { $schema, ...body } = schema;
 	return {
 		$schema,
-		$id: 'https://github.com/pattern-stack/codegen-patterns/blob/main/src/schema/codegen-config.schema.json',
 		title: 'codegen.config.yaml',
 		description:
 			'Project configuration for @pattern-stack/codegen. Generated from src/schema/codegen-config.schema.ts; do not edit.',

@@ -38,6 +38,8 @@ export type TargetPair = (typeof TARGET_PAIRS)[number] extends infer R
 	: never;
 
 /** The supported pairs as `target:` spells them, for messages and docs: `{ database: postgres, orm: drizzle }`. */
-export function supportedTargetPairs(): string[] {
-	return TARGET_PAIRS.map((p) => `{ database: ${p.database}, orm: ${p.orm} }`);
+export function supportedTargetPairs(
+	pairs: ReadonlyArray<{ readonly database: string; readonly orm: string }> = TARGET_PAIRS,
+): string[] {
+	return pairs.map((p) => `{ database: ${p.database}, orm: ${p.orm} }`);
 }
