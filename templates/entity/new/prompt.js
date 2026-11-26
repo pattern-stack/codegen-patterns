@@ -243,8 +243,8 @@ export default {
       // timestamp columns are timestamptz (`behaviors.timezone`). A behavior's
       // own `options: { timezone }` overrides it inside the extension.
       behaviorsTimezone: getProjectConfig().behaviors.timezone,
-      // TGT-0 (ADR-047): the project's generation target; `target.data` picks
-      // the column renderer inside the extension.
+      // TGT-0 (ADR-047): the project's generation target; its `(database, orm)`
+      // pair picks the column renderer inside the extension.
       target: getProjectConfig().target,
       // REL-2 (#587): the extension computes the relation-manifest and
       // api-includes specifiers RELATIVE to each module folder, so it needs the

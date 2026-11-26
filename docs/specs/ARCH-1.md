@@ -100,7 +100,8 @@ and the two-pass generation still typechecks with only the named #680 expectatio
 
 ## Found while implementing
 
-- **#696** (filed): `src/schema/generate-json-schema.ts` cannot run. It calls `z.toJSONSchema`, a zod 4 API, and the
+- **#696** (filed; closed by ZOD-0, which generates the entity JSON Schema from the real schema and tests it for
+  drift): `src/schema/generate-json-schema.ts` cannot run. It calls `z.toJSONSchema`, a zod 4 API, and the
   repo pins zod 3, so `src/schema/entity-definition.schema.json` cannot be regenerated from its source of truth and
   nothing in CI notices the drift. The three deleted entity keys were removed from the committed JSON by hand.
 

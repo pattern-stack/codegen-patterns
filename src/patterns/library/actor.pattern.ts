@@ -19,7 +19,7 @@
  * See `runtime/base-classes/with-actor.ts` and `docs/specs/CAP-3.md`.
  */
 
-import { z } from 'zod';
+import { z } from '../../schema/zod.js';
 import { defineCapabilityPattern } from '../pattern-definition.js';
 import { ACTOR_CAPABILITY } from '../../roles/derive.js';
 

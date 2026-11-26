@@ -1,5 +1,5 @@
 /**
- * The `drizzle-pg` column renderer (TGT-0, ADR-047): {@link FieldFacts} → a Drizzle `pg-core` column builder, the
+ * The `drizzle` + `postgres` column renderer (TGT-0, ADR-047): {@link FieldFacts} → a Drizzle `pg-core` column builder, the
  * builder's import name, and the TypeScript type Drizzle's select model gives the column.
  *
  * Every string here is Drizzle-on-Postgres text; the facts it reads hold none. Moved verbatim from
@@ -8,9 +8,8 @@
  * Hygen-safe: reached from `entity-locals.js`, so it imports only modules that ship in the package's `files`.
  */
 
-import type { FieldFacts } from '../../derived/columns/types.js';
-import { timestampColumn } from '../../schema/field-timestamp.js';
-import type { ColumnRenderer, RenderedColumn } from '../columns.js';
+import type { FieldFacts } from '../../../derived/columns/types.js';
+import type { ColumnRenderer, RenderedColumn } from '../../columns.js';
 
 /** A field's element type → its Drizzle column builder. */
 const DRIZZLE_TYPE_MAP: Readonly<Record<string, string>> = {
@@ -148,6 +147,29 @@ function buildDrizzleChain(f: FieldFacts, drizzleType: string): string {
 	return chain;
 }
 
+/**
+ * The Drizzle builder call for a timestamp column. The only place the options literal is written. Moved here from
+ * `src/schema/field-timestamp.ts` by TGT-1: the timezone RULES stay there (`fieldWithTimezone`,
+ * `behaviorWithTimezone`); this is the pair's text for the column they decide.
+ *
+ * `withTimezone` is required and must be a boolean: every caller decides it
+ * (`fieldWithTimezone` / `behaviorWithTimezone`). The callers are EJS templates
+ * and untyped prompts, so a call that drops the argument would otherwise
+ * silently emit timestamptz whatever the project's `behaviors.timezone` says
+ * (CLAUDE.md gate rule (c)) — it throws instead.
+ */
+export function timestampColumn(column: string, withTimezone: boolean): string {
+	if (typeof withTimezone !== 'boolean') {
+		throw new Error(
+			`timestampColumn('${column}'): withTimezone must be true or false, got ${String(withTimezone)} — ` +
+				'the caller decides it (fieldWithTimezone / behaviorWithTimezone).',
+		);
+	}
+	return withTimezone
+		? `timestamp('${column}', { withTimezone: true, mode: 'date' })`
+		: `timestamp('${column}')`;
+}
+
 /** The TypeScript type of a field's column in Drizzle's select model. */
 function tsTypeOf(f: FieldFacts): string {
 	const elementTsType = f.hasChoices
@@ -157,8 +179,8 @@ function tsTypeOf(f: FieldFacts): string {
 	return f.hasChoices ? `(${elementTsType})[]` : `${elementTsType}[]`;
 }
 
-export const drizzlePgColumns: ColumnRenderer = {
-	id: 'drizzle-pg',
+export const drizzlePostgresColumns: ColumnRenderer = {
+	pair: 'drizzle/postgres',
 	render(f: FieldFacts): RenderedColumn {
 		const drizzleType = drizzleTypeOf(f);
 		return { drizzleType, drizzleChain: buildDrizzleChain(f, drizzleType), tsType: tsTypeOf(f) };
@@ -166,4 +188,5 @@ export const drizzlePgColumns: ColumnRenderer = {
 	importFor(drizzleType: string): string | undefined {
 		return DRIZZLE_IMPORT_MAP[drizzleType];
 	},
+	timestampColumn,
 };

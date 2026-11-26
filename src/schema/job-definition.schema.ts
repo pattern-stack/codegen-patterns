@@ -1,6 +1,13 @@
-import { z } from "zod";
-import { DetectionConfigSchema } from "../../runtime/subsystems/integration";
+import { z } from "./zod";
+import { DetectionConfigSchema as DetectionConfigSchemaZod3 } from "../../runtime/subsystems/integration";
+import { fromZod3 } from "./zod3-schema";
 import { ScheduleSchema } from "./event-definition.schema";
+
+/** The runtime's detection schema (Zod 3, one owner), hosted in this Zod 4 schema. */
+const DetectionConfigSchema = fromZod3(
+	DetectionConfigSchemaZod3,
+	"The arm's read source, the same shape as an entity's 'detection:' entry: 'mode: poll' or 'mode: webhook', and 'mapping:'",
+);
 
 /**
  * Job Definition Schema — the codegen "jobs" definition kind (RFC-0005).

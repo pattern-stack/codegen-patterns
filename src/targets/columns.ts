@@ -1,16 +1,21 @@
 /**
- * Column renderers, keyed by the project's data-access target (`target.data` in `codegen.config.yaml`, TGT-0,
- * ADR-047). A renderer turns {@link FieldFacts} into one target's column text.
+ * Column renderers, keyed by the project's data layer: the `(orm, database)` pair from `target:` in
+ * `codegen.config.yaml` (TGT-0, ADR-047). A renderer turns {@link FieldFacts} into that pair's column text — the
+ * text really differs per pair (Drizzle's `pg-core` vs `sqlite-core`), so the pair, not either key alone, is what
+ * selects it. Each pair's renderer lives at `src/targets/<orm>/<database>/columns.ts`.
  *
- * One entry today. The {@link RenderedColumn} shape is what `drizzle-pg` needs and what the templates print; it is
- * not generalised until a second renderer exists and shows what the two share (ADR-047 § One axis at a time).
+ * Which renderer a pair uses is bound in `./renderers.ts` (TGT-1). One pair today. The {@link RenderedColumn} shape is what `drizzle/postgres` needs and what the templates print;
+ * it is not generalised until a second renderer exists and shows what the two share (ADR-047).
  *
  * Hygen-safe: reached from `entity-locals.js` and the junction prompt.
  */
 
 import type { FieldFacts } from '../derived/columns/types.js';
-import type { DataTarget, TargetConfig } from '../schema/codegen-config.schema.js';
-import { drizzlePgColumns } from './drizzle-pg/columns.js';
+import type { TargetConfig } from '../schema/codegen-config.schema.js';
+import type { TargetPair } from './pairs.js';
+import { renderersFor } from './renderers.js';
+
+export type { TargetPair } from './pairs.js';
 
 /** One field's column, as the backend templates print it. */
 export interface RenderedColumn {
@@ -23,29 +28,21 @@ export interface RenderedColumn {
 }
 
 export interface ColumnRenderer {
-	readonly id: DataTarget;
+	readonly pair: TargetPair;
 	render(field: FieldFacts): RenderedColumn;
 	/** The module import a column builder (a {@link RenderedColumn.drizzleType}) needs; `undefined` when it needs none. */
 	importFor(drizzleType: string): string | undefined;
+	/**
+	 * A timestamp column's builder call, `withTimezone` decided by the caller (`fieldWithTimezone` /
+	 * `behaviorWithTimezone`) — the behavior and junction time columns the templates print directly (TGT-1).
+	 */
+	timestampColumn(column: string, withTimezone: boolean): string;
 }
 
-/** Every data-access target's column renderer. Adding a `DataTarget` value without an entry is a type error. */
-export const COLUMN_RENDERERS: Readonly<Record<DataTarget, ColumnRenderer>> = {
-	'drizzle-pg': drizzlePgColumns,
-};
-
 /**
- * The column renderer for the project's resolved `target`. Required: the hygen prompts read `target` from the parsed
- * config, whose schema owns the default, so an absent or unknown value means the caller skipped the prompt — never a
- * reason to fall back to a renderer.
+ * The column renderer for the project's resolved `target` (`renderersFor`, `./renderers.ts`): required, and a pair
+ * with no renderer is refused by name.
  */
 export function columnRendererFor(target: TargetConfig | undefined, caller: string): ColumnRenderer {
-	const renderer = target ? COLUMN_RENDERERS[target.data] : undefined;
-	if (!renderer) {
-		throw new Error(
-			`${caller}: target must be the project's resolved \`target\` from codegen.config.yaml ` +
-				`(target.data one of ${Object.keys(COLUMN_RENDERERS).join(', ')}); got ${JSON.stringify(target)}.`,
-		);
-	}
-	return renderer;
+	return renderersFor(target, caller).columns;
 }

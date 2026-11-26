@@ -187,7 +187,7 @@ describe('integration.sink.exclude_fields — superRefine: non-existent field re
       },
     });
     expect(result.success).toBe(false);
-    const error = result.error!.errors.find((e) =>
+    const error = result.error!.issues.find((e) =>
       e.message.includes('typo_field_name'),
     );
     expect(error).toBeDefined();
@@ -204,7 +204,7 @@ describe('integration.sink.exclude_fields — superRefine: FK column rejected', 
       },
     });
     expect(result.success).toBe(false);
-    const error = result.error!.errors.find((e) =>
+    const error = result.error!.issues.find((e) =>
       e.message.includes('channel_id') && e.message.includes('FK'),
     );
     expect(error).toBeDefined();
@@ -221,7 +221,7 @@ describe('integration.sink.exclude_fields — superRefine: user_id rejected', ()
       },
     });
     expect(result.success).toBe(false);
-    const error = result.error!.errors.find((e) =>
+    const error = result.error!.issues.find((e) =>
       e.message.includes('user_id'),
     );
     expect(error).toBeDefined();

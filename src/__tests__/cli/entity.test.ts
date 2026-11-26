@@ -509,7 +509,7 @@ describe('entity noun — new reports every pre-flight rejection', () => {
 		);
 		expect(result).toBe(1);
 		expect(err).toContain('bad.yaml');
-		expect(err).toContain("'config'");
+		expect(err).toContain('Unrecognized key: "config"');
 	});
 
 	test('JSON mode: the rejection and its details are in the payload', async () => {
@@ -530,7 +530,7 @@ describe('entity noun — new reports every pre-flight rejection', () => {
 		const parsed = JSON.parse(out);
 		expect(parsed.totals.failed).toBe(1);
 		expect(parsed.failed[0].name).toBe('bad.yaml');
-		expect(parsed.failed[0].details.join('\n')).toContain("'config'");
+		expect(parsed.failed[0].details.join('\n')).toContain('Unrecognized key: "config"');
 	});
 
 	test('--no-continue-on-error --json stops before generating and says why', async () => {

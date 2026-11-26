@@ -29,8 +29,9 @@
  * its own `timezone:`).
  *
  * Readers: the entity schema (option validation), and the entity, junction and
- * relationship hygen prompts (imported as `src/schema/field-timestamp.js`).
- * Nothing else spells the options literal.
+ * relationship hygen prompts (imported as `src/schema/field-timestamp.js`). The
+ * column text itself is the target's (`timestampColumn`, the drizzle/postgres
+ * column renderer, TGT-1).
  *
  * Kept dependency-free: the hygen prompts import it straight from the shipped
  * `src/` tree.
@@ -107,25 +108,4 @@ export function behaviorTimezoneOptionError(
 	}
 	if (typeof tz !== 'boolean') return TIMEZONE_NOT_BOOLEAN_MESSAGE;
 	return null;
-}
-
-/**
- * The Drizzle builder call for a timestamp column. The only place the options literal is written.
- *
- * `withTimezone` is required and must be a boolean: every caller decides it
- * (`fieldWithTimezone` / `behaviorWithTimezone`). The callers are EJS templates
- * and untyped prompts, so a call that drops the argument would otherwise
- * silently emit timestamptz whatever the project's `behaviors.timezone` says
- * (CLAUDE.md gate rule (c)) — it throws instead.
- */
-export function timestampColumn(column: string, withTimezone: boolean): string {
-	if (typeof withTimezone !== 'boolean') {
-		throw new Error(
-			`timestampColumn('${column}'): withTimezone must be true or false, got ${String(withTimezone)} — ` +
-				'the caller decides it (fieldWithTimezone / behaviorWithTimezone).',
-		);
-	}
-	return withTimezone
-		? `timestamp('${column}', { withTimezone: true, mode: 'date' })`
-		: `timestamp('${column}')`;
 }

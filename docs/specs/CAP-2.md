@@ -312,7 +312,7 @@ target-keyed derivation could not express when two roles share a target.
     filtering, pairing + project merge, the junction list being authoritative).
 
 12. **Not changed, noted:** `src/schema/generate-json-schema.ts` restates the entity schema by hand and has not
-    tracked it since the repo reorg (`context`, `sync`, `api` are absent too); `roles` is not added there. And
+    tracked it since the repo reorg (`context`, `sync`, `api` are absent too); `roles` is not added there. (Superseded 2026-11-26 by ZOD-0: the hand-kept mirror is deleted; `entity-definition.schema.json` is generated from the real schema and tested for drift.) And
     `entity new`'s default `--continue-on-error` mode counts invalid YAMLs as failed without printing why (#627);
     the roles pre-flight prints unconditionally and does not inherit that.
 

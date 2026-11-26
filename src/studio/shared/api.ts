@@ -101,6 +101,8 @@ export interface ZodIssueLike {
 	path: (string | number)[];
 	message: string;
 	code: string;
+	/** `unrecognized_keys` only: the keys the schema does not declare (Zod's own `issue.keys`). */
+	keys?: string[];
 }
 
 /** Body of a 422 from `PUT /api/files/:path`. */

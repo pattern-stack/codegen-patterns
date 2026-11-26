@@ -17,8 +17,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { emittedStem } from '../../../src/config/file-naming.js';
 import yaml from "yaml";
-import { behaviorWithTimezone, timestampColumn } from "../../../src/schema/field-timestamp.js";
+import { behaviorWithTimezone } from "../../../src/schema/field-timestamp.js";
 import { JunctionDefinitionSchema, hasIdentityRole } from "../../../src/schema/junction-definition.schema.js";
+import { codegenMessages } from "../../../src/schema/zod.js";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 import {
   junctionName as deriveJunctionName,
@@ -32,7 +33,8 @@ import {
 } from "../../_shared/entity-naming.mjs";
 import { loadRuntimeMode, runtimeImport } from "../../../src/config/runtime-mode.mjs";
 import { processFieldFeatures, processFields } from "../../entity/new/backend/entity-locals.js";
-import { columnRendererFor } from "../../../src/targets/columns.js";
+import { renderersFor } from "../../../src/targets/renderers.js";
+import { onDeleteAction } from "../../../src/derived/constraints/on-delete.js";
 import { loadOwnedTableNames } from "../../entity/new/prompt.js";
 import { configOrDefaults, loadProjectConfig } from "../../../src/config/project-config.js";
 import { TABLE_CALLBACK_PARAM } from "../../_shared/table-callback.mjs";
@@ -66,17 +68,6 @@ const pascalCase = (s) => capitalize(camelCase(s));
 // `table` — before handing it to hygen (GATE-1, #599).
 
 // ============================================================================
-// On-Delete Action Mapping
-// ============================================================================
-
-const ON_DELETE_MAP = {
-  restrict: "restrict",
-  cascade: "cascade",
-  set_null: "set null",
-  no_action: "no action",
-};
-
-// ============================================================================
 // Drizzle Import Set
 // ============================================================================
 
@@ -102,9 +93,9 @@ function buildDrizzleImports(hasRole, processedCustomFields, hasIndexes) {
 // column builder (`processFields` → `drizzleChain`, `processFieldFeatures` →
 // `.references()` + `index: true`) — one owner for nullability, defaults,
 // enums, FKs and indexes. Nothing here re-derives a column.
-function processPayloadFields(fields, junctionName, naming, ownedTables, columns) {
+function processPayloadFields(fields, junctionName, naming, ownedTables, { columns, constraints }) {
   const processed = processFields(fields, { entityName: junctionName, enumResolver: null, columns });
-  const features = processFieldFeatures(processed, fields, naming, ownedTables, new Set());
+  const features = processFieldFeatures(processed, fields, naming, ownedTables, new Set(), constraints);
   return { processed, ...features };
 }
 
@@ -156,7 +147,7 @@ export default {
     // fields included (#740). `codegen junction new` runs it before hygen;
     // running it here too keeps a direct hygen call from rendering a YAML the
     // CLI would refuse. The raw definition is what the locals below read.
-    const parsed = JunctionDefinitionSchema.safeParse(definition);
+    const parsed = JunctionDefinitionSchema.safeParse(definition, { error: codegenMessages });
     if (!parsed.success) {
       const issues = parsed.error.issues.map((issue) => {
         const [head, field] = issue.path;
@@ -248,8 +239,8 @@ export default {
 
     const onDeleteLeftRaw = config.on_delete_left ?? "restrict";
     const onDeleteRightRaw = config.on_delete_right ?? "restrict";
-    const onDeleteLeft = ON_DELETE_MAP[onDeleteLeftRaw] ?? "restrict";
-    const onDeleteRight = ON_DELETE_MAP[onDeleteRightRaw] ?? "restrict";
+    const onDeleteLeft = onDeleteAction(onDeleteLeftRaw);
+    const onDeleteRight = onDeleteAction(onDeleteRightRaw);
 
     // ======================================================================
     // Custom fields (fields other than `role`)
@@ -258,14 +249,16 @@ export default {
     const otherFields = { ...fields };
     if (hasRole) delete otherFields.role; // the identity role is the role enum above
     const entityLookup = projectEntityLookup(cwd);
+    // TGT-0 / TGT-1 (ADR-047): the project's data-access target renders the payload columns, their FKs and indexes,
+    // and the time columns.
+    const { columns, constraints } = renderersFor(config_.target, `junction new (${junctionName})`);
     const payload = processPayloadFields(
       otherFields,
       junctionName,
       // TABLE-0: a payload index / self-FK names the junction's SQL table.
       { entityName: junctionName, ownNaming: junction, entityTableName: tableName, modulesDir, entityLookup },
       Array.from(loadOwnedTableNames(cwd, { tablePrefix: config_.tables.prefix })),
-      // TGT-0 (ADR-047): the project's data-access target renders the payload columns.
-      columnRendererFor(config_.target, `junction new (${junctionName})`),
+      { columns, constraints },
     );
     const processedCustomFields = payload.processed;
     const hasCustomFields = processedCustomFields.length > 0;
@@ -513,12 +506,13 @@ export default {
       linkInputRequiredKeys,
 
       // On-delete
-      onDeleteLeft,
-      onDeleteRight,
+      // TGT-1: the endpoints' `.references(…, { onDelete })` suffixes are the target's text.
+      leftReference: constraints.columnReference({ targetExport: leftTable, targetProp: "id", onDelete: onDeleteLeft }),
+      rightReference: constraints.columnReference({ targetExport: rightTable, targetProp: "id", onDelete: onDeleteRight }),
 
       // Custom fields
       processedCustomFields,
-      timestampColumn,
+      timestampColumn: columns.timestampColumn,
       generatedTimeWithTimezone,
       hasCustomFields,
       payloadIndexes,

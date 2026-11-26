@@ -1,5 +1,5 @@
 /**
- * TGT-0: a field's facts (`deriveFieldFacts`) hold no source text, and the `drizzle-pg` renderer turns them into
+ * TGT-0: a field's facts (`deriveFieldFacts`) hold no source text, and the `drizzle/postgres` renderer turns them into
  * exactly the columns the entity pipeline emitted before the split.
  *
  * The expected triples were produced by `processFields` on `main` before TGT-0 (the record that held facts and
@@ -10,7 +10,10 @@
 
 import { describe, expect, it } from 'bun:test';
 import { deriveFieldFacts } from '../../../derived/columns/fields';
-import { COLUMN_RENDERERS, columnRendererFor } from '../../../targets/columns';
+import { columnRendererFor } from '../../../targets/columns';
+import { TARGET_RENDERERS } from '../../../targets/renderers';
+import { TARGET_PAIRS } from '../../../targets/pairs';
+import { TargetConfigSchema } from '../../../schema/codegen-config.schema';
 import { processFields } from '../../../../templates/entity/new/backend/entity-locals.js';
 import { buildBackendLocals } from '../../../../templates/entity/new/backend/entity-locals.js';
 import { DEFAULT_CODEGEN_CONFIG } from '../../../config/project-config';
@@ -57,7 +60,7 @@ const EXPECTED: Record<keyof typeof FIELDS, [string, string, string]> = {
 };
 
 const facts = deriveFieldFacts(FIELDS, 'widget', null);
-const drizzlePg = columnRendererFor(DEFAULT_CODEGEN_CONFIG.target, 'test');
+const drizzlePostgres = columnRendererFor(DEFAULT_CODEGEN_CONFIG.target, 'test');
 
 describe('deriveFieldFacts', () => {
 	it('derives one fact record per field but id, in declaration order', () => {
@@ -106,9 +109,9 @@ describe('deriveFieldFacts', () => {
 	});
 });
 
-describe('the drizzle-pg column renderer', () => {
+describe('the drizzle/postgres column renderer', () => {
 	it.each(facts.map((f) => [f.name, f] as const))('%s renders as it did before TGT-0', (name, f) => {
-		const { drizzleType, drizzleChain, tsType } = drizzlePg.render(f);
+		const { drizzleType, drizzleChain, tsType } = drizzlePostgres.render(f);
 		expect([drizzleType, drizzleChain, tsType]).toEqual(EXPECTED[name as keyof typeof FIELDS]);
 	});
 
@@ -118,15 +121,34 @@ describe('the drizzle-pg column renderer', () => {
 });
 
 describe('the target selects the renderer, and is required', () => {
-	it('drizzle-pg is the only data-access target, and the default', () => {
-		expect(Object.keys(COLUMN_RENDERERS)).toEqual(['drizzle-pg']);
-		expect(DEFAULT_CODEGEN_CONFIG.target).toEqual({ data: 'drizzle-pg' });
-		expect(drizzlePg.id).toBe('drizzle-pg');
+	it('drizzle/postgres is the one supported pair, and the default', () => {
+		expect(Object.keys(TARGET_RENDERERS)).toEqual(['drizzle/postgres']);
+		expect(DEFAULT_CODEGEN_CONFIG.target).toEqual({ database: 'postgres', orm: 'drizzle' });
+		expect(drizzlePostgres.pair).toBe('drizzle/postgres');
 	});
 
-	it('an absent or unknown target is an error, never a fallback renderer', () => {
-		expect(() => columnRendererFor(undefined, 'caller')).toThrow(/caller: target must be .*drizzle-pg.*got undefined/);
-		expect(() => columnRendererFor({ data: 'sqlite' } as never, 'caller')).toThrow(/got \{"data":"sqlite"\}/);
+	// One table (`TARGET_PAIRS`) feeds the schema and the renderers: a row that renders nothing, or a pair the
+	// schema accepts with no renderer, fails here.
+	it.each(TARGET_PAIRS.map((p) => [`${p.orm}/${p.database}`, p] as const))(
+		'%s parses, has a renderer, and renders every field shape',
+		(key, p) => {
+			const target = TargetConfigSchema.parse({ database: p.database, orm: p.orm });
+			const renderer = columnRendererFor(target, 'test');
+			expect(renderer.pair).toBe(key as typeof renderer.pair);
+			for (const f of facts) expect(renderer.render(f).drizzleChain.length).toBeGreaterThan(0);
+		},
+	);
+
+	it('a pair not in the table is refused by the schema and by the renderer lookup', () => {
+		expect(TargetConfigSchema.safeParse({ database: 'sqlite', orm: 'drizzle' }).success).toBe(false);
+		expect(TargetConfigSchema.safeParse({ database: 'postgres', orm: 'kysely' }).success).toBe(false);
+		expect(() => columnRendererFor({ database: 'sqlite', orm: 'drizzle' } as never, 'caller')).toThrow(
+			'caller: target { database: sqlite, orm: drizzle } is not a supported pair (supported: { database: postgres, orm: drizzle }).',
+		);
+	});
+
+	it('an absent target is an error, never a fallback renderer', () => {
+		expect(() => columnRendererFor(undefined, 'caller')).toThrow(/caller: target must be .* got undefined/);
 	});
 
 	it('processFields refuses to run without a renderer', () => {

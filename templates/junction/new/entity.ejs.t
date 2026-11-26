@@ -46,8 +46,8 @@ export const <%= tableVarName %> = pgTable(
   '<%= tableName %>',
   {
     // FK columns — composite primary key (no surrogate id: Q4 resolution)
-    <%= leftColumnCamel %>: uuid('<%= leftColumn %>').notNull().references((): AnyPgColumn => <%= leftTable %>.id, { onDelete: '<%= onDeleteLeft %>' }),
-    <%= rightColumnCamel %>: uuid('<%= rightColumn %>').notNull().references((): AnyPgColumn => <%= rightTable %>.id, { onDelete: '<%= onDeleteRight %>' }),
+    <%= leftColumnCamel %>: uuid('<%= leftColumn %>').notNull()<%- leftReference %>,
+    <%= rightColumnCamel %>: uuid('<%= rightColumn %>').notNull()<%- rightReference %>,
 <%_ if (hasRole) { _%>
 
     // Role enum (per-pairing; declared in junction YAML's fields.role.choices).

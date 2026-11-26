@@ -95,7 +95,9 @@ describe('validateContent — entity', () => {
 		if (outcome.ok) throw new Error('unreachable');
 		const issue = outcome.issues.find((i) => i.path.join('.') === 'fields.email.type');
 		expect(issue).toBeDefined();
-		expect(issue?.message).toContain('strng');
+		// Zod 4 lists the allowed values; codegen's message rule adds the refused one (ZOD-0, `codegenMessages`).
+		expect(issue?.message).toContain('expected one of');
+		expect(issue?.message).toContain('received "strng"');
 	});
 
 	it('reports a missing required key', () => {

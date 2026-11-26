@@ -272,7 +272,7 @@ describe('backend search templates — declaration schema', () => {
       });
 
       expect(result.success).toBe(false);
-      expect(JSON.stringify(result.error?.issues)).toContain(`'${key}'`);
+      expect(result.error?.issues).toContainEqual(expect.objectContaining({ code: 'unrecognized_keys', keys: [key] }));
     });
   }
 

@@ -130,5 +130,5 @@ these details:
 **Revision 2 — 2026-11-25, the `columns/` slot (TGT-0, ADR-047).** `src/derived/columns/` exists. It holds a
 field's column **facts** (`deriveFieldFacts`: type, element type, nullability, default, time zone, enum names, length
 bounds), derived once from the YAML, with no Drizzle text, Zod chain or TypeScript type string, as decision 4 requires.
-The text is rendered from those facts by the project's target (`src/targets/<target>/columns.ts`, chosen by
-`target.data`). The `wiring/` slot is still unstarted.
+The text is rendered from those facts by the project's target (`src/targets/<orm>/<database>/columns.ts`, chosen
+by the `target: { database, orm }` pair). The `wiring/` slot is still unstarted.

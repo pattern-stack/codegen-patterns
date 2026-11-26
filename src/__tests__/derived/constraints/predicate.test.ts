@@ -1,10 +1,15 @@
 /**
- * `renderSqlPredicate` (#784): the raw-SQL `where:` renderer for partial unique
- * indexes. Column words become `${t.<prop>}`; everything else is copied.
+ * A `where:` predicate (#784), tokenized into facts (`tokenizePredicate`, TGT-1) and rendered by the drizzle/postgres
+ * constraint renderer: column words become `${t.<prop>}`; everything else is copied. The cases are the single-pass
+ * renderer's, unchanged — the split must render the same bytes.
  */
 
 import { describe, it, expect } from 'bun:test';
-import { renderSqlPredicate } from '../../../templates/_shared/sql-predicate.mjs';
+import { tokenizePredicate } from '../../../derived/constraints/predicate';
+import { drizzlePostgresConstraints } from '../../../targets/drizzle/postgres/constraints';
+
+const renderSqlPredicate = (p: string, columns: Map<string, string>, tableParam: string) =>
+  drizzlePostgresConstraints.predicate(tokenizePredicate(p, columns), tableParam);
 
 const cols = new Map<string, string>([
   ['closed_at', 'closedAt'],
@@ -15,7 +20,7 @@ const cols = new Map<string, string>([
 ]);
 const r = (p: string) => renderSqlPredicate(p, cols, 't');
 
-describe('renderSqlPredicate', () => {
+describe('a where: predicate, tokenized then rendered', () => {
   it('rewrites a column word', () => {
     expect(r('closed_at IS NULL')).toBe('${t.closedAt} IS NULL');
   });
@@ -87,5 +92,31 @@ describe('renderSqlPredicate', () => {
     const t = { status: 'STATUS' };
     const evaluated = new Function('t', 'return `' + body + '`')(t);
     expect(evaluated).toBe("STATUS = 'a\\b`c${d}'");
+  });
+});
+
+describe('tokenizePredicate: facts, no target text', () => {
+  it('cuts a predicate into copied text and column references', () => {
+    expect(tokenizePredicate("closed_at IS NULL AND status = 'x'", cols)).toEqual([
+      { column: 'closed_at', prop: 'closedAt' },
+      { text: ' IS NULL AND ' },
+      { column: 'status', prop: 'status' },
+      { text: " = 'x'" },
+    ]);
+  });
+
+  it('keeps quoted text as written (the renderer escapes it), and cuts out only real column references', () => {
+    expect(tokenizePredicate("lower(name) <> '${x}' AND date::text = col", cols)).toEqual([
+      { text: 'lower(' },
+      { column: 'name', prop: 'name' },
+      { text: ") <> '${x}' AND " },
+      { column: 'date', prop: 'date' },
+      { text: '::text = ' },
+      { column: 'col', prop: 'col' },
+    ]);
+  });
+
+  it('the renderer requires the table parameter', () => {
+    expect(() => drizzlePostgresConstraints.predicate([{ text: 'x' }], '')).toThrow(/tableParam/);
   });
 });

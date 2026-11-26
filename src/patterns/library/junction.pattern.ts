@@ -19,7 +19,7 @@
  * See `.ai-docs/stacks/codegen-app-patterns/specs/58.md`.
  */
 
-import { z } from 'zod';
+import { z } from '../../schema/zod.js';
 import { definePattern } from '../pattern-definition.js';
 import { BaseJunctionFields } from './base-junction-fields.js';
 

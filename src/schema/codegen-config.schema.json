@@ -1,0 +1,663 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "codegen.config.yaml",
+  "description": "Project configuration for @pattern-stack/codegen. Generated from src/schema/codegen-config.schema.ts; do not edit.",
+  "type": "object",
+  "properties": {
+    "runtime": {
+      "default": "package",
+      "type": "string",
+      "enum": [
+        "package",
+        "vendored"
+      ]
+    },
+    "target": {
+      "default": {
+        "database": "postgres",
+        "orm": "drizzle"
+      },
+      "type": "object",
+      "properties": {
+        "database": {
+          "type": "string",
+          "const": "postgres",
+          "description": "PostgreSQL: pg-core column builders, node-postgres driver on Node"
+        },
+        "orm": {
+          "type": "string",
+          "const": "drizzle",
+          "description": "Drizzle ORM: tables, columns and repositories written against drizzle-orm"
+        }
+      },
+      "required": [
+        "database",
+        "orm"
+      ],
+      "additionalProperties": false
+    },
+    "paths": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "backend_src": {
+          "default": "src",
+          "type": "string",
+          "minLength": 1
+        },
+        "frontend_src": {
+          "default": "apps/frontend/src",
+          "type": "string",
+          "minLength": 1
+        },
+        "entities": {
+          "default": "entities",
+          "type": "string",
+          "minLength": 1
+        },
+        "events_dir": {
+          "default": "events",
+          "type": "string",
+          "minLength": 1
+        },
+        "jobs_dir": {
+          "default": "definitions/jobs",
+          "type": "string",
+          "minLength": 1
+        },
+        "providers": {
+          "default": "definitions/providers",
+          "type": "string",
+          "minLength": 1
+        },
+        "modules_dir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "orchestration_src": {
+          "type": "string",
+          "minLength": 1
+        },
+        "generated": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "generate": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "frontend": {
+          "default": false,
+          "type": "boolean"
+        },
+        "semantic": {
+          "default": false,
+          "type": "boolean"
+        },
+        "analytics": {
+          "not": {}
+        }
+      },
+      "additionalProperties": false
+    },
+    "patterns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "locations": {
+      "type": "object",
+      "properties": {
+        "dbEntities": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "import": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "frontendGenerated": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "import": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "frontendCollectionsAuth": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "import": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "frontend": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "auth": {
+          "default": {
+            "function": "getAuthorizationHeader"
+          },
+          "type": "object",
+          "properties": {
+            "function": {
+              "default": "getAuthorizationHeader",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "parsers": {
+          "default": {
+            "timestamptz": "(date: string) => new Date(date)"
+          },
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "sync": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "mode": {
+              "default": "electric",
+              "type": "string",
+              "enum": [
+                "api",
+                "electric"
+              ]
+            },
+            "shapeUrl": {
+              "default": "/v1/shape",
+              "type": "string"
+            },
+            "useTableParam": {
+              "default": true,
+              "type": "boolean"
+            },
+            "columnMapper": {
+              "default": "snakeCamelMapper",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "columnMapperNeedsCall": {
+              "default": true,
+              "type": "boolean"
+            },
+            "apiBaseUrlImport": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "apiUrl": {
+              "default": "/api",
+              "type": "string"
+            }
+          }
+        },
+        "catalog": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "categories": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "blurb": {
+                    "default": "",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "fields": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "textareaThreshold": {
+              "default": 500,
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "auth": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "devAllowAnonymous": {
+          "default": false,
+          "type": "boolean"
+        },
+        "redirect_uri_base": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "tenancy": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "column": {
+          "default": "tenant_id",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "tables": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "prefix": {
+          "default": "",
+          "type": "string",
+          "pattern": "^([a-z][a-z0-9_]*)?$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "behaviors": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "timezone": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "dev": {
+      "type": "object",
+      "properties": {
+        "port": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
+    "subsystems": {
+      "type": "object",
+      "properties": {
+        "install": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "events",
+              "jobs",
+              "cache",
+              "storage",
+              "integration",
+              "bridge",
+              "openapi-config",
+              "observability",
+              "auth",
+              "auth-integrations"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "events": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "drizzle",
+            "memory"
+          ]
+        },
+        "multi_tenant": {
+          "type": "boolean"
+        },
+        "extensions": {
+          "type": "object",
+          "properties": {
+            "drizzle": {
+              "type": "object",
+              "properties": {
+                "listen_notify": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "jobs": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "drizzle",
+            "memory",
+            "bullmq"
+          ]
+        },
+        "multi_tenant": {
+          "type": "boolean"
+        },
+        "worker_mode": {
+          "default": "embedded",
+          "type": "string",
+          "enum": [
+            "embedded",
+            "standalone"
+          ]
+        },
+        "worker_pools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "all_pools": {
+          "type": "boolean"
+        },
+        "pools": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "queue": {
+                "type": "string"
+              },
+              "concurrency": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "reserved": {
+                "type": "boolean"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "extensions": {
+          "type": "object",
+          "properties": {
+            "drizzle": {
+              "type": "object",
+              "properties": {
+                "listen_notify": {
+                  "type": "boolean"
+                },
+                "poll_interval_ms": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "stale_threshold_ms": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "stale_sweeper_interval_ms": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "claim_heartbeat_interval_ms": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "additionalProperties": false
+            },
+            "bullmq": {
+              "type": "object",
+              "properties": {
+                "redis_url": {
+                  "type": "string"
+                },
+                "queue_prefix": {
+                  "type": "string"
+                },
+                "bull_board": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "mount_path": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "bridge": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "drizzle",
+            "memory"
+          ]
+        },
+        "multi_tenant": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "integration": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "drizzle",
+            "memory"
+          ]
+        },
+        "multi_tenant": {
+          "type": "boolean"
+        },
+        "differ": {
+          "type": "object",
+          "properties": {
+            "ignore": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "unignore": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "observability": {
+      "type": "object",
+      "properties": {
+        "reporters": {
+          "type": "object",
+          "properties": {
+            "bridgeMetrics": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "intervalMs": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "windowHours": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "enabled"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "openapi": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "path": {
+          "default": "/docs",
+          "type": "string"
+        },
+        "title": {
+          "default": "API",
+          "type": "string"
+        },
+        "version": {
+          "default": "0.0.0",
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "auth": {
+          "default": "bearer",
+          "type": "string",
+          "enum": [
+            "bearer",
+            "none"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "cache": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "drizzle",
+            "memory"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "storage": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "local",
+            "memory"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
