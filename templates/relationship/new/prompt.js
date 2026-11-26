@@ -270,6 +270,12 @@ function processFields(fields) {
 // Zod chain helpers for DTOs
 // ============================================================================
 
+// Whether the create chain fills a value when the field is omitted; the update DTO restates exactly these fields
+// without it (ZOD-1a). See the backend copy (`createChainAppliesDefault` in entity-locals.js) for the rationale.
+function createChainAppliesDefault(field) {
+  return field.type === "boolean" && field.hasDefault;
+}
+
 function zodChainForCreate(field) {
   const { type, nullable, required, hasDefault, hasChoices, choices } = field;
 
@@ -278,13 +284,21 @@ function zodChainForCreate(field) {
   // `.nullable()` and `.optional()`, not just `.nullable()`).
   let base = zodValueFor({ type, hasChoices, choices });
   base += zodLengthChecks(field);
-  if (type === "boolean" && hasDefault) {
+  if (createChainAppliesDefault(field)) {
     base += `.default(${field.default ?? false})`;
     return base;
   }
   if (nullable) base += ".nullable()";
   if (!required) base += ".optional()";
   return base;
+}
+
+// The update chain: the create chain made optional, without its default (ZOD-1a).
+function zodChainForUpdate(field) {
+  let base = zodValueFor({ type: field.type, hasChoices: field.hasChoices, choices: field.choices });
+  base += zodLengthChecks(field);
+  if (field.nullable && !createChainAppliesDefault(field)) base += ".nullable()";
+  return base + ".optional()";
 }
 
 function zodChainForOutput(field) {
@@ -559,7 +573,10 @@ export default {
     const createDtoFields = processedFields.map((f) => ({
       ...f,
       zodChainCreate: zodChainForCreate(f),
+      zodChainUpdate: zodChainForUpdate(f),
     }));
+    // ZOD-1a: the create fields whose chain applies a default; the update DTO restates them without it.
+    const updateDefaultOverrides = createDtoFields.filter(createChainAppliesDefault);
 
     const outputDtoFields = processedFields.map((f) => ({
       ...f,
@@ -767,6 +784,7 @@ export default {
 
       // DTO fields
       createDtoFields,
+      updateDefaultOverrides,
       outputDtoFields,
 
       // Declarative queries
