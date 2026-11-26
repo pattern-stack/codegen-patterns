@@ -16,4 +16,9 @@ describe('onDeleteAction', () => {
 	it('absent is restrict, the declared default', () => {
 		expect(onDeleteAction(undefined)).toBe('restrict');
 	});
+
+	it('an inherited object key is not an action', () => {
+		expect(onDeleteAction('constructor')).toBe('restrict');
+		expect(onDeleteAction('toString')).toBe('restrict');
+	});
 });

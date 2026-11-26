@@ -1692,8 +1692,9 @@ export function buildBackendLocals(definition, baseLocals) {
   // and `index: true` (→ a single-column index emitted below).
   const belongsTo = processBelongsTo(relationships, targetNaming, fields);
   // TGT-1: each single-column belongs_to FK's `.references(…)` suffix is the target's text, keyed by the FK column. A
-  // `match:` relationship has none: it is half of a composite FK (the constraints block).
-  const belongsToReferences = Object.fromEntries(
+  // `match:` relationship has none: it is half of a composite FK (the constraints block). The template reads it
+  // through `belongsToReference`, which throws on a missing one — never a silently FK-less column.
+  const belongsToReferenceByField = Object.fromEntries(
     belongsTo
       .filter((rel) => !rel.match)
       .map((rel) => [
@@ -2747,7 +2748,13 @@ export function buildBackendLocals(definition, baseLocals) {
     outputDtoFields: outputDtoFields,
     outputDtoHasUnknownKey,
     belongsTo: belongsTo,
-    belongsToReferences,
+    belongsToReference: (field) => {
+      const reference = belongsToReferenceByField[field];
+      if (reference === undefined) {
+        throw new Error(`[codegen] '${entityName}': internal error — no .references() for belongs_to column '${field}'.`);
+      }
+      return reference;
+    },
     belongsToFkFields: belongsToFkFields,
     createFkFields,
 

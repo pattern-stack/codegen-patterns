@@ -22,7 +22,7 @@ YAML ──► constraint facts     src/derived/constraints/    types.ts (Column
                    columnReference / index / unique / foreignKey / check / predicate
 
 entity-locals.js and the junction prompt compose facts + text into the SAME records as before
-(tableConstraints[].{expr, builder, comment}, processedFields[].drizzleChain, belongsToReferences, …).
+(tableConstraints[].{expr, builder, comment}, processedFields[].drizzleChain, belongsToReference(field), …).
 ```
 
 - **Facts hold no source text.** `src/derived/constraints/types.ts` is types only. Each fact names tables, columns
@@ -44,8 +44,8 @@ entity-locals.js and the junction prompt compose facts + text into the SAME reco
   only, so the config schema imports no renderer. `renderersFor(target, caller)` holds both refusals: no target, or a
   pair with no renderers. `columnRendererFor` and `constraintRendererFor` are its two halves.
 - **Required everywhere.** `processFieldFeatures` takes the constraint renderer as an argument and throws without
-  it. `processBelongsTo` keeps its signature. The `belongs_to` `.references` suffixes are a separate local,
-  `belongsToReferences[field]`.
+  it. `processBelongsTo` keeps its signature. The `belongs_to` `.references` suffixes come from a local
+  function, `belongsToReference(field)`, which throws when one is missing (never an FK-less column).
 
 ## Not moved (named)
 
