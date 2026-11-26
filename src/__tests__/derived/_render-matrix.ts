@@ -229,6 +229,31 @@ const seaFreight = def({
 	fields: { vessel: { type: 'string', required: true } },
 });
 
+// ── Defaulted fields and the update DTO (ZOD-1a): a plain entity, a family base and its child, each with a boolean
+// `default:`. The create chains apply the default; every update restates those fields without it, so a PATCH that
+// omits one leaves it as it is (on Zod 4, `.optional()` around `.default()` would apply it). ──
+const shelf = def({
+	entity: { name: 'shelf', plural: 'shelves' },
+	fields: {
+		label: { type: 'string', required: true },
+		active: { type: 'boolean', default: true },
+		archived: { type: 'boolean', nullable: true, default: false },
+	},
+});
+const tote = def({
+	entity: { name: 'tote', plural: 'totes' },
+	discriminator: 'kind',
+	fields: {
+		kind: { type: 'enum', choices: ['bin', 'loose'], required: true },
+		fragile: { type: 'boolean', default: false },
+	},
+});
+const bin = def({
+	entity: { name: 'bin', plural: 'bins' },
+	inherits: 'tote',
+	fields: { label: { type: 'string', required: true }, sealed: { type: 'boolean', default: true } },
+});
+
 export const RENDER_MATRIX: readonly MatrixCase[] = [
 	{
 		id: 'matrix-eav',
@@ -304,6 +329,14 @@ export const RENDER_MATRIX: readonly MatrixCase[] = [
 			'a joined-table family whose every kind has a child table — the base has no create use case, route or provider; each child has all three writes',
 		subjects: ['shipment', 'air_freight'],
 		entities: [shipment, airFreight, seaFreight],
+		junctions: [],
+	},
+	{
+		id: 'matrix-update-defaults',
+		covers:
+			'boolean `default:` fields and the update DTO: the create applies the default, every update (plain, family base, family child) restates the field without it',
+		subjects: ['shelf', 'tote', 'bin'],
+		entities: [shelf, tote, bin],
 		junctions: [],
 	},
 	{

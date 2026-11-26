@@ -309,6 +309,7 @@ export function matchColumns({ entityName, relationships, lookup, existing, null
  *                   baseRepositoryImportPath: string, baseModuleDir: string,
  *                   discriminatorProp: string, baseTimestamps: boolean,
  *                   baseImportPathFromSubdir: string, baseCreateSchema: string, baseCreateImportPath: string,
+ *                   baseUpdateSchema: string, baseUpdateImportPath: string,
  *                   baseOutputSchema: string, baseOutputImportPath: string },
  *   base: null | { discriminator: string, discriminatorProp: string, kinds: string[],
  *                  children: Array<{ as: string, name: string, relKey: string, plural: string,
@@ -347,6 +348,9 @@ export function familyReads({ entityName, definition, lookup, ownNaming, modules
       baseImportPathFromSubdir: `../${ref.importPath}`,
       baseCreateSchema: dtoSchemaNames(declaration.base).createSchema,
       baseCreateImportPath: `../${ref.dir}/dto/${dtoFileStem(declaration.base, 'create')}.dto`,
+      // ZOD-1a: the child's update extends the base's update, as its create extends the base's create.
+      baseUpdateSchema: dtoSchemaNames(declaration.base).updateSchema,
+      baseUpdateImportPath: `../${ref.dir}/dto/${dtoFileStem(declaration.base, 'update')}.dto`,
       baseOutputSchema: dtoSchemaNames(declaration.base).outputSchema,
       baseOutputImportPath: `../${ref.dir}/dto/${dtoFileStem(declaration.base, 'output')}.dto`,
     };
