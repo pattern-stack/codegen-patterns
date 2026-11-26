@@ -57,7 +57,7 @@ Sizes are the analysis's guesses: S ≈ a day, M ≈ 2–4 days, L ≈ a week (h
 
 | # | What | Size |
 |---|---|---|
-| G1+G2 | **Value objects** (d13, replaces G1 and G2; see `PROPOSAL-VALUE-OBJECTS.md`): named `value_object:`, inline `value:`, tagged `union:`; identity can be a value object (composite key) and `references:` a value-object FK; `storage: json` or `columns`. Phased: (1) `storage: json` with G3's typed json, S–M; (2) `storage: columns`, M–L; (3) `identity:` / `references:` by value object, L (on #780, #787; epics #783, #793) | L |
+| G1+G2 | **Value objects** (d13, replaces G1 and G2; see `PROPOSAL-VALUE-OBJECTS.md`): named `value_object:`, inline `value:`, tagged `union:`; identity can be a value object (composite key) and `references:` a value-object FK; `order: seq` beside the identity for insertion order; `storage: columns` (default) or `json`. Phased: (1) `storage: columns` + `order:`, M–L; (2) `identity:` / `references:` by value object, L (on #780, #787; epics #783, #793); (3) `storage: json` with G3's typed json, S–M | L |
 | G3 | The plain/sqlite record schema: Zod 4 per noun; a nullable column reads as a *missing* field; `instant` as ISO TEXT; typed `json` | M |
 | G4 | `versioned: rev`: compare-and-set `move(next) → row \| undefined` (the `versionable` behaviour is a stub today) | M |
 | G5 | Guarded updates: named `updates:` with a `where` on current values (set-once = `WHERE x IS NULL`) → `row \| undefined` | M |
@@ -92,8 +92,8 @@ Postgres goldens byte-identical are the real limits. Value objects (G1+G2) chang
 1. Merge the stack above.
 2. s7 A, with G9 (DDL) and the storage half of G3.
 3. s7 B.
-4. YAML growth: value objects phase 1 (`storage: json`, with G3) → G4 rev → G6 queries → G5 guarded updates → value
-   objects phase 2 (`storage: columns`) → phase 3 (`identity:` / `references:` by value object).
+4. YAML growth: value objects phase 1 (`storage: columns` + `order:`) → G4 rev → G6 queries → G5 guarded updates →
+   value objects phase 2 (`identity:` / `references:`) → phase 3 (`storage: json`, with G3).
 5. Zod 4 in generated code, with the rest of G3.
 6. G7 transaction-bound store + G8 module grouping + G10 generated suites, proven module by module on crew: teams,
    then notifications, then mail.
@@ -105,7 +105,7 @@ G14 and the `limit` bug can go any time; they affect every codegen app today.
 ## Open for Doug (defaults from GAP.md, all recommended)
 
 1. YAML `name:` only for named updates and counts; crew takes codegen's derived finder names.
-2. ~~Build value objects (G2) in codegen, columns only~~. Superseded by d13: value objects per `PROPOSAL-VALUE-OBJECTS.md`, `storage: json` first, then `columns`.
+2. ~~Build value objects (G2) in codegen, columns only~~. Superseded by d13: value objects per `PROPOSAL-VALUE-OBJECTS.md`, columns first (the default), json as the opt-in.
 3. Missing vs null and Date vs ISO string are decided per target, so drizzle-pg goldens stay byte-identical.
 4. Placement in crew: generated `domain/<noun>.record.ts` beside the hand-written `<noun>.ts`; generated store,
    tables and `.sql` in `infrastructure/sqlite/`; `module.ts` stays hand-written.

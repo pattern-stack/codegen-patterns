@@ -39,6 +39,7 @@ fields: { project: name, team: name, agent: name }
 # entities/agent.yaml
 entity: agent
 identity: address                       # the identity is a value object (→ composite primary key)
+order: seq                              # insertion order, beside the identity (rowid on SQLite, identity on Postgres)
 fields:
   address: { value: agent_address }
   parent:  { value: agent_address, optional: true, references: agent }   # composite FK
@@ -59,7 +60,7 @@ fields:
         agent: { agent: agent_address }
         human: { name: name }
         crew:  {}
-    storage: json                       # not queried inside, so one column is enough
+    # storage: columns (the default): mail filters on to.* and from.* (sqlite.mail-store.ts:211-226)
 ```
 
 ## Nested everywhere above storage, flat only in storage
@@ -78,6 +79,8 @@ fields:
 
 ## Crew's value objects, and the storage each needs
 
+Corrected 2026-11-26 (gap-map's check against crew): `Message.from` and `Message.to` are queried, so they're stored as columns.
+
 | Value object | Queried inside? | Storage |
 |---|---|---|
 | `AgentAddress` (agent identity, `parent`, notification `agent`, receipt `to`, message `from.agent`) | yes: keys, foreign keys, "children of X" | columns |
@@ -85,16 +88,31 @@ fields:
 | `AgentSession.runtime` | yes: s4 resolves a session from its Herdr terminal (`runtime.ref`) | columns |
 | `AgentSession.harness` | not today | json |
 | `MessageReceipt.at` (one timestamp per step) | no (queries use `state`) | json |
-| `Message.from`, `Message.to` (unions) | not today | json |
+| `Message.from`, `Message.to` (unions) | yes: room posts filter on `to.*` and `mail.sql:44` indexes it; `countInRoom` excludes `from` = me (`crew:src/modules/mail/infrastructure/sqlite/sqlite.mail-store.ts:211-226`) | columns |
+
+## Ordering: `order:` beside `identity:`
+
+G1 had two halves, and the value-object identity covers only one. A value-object identity (a composite primary key) has
+no insertion order, yet crew's ordered reads all depend on it, and its instants can tie:
+- agents `onTeam` `ORDER BY seq`; sessions `ofAgent` `ORDER BY seq DESC` (`crew:…/sqlite.teams-store.ts:170, :208`);
+- the room-post cursor `seq > …` in `position` / `inRoom` (`sqlite.mail-store.ts:209-216`);
+- notifications, receipts, rooms and members.
+
+crew's suites assert oldest-first and newest-first order (`assert-teams-repositories.ts:84-90, 124-130`). So an entity
+can declare `order: seq`: an autoincrement column that isn't the key. It's rowid on SQLite and an identity column on
+Postgres. It is the non-key half of #797's `strategy: identity`. Ordered finders and cursors (`after:`) use it.
 
 ## Phasing
 
-1. **`storage: json` with a real schema** (S–M). Value objects (named and inline, unions included) stored as one
-   typed JSON column, with no mapping code. This overlaps G3's "typed json"; do them together. It covers crew's json
-   rows above.
-2. **`storage: columns`** (M–L). Prefixed columns, the mapper, `CHECK` constraints, path queries and indexes.
-3. **`identity:` and `references:` by value object** (L). Composite primary and foreign keys. Builds on #780 (natural
+Columns are the default and come first (Doug, 2026-11-26). Every crew value object that is queried needs them, and
+only `AgentSession.harness` and `MessageReceipt.at` are json.
+
+1. **`storage: columns`** (M–L). Prefixed columns, the mapper, `CHECK` constraints, path queries and indexes, plus
+   `order:`.
+2. **`identity:` and `references:` by value object** (L). Composite primary and foreign keys. Builds on #780 (natural
    keys) and #787 (composite FKs); epics #783 and #793.
+3. **`storage: json` with a real schema** (S–M), the opt-in. One typed JSON column, no mapping code. Done together with
+   G3's "typed json".
 
 ## Risks
 
