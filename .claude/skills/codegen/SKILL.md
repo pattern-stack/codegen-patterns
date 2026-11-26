@@ -298,9 +298,10 @@ One schema, `CodegenConfigSchema` (`src/schema/codegen-config.schema.ts`), parse
 as `$CODEGEN_CONFIG_PATH`). Every block is `.strict()`: an unknown or removed key is a `CodegenConfigError` naming the
 key and the file, exit 1 (CFG-0, #640). Open maps only: `jobs.pools.<name>`, `frontend.parsers`.
 
-Top-level keys: `runtime`, `paths`, `generate`, `patterns`, `naming`, `locations`, `frontend`, `auth`, `database`,
-`behaviors`, `dev`, `subsystems`, `events`, `jobs`, `bridge`, `integration`, `observability`, `openapi`, `cache`,
-`storage`.
+Top-level keys: `runtime`, `target`, `paths`, `generate`, `patterns`, `locations`, `frontend`, `auth`, `tenancy`,
+`tables`, `behaviors`, `dev`, `subsystems`, `events`, `jobs`, `bridge`, `integration`, `observability`, `openapi`,
+`cache`, `storage` (`naming:` and `database:` were deleted by ARCH-1). `target: { data: drizzle-pg }` is the
+generation target: one key per axis, `drizzle-pg` its only value (ADR-047, TGT-0).
 
 **Adding a key:** declare it in the schema with a comment naming its reader, and read it off the parsed config —
 never `yaml.parse` the file. `src/__tests__/config/config-census.test.ts` greps every `paths.<key>` and top-level

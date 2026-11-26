@@ -91,6 +91,7 @@ The backend uses **hygen templates**; the frontend and integration layers use
 ### Backend Template Pipeline (hygen)
 
 - **`templates/entity/new/backend/`** — the one backend pipeline: per entity, a module folder under `paths.modules_dir` (`<modules_dir>[/<kebab context>]/<kebab plural>/`) holding the entity (Drizzle table), repository, service, controller, module, DTOs and use-cases. `backend/entity-locals.js` builds almost every local; `prompt.js` builds only the four it does not (the `@generated` banner, the runtime-import specifiers, the `detection:` literal and the EVT-7 `emits:` descriptors) and spreads the extension's over them. Every template references its locals unguarded, so a missing local throws (#638).
+- **The generation target (ADR-047, TGT-0).** `target: { data: drizzle-pg }` in `codegen.config.yaml`: one key per axis, added when the axis gets a second value (only `data` exists, and `drizzle-pg` is its one value). A field's column **facts** come from `deriveFieldFacts` (`src/derived/columns/`, no source text); its column **text** comes from `COLUMN_RENDERERS[target.data]` (`src/targets/columns.ts` → `src/targets/drizzle-pg/columns.ts`). `processFields` composes the two into the record every template prints. Zod rendering is shared by every target. `prompt.js` passes `target`; `buildBackendLocals` and the junction prompt throw without it. Constraints, behavior columns, repositories and base classes are still Drizzle-on-Postgres text outside `src/targets/`; each moves in its own `TGT-N`.
 - There is no architecture choice. The `clean` pipeline (`templates/entity/new/backend/`) and `generate.architecture` were deleted by ARCH-0 (#677, `docs/specs/ARCH-0.md`); writing the key is an unknown-key error. ARCH-1 (#682, `docs/specs/ARCH-1.md`) deleted the rest of the surface only `clean` read — `naming:`, `database:`, `behaviors.strategy` (`behaviors:` itself is live again as `{ timezone }`, #845), the 14 `locations.backend*` names (plus four dead `db*` ones), the entity layout keys (`folder_structure:`, `file_grouping:`, `behavior_strategy:`) and the 69 dead `prompt.js` locals behind them, with `src/config/naming-config.mjs`, `src/config/locations.mjs` and `src/schema/naming-config.schema.ts`. Each deleted key is now an unknown-key error naming the key and the file. `expose:` stays — the frontend emitter reads it.
 
 ### Joined-table inheritance (`inherits:`, RFC-0006, #875)
@@ -194,6 +195,8 @@ src/                    # Generator source code
   parser/               # YAML loading, cross-reference resolution (+ entity registry)
   scanner/              # Project pattern detection (framework, ORM, naming)
   schema/               # Zod schemas for entity definitions + codegen config
+  derived/              # Derived once from the YAML (ADR-046): api/ names + existence, columns/ field facts
+  targets/              # Per-target text rendered from derived facts, keyed by `target:` (ADR-047)
   utils/                # YAML and config loaders
   __tests__/            # Unit tests (mirrors src/ structure)
 runtime/                # Code shipped into user's generated project
@@ -435,7 +438,7 @@ queries:
 
 ### Configuration
 
-Project config in `codegen.config.yaml`. Key sections: `paths`, `locations`, `generate`, `tenancy`, `tables`, `frontend`. See README.md for full reference.
+Project config in `codegen.config.yaml`. Key sections: `runtime`, `target`, `paths`, `locations`, `generate`, `tenancy`, `tables`, `frontend`. See README.md for full reference.
 
 Auto-detect: `just scan` generates a config from project conventions.
 

@@ -126,3 +126,9 @@ these details:
   with their assertions repointed at `apiSurface`, is the owner's call.
 - Generated output is byte-identical across Phase B: `test/baseline`, the junction snapshots, the render goldens
   (every file every backend template renders, for every entity of each matrix case) and the API-surface golden.
+
+**Revision 2 — 2026-11-25, the `columns/` slot (TGT-0, ADR-047).** `src/derived/columns/` exists. It holds a
+field's column **facts** (`deriveFieldFacts`: type, element type, nullability, default, time zone, enum names, length
+bounds), derived once from the YAML, with no Drizzle text, Zod chain or TypeScript type string, as decision 4 requires.
+The text is rendered from those facts by the project's target (`src/targets/<target>/columns.ts`, chosen by
+`target.data`). The `wiring/` slot is still unstarted.
