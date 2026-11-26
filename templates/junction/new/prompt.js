@@ -505,8 +505,9 @@ export default {
       linkInputRequiredKeys,
 
       // On-delete
-      onDeleteLeft,
-      onDeleteRight,
+      // TGT-1: the endpoints' `.references(…, { onDelete })` suffixes are the target's text.
+      leftReference: constraints.columnReference({ targetExport: leftTable, targetColumn: "id", onDelete: onDeleteLeft }),
+      rightReference: constraints.columnReference({ targetExport: rightTable, targetColumn: "id", onDelete: onDeleteRight }),
 
       // Custom fields
       processedCustomFields,

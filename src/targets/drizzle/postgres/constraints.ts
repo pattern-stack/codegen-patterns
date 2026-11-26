@@ -34,7 +34,8 @@ function predicate(segments: readonly PredicateSegment[], tableParam: string): s
  * cycle through another table, otherwise makes the table's type refer to itself.
  */
 function columnReference(reference: ColumnReferenceFact): string {
-	return `.references((): AnyPgColumn => ${reference.targetExport}.${reference.targetColumn})`;
+	const action = reference.onDelete === undefined ? '' : `, { onDelete: '${reference.onDelete}' }`;
+	return `.references((): AnyPgColumn => ${reference.targetExport}.${reference.targetColumn}${action})`;
 }
 
 function index(fact: IndexFact, tableParam: string): string {

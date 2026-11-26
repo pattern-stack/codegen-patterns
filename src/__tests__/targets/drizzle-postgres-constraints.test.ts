@@ -19,6 +19,10 @@ describe('drizzle/postgres constraints', () => {
 		expect(pg.columnReference({ targetExport: 'accounts', targetColumn: 'id' })).toBe(
 			'.references((): AnyPgColumn => accounts.id)',
 		);
+		// belongs_to and junction endpoints carry the referential action (ADR-021).
+		expect(pg.columnReference({ targetExport: 'accounts', targetColumn: 'id', onDelete: 'set null' })).toBe(
+			".references((): AnyPgColumn => accounts.id, { onDelete: 'set null' })",
+		);
 	});
 
 	it('an index is index(name).on(<param>.<prop>, …)', () => {

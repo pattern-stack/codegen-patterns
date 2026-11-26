@@ -22,7 +22,10 @@ export interface ConstraintRenderer {
 	 * table callback's parameter (`tableParam`, required).
 	 */
 	predicate(segments: readonly PredicateSegment[], tableParam: string): string;
-	/** The suffix a column's builder chain gains to reference another table's column (a field `foreign_key:`). */
+	/**
+	 * The suffix a column's builder chain gains to reference another table's column: a field `foreign_key:`, a
+	 * `belongs_to`, a junction endpoint.
+	 */
 	columnReference(reference: ColumnReferenceFact): string;
 	/** A plain index, as an entry of the table's extra-config callback over `tableParam`. */
 	index(index: IndexFact, tableParam: string): string;

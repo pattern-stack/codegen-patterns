@@ -1703,6 +1703,16 @@ export function buildBackendLocals(definition, baseLocals) {
   // also declared as a field inherits its `required`/`nullable` (→ .notNull())
   // and `index: true` (→ a single-column index emitted below).
   const belongsTo = processBelongsTo(relationships, targetNaming, fields);
+  // TGT-1: each single-column belongs_to FK's `.references(…)` suffix is the target's text, keyed by the FK column. A
+  // `match:` relationship has none: it is half of a composite FK (the constraints block).
+  const belongsToReferences = Object.fromEntries(
+    belongsTo
+      .filter((rel) => !rel.match)
+      .map((rel) => [
+        rel.field,
+        constraints.columnReference({ targetExport: rel.relatedTable, targetColumn: 'id', onDelete: rel.onDelete }),
+      ]),
+  );
 
   // Process has_many relationships (CGP-358b)
   // `renderSet` (#815) is an input; no template reads it. It is the entities the same
@@ -2723,6 +2733,7 @@ export function buildBackendLocals(definition, baseLocals) {
     outputDtoFields: outputDtoFields,
     outputDtoHasUnknownKey,
     belongsTo: belongsTo,
+    belongsToReferences,
     belongsToFkFields: belongsToFkFields,
     createFkFields,
 
