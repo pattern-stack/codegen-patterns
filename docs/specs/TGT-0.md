@@ -113,9 +113,8 @@ processFields(fields, { entityName, enumResolver, columns }) = facts + render(fa
 
 ## Next
 
-1. **Constraints.** Split FK, index, unique and check facts from their text (`processFieldFeatures`,
-   `processUniqueIndexes`, the constraints block), and move `timestampColumn`
-   (`src/schema/field-timestamp.ts`) behind the renderer.
+1. ~~**Constraints.**~~ Done in TGT-1 (`docs/specs/TGT-1.md`), except the `external_id_tracking` unique (TGT-1b,
+   after #917).
 2. **The relationship pipeline's copy.** Decide on its decimal, date, json and enum-naming differences, then make it
    read the shared facts. Until then it is `drizzle/postgres` only and does not go through the target: it imports
    `renderColumnDefault` / `varcharColumn` from `src/targets/drizzle/postgres/columns.ts` directly and keeps its own

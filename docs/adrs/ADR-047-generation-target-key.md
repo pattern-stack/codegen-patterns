@@ -105,3 +105,13 @@ carried it (0.34.0 predates #940), so there is no shim: `data:` is an unknown ke
   locals builder makes; the problem is who renders text, not which tree prints it (ADR-046 rejected the same move).
 - **Detecting the target** from the project (the scanner already guesses a framework and an ORM). A guess is not a
   declaration, and the scanner's result feeds nothing today.
+
+## Revision — 2026-11-26 (TGT-1)
+
+- **A row carries no renderer.** Decision 3 said a `TARGET_PAIRS` row is "a pair *with* its renderer". TGT-1 adds a
+  second renderer per pair (constraints), so the binding moved to `TARGET_RENDERERS` (`src/targets/renderers.ts`),
+  typed `{ [P in TargetPair]: PairRenderers }`. The guarantee is the same, and now `tsc` checks it: a pair can't be
+  accepted without its renderers. `TARGET_PAIRS` is rows only, so the config schema imports no renderer code.
+  `COLUMN_RENDERERS` is gone; `renderersFor(target, caller)` holds the refusals.
+- **Constraints are behind the target.** Their facts are in `src/derived/constraints/`, and the text is each pair's
+  `constraints.ts` (`docs/specs/TGT-1.md`). The `external_id_tracking` unique follows in TGT-1b.
