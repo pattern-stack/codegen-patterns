@@ -338,6 +338,9 @@ by generated ones.
 
 ## The gap list
 
+> **2026-11-26, d13:** G1 and G2 are replaced by one feature, value objects. See `PROPOSAL-VALUE-OBJECTS.md`.
+> G14 is filed as #948, and the `limit` bug in G6 as #949.
+
 Sizes: S ≈ a day, M ≈ 2–4 days, L ≈ a week or more (*guesses*). "Extends" names the existing issue, epic or slice.
 
 | # | Proposed codegen issue title | Size | Extends |

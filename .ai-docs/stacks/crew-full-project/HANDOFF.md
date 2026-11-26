@@ -2,7 +2,7 @@
 
 For whoever picks this up in codegen-patterns. It is everything the codegen-targets project
 (`~/Farm/codegen-targets` on Doug's Mac) learned and settled, in one place. Read this, then `GAP.md` (the gap list,
-with file:line evidence), then `PLAN-SQLITE-DRIZZLE-PAIR.md` and `NEST-INTEGRATION.md` (background).
+with file:line evidence; G1 and G2 are replaced by `PROPOSAL-VALUE-OBJECTS.md`, d13), then `PLAN-SQLITE-DRIZZLE-PAIR.md` and `NEST-INTEGRATION.md` (background).
 
 `crew:` paths refer to crew, Doug's agent-orchestration package: private repo github.com/dugshub/crew, main at
 `c181166`. The gap analysis read crew at that commit.
@@ -48,7 +48,8 @@ Auto-merge stays **off** for every PR in the stack. A stacked PR that auto-merge
 That's how #940's amendment was lost. The repo doesn't delete merged branches, so after a squash-merge, rebase the
 next layer with `git rebase --onto origin/main <old-base-tip>` and retarget it to main.
 
-Filed: #942, #943, #944 (relationship pipeline field bugs), plus a comment on #867.
+Filed: #942, #943, #944 (relationship pipeline field bugs), plus a comment on #867. Then #948 (G14) and #949
+(`queries: limit:` ignored).
 
 ## The work: GAP.md's list
 
@@ -56,8 +57,7 @@ Sizes are the analysis's guesses: S ≈ a day, M ≈ 2–4 days, L ≈ a week (h
 
 | # | What | Size |
 |---|---|---|
-| G1 | Keys: composite natural primary key, an ordering column, a declared identity (`key:`) used by get/update/move instead of `id` | L |
-| G2 | Value objects: `shape:` fields as prefixed columns; named shapes; tagged unions over a `kind` column (no issue covers this yet) | L |
+| G1+G2 | **Value objects** (d13, replaces G1 and G2; see `PROPOSAL-VALUE-OBJECTS.md`): named `value_object:`, inline `value:`, tagged `union:`; identity can be a value object (composite key) and `references:` a value-object FK; `storage: json` or `columns`. Phased: (1) `storage: json` with G3's typed json, S–M; (2) `storage: columns`, M–L; (3) `identity:` / `references:` by value object, L (on #780, #787; epics #783, #793) | L |
 | G3 | The plain/sqlite record schema: Zod 4 per noun; a nullable column reads as a *missing* field; `instant` as ISO TEXT; typed `json` | M |
 | G4 | `versioned: rev`: compare-and-set `move(next) → row \| undefined` (the `versionable` behaviour is a stub today) | M |
 | G5 | Guarded updates: named `updates:` with a `where` on current values (set-once = `WHERE x IS NULL`) → `row \| undefined` | M |
@@ -85,14 +85,15 @@ Plus these, queued and needed:
 
 **Rough total:** about 45 human-days. At this week's agent pace (TGT-0, an M, took about half a day with review),
 2–3 weeks of agent time in sequence, or 1–1.5 weeks in two or three parallel lanes. Reviews, merges, and keeping
-Postgres goldens byte-identical are the real limits. G1 and G2 change the YAML language itself and carry the most risk.
+Postgres goldens byte-identical are the real limits. Value objects (G1+G2) change the YAML language itself and carry the most risk.
 
 ## Recommended order (from GAP.md)
 
 1. Merge the stack above.
 2. s7 A, with G9 (DDL) and the storage half of G3.
 3. s7 B.
-4. YAML growth: G1 keys → G4 rev → G6 queries → G5 guarded updates → G2 value objects.
+4. YAML growth: value objects phase 1 (`storage: json`, with G3) → G4 rev → G6 queries → G5 guarded updates → value
+   objects phase 2 (`storage: columns`) → phase 3 (`identity:` / `references:` by value object).
 5. Zod 4 in generated code, with the rest of G3.
 6. G7 transaction-bound store + G8 module grouping + G10 generated suites, proven module by module on crew: teams,
    then notifications, then mail.
@@ -104,7 +105,7 @@ G14 and the `limit` bug can go any time; they affect every codegen app today.
 ## Open for Doug (defaults from GAP.md, all recommended)
 
 1. YAML `name:` only for named updates and counts; crew takes codegen's derived finder names.
-2. Build value objects (G2) in codegen, columns only; crew adapts where shapes share columns.
+2. ~~Build value objects (G2) in codegen, columns only~~. Superseded by d13: value objects per `PROPOSAL-VALUE-OBJECTS.md`, `storage: json` first, then `columns`.
 3. Missing vs null and Date vs ISO string are decided per target, so drizzle-pg goldens stay byte-identical.
 4. Placement in crew: generated `domain/<noun>.record.ts` beside the hand-written `<noun>.ts`; generated store,
    tables and `.sql` in `infrastructure/sqlite/`; `module.ts` stays hand-written.
