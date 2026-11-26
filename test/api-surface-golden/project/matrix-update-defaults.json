@@ -1,0 +1,97 @@
+{
+	"case": "matrix-update-defaults",
+	"covers": "boolean `default:` fields and the update DTO: the create applies the default, every update (plain, family base, family child) restates the field without it",
+	"relations": [
+		{
+			"id": "bin.inherits",
+			"from": "bin",
+			"to": "tote",
+			"kind": "inherits",
+			"generates": [
+				{
+					"entity": "bin",
+					"layer": "repository",
+					"method": "findWithBase"
+				},
+				{
+					"entity": "bin",
+					"layer": "repository",
+					"method": "findManyWithBase"
+				},
+				{
+					"entity": "bin",
+					"layer": "repository",
+					"method": "listFlat"
+				},
+				{
+					"entity": "bin",
+					"layer": "repository",
+					"method": "countFlat"
+				},
+				{
+					"entity": "bin",
+					"layer": "repository",
+					"method": "create"
+				},
+				{
+					"entity": "bin",
+					"layer": "repository",
+					"method": "update"
+				},
+				{
+					"entity": "bin",
+					"layer": "repository",
+					"method": "delete"
+				},
+				{
+					"entity": "bin",
+					"layer": "service",
+					"method": "findWithBase"
+				},
+				{
+					"entity": "bin",
+					"layer": "service",
+					"method": "findManyWithBase"
+				},
+				{
+					"entity": "bin",
+					"layer": "service",
+					"method": "listFlat"
+				},
+				{
+					"entity": "bin",
+					"layer": "service",
+					"method": "countFlat"
+				},
+				{
+					"entity": "bin",
+					"layer": "service",
+					"method": "create"
+				},
+				{
+					"entity": "bin",
+					"layer": "service",
+					"method": "update"
+				},
+				{
+					"entity": "bin",
+					"layer": "service",
+					"method": "delete"
+				}
+			],
+			"includeKeys": [
+				{
+					"table": "bins",
+					"key": "tote"
+				},
+				{
+					"table": "totes",
+					"key": "bin"
+				}
+			]
+		}
+	],
+	"unmodelled": [],
+	"warnings": [],
+	"includes": {}
+}

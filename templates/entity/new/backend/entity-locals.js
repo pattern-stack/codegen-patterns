@@ -378,6 +378,8 @@ export function processFields(fields, { entityName, enumResolver, columns }) {
       nullable: f.nullable,
       required: f.required,
       hasDefault: f.hasDefault,
+      // The declared `default:` value: the create DTO's `.default(…)` prints it (it printed `false` without it).
+      default: f.default,
       isPrimaryKey: false,
       drizzleChain,
       choices: f.choices,
@@ -968,6 +970,16 @@ function collectDrizzleImports(columns, processedFields, belongsTo, hasTimestamp
 }
 
 /**
+ * Whether the field's create chain fills a value when the field is omitted (`.default(…)`). Today: a boolean with a
+ * YAML `default:`. The one owner of that rule: the create chain applies it, and the update DTO overrides exactly these
+ * fields (ZOD-1a), because an update built as `Create.partial()` would carry the default along. On Zod 4 an
+ * `.optional()` around a `.default()` applies it, so a PATCH that omits the field would reset it.
+ */
+function createChainAppliesDefault(field) {
+  return field.type === 'boolean' && field.hasDefault;
+}
+
+/**
  * Derive Zod chain for a field in create DTO context
  */
 function zodChainForCreate(field) {
@@ -986,7 +998,7 @@ function zodChainForCreate(field) {
   // re-checked.
   base += zodLengthChecks(field);
 
-  if (type === 'boolean' && hasDefault) {
+  if (createChainAppliesDefault(field)) {
     // `.default()` already makes the input optional in Zod.
     base += `.default(${field.default ?? false})`;
     return base;
@@ -995,6 +1007,18 @@ function zodChainForCreate(field) {
   if (nullable) base += '.nullable()';
   if (!required) base += '.optional()';
   return base;
+}
+
+/**
+ * Derive Zod chain for a field in update DTO context: the create chain made optional, without its default (ZOD-1a).
+ * It accepts exactly what `Create.partial()` accepts for the field, and an omitted field is left as it is.
+ */
+function zodChainForUpdate(field) {
+  let base = zodValueFor({ type: field.type, hasChoices: field.hasChoices, choices: field.choices });
+  base += zodLengthChecks(field);
+  // The create chain does not add `.nullable()` when it applies a default; neither does its update.
+  if (field.nullable && !createChainAppliesDefault(field)) base += '.nullable()';
+  return base + '.optional()';
 }
 
 /**
@@ -2428,6 +2452,7 @@ export function buildBackendLocals(definition, baseLocals) {
   const belongsToFkFields = belongsTo.map((rel) => ({
     camelName: rel.camelField,
     zodChainCreate: rel.nullable ? 'z.string().uuid().nullable().optional()' : 'z.string().uuid()',
+    zodChainUpdate: rel.nullable ? 'z.string().uuid().nullable().optional()' : 'z.string().uuid().optional()',
     zodChainOutput: rel.nullable ? 'z.string().uuid().nullable()' : 'z.string().uuid()',
     nullable: rel.nullable,
   }));
@@ -2449,6 +2474,8 @@ export function buildBackendLocals(definition, baseLocals) {
           ? 'z.never()'
           : `z.enum([${baseOnlyKinds.map((k) => `'${k}'`).join(', ')}])`
         : zodChainForCreate(f),
+    zodChainUpdate: zodChainForUpdate(f),
+    createAppliesDefault: createChainAppliesDefault(f),
   }));
 
   // Build zodChain for each output DTO field (all non-FK fields).
@@ -2748,6 +2775,8 @@ export function buildBackendLocals(definition, baseLocals) {
     // Field data
     processedFields: nonFkFields,
     createDtoFields: createDtoFieldsWithZod,
+    // ZOD-1a: the create fields whose chain applies a default; the update DTO restates them without it.
+    updateDefaultOverrides: createDtoFieldsWithZod.filter((f) => f.createAppliesDefault),
     outputDtoFields: outputDtoFields,
     outputDtoHasUnknownKey,
     belongsTo: belongsTo,
