@@ -14,7 +14,6 @@ import {
   relativeModuleDir,
 } from '../../../_shared/entity-naming.mjs';
 import { junctionFanOutFor, junctionNaming } from '../../../_shared/junction-fan-out.mjs';
-import { renderSqlPredicate } from '../../../_shared/sql-predicate.mjs';
 import { TABLE_CALLBACK_PARAM as T } from '../../../_shared/table-callback.mjs';
 import {
   familyReads,
@@ -35,6 +34,9 @@ import '../../../../src/patterns/library/index.js';
 import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
 import { arrayElementType, deriveFieldFacts, isArrayType } from '../../../../src/derived/columns/fields.js';
 import { columnRendererFor } from '../../../../src/targets/columns.js';
+import { constraintRendererFor } from '../../../../src/targets/constraints.js';
+import { tokenizePredicate } from '../../../../src/derived/constraints/predicate.js';
+import { onDeleteAction } from '../../../../src/derived/constraints/on-delete.js';
 import {
   familyConstName,
   familyHelperName,
@@ -49,7 +51,7 @@ import {
 import { camelCase, emittedStem } from '../../../../src/config/file-naming.js';
 import { resolvedBehaviorNames as resolveBehaviorNames } from '../../../../src/patterns/implied-behaviors.js';
 import { foreignKeyColumnNullable } from '../../../../src/schema/field-nullability.js';
-import { behaviorWithTimezone, timestampColumn } from '../../../../src/schema/field-timestamp.js';
+import { behaviorWithTimezone } from '../../../../src/schema/field-timestamp.js';
 import { resolveTenancy } from '../../../../src/schema/tenancy.js';
 import { matchPairsOf } from '../../../../src/schema/inheritance.js';
 import { sqlTableName } from '../../../../src/config/table-naming.js';
@@ -391,22 +393,6 @@ export function processFields(fields, { entityName, enumResolver, columns }) {
 }
 
 /**
- * Map YAML on_delete value to the Drizzle onDelete option string.
- *
- * ADR-021 uses snake_case values in YAML (set_null, no_action) while
- * Drizzle expects the SQL keyword form with a space ('set null', 'no action').
- */
-function mapOnDelete(onDelete) {
-  const map = {
-    restrict: 'restrict',
-    cascade: 'cascade',
-    set_null: 'set null',
-    no_action: 'no action',
-  };
-  return map[onDelete] ?? 'restrict';
-}
-
-/**
  * Process has_many relationships into HasManyRelation[].
  *
  * Mirrors processBelongsTo. The `foreign_key` declared on a has_many
@@ -546,7 +532,7 @@ function processBelongsTo(relationships, naming, fields = {}) {
 
     // on_delete defaults to 'restrict' per ADR-021
     const onDeleteYaml = rel.on_delete ?? 'restrict';
-    const onDelete = mapOnDelete(onDeleteYaml);
+    const onDelete = onDeleteAction(onDeleteYaml);
 
     // Relation key — names this edge's per-relationship members (the
     // service's parent-fetch method, the Integrated write key
@@ -672,8 +658,13 @@ function collectRepositoryDeps(belongsTo, existingHasMany) {
  *   (#511) leads with the column, or they are the adopted tenant column (the
  *   tenant index is that index). Absent or empty → suppress nothing: an extra index is harmless, a
  *   silently dropped one is not.
+ * @param {object}   constraints     the target's constraint renderer (`constraintRendererFor`, TGT-1): writes the
+ *   `.references(…)` suffix and the index entry from their facts. Required.
  */
-export function processFieldFeatures(renderedFields, fields, naming, ownedTables, suppressedIndexNames) {
+export function processFieldFeatures(renderedFields, fields, naming, ownedTables, suppressedIndexNames, constraints) {
+  if (!constraints) {
+    throw new Error(`processFieldFeatures(${naming?.entityName}): the target's constraint renderer is required (TGT-1).`);
+  }
   // TABLE-0: a `foreign_key: <table>.<column>` names a SQL TABLE, and index
   // names are SQL identifiers — both read `entityTableName`. The `.references()`
   // callback and the import name the target's Drizzle EXPORT (its `plural`),
@@ -730,8 +721,8 @@ export function processFieldFeatures(renderedFields, fields, naming, ownedTables
             });
           }
         }
-        // Every FK callback is annotated (#631): see `hasFk`.
-        pf.drizzleChain += `.references((): AnyPgColumn => ${relatedExport}.${fkColumn})`;
+        // Every FK callback is annotated (#631): see `hasFk`. The suffix is the target's text (TGT-1).
+        pf.drizzleChain += constraints.columnReference({ targetExport: relatedExport, targetProp: fkColumn });
         hasFieldFk = true;
       }
       // else: host-owned target — plain column, no FK, no import. `index: true`
@@ -740,10 +731,11 @@ export function processFieldFeatures(renderedFields, fields, naming, ownedTables
 
     // --- index: true (#355) ---
     if (field.index === true && !(suppressedIndexNames && suppressedIndexNames.has(pf.name))) {
+      const name = `${entityTableName}_${pf.name}_idx`;
       indexExpressions.push({
         comment: null,
-        expr: `index('${entityTableName}_${pf.name}_idx').on(${T}.${pf.camelName})`,
-        name: `${entityTableName}_${pf.name}_idx`,
+        expr: constraints.index({ name, props: [pf.camelName] }, T),
+        name,
         builder: 'index',
         source: `field '${pf.name}' (index: true)`,
       });
@@ -809,14 +801,15 @@ function entityTableColumns({
  * drizzle-orm 1.0.0-rc.4, so a partial entry does not. An author `name` is kept
  * verbatim. Generation errors: C1 (unknown column), C2 (the tenant column
  * listed, or a repeated field), and the `where:` scanner errors
- * (renderSqlPredicate).
+ * (`tokenizePredicate`). The rules above are decided here, as facts; the builder and its text are the target's
+ * (`constraints.unique`, TGT-1).
  *
  * `tenancy` is `resolveTenancy`'s result (#791) — `null` when the entity is not
  * tenant_scoped; its `column` is the prefix (`tenant_id` by default).
  */
 function processUniqueIndexes(
   entries,
-  { entityName, tableName, tenancy = null, tableColumns },
+  { entityName, tableName, tenancy = null, tableColumns, constraints },
 ) {
   const tenantScoped = tenancy !== null;
   if (!Array.isArray(entries)) return [];
@@ -839,40 +832,30 @@ function processUniqueIndexes(
     }
 
     const partial = ui.where !== undefined;
-    const nnd = partial ? false : (ui.nulls_not_distinct ?? tenantScoped);
     const cols = tenantScoped ? [tenancy.column, ...ui.fields] : ui.fields;
     const name = ui.name || `${tableName}_${cols.join('_')}_uniq`;
-    const onCols = cols.map((c) => `${T}.${propByColumn.get(c)}`).join(', ');
-
-    let expr;
-    let builder;
-    let comment = null;
+    let where = null;
     if (partial) {
-      let body;
       try {
-        body = renderSqlPredicate(ui.where, lowerColumns, T);
+        where = tokenizePredicate(ui.where, lowerColumns);
       } catch (err) {
         throw new Error(`${label} where: ${err.message}`);
       }
-      builder = 'uniqueIndex';
-      expr = `uniqueIndex('${name}').on(${onCols}).where(sql\`${body}\`)`;
-      if (tenantScoped) {
-        comment =
-          'tenant_scoped — unique per tenant; partial, so NULL-tenant rows never conflict (no NULLS NOT DISTINCT on a partial index in drizzle rc.4)';
-      }
-    } else if (nnd) {
-      builder = 'unique';
-      expr = `unique('${name}').on(${onCols}).nullsNotDistinct()`;
-      if (tenantScoped) {
-        comment = 'tenant_scoped — unique per tenant; NULLS NOT DISTINCT, so the NULL tenant is one partition (ADR-042)';
-      }
-    } else {
-      builder = 'uniqueIndex';
-      expr = `uniqueIndex('${name}').on(${onCols})`;
-      if (tenantScoped) {
-        comment = 'tenant_scoped — unique per tenant; nulls_not_distinct: false, so NULL-tenant rows never conflict';
-      }
     }
+    // The facts; the builder, its text and the pair's note on the NULL tenant are the target's (TGT-1).
+    const { expr, builder, comment } = constraints.unique(
+      {
+        name,
+        props: cols.map((c) => propByColumn.get(c)),
+        where,
+        // A partial unique is never NULLS NOT DISTINCT: the generator's rule (drizzle rc.4 can't write one), decided
+        // here so the fact says what the database enforces.
+        nullsNotDistinct: partial ? false : (ui.nulls_not_distinct ?? tenantScoped),
+        referenced: false,
+        tenantScoped,
+      },
+      T,
+    );
     return { name, comment, expr, builder, partial, columns: cols, source: ui.source };
   });
 }
@@ -1385,6 +1368,8 @@ export function buildBackendLocals(definition, baseLocals) {
   // (`src/targets/columns.ts`). Required: prompt.js reads `target` from the
   // parsed config, whose schema owns the default (ADR-047).
   const columns = columnRendererFor(baseLocals.target, `buildBackendLocals(${entity.name})`);
+  // TGT-1: and its constraints (`src/targets/constraints.ts`).
+  const constraints = constraintRendererFor(baseLocals.target, `buildBackendLocals(${entity.name})`);
   // ADR-043 §6 `api: false` and REL-2 §2.5's typed include are decided once, in
   // the derivation (`apiEnabled` / `hasTypedInclude`, `src/derived/api/
   // entity.ts`); the templates read its answers as `apiSurface.http.enabled` /
@@ -1709,6 +1694,17 @@ export function buildBackendLocals(definition, baseLocals) {
   // also declared as a field inherits its `required`/`nullable` (→ .notNull())
   // and `index: true` (→ a single-column index emitted below).
   const belongsTo = processBelongsTo(relationships, targetNaming, fields);
+  // TGT-1: each single-column belongs_to FK's `.references(…)` suffix is the target's text, keyed by the FK column. A
+  // `match:` relationship has none: it is half of a composite FK (the constraints block). The template reads it
+  // through `belongsToReference`, which throws on a missing one — never a silently FK-less column.
+  const belongsToReferenceByField = Object.fromEntries(
+    belongsTo
+      .filter((rel) => !rel.match)
+      .map((rel) => [
+        rel.field,
+        constraints.columnReference({ targetExport: rel.relatedTable, targetProp: 'id', onDelete: rel.onDelete }),
+      ]),
+  );
 
   // Process has_many relationships (CGP-358b)
   // `renderSet` (#815) is an input; no template reads it. It is the entities the same
@@ -1841,6 +1837,7 @@ export function buildBackendLocals(definition, baseLocals) {
     targetNaming,
     baseLocals?.ownedTableNames,
     suppressedIndexNames,
+    constraints,
   );
   const belongsToTables = new Set(belongsTo.map((r) => r.relatedTable));
   const fieldFkImports = fieldFeatures.fkImports.filter(
@@ -2001,7 +1998,7 @@ export function buildBackendLocals(definition, baseLocals) {
       ...fieldUniqueEntries(fields, tenancy),
       ...(definition.unique_indexes ?? []).map((ui, i) => ({ ...ui, source: `unique_indexes[${i}]` })),
     ],
-    { entityName, tableName: entityTableName, tenancy, tableColumns },
+    { entityName, tableName: entityTableName, tenancy, tableColumns, constraints },
   );
 
   // RFC-0006 §2.4 (S4): the columns this table DERIVES from a parent row, and the parents each is read from — in
@@ -2036,7 +2033,7 @@ export function buildBackendLocals(definition, baseLocals) {
     .filter((rel) => rel.hasIndex && !suppressedIndexNames.has(rel.field))
     .map((rel) => ({
       comment: null,
-      expr: `index('${entityTableName}_${rel.field}_idx').on(${T}.${rel.camelField})`,
+      expr: constraints.index({ name: `${entityTableName}_${rel.field}_idx`, props: [rel.camelField] }, T),
       name: `${entityTableName}_${rel.field}_idx`,
       builder: 'index',
       source: `belongs_to '${rel.field}' index`,
@@ -2057,7 +2054,7 @@ export function buildBackendLocals(definition, baseLocals) {
     // Every scoped read filters on this column, so it is indexed unconditionally.
     tableConstraints.unshift({
       comment: `tenant_scoped behavior (ADR-042) — every scoped read filters on ${tenancy.column}`,
-      expr: `index('${entityTableName}_${tenancy.column}_idx').on(${T}.${tenancy.prop})`,
+      expr: constraints.index({ name: `${entityTableName}_${tenancy.column}_idx`, props: [tenancy.prop] }, T),
       name: `${entityTableName}_${tenancy.column}_idx`,
       builder: 'index',
       source: 'tenant_scoped',
@@ -2096,22 +2093,35 @@ export function buildBackendLocals(definition, baseLocals) {
     );
   }
 
-  // RFC-0006 constraints (§2.1, §2.2, §2.4), appended after every other entry.
+  // RFC-0006 constraints (§2.1, §2.2, §2.4), appended after every other entry. Facts here; text from the target's
+  // constraint renderer (TGT-1).
   const propOf = (column) => camelCase(column);
-  const fkExpr = (name, columns, targetTable, targetColumns, onDelete) =>
-    `foreignKey({\n` +
-    `      name: '${name}',\n` +
-    `      columns: [${columns.map((c) => `${T}.${propOf(c)}`).join(', ')}],\n` +
-    `      foreignColumns: [${targetColumns.map((c) => `${targetTable}.${propOf(c)}`).join(', ')}],\n` +
-    `    }).onDelete('${onDelete}')`;
+  const fkExpr = (name, columns, targetExport, targetColumns, onDelete) =>
+    constraints.foreignKey(
+      { name, props: columns.map(propOf), targetExport, targetProps: targetColumns.map(propOf), onDelete },
+      T,
+    );
   // The targets of other tables' composite FKs: unique(id, <cols>), one per column set.
+  const uniqueTargetEntry = (name, columns) => {
+    const { expr, builder } = constraints.unique(
+      {
+        name,
+        props: ['id', ...columns].map(propOf),
+        where: null,
+        nullsNotDistinct: false,
+        referenced: true,
+        tenantScoped: false,
+      },
+      T,
+    );
+    return { expr, builder };
+  };
   for (const u of inheritance.uniqueTargets) {
     const name = `${entityTableName}_id_${u.columns.join('_')}_uniq`;
     tableConstraints.push({
       comment: `inherits / match: the target of a composite FK (id, ${u.columns.join(', ')})`,
-      expr: `unique('${name}').on(${T}.id, ${u.columns.map((c) => `${T}.${propOf(c)}`).join(', ')})`,
+      ...uniqueTargetEntry(name, u.columns),
       name,
-      builder: 'unique',
       partial: false,
       columns: ['id', ...u.columns],
       source: `inherits / match: unique(id, ${u.columns.join(', ')})`,
@@ -2139,13 +2149,20 @@ export function buildBackendLocals(definition, baseLocals) {
     const locals = fk.pairs.map(([l]) => l).filter((l) => nullableDerived.has(l));
     if (locals.length === 0) continue;
     const name = `${entityTableName}_${fk.relName}_match_check`;
-    const body = locals
-      .map((l) => `\${${T}.${camelCase(rel.field)}} IS NULL OR \${${T}.${camelCase(l)}} IS NOT NULL`)
-      .map((c) => (locals.length > 1 ? `(${c})` : c))
-      .join(' AND ');
+    // `<fk> IS NULL OR <derived> IS NOT NULL`, per derived column, parenthesised and ANDed when there are several.
+    const expression = locals.flatMap((l, i) => {
+      const clause = [
+        { column: rel.field, prop: camelCase(rel.field) },
+        { text: ' IS NULL OR ' },
+        { column: l, prop: camelCase(l) },
+        { text: ' IS NOT NULL' },
+      ];
+      const one = locals.length > 1 ? [{ text: '(' }, ...clause, { text: ')' }] : clause;
+      return i === 0 ? one : [{ text: ' AND ' }, ...one];
+    });
     tableConstraints.push({
       comment: `match: a set ${rel.field} needs ${locals.join(', ')}, so it always reaches its composite FK (MATCH SIMPLE skips a NULL)`,
-      expr: `check('${name}', sql\`${body}\`)`,
+      expr: constraints.check({ name, expression }, T),
       name,
       builder: 'check',
       source: `match: on relationship '${fk.relName}' (nullable)`,
@@ -2159,7 +2176,7 @@ export function buildBackendLocals(definition, baseLocals) {
       const t = inheritedChild.tenant;
       tableConstraints.unshift({
         comment: `inherits: the tenant column comes from the base (${baseName}), indexed like any tenant-scoped table`,
-        expr: `index('${entityTableName}_${t.column}_idx').on(${T}.${t.prop})`,
+        expr: constraints.index({ name: `${entityTableName}_${t.column}_idx`, props: [t.prop] }, T),
         name: `${entityTableName}_${t.column}_idx`,
         builder: 'index',
         source: 'inherits: tenant column',
@@ -2187,7 +2204,13 @@ export function buildBackendLocals(definition, baseLocals) {
     const checkName = `${entityTableName}_${disc}_check`;
     tableConstraints.push({
       comment: `inherits ${baseName}: the kind is fixed (DEFAULT + CHECK, not a generated column)`,
-      expr: `check('${checkName}', sql\`\${${T}.${inheritedChild.kind.prop}} = '${inheritedChild.as}'\`)`,
+      expr: constraints.check(
+        {
+          name: checkName,
+          expression: [{ column: disc, prop: inheritedChild.kind.prop }, { text: ` = '${inheritedChild.as}'` }],
+        },
+        T,
+      ),
       name: checkName,
       builder: 'check',
       source: 'inherits: kind CHECK',
@@ -2641,8 +2664,9 @@ export function buildBackendLocals(definition, baseLocals) {
     hasPatternConfig,
     patternConfig: patternConfigBlock,
     renderPatternConfigLiteral,
-    // The one place a timestamp column's options are spelled (#796) — entity.ejs.t's behavior columns.
-    timestampColumn,
+    // The one place a timestamp column's options are spelled (#796) — entity.ejs.t's behavior columns. The target's
+    // text (TGT-1), so it comes from the pair's renderer.
+    timestampColumn: columns.timestampColumn,
     ...patternConfigClasses,
 
     // Capability composition (ADR-041). `capabilityMixins` is empty for every
@@ -2727,6 +2751,13 @@ export function buildBackendLocals(definition, baseLocals) {
     outputDtoFields: outputDtoFields,
     outputDtoHasUnknownKey,
     belongsTo: belongsTo,
+    belongsToReference: (field) => {
+      const reference = belongsToReferenceByField[field];
+      if (reference === undefined) {
+        throw new Error(`[codegen] '${entityName}': internal error — no .references() for belongs_to column '${field}'.`);
+      }
+      return reference;
+    },
     belongsToFkFields: belongsToFkFields,
     createFkFields,
 

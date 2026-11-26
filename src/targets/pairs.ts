@@ -3,16 +3,15 @@
  *
  * - the config schema (`TargetConfigSchema`, `src/schema/codegen-config.schema.ts`) is a union of these pairs, so
  *   validation and editor completion offer exactly them;
- * - the column renderer table (`src/targets/columns.ts`) is these pairs' renderers;
+ * - the renderer binding (`TARGET_RENDERERS`, `src/targets/renderers.ts`) must have an entry for every row, and `tsc`
+ *   refuses one missing (TGT-1: the rows carry no renderer, so the config schema imports none);
  * - the refusal of an unsupported pair names them.
  *
  * A pair is `(orm, database)` because the column text is the pair's (Drizzle's `pg-core` vs `sqlite-core`). Add a
  * row when a pair's renderer exists and passes the same gates — never a second list anywhere else.
  *
- * Hygen-safe: reached from the config schema and `entity-locals.js`, so it imports only modules that ship.
+ * Hygen-safe: reached from the config schema and `entity-locals.js`; it imports nothing.
  */
-
-import { drizzlePostgresColumns } from './drizzle/postgres/columns.js';
 
 export const TARGET_PAIRS = [
 	{
@@ -20,7 +19,6 @@ export const TARGET_PAIRS = [
 		database: 'postgres',
 		ormDescription: 'Drizzle ORM: tables, columns and repositories written against drizzle-orm',
 		databaseDescription: 'PostgreSQL: pg-core column builders, node-postgres driver on Node',
-		columns: drizzlePostgresColumns,
 	},
 ] as const;
 

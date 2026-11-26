@@ -20,7 +20,7 @@ import { describe, it, expect } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ejs from 'ejs';
-import { timestampColumn } from '../../schema/field-timestamp';
+import { timestampColumn } from '../../targets/drizzle/postgres/columns';
 
 const JUNCTION_ENTITY_TEMPLATE = readFileSync(
   resolve(import.meta.dir, '../../../templates/junction/new/entity.ejs.t'),
@@ -76,8 +76,8 @@ function localsFor({ hasRole }: { hasRole: boolean }): Record<string, unknown> {
     rightColumn: 'contact_id',
     leftColumnCamel: 'opportunityId',
     rightColumnCamel: 'contactId',
-    onDeleteLeft: 'restrict',
-    onDeleteRight: 'restrict',
+    leftReference: ".references((): AnyPgColumn => opportunities.id, { onDelete: 'restrict' })",
+    rightReference: ".references((): AnyPgColumn => contacts.id, { onDelete: 'restrict' })",
     hasRole,
     roleEnumName: hasRole ? 'opportunityContactRoleEnum' : null,
     roleEnumValues: hasRole ? ['champion', 'decision_maker', 'influencer'] : [],

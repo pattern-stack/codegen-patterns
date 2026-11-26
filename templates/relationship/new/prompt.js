@@ -32,13 +32,13 @@ import {
   TIMEZONE_ON_NON_DATETIME_MESSAGE,
   behaviorWithTimezone,
   fieldWithTimezone,
-  timestampColumn,
   TIMEZONE_NOT_BOOLEAN_MESSAGE,
   timezoneNotBoolean,
   timezoneOnNonDatetime,
 } from "../../../src/schema/field-timestamp.js";
 import { fieldLengthIssues, stringLengthBounds } from "../../../src/schema/field-length.js";
-import { renderColumnDefault, varcharColumn } from "../../../src/targets/drizzle/postgres/columns.js";
+// drizzle/postgres directly, not through `target:`: this pipeline keeps its own copy until its cut (TGT-0 § Next 2).
+import { renderColumnDefault, timestampColumn, varcharColumn } from "../../../src/targets/drizzle/postgres/columns.js";
 import { zodLengthChecks } from "../../entity/new/backend/entity-locals.js";
 
 // ============================================================================

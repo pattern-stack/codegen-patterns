@@ -51,7 +51,7 @@ export const <%= entityNamePlural %> = pgTable(
     // match: this column is half of a composite FK (see the constraints below), not a single-column reference.
     <%= rel.camelField %>: uuid('<%= rel.field %>')<%= rel.nullable ? '' : '.notNull()' %>,
 <%_ } else { _%>
-    <%= rel.camelField %>: uuid('<%= rel.field %>')<%= rel.nullable ? '' : '.notNull()' %>.references((): AnyPgColumn => <%= rel.relatedTable %>.id, { onDelete: '<%= rel.onDelete %>' }),
+    <%= rel.camelField %>: uuid('<%= rel.field %>')<%= rel.nullable ? '' : '.notNull()' %><%- belongsToReference(rel.field) %>,
 <%_ } _%>
 <%_ }) _%>
 <%_ matchDerivedColumns.forEach(c => { _%>
