@@ -1,9 +1,10 @@
 /**
  * Field length keys — the ONE statement of when `min_length` / `max_length`
- * are accepted on a field declaration (#772). What they emit (a `varchar(n)`
- * column, `.min(n)` / `.max(n)` on the write DTOs) is `stringLengthBounds` in
- * `templates/entity/new/backend/entity-locals.js`; this module only decides
- * whether the declaration is valid.
+ * are accepted on a field declaration (#772), and of the bounds a valid one
+ * carries (`stringLengthBounds`). What the bounds emit — a `varchar(n)` column,
+ * `.min(n)` / `.max(n)` on the write DTOs — is each renderer's business
+ * (`src/targets/drizzle-pg/columns.ts`, `zodLengthChecks` in
+ * `templates/entity/new/backend/entity-locals.js`).
  *
  *   - either key next to `choices:` / `choices_from:` → refused, whatever the
  *     type: an enum's values bound its length, so the key would be parsed and
@@ -64,4 +65,29 @@ export function fieldLengthIssues(field: FieldLengthDeclaration): FieldLengthIss
 		issues.push({ key: 'min_length', message: "'min_length' cannot exceed 'max_length': no value could satisfy both" });
 	}
 	return issues;
+}
+
+/** A field's length bounds: `null` where the field declares none. */
+export interface StringLengthBounds {
+	minLength: number | null;
+	maxLength: number | null;
+}
+
+/**
+ * A `string` field's length bounds (#772) — the one rule every pipeline that
+ * renders a field column reads (the entity and junction payload fields through
+ * `deriveFieldFacts`, and the relationship prompt's `fields:`). Whether the keys
+ * are valid is {@link fieldLengthIssues}: `type: string` only, never with
+ * `choices:` — refused before this runs, so the guard below is not a silent drop.
+ */
+export function stringLengthBounds(
+	field: FieldLengthDeclaration,
+	type: string,
+	hasChoices: boolean,
+): StringLengthBounds {
+	if (type !== 'string' || hasChoices) return { minLength: null, maxLength: null };
+	return {
+		minLength: Number.isInteger(field.min_length) ? (field.min_length as number) : null,
+		maxLength: Number.isInteger(field.max_length) ? (field.max_length as number) : null,
+	};
 }

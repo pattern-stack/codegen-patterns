@@ -36,6 +36,7 @@ const TARGETS = [
  */
 export const PROJECT_CONFIG_LOCALS = Object.freeze({
 	behaviorsTimezone: DEFAULT_CODEGEN_CONFIG.behaviors.timezone,
+	target: DEFAULT_CODEGEN_CONFIG.target,
 });
 
 /** The prompt-owned locals, then `base`, then the test entity lookup. */
