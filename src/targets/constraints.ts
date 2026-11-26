@@ -21,8 +21,9 @@ import type { TargetConfig } from '../schema/codegen-config.schema.js';
 import type { TargetPair } from './pairs.js';
 import { renderersFor } from './renderers.js';
 
-export interface ConstraintRenderer {
-	readonly pair: TargetPair;
+/** A pair's constraint renderer; generic over the pair's key, as `ColumnRenderer` is. */
+export interface ConstraintRenderer<P extends string = TargetPair> {
+	readonly pair: P;
 	/**
 	 * A tokenized predicate as the body of the pair's raw-SQL expression, its column references written against the
 	 * table callback's parameter (`tableParam`, required).

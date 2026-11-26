@@ -76,6 +76,7 @@
     "src/targets/renderers.ts",
     "src/targets/drizzle/postgres/columns.ts",
     "src/targets/drizzle/postgres/constraints.ts",
+    "src/targets/drizzle/sqlite/columns.ts",
     "src/config/entities-dir.ts",
     "src/config/junctions-dir.ts",
     "src/config/junction-naming.ts",
