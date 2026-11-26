@@ -37,6 +37,7 @@ import { columnRendererFor } from '../../../../src/targets/columns.js';
 import { constraintRendererFor } from '../../../../src/targets/constraints.js';
 import { tokenizePredicate } from '../../../../src/derived/constraints/predicate.js';
 import { onDeleteAction } from '../../../../src/derived/constraints/on-delete.js';
+import { deriveTableColumns } from '../../../../src/derived/tables/columns.js';
 import {
   familyConstName,
   familyHelperName,
@@ -745,41 +746,6 @@ export function processFieldFeatures(renderedFields, fields, naming, ownedTables
   }
 
   return { fkImports, indexExpressions, hasFieldFk };
-}
-
-/**
- * Columns of the rendered `pgTable`, as `{ column, prop }` (#784). Built from
- * exactly the inputs the entity template renders (`id`; belongs_to FK columns;
- * non-FK fields; the external_id_tracking, tenant and timestamp/soft-delete
- * columns); a unit test pins it to the rendered column block.
- */
-function entityTableColumns({
-  belongsTo,
-  nonFkFields,
-  hasExternalIdTracking,
-  tenancy,
-  hasTimestamps,
-  hasSoftDelete,
-  extraColumns = [],
-}) {
-  const cols = [{ column: 'id', prop: 'id' }, ...extraColumns];
-  for (const rel of belongsTo) cols.push({ column: rel.field, prop: rel.camelField });
-  for (const f of nonFkFields) cols.push({ column: f.name, prop: f.camelName });
-  if (hasExternalIdTracking) {
-    cols.push(
-      { column: 'external_id', prop: 'externalId' },
-      { column: 'provider', prop: 'provider' },
-      { column: 'provider_metadata', prop: 'providerMetadata' },
-    );
-  }
-  // An ADOPTED tenant column (#791) is already in the list, as its field or
-  // belongs_to; only an emitted one is added here.
-  if (tenancy && !tenancy.adopted) cols.push({ column: tenancy.column, prop: tenancy.prop });
-  if (hasTimestamps) {
-    cols.push({ column: 'created_at', prop: 'createdAt' }, { column: 'updated_at', prop: 'updatedAt' });
-  }
-  if (hasSoftDelete) cols.push({ column: 'deleted_at', prop: 'deletedAt' });
-  return cols;
 }
 
 /**
@@ -2008,15 +1974,32 @@ export function buildBackendLocals(definition, baseLocals) {
 
   // Field-level `unique: true` (#511) and composite unique indexes (#356),
   // through one builder.
-  const tableColumns = entityTableColumns({
+  // TGT-2a: every column of the table, as facts — the one owner of the column list (`src/derived/tables/`). The
+  // template prints each group's own text; every column lookup reads this list, and the SQLite DDL renders it whole.
+  const tableColumnFacts = deriveTableColumns({
+    isChild,
+    inherited: isChild
+      ? {
+          kind: { column: inheritedChild.kind.column, prop: inheritedChild.kind.prop, as: inheritedChild.as },
+          tenant: inheritedChild.tenant,
+        }
+      : null,
+    matched: matched.derived.map((d) => ({
+      column: d.column,
+      prop: camelCase(d.column),
+      nullable: d.nullable,
+      kind: d.kind,
+      field: d.field,
+      enumRef: d.enumRef,
+    })),
     belongsTo,
-    nonFkFields,
-    hasExternalIdTracking,
-    tenancy,
-    hasTimestamps,
-    hasSoftDelete,
-    extraColumns: [...inheritedKeyColumns, ...matchDerivedColumns].map((c) => ({ column: c.column, prop: c.prop })),
+    fields: nonFkFields,
+    externalIdTracking: hasExternalIdTracking,
+    tenant: tenancy && !tenancy.adopted ? { column: tenancy.column, prop: tenancy.prop } : null,
+    timestamps: hasTimestamps ? { withTimezone: timestampsWithTimezone } : null,
+    softDelete: hasSoftDelete ? { withTimezone: softDeleteWithTimezone } : null,
   });
+  const tableColumns = tableColumnFacts.map((c) => ({ column: c.name, prop: c.prop }));
   const uniqueIndexExpressions = processUniqueIndexes(
     [
       ...fieldUniqueEntries(fields, tenancy),

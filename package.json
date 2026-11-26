@@ -68,6 +68,8 @@
     "src/derived/constraints/on-delete.ts",
     "src/derived/constraints/predicate.ts",
     "src/derived/constraints/types.ts",
+    "src/derived/tables/types.ts",
+    "src/derived/tables/columns.ts",
     "src/targets/columns.ts",
     "src/targets/constraints.ts",
     "src/targets/pairs.ts",
