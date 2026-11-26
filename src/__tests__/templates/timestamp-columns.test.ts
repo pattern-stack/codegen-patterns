@@ -120,7 +120,7 @@ describe('non-boolean timezone: is refused (#796)', () => {
 		// `timezone: z.boolean()` refuses it, as it does on an entity.
 		it(`junction rejects timezone: ${bad}`, async () => {
 			await expect(junctionLocals(yamlField)).rejects.toThrow(
-				"junction field 'opens_at': Expected boolean",
+				"junction field 'opens_at': Invalid input: expected boolean",
 			);
 		});
 		it(`relationship rejects timezone: ${bad}`, async () => {

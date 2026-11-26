@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { parse as parseYaml } from 'yaml';
-import { ZodError } from 'zod';
+import { z } from '../schema/zod';
 import {
 	type EntityDefinition,
 	EntityDefinitionSchema,
@@ -101,8 +101,8 @@ export function loadEntityFromYaml(filePath: string): LoadEntityResult {
 /**
  * Format Zod errors into human-readable messages
  */
-function formatZodErrors(error: ZodError): string[] {
-	return error.errors.map((err) => {
+function formatZodErrors(error: z.ZodError): string[] {
+	return error.issues.map((err) => {
 		const path = err.path.join('.');
 		const location = path ? `at '${path}'` : 'at root';
 		return `${err.message} ${location}`;

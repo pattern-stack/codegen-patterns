@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod.js";
 import { DEFAULT_TARGET_PAIR, supportedTargetPairs, TARGET_PAIRS } from '../targets/pairs.js';
 import { DEFAULT_TENANT_COLUMN, TENANT_COLUMN_PATTERN } from "./tenancy.js";
 import { TABLE_PREFIX_PATTERN } from "../config/table-naming.js";
@@ -76,7 +76,7 @@ export const GenerateConfigSchema = z
      */
     analytics: z
       .never({
-        invalid_type_error:
+        error:
           "'generate.analytics' was removed by SEM-1 (ADR-045) — use 'generate.semantic: true' to emit the semantic model",
       })
       .optional(),
@@ -259,16 +259,14 @@ function targetUnionMessage(data: unknown, pairs: readonly TargetPairRow[]): str
  */
 function targetPairSchema(pair: TargetPairRow, pairs: readonly TargetPairRow[]) {
   const supported = `supported: ${supportedTargetPairs(pairs).join(', ')}`;
-  const errorMap: z.ZodErrorMap = (_issue, ctx) => ({
-    message:
-      ctx.data === undefined
-        ? `required: write both database and orm; ${supported}`
-        : `not a supported (database, orm) pair; ${supported}`,
-  });
+  const error = (issue: { input?: unknown }) =>
+    issue.input === undefined
+      ? `required: write both database and orm; ${supported}`
+      : `not a supported (database, orm) pair; ${supported}`;
   return z
     .object({
-      database: z.literal(pair.database, { errorMap }).describe(pair.databaseDescription),
-      orm: z.literal(pair.orm, { errorMap }).describe(pair.ormDescription),
+      database: z.literal(pair.database, { error }).describe(pair.databaseDescription),
+      orm: z.literal(pair.orm, { error }).describe(pair.ormDescription),
     })
     .strict();
 }
@@ -286,9 +284,7 @@ export function targetConfigSchemaFor(pairs: readonly TargetPairRow[]): z.ZodTyp
   if (first === undefined) throw new Error('targetConfigSchemaFor: the pair table is empty');
   if (rest.length === 0) return first;
   return z.union([first, ...rest] as [typeof first, typeof first, ...(typeof first)[]], {
-    errorMap: (issue, ctx) => ({
-      message: issue.code === 'invalid_union' ? targetUnionMessage(ctx.data, pairs) : ctx.defaultError,
-    }),
+    error: (issue) => (issue.code === 'invalid_union' ? targetUnionMessage(issue.input, pairs) : undefined),
   });
 }
 
@@ -362,7 +358,7 @@ export const FrontendSyncConfigSchema = z
     apiBaseUrlImport: z.string().nullable().default(null),
     apiUrl: z.string().default('/api'),
   })
-  .default({});
+  .prefault({});
 
 export type FrontendSyncConfig = z.infer<typeof FrontendSyncConfigSchema>;
 
@@ -389,7 +385,7 @@ export const FrontendCatalogConfigSchema = z
 			)
 			.default([]),
 	})
-	.default({});
+	.prefault({});
 
 export type FrontendCatalogConfig = z.infer<typeof FrontendCatalogConfigSchema>;
 
@@ -420,7 +416,7 @@ export const FrontendFieldsConfigSchema = z
     textareaThreshold: z.number().int().positive().nullable().default(500),
   })
   .strict()
-  .default({});
+  .prefault({});
 
 export type FrontendFieldsConfig = z.infer<typeof FrontendFieldsConfigSchema>;
 
@@ -447,14 +443,14 @@ export const FrontendConfigSchema = z
   .object({
     auth: FrontendAuthConfigSchema,
     parsers: z
-      .record(z.string())
+      .record(z.string(), z.string())
       .default({ timestamptz: '(date: string) => new Date(date)' }),
     sync: FrontendSyncConfigSchema,
     catalog: FrontendCatalogConfigSchema,
     fields: FrontendFieldsConfigSchema,
   })
   .strict()
-  .default({});
+  .prefault({});
 
 export type FrontendConfig = z.infer<typeof FrontendConfigSchema>;
 
@@ -488,7 +484,7 @@ export const AuthConfigSchema = z
     redirect_uri_base: z.string().optional(),
   })
   .strict()
-  .default({});
+  .prefault({});
 
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 
@@ -517,7 +513,7 @@ export const TenancyConfigSchema = z
       .default(DEFAULT_TENANT_COLUMN),
   })
   .strict()
-  .default({});
+  .prefault({});
 
 export type TenancyConfig = z.infer<typeof TenancyConfigSchema>;
 
@@ -546,7 +542,7 @@ export const TablesConfigSchema = z
       .default(''),
   })
   .strict()
-  .default({});
+  .prefault({});
 
 export type TablesConfig = z.infer<typeof TablesConfigSchema>;
 
@@ -573,7 +569,7 @@ export const BehaviorsConfigSchema = z
     timezone: z.boolean().default(true),
   })
   .strict()
-  .default({});
+  .prefault({});
 
 export type BehaviorsConfig = z.infer<typeof BehaviorsConfigSchema>;
 
@@ -736,7 +732,7 @@ export const JobsConfigSchema = z
     /** Embedded worker drains every pool (`JobWorkerModule.forRoot({ allPools })`). */
     all_pools: z.boolean().optional(),
     pools: z
-      .record(JobsPoolSchema)
+      .record(z.string(), JobsPoolSchema)
       .superRefine((pools, ctx) => {
         for (const issue of poolOverrideIssues(pools)) {
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: issue.path, message: issue.message });
@@ -896,8 +892,8 @@ export const CodegenConfigObjectSchema = z
   .object({
     runtime: RuntimeModeSchema,
     target: TargetConfigSchema.default(DEFAULT_TARGET),
-    paths: ResolvedPathsSchema.default({}),
-    generate: GenerateConfigSchema.default({}),
+    paths: ResolvedPathsSchema.prefault({}),
+    generate: GenerateConfigSchema.prefault({}),
     patterns: PatternsConfigSchema,
     locations: LocationsConfigSchema.optional(),
     frontend: FrontendConfigSchema,

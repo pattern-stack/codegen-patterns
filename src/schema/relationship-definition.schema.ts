@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from './zod.js';
 import { reservedGlobalFor, reservedNameMessage } from './reserved-entity-names.js';
 
 /**

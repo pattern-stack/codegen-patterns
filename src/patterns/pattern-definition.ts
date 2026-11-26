@@ -32,7 +32,18 @@
  * `docs/adrs/ADR-041-capability-composition-emission.md` for capabilities.
  */
 
-import type { ZodSchema } from 'zod';
+/**
+ * What codegen needs from a pattern's `configSchema`: `safeParse`, and on failure each issue's path and message.
+ *
+ * Structural on purpose (ZOD-0). Library patterns are written on codegen's Zod 4 (`src/schema/zod.ts`); an
+ * app-defined pattern (ADR-031) is written on the consumer's own `zod`, today usually Zod 3. A Zod 3 schema and a Zod 4
+ * schema both satisfy this type, so neither side has to match the other's version.
+ */
+export interface PatternConfigSchema<TConfig> {
+	safeParse(input: unknown):
+		| { success: true; data: TConfig }
+		| { success: false; error: { issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey>; message: string }> } };
+}
 
 /**
  * A column a pattern contributes to every entity that declares it.
@@ -131,7 +142,7 @@ export interface PatternDefinition<TConfig = unknown> {
 	 * pattern at parse time. When absent, entities may not supply a `config:`
 	 * entry for this pattern and codegen emits no `patternConfig` property.
 	 */
-	configSchema?: ZodSchema<TConfig>;
+	configSchema?: PatternConfigSchema<TConfig>;
 
 	/** One-line description for codegen help output and error messages */
 	description?: string;
@@ -267,7 +278,7 @@ export interface CapabilityPatternDefinition<TConfig = unknown> {
 	 * present and the entity supplies a block, codegen emits it as
 	 * `configProperty` on the repository.
 	 */
-	configSchema?: ZodSchema<TConfig>;
+	configSchema?: PatternConfigSchema<TConfig>;
 
 	/** One-line description for codegen help output and error messages. */
 	description?: string;

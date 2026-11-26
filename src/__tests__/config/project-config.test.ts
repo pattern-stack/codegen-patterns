@@ -261,7 +261,7 @@ describe('tables kept in step with the schema', () => {
 	});
 
 	it('the top-level schema is strict', () => {
-		expect(CodegenConfigObjectSchema._def.unknownKeys).toBe('strict');
+		expect(CodegenConfigObjectSchema.def.catchall?.def.type).toBe('never');
 	});
 });
 

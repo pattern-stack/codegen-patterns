@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod.js";
 import { TENANT_COLUMN_PATTERN } from "./tenancy.js";
 import { inheritanceIssues } from "./inheritance.js";
 import { TABLE_NAME_IS_NOT_A_KEY, TABLE_NAME_PATTERN, TABLE_PREFIX_PATTERN } from "../config/table-naming.js";
@@ -17,7 +17,8 @@ import {
   timezoneOnNonDatetime,
 } from "./field-timestamp.js";
 import { timestampBehaviorNames } from "../behaviors/index.js";
-import { DetectionConfigSchema } from "../../runtime/subsystems/integration";
+import { DetectionConfigSchema as DetectionConfigSchemaZod3 } from "../../runtime/subsystems/integration";
+import { fromZod3 } from "./zod3-schema";
 
 /** A snake_case name as written in YAML: an entity, a kind value, a field. */
 const SNAKE_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
@@ -160,16 +161,16 @@ const AnalyticsFieldSchema = z.object({
 });
 
 const UiMetadataSchema = z.object({
-  ui_label: z.string().optional(),
-  ui_type: UiTypeSchema.optional(),
-  ui_importance: UiImportanceSchema.optional(),
-  ui_group: z.string().optional(),
-  ui_sortable: z.boolean().optional(),
-  ui_filterable: z.boolean().optional(),
-  ui_visible: z.boolean().optional(),
-  ui_placeholder: z.string().optional(),
-  ui_help: z.string().optional(),
-  ui_format: z.record(z.unknown()).optional(),
+  ui_label: z.string().optional().describe("Display label"),
+  ui_type: UiTypeSchema.optional().describe("UI input type"),
+  ui_importance: UiImportanceSchema.optional().describe("Field importance for display"),
+  ui_group: z.string().optional().describe("UI grouping"),
+  ui_sortable: z.boolean().optional().describe("Allow sorting by this field"),
+  ui_filterable: z.boolean().optional().describe("Allow filtering by this field"),
+  ui_visible: z.boolean().optional().describe("Show in UI by default"),
+  ui_placeholder: z.string().optional().describe("Input placeholder text"),
+  ui_help: z.string().optional().describe("Help text"),
+  ui_format: z.record(z.string(), z.unknown()).optional(),
   // Key-field curation (ADR-040): curated/displayed fields that drive card &
   // preview surfaces. Names mirror qField / EAV `field_definitions`
   // (`isKeyField` / `keyFieldOrder`) — one metadata vocabulary, multiple homes.
@@ -210,29 +211,29 @@ const UiMetadataSchema = z.object({
  * Base Field Schema - Core database/type properties
  */
 const BaseFieldSchema = z.object({
-  type: FieldTypeSchema,
+  type: FieldTypeSchema.describe("Field data type"),
   // No `.default(false)`: a written `required: false` must survive parsing, so
   // the FK rule can reject it (`foreignKeyRequiredFalseWithoutNullable`, #850).
-  required: z.boolean().optional(),
-  nullable: z.boolean().optional(),
+  required: z.boolean().optional().describe("Field must be provided on CREATE"),
+  nullable: z.boolean().optional().describe("Database column allows NULL. Undeclared: NULL unless required: true; a belongs_to foreign key is NOT NULL unless nullable: true. false (without required: true) needs a default:"),
   // `type: datetime` only (#796): `false` keeps a wall-clock `timestamp without time zone` column;
   // the default is `timestamp with time zone`. The rule lives in `field-timestamp.ts`.
-  timezone: z.boolean().optional(),
+  timezone: z.boolean().optional().describe("type: datetime only. Default: timestamp with time zone. false: wall-clock timestamp without time zone (read through the Date UTC fields)"),
 
   // String constraints
-  max_length: z.number().int().positive().optional(),
-  min_length: z.number().int().nonnegative().optional(),
+  max_length: z.number().int().positive().optional().describe("Max string length"),
+  min_length: z.number().int().nonnegative().optional().describe("Min string length"),
 
   // Numeric constraints
-  min: z.number().optional(),
-  max: z.number().optional(),
+  min: z.number().optional().describe("Minimum numeric value"),
+  max: z.number().optional().describe("Maximum numeric value"),
 
   // Enum/choices (inline definition)
-  choices: z.array(z.string()).optional(),
+  choices: z.array(z.string()).optional().describe("Enum values for this field"),
 
   // Enum/choices from external file (e.g., "relationship_types.yaml")
   // Mutually exclusive with choices - parser loads file and extracts keys
-  choices_from: z.string().optional(),
+  choices_from: z.string().optional().describe("Load enum values from external YAML file"),
 
   // Same Postgres enum type as another entity's enum field (RFC-0006 §2.4, #875):
   // `<entity>.<field>`. The owner's `pgEnum` is imported, none is declared here.
@@ -244,22 +245,22 @@ const BaseFieldSchema = z.object({
       /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/,
       "'choices_of' must be '<entity>.<field>' (snake_case), e.g. 'communication.kind'",
     )
-    .optional(),
+    .optional().describe("'<entity>.<field>': this enum is the same Postgres type as that entity's enum field (RFC-0006)"),
 
   // Entity reference: allowed entity types for polymorphic refs
   // Required when type is 'entity_ref'
-  allowed_types: z.array(z.string()).optional(),
+  allowed_types: z.array(z.string()).optional().describe("Allowed entity types for entity_ref"),
 
   // Default value
-  default: z.unknown().optional(),
+  default: z.unknown().optional().describe("Default value"),
 
   // Indexing
-  index: z.boolean().optional(),
+  index: z.boolean().optional().describe("Create database index"),
   // Single-column unique index (#511): `uniqueIndex('<table>_<col>_uniq')`, tenant-prefixed under `tenant_scoped`.
-  unique: z.boolean().optional(),
+  unique: z.boolean().optional().describe("Unique constraint"),
 
   // Foreign key reference (e.g., "accounts.id")
-  foreign_key: z.string().optional(),
+  foreign_key: z.string().optional().describe("Foreign key reference (e.g., 'accounts.id')"),
 });
 
 /**
@@ -485,9 +486,9 @@ export type OnDelete = z.infer<typeof OnDeleteSchema>;
 
 const RelationshipSchema = z
   .object({
-    type: RelationshipTypeSchema,
-    target: z.string(), // Target entity name (e.g., "account")
-    foreign_key: z.string(), // FK field name (e.g., "account_id")
+    type: RelationshipTypeSchema.describe("Relationship type"),
+    target: z.string().describe("Target entity name (e.g., 'account')"),
+    foreign_key: z.string().describe("FK field name (e.g., 'account_id')"),
     through: z.string().optional(), // For transitive: "owned_opportunities.updates"
     inverse: z.string().optional(), // Name of inverse relationship on target entity
     nullable: z.boolean().optional(), // Whether the FK column allows NULL
@@ -502,7 +503,7 @@ const RelationshipSchema = z
           .record(z.string().min(1), z.string().min(1))
           .refine((m) => Object.keys(m).length > 0, "'match' needs at least one column pair"),
       ])
-      .optional(),
+      .optional().describe("belongs_to only: composite FK. { <local column>: <target column> }, or a list of names as shorthand for same-name pairs (RFC-0006)"),
   })
   .strict()
   .refine((data) => data.match === undefined || data.type === "belongs_to", {
@@ -668,7 +669,7 @@ const BehaviorConfigSchema = z
     z.string(),
     z.object({
       name: z.string(),
-      options: z.record(z.unknown()).optional(),
+      options: z.record(z.string(), z.unknown()).optional(),
     }),
   ])
   .superRefine((declaration, ctx) => {
@@ -712,8 +713,8 @@ const EntityConfigSchema = z
             message: reservedNameMessage("Entity", name, reserved),
           });
         }
-      }),
-    plural: z.string().regex(/^[a-z][a-z0-9_]*$/, "Plural must be lowercase"),
+      }).describe("Entity name in snake_case (e.g., 'opportunity')"),
+    plural: z.string().regex(/^[a-z][a-z0-9_]*$/, "Plural must be lowercase").describe("Plural form in snake_case (e.g., 'opportunities')"),
     // The SQL table name (TABLE-0) — `src/config/table-naming.ts`
     // is the one rule. Both keys are optional; with neither, the table is
     // `<tables.prefix><plural>` and the output is what it was before the split.
@@ -729,20 +730,20 @@ const EntityConfigSchema = z
     table: z
       .string()
       .regex(TABLE_NAME_PATTERN, "table must be a lowercase snake_case SQL table name")
-      .optional(),
+      .optional().describe("Literal SQL table name, used verbatim (default: <tables.prefix><plural>)"),
     // Not a key. Declared so writing it fails naming `table:` — `.strict()`
     // alone reports an unrecognized key with no pointer (as `generate.analytics`).
-    table_name: z.never({ invalid_type_error: TABLE_NAME_IS_NOT_A_KEY }).optional(),
+    table_name: z.never({ error: TABLE_NAME_IS_NOT_A_KEY }).optional(),
     table_prefix: z
       .string()
       .regex(TABLE_PREFIX_PATTERN, "table_prefix must be empty or lowercase snake_case (e.g. 'crm__')")
-      .optional(),
+      .optional().describe("Overrides the project's tables.prefix for this table; '' opts out. Exclusive with table"),
 
     // Which layers to generate (default: all)
     expose: z
       .array(ExposeLayerSchema)
       .optional()
-      .default(["repository", "rest", "trpc"]),
+      .default(["repository", "rest", "trpc"]).describe("Which layers to generate"),
 
     // App-defined patterns (ADR-031, supersedes ADR-005 family:).
     // `pattern:` and `patterns:` are mutually exclusive — use `pattern:`
@@ -1192,9 +1193,9 @@ export type ApiConfig = z.infer<typeof ApiConfigSchema>;
 
 export const EntityDefinitionSchema = z
   .object({
-    entity: EntityConfigSchema,
-    fields: z.record(z.string(), FieldDefinitionSchema),
-    relationships: z.record(z.string(), RelationshipSchema).optional(),
+    entity: EntityConfigSchema.describe("Entity configuration"),
+    fields: z.record(z.string(), FieldDefinitionSchema).describe("Field definitions"),
+    relationships: z.record(z.string(), RelationshipSchema).optional().describe("Entity relationships"),
 
     // CAP-2 (ADR-041): named, typed edges to actor entities. A top-level
     // SIBLING of `relationships:` rather than an annotation on it — a role is a
@@ -1205,7 +1206,7 @@ export const EntityDefinitionSchema = z
     // index and on-delete action ride the existing path.
     roles: RolesSchema.optional(),
     // Behaviors add cross-cutting concerns (timestamps, soft_delete, user_tracking, etc.)
-    behaviors: z.array(BehaviorConfigSchema).optional().default([]),
+    behaviors: z.array(BehaviorConfigSchema).optional().default([]).describe("Cross-cutting behaviors"),
 
     // Joined-table inheritance (RFC-0006, #875). Top-level siblings of
     // `relationships:` and `roles:`: each is a statement about how this entity
@@ -1227,11 +1228,11 @@ export const EntityDefinitionSchema = z
           })
           .strict(),
       ])
-      .optional(),
+      .optional().describe("Child of a joined-table family: '<base entity>', or { base, as } when the kind value is not the entity name (RFC-0006)"),
     discriminator: z
       .string()
       .regex(SNAKE_NAME_PATTERN, "'discriminator' must name a snake_case field")
-      .optional(),
+      .optional().describe("Base of a joined-table family: the enum field that holds each row's kind (RFC-0006)"),
 
     // Per-entity generation toggles (e.g. disable write-side emission)
     generate: GenerateConfigSchema.optional(),
@@ -1312,7 +1313,7 @@ export const EntityDefinitionSchema = z
     // Within-file cross-check (ADR-033.1 §6): every key here must also
     // appear in `integration.providers` — see the superRefine on
     // `EntityDefinitionSchema` below.
-    detection: z.record(z.string(), DetectionConfigSchema).optional(),
+    detection: z.record(z.string(), fromZod3(DetectionConfigSchemaZod3)).optional(),
 
     // NOTE: `surface:` and `context:` moved INTO EntityConfigSchema (the
     // `entity:` block) in 0.12.2 — consumers write them next to
@@ -1410,7 +1411,7 @@ export const EntityDefinitionSchema = z
           .object({
             fields: z
               .array(z.string())
-              .min(1, 'unique_indexes entries need at least one field'),
+              .min(1, 'unique_indexes entries need at least one field').describe("Columns the unique constraint spans (1+)"),
             name: z
               .string()
               .regex(
@@ -1418,12 +1419,12 @@ export const EntityDefinitionSchema = z
                 'unique_indexes name must be a lowercase snake_case identifier',
               )
               .max(63, 'unique_indexes name is at most 63 characters (Postgres truncates longer names)')
-              .optional(),
-            where: z.string().trim().min(1, 'unique_indexes where must not be blank').optional(),
-            nulls_not_distinct: z.boolean().optional(),
+              .optional().describe("Constraint name, lowercase snake_case, max 63 (default <table>_<col1>_<col2>_uniq); required with `where`"),
+            where: z.string().trim().min(1, 'unique_indexes where must not be blank').optional().describe("Raw SQL predicate making this a partial unique index; needs `name`, exclusive with nulls_not_distinct: true"),
+            nulls_not_distinct: z.boolean().optional().describe("true: UNIQUE NULLS NOT DISTINCT constraint. Default on tenant_scoped entities; false opts out. PostgreSQL 15+"),
             // RFC-0006 §4.2, R11: this entry is the `ON CONFLICT` target of the
             // pair upsert. At most one per entity; checked in the entity superRefine.
-            natural_key: z.boolean().optional(),
+            natural_key: z.boolean().optional().describe("The ON CONFLICT target of the pair upsert. At most one per entity; every column NOT NULL; a child declares none (RFC-0006 R11)"),
           })
           .strict()
           .superRefine((entry, ctx) => {
@@ -1444,7 +1445,7 @@ export const EntityDefinitionSchema = z
             }
           }),
       )
-      .optional(),
+      .optional().describe("Unique constraints: 1+ fields, optional where (partial) and nulls_not_distinct"),
   })
   .strict()
   .refine(

@@ -7,34 +7,24 @@
  * written by `generate-config-json-schema.ts` (`just gen-config-schema`); a unit test fails when the committed file
  * and a fresh build differ, so it cannot drift the way the hand-kept entity schema did (#696).
  *
- * The repo is on Zod 3, whose schemas `z.toJSONSchema` (Zod 4) cannot read, so the converter is `zod-to-json-schema`
- * (a devDependency; the JSON file is what ships). When the repo moves to Zod 4 this becomes `z.toJSONSchema` with
- * `io: 'input'`.
+ * The converter is Zod 4's own `z.toJSONSchema`, through {@link editorJsonSchema} (ZOD-0), the one place both
+ * editor schemas (this one and the entity schema) are built.
  *
  * The schema describes the file as WRITTEN (Zod's input side): keys with defaults are optional, and the top-level
  * transform that fills `patterns` from `paths` is not in it. Refinements that span keys (`superRefine`) can't be
  * expressed in JSON Schema; the generator's own parse still runs them, so the editor is a first check, not the gate.
  */
 
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import { CodegenConfigObjectSchema } from './codegen-config.schema.js';
+import { editorJsonSchema } from './editor-json-schema.js';
 
 /** The JSON Schema for `codegen.config.yaml`. Pure: the same object for the same Zod schema. */
 export function buildCodegenConfigJsonSchema(): Record<string, unknown> {
-	const schema = zodToJsonSchema(CodegenConfigObjectSchema, {
-		target: 'jsonSchema7',
-		$refStrategy: 'none',
-		effectStrategy: 'input',
-		pipeStrategy: 'input',
-	}) as Record<string, unknown>;
-	const { $schema, ...body } = schema;
-	return {
-		$schema,
+	return editorJsonSchema(CodegenConfigObjectSchema, {
 		title: 'codegen.config.yaml',
 		description:
 			'Project configuration for @pattern-stack/codegen. Generated from src/schema/codegen-config.schema.ts; do not edit.',
-		...body,
-	};
+	});
 }
 
 /** The committed file's text: the schema, two-space indented, with a trailing newline. */

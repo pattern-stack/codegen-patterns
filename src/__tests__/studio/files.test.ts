@@ -95,7 +95,9 @@ describe('validateContent — entity', () => {
 		if (outcome.ok) throw new Error('unreachable');
 		const issue = outcome.issues.find((i) => i.path.join('.') === 'fields.email.type');
 		expect(issue).toBeDefined();
-		expect(issue?.message).toContain('strng');
+		// Zod 4's enum message lists the allowed values; it does not quote the input (ZOD-0).
+		expect(issue?.message).toContain('expected one of');
+		expect(issue?.message).toContain('"string"');
 	});
 
 	it('reports a missing required key', () => {

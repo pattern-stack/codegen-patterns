@@ -194,7 +194,7 @@ src/                    # Generator source code
   formatters/           # Console, JSON, markdown output formatters
   parser/               # YAML loading, cross-reference resolution (+ entity registry)
   scanner/              # Project pattern detection (framework, ORM, naming)
-  schema/               # Zod schemas for entity definitions + codegen config
+  schema/               # Zod schemas for entity definitions + codegen config (Zod 4 via schema/zod.ts; ZOD-0)
   derived/              # Derived once from the YAML (ADR-046): api/ names + existence, columns/ field facts, constraints/ constraint facts
   targets/              # Per-target text rendered from derived facts, keyed by `target:` (ADR-047)
   utils/                # YAML and config loaders
@@ -441,6 +441,16 @@ queries:
 Project config in `codegen.config.yaml`. Key sections: `runtime`, `target`, `paths`, `locations`, `generate`, `tenancy`, `tables`, `frontend`. See README.md for full reference.
 
 Auto-detect: `just scan` generates a config from project conventions.
+
+### Two Zods (ZOD-0)
+
+Codegen's own schemas are **Zod 4**: import `z` from `src/schema/zod.ts`, the only importer of the `zod4` dependency
+(an npm alias of `zod@4`). What emitted apps import — `runtime/**`, `templates/**` — stays on the `zod` dependency
+(Zod 3) until the generated code moves (ZOD-0 step 2, a major). `zod-boundary.test.ts` holds the line. A runtime
+Zod 3 schema inside a codegen schema goes through `fromZod3`; a pattern's `configSchema` is structural
+(`PatternConfigSchema`), so consumers' Zod 3 patterns still validate. The editor schemas
+(`entity-definition.schema.json`, `codegen-config.schema.json`) are generated (`just gen-entity-schema`,
+`just gen-config-schema`) and tested for drift. See `docs/specs/ZOD-0.md`.
 
 ### Testing
 

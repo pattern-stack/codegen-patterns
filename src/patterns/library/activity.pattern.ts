@@ -21,7 +21,7 @@
  * See `docs/specs/ACTIVITY-SUBJECT-1.md`.
  */
 
-import { z } from 'zod';
+import { z } from '../../schema/zod.js';
 import { definePattern } from '../pattern-definition.js';
 
 /**

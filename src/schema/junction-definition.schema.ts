@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from './zod.js';
 import { junctionName } from '../config/junction-naming.js';
 import { TABLE_NAME_IS_NOT_A_KEY, TABLE_NAME_PATTERN, TABLE_PREFIX_PATTERN } from '../config/table-naming.js';
 import { BASE_JUNCTION_FIELD_NAMES } from '../patterns/library/base-junction-fields.js';
@@ -145,7 +145,7 @@ export const JunctionDefinitionSchema = z
 			.regex(TABLE_NAME_PATTERN, 'table must be a lowercase snake_case SQL table name')
 			.optional(),
 		/** Not a key — declared so writing it fails naming `table:`. */
-		table_name: z.never({ invalid_type_error: TABLE_NAME_IS_NOT_A_KEY }).optional(),
+		table_name: z.never({ error: TABLE_NAME_IS_NOT_A_KEY }).optional(),
 		table_prefix: z
 			.string()
 			.regex(TABLE_PREFIX_PATTERN, "table_prefix must be empty or lowercase snake_case (e.g. 'crm__')")

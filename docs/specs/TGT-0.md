@@ -137,8 +137,8 @@ it ships as its own PR, together with the editor schema:
   smoke. Consumers point `# yaml-language-server: $schema=…` at it (`docs/CONSUMER-SETUP.md` › Editor completion).
   - It describes the file as written: keys with defaults are optional, and the `patterns` default is not in it.
     Refinements that span keys (`superRefine`) are not expressible, so the generator's parse stays the gate.
-  - `zod-to-json-schema` (a devDependency) converts while the repo is on Zod 3. The entity schema's generator still
-    restates its shapes by hand on `zod/v4` (#696), which is out of scope here.
+  - The converter is Zod 4's `z.toJSONSchema`, shared with the entity schema's (`editorJsonSchema`, ZOD-0). TGT-0b
+    shipped with `zod-to-json-schema` while the repo was on Zod 3; ZOD-0 replaced it.
 - **Ready for a second row.** `targetConfigSchemaFor(pairs)` builds `target:` from any pair table: one strict object
   for one row, or a `z.union` for more, whose single `invalid_union` issue gets a message worked out from the value.
   The message says the same things the one-row schema says per key: unknown key, both keys required, or not a

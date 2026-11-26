@@ -121,7 +121,7 @@ describe('entity new rejects the run on an invalid job YAML (#664)', () => {
 		const { code, out } = await run(['entity', 'new', '--all', '--force', '--cwd', root]);
 		expect(code).toBe(1);
 		expect(out).toContain('broken_poll.yaml — ');
-		expect(out).toContain("Expected string, received number at 'pool'");
+		expect(out).toContain("Invalid input: expected string, received number at 'pool'");
 		expect(out).not.toContain('generating note');
 		expect(fs.existsSync(modulesBarrel(root))).toBe(false);
 		expect(fs.existsSync(noteEntity(root))).toBe(false);
@@ -335,7 +335,7 @@ describe('entity new rejects the run on a provider YAML with a blocking issue (C
 			stopped: 'pre-flight',
 			failed: [{ name: 'broken.yaml', file }],
 		});
-		expect(payload.failed[0].message).toContain("Required at 'surfaces'");
+		expect(payload.failed[0].message).toContain("Invalid input: expected array, received undefined at 'surfaces'");
 		expect(fs.existsSync(noteEntity(root))).toBe(false);
 	});
 

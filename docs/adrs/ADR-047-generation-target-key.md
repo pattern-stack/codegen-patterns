@@ -87,13 +87,19 @@ target it is.
   an editor pointed at it offers only the supported pairs, with each key's description, and underlines any other.
   A unit test fails when the committed file and a fresh build differ, so a new row cannot reach the editor late. Tests
   run every row, and every off-table pair, through both the Zod schema and the JSON Schema (ajv). The converter is
-  `zod-to-json-schema` while the repo is on Zod 3, and Zod 4's `z.toJSONSchema` once it moves.
+  Zod 4's `z.toJSONSchema` (ZOD-0).
 
 ## Revision — 2026-11-26 (TGT-0b)
 
 #940 merged the first shape, `target: { data: drizzle-pg }`. TGT-0b replaced it with the pair before any release
 carried it (0.34.0 predates #940), so there is no shim: `data:` is an unknown key, and the same error asks for
 `database` and `orm` and names the supported pairs.
+
+## Revision — 2026-11-26 (ZOD-0)
+
+Codegen's own schemas moved to Zod 4 (`docs/specs/ZOD-0.md`), so the config's JSON Schema is built by Zod's own
+`z.toJSONSchema` and `zod-to-json-schema` is gone. `target:` reads the same in it: one strict object per pair, its
+keys `const` and described.
 
 ## Alternatives rejected
 

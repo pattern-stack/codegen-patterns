@@ -45,7 +45,7 @@ describe('junction fixtures validate against schema', () => {
 			const data = loadFixture(fixture);
 			const result = JunctionDefinitionSchema.safeParse(data);
 			if (!result.success) {
-				console.error(`Validation errors for ${fixture}:`, result.error.errors);
+				console.error(`Validation errors for ${fixture}:`, result.error.issues);
 			}
 			expect(result.success).toBe(true);
 		});
@@ -166,7 +166,7 @@ describe('junction schema rejects malformed input', () => {
 		expect(result.success).toBe(false);
 		const messages = result.success
 			? []
-			: result.error.errors.map((e) => e.message).join(' | ');
+			: result.error.issues.map((e) => e.message).join(' | ');
 		expect(messages).toMatch(/distinct/);
 	});
 
@@ -176,7 +176,7 @@ describe('junction schema rejects malformed input', () => {
 		expect(result.success).toBe(false);
 		const messages = result.success
 			? []
-			: result.error.errors.map((e) => e.message).join(' | ');
+			: result.error.issues.map((e) => e.message).join(' | ');
 		expect(messages).toMatch(/BaseJunctionFields/);
 	});
 
