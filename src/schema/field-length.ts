@@ -3,7 +3,7 @@
  * are accepted on a field declaration (#772), and of the bounds a valid one
  * carries (`stringLengthBounds`). What the bounds emit — a `varchar(n)` column,
  * `.min(n)` / `.max(n)` on the write DTOs — is each renderer's business
- * (`src/targets/drizzle-pg/columns.ts`, `zodLengthChecks` in
+ * (`src/targets/drizzle/postgres/columns.ts`, `zodLengthChecks` in
  * `templates/entity/new/backend/entity-locals.js`).
  *
  *   - either key next to `choices:` / `choices_from:` → refused, whatever the

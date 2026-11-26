@@ -30,6 +30,7 @@ import { loadContext } from '../../cli/shared/context';
 import { buildInitPlan } from '../../cli/shared/init-scaffold';
 import { proposedConfigYaml } from '../../cli/commands/project';
 import { generateConfig, scanProject } from '../../scanner/index';
+import { jsonSchemaErrors } from '../schema/_config-json-schema';
 
 const REPO = path.resolve(import.meta.dir, '../../..');
 
@@ -202,12 +203,15 @@ describe('loadProjectConfig', () => {
 	});
 });
 
-describe('the configs the generator writes pass the strict parse', () => {
+describe('the configs the generator writes pass the strict parse, and the editor\'s JSON Schema (TGT-0b)', () => {
 	it('test/fixtures/codegen.config*.yaml', () => {
 		const dir = path.join(REPO, 'test/fixtures');
 		const files = fs.readdirSync(dir).filter((f) => /^codegen\.config.*\.yaml$/.test(f));
 		expect(files.length).toBeGreaterThanOrEqual(1);
-		for (const f of files) expect(() => loadCodegenConfig(path.join(dir, f))).not.toThrow();
+		for (const f of files) {
+			expect(() => loadCodegenConfig(path.join(dir, f))).not.toThrow();
+			expect(jsonSchemaErrors(yaml.parse(fs.readFileSync(path.join(dir, f), 'utf-8')))).toEqual([]);
+		}
 	});
 
 	it('every subsystem config-block injector', () => {
@@ -226,6 +230,7 @@ describe('the configs the generator writes pass the strict parse', () => {
 			const body = fs.readFileSync(file, 'utf-8').split(/^---$/m).slice(2).join('---');
 			expect(body).not.toContain('<%');
 			expect(() => parseCodegenConfig(yaml.parse(body), file)).not.toThrow();
+			expect(jsonSchemaErrors(yaml.parse(body))).toEqual([]);
 		}
 	});
 
@@ -237,6 +242,7 @@ describe('the configs the generator writes pass the strict parse', () => {
 			const entry = plan.entries.find((e) => e.relPath === 'codegen.config.yaml');
 			expect(entry?.content).toBeDefined();
 			expect(() => parseCodegenConfig(yaml.parse(entry!.content!), 'init')).not.toThrow();
+			expect(jsonSchemaErrors(yaml.parse(entry!.content!))).toEqual([]);
 		}
 	});
 
@@ -245,6 +251,7 @@ describe('the configs the generator writes pass the strict parse', () => {
 		const written = proposedConfigYaml(generateConfig(profile));
 		expect(Object.keys(written).sort()).toEqual(['generate', 'paths']);
 		expect(() => parseCodegenConfig(written, 'scan')).not.toThrow();
+		expect(jsonSchemaErrors(written)).toEqual([]);
 	});
 });
 
@@ -309,28 +316,41 @@ describe('jobs.backend: memory cannot run a standalone worker (JOBS-0, #656)', (
 	});
 });
 
-describe('target: — one key per axis, data-access only (TGT-0, ADR-047)', () => {
-	it('absent → { data: drizzle-pg }, the schema-owned default', () => {
-		expect(parseCodegenConfig({}, 'x.yaml').target).toEqual({ data: 'drizzle-pg' });
-		expect(parseCodegenConfig({ target: {} }, 'x.yaml').target).toEqual({ data: 'drizzle-pg' });
+describe('target: — the (database, orm) pair, derived from TARGET_PAIRS (TGT-0, ADR-047)', () => {
+	const SUPPORTED = 'supported: { database: postgres, orm: drizzle }';
+
+	it('absent → { database: postgres, orm: drizzle }, the first row of the table', () => {
+		expect(parseCodegenConfig({}, 'x.yaml').target).toEqual({ database: 'postgres', orm: 'drizzle' });
 	});
 
-	it('target.data: drizzle-pg parses', () => {
-		expect(parseCodegenConfig({ target: { data: 'drizzle-pg' } }, 'x.yaml').target).toEqual({ data: 'drizzle-pg' });
+	it('{ database: postgres, orm: drizzle } parses', () => {
+		expect(parseCodegenConfig({ target: { database: 'postgres', orm: 'drizzle' } }, 'x.yaml').target).toEqual({
+			database: 'postgres',
+			orm: 'drizzle',
+		});
 	});
 
-	it('an unknown data-access target is an error naming the allowed values', () => {
-		const err = errorOf(() => parseCodegenConfig({ target: { data: 'drizzle-sqlite' } }, 'x.yaml'));
-		expect(err.issues[0]).toMatch(/^target\.data: .*'drizzle-pg'/);
+	it('a pair the table lacks is refused, naming the supported pairs', () => {
+		const err = errorOf(() => parseCodegenConfig({ target: { database: 'sqlite', orm: 'drizzle' } }, 'x.yaml'));
+		expect(err.issues).toEqual([`target.database: not a supported (database, orm) pair; ${SUPPORTED}`]);
+		const orm = errorOf(() => parseCodegenConfig({ target: { database: 'postgres', orm: 'kysely' } }, 'x.yaml'));
+		expect(orm.issues).toEqual([`target.orm: not a supported (database, orm) pair; ${SUPPORTED}`]);
 	});
 
-	it('an axis with no second value yet is an unknown key, not a silently ignored one', () => {
-		const err = errorOf(() => parseCodegenConfig({ target: { data: 'drizzle-pg', composition: 'nest' } }, 'x.yaml'));
-		expect(err.issues[0]).toStartWith('target.composition: unknown key (expected one of: data)');
+	it('written, both keys are required', () => {
+		const err = errorOf(() => parseCodegenConfig({ target: { database: 'postgres' } }, 'x.yaml'));
+		expect(err.issues).toEqual([`target.orm: required: write both database and orm; ${SUPPORTED}`]);
+	});
+
+	it('a key with no second value yet (http, wiring, runtime) is an unknown key, not a silently ignored one', () => {
+		const err = errorOf(() =>
+			parseCodegenConfig({ target: { database: 'postgres', orm: 'drizzle', http: 'hono' } }, 'x.yaml'),
+		);
+		expect(err.issues).toEqual(['target.http: unknown key (expected one of: database, orm)']);
 	});
 
 	it('a bare string is not a target', () => {
-		const err = errorOf(() => parseCodegenConfig({ target: 'nest-drizzle-pg' }, 'x.yaml'));
+		const err = errorOf(() => parseCodegenConfig({ target: 'drizzle-postgres' }, 'x.yaml'));
 		expect(err.issues[0]).toStartWith('target:');
 	});
 });

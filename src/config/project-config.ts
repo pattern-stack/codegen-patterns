@@ -61,6 +61,19 @@ function unwrap(schema: z.ZodTypeAny): z.ZodTypeAny {
 	}
 }
 
+/**
+ * The keys an object schema accepts. A union of objects (`target:` once `TARGET_PAIRS` has two rows) accepts the keys
+ * of any option, in first-seen order. Anything else has no key set: `[]`.
+ */
+export function objectSchemaKeys(schema: z.ZodTypeAny): string[] {
+	const s = unwrap(schema);
+	if (s instanceof z.ZodObject) return Object.keys(s.shape);
+	if (s instanceof z.ZodUnion) {
+		return [...new Set((s.options as z.ZodTypeAny[]).flatMap((option) => objectSchemaKeys(option)))];
+	}
+	return [];
+}
+
 /** The keys the schema accepts at `at` (an object path), for the error message. */
 function keysAt(at: (string | number)[]): string[] {
 	let s: z.ZodTypeAny = unwrap(CodegenConfigSchema);
@@ -70,7 +83,7 @@ function keysAt(at: (string | number)[]): string[] {
 		else if (s instanceof z.ZodArray) s = unwrap(s.element);
 		else return [];
 	}
-	return s instanceof z.ZodObject ? Object.keys(s.shape) : [];
+	return objectSchemaKeys(s);
 }
 
 function formatIssues(error: z.ZodError): string[] {

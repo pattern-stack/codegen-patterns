@@ -66,7 +66,8 @@
     "src/derived/columns/types.ts",
     "src/derived/columns/fields.ts",
     "src/targets/columns.ts",
-    "src/targets/drizzle-pg/columns.ts",
+    "src/targets/pairs.ts",
+    "src/targets/drizzle/postgres/columns.ts",
     "src/config/entities-dir.ts",
     "src/config/junctions-dir.ts",
     "src/config/junction-naming.ts",
@@ -75,6 +76,7 @@
     "src/config/table-naming.ts",
     "src/config/project-config.ts",
     "src/schema/codegen-config.schema.ts",
+    "src/schema/codegen-config.schema.json",
     "src/schema/field-nullability.ts",
     "src/schema/field-length.ts",
     "src/schema/field-timestamp.ts",
@@ -186,6 +188,7 @@
     "@types/pg": "^8.20.0",
     "@types/pluralize": "^0.0.33",
     "@types/supertest": "^7.2.0",
+    "ajv": "^8.20.0",
     "bullmq": "^5.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
@@ -200,7 +203,8 @@
     "rxjs": "^7.8.2",
     "supertest": "^7.2.2",
     "testcontainers": "^12.0.0",
-    "tsup": "^8.5.1"
+    "tsup": "^8.5.1",
+    "zod-to-json-schema": "^3.25.2"
   },
   "directories": {
     "doc": "docs",

@@ -26,6 +26,11 @@ gen-all:
 scan path=".":
     bun src/cli/index.ts project scan {{path}}
 
+# Regenerate src/schema/codegen-config.schema.json (editor completion for codegen.config.yaml) from the
+# config's Zod schema. Run after changing a config block or a TARGET_PAIRS row; a unit test fails until you do (TGT-0b).
+gen-config-schema:
+    bun src/schema/generate-config-json-schema.ts
+
 # Scaffold a subsystem (events, jobs, cache, storage) via the new CLI
 gen-subsystem name:
     bun src/cli/index.ts subsystem install {{name}}

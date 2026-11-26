@@ -1,0 +1,652 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "codegen.config.yaml",
+  "description": "Project configuration for @pattern-stack/codegen. Generated from src/schema/codegen-config.schema.ts; do not edit.",
+  "type": "object",
+  "properties": {
+    "runtime": {
+      "type": "string",
+      "enum": [
+        "package",
+        "vendored"
+      ],
+      "default": "package"
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "type": "string",
+          "const": "postgres",
+          "description": "PostgreSQL: pg-core column builders, node-postgres driver on Node"
+        },
+        "orm": {
+          "type": "string",
+          "const": "drizzle",
+          "description": "Drizzle ORM: tables, columns and repositories written against drizzle-orm"
+        }
+      },
+      "required": [
+        "database",
+        "orm"
+      ],
+      "additionalProperties": false,
+      "default": {
+        "database": "postgres",
+        "orm": "drizzle"
+      }
+    },
+    "paths": {
+      "type": "object",
+      "properties": {
+        "backend_src": {
+          "type": "string",
+          "minLength": 1,
+          "default": "src"
+        },
+        "frontend_src": {
+          "type": "string",
+          "minLength": 1,
+          "default": "apps/frontend/src"
+        },
+        "entities": {
+          "type": "string",
+          "minLength": 1,
+          "default": "entities"
+        },
+        "events_dir": {
+          "type": "string",
+          "minLength": 1,
+          "default": "events"
+        },
+        "jobs_dir": {
+          "type": "string",
+          "minLength": 1,
+          "default": "definitions/jobs"
+        },
+        "providers": {
+          "type": "string",
+          "minLength": 1,
+          "default": "definitions/providers"
+        },
+        "modules_dir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "orchestration_src": {
+          "type": "string",
+          "minLength": 1
+        },
+        "generated": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "default": {}
+    },
+    "generate": {
+      "type": "object",
+      "properties": {
+        "frontend": {
+          "type": "boolean",
+          "default": false
+        },
+        "semantic": {
+          "type": "boolean",
+          "default": false
+        },
+        "analytics": {
+          "not": {}
+        }
+      },
+      "additionalProperties": false,
+      "default": {}
+    },
+    "patterns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "locations": {
+      "type": "object",
+      "properties": {
+        "dbEntities": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "import": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "frontendGenerated": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "import": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "frontendCollectionsAuth": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "import": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "frontend": {
+      "type": "object",
+      "properties": {
+        "auth": {
+          "type": "object",
+          "properties": {
+            "function": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": "getAuthorizationHeader"
+            }
+          },
+          "additionalProperties": false,
+          "default": {
+            "function": "getAuthorizationHeader"
+          }
+        },
+        "parsers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {
+            "timestamptz": "(date: string) => new Date(date)"
+          }
+        },
+        "sync": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "api",
+                "electric"
+              ],
+              "default": "electric"
+            },
+            "shapeUrl": {
+              "type": "string",
+              "default": "/v1/shape"
+            },
+            "useTableParam": {
+              "type": "boolean",
+              "default": true
+            },
+            "columnMapper": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": "snakeCamelMapper"
+            },
+            "columnMapperNeedsCall": {
+              "type": "boolean",
+              "default": true
+            },
+            "apiBaseUrlImport": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
+            },
+            "apiUrl": {
+              "type": "string",
+              "default": "/api"
+            }
+          },
+          "additionalProperties": false,
+          "default": {}
+        },
+        "catalog": {
+          "type": "object",
+          "properties": {
+            "categories": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "blurb": {
+                    "type": "string",
+                    "default": ""
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "additionalProperties": false
+              },
+              "default": []
+            }
+          },
+          "additionalProperties": false,
+          "default": {}
+        },
+        "fields": {
+          "type": "object",
+          "properties": {
+            "textareaThreshold": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": 500
+            }
+          },
+          "additionalProperties": false,
+          "default": {}
+        }
+      },
+      "additionalProperties": false,
+      "default": {}
+    },
+    "auth": {
+      "type": "object",
+      "properties": {
+        "devAllowAnonymous": {
+          "type": "boolean",
+          "default": false
+        },
+        "redirect_uri_base": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "default": {}
+    },
+    "tenancy": {
+      "type": "object",
+      "properties": {
+        "column": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "default": "tenant_id"
+        }
+      },
+      "additionalProperties": false,
+      "default": {}
+    },
+    "tables": {
+      "type": "object",
+      "properties": {
+        "prefix": {
+          "type": "string",
+          "pattern": "^([a-z][a-z0-9_]*)?$",
+          "default": ""
+        }
+      },
+      "additionalProperties": false,
+      "default": {}
+    },
+    "behaviors": {
+      "type": "object",
+      "properties": {
+        "timezone": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false,
+      "default": {}
+    },
+    "dev": {
+      "type": "object",
+      "properties": {
+        "port": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "subsystems": {
+      "type": "object",
+      "properties": {
+        "install": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "events",
+              "jobs",
+              "cache",
+              "storage",
+              "integration",
+              "bridge",
+              "openapi-config",
+              "observability",
+              "auth",
+              "auth-integrations"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "events": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "drizzle",
+            "memory"
+          ]
+        },
+        "multi_tenant": {
+          "type": "boolean"
+        },
+        "extensions": {
+          "type": "object",
+          "properties": {
+            "drizzle": {
+              "type": "object",
+              "properties": {
+                "listen_notify": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "jobs": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "drizzle",
+            "memory",
+            "bullmq"
+          ]
+        },
+        "multi_tenant": {
+          "type": "boolean"
+        },
+        "worker_mode": {
+          "type": "string",
+          "enum": [
+            "embedded",
+            "standalone"
+          ],
+          "default": "embedded"
+        },
+        "worker_pools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "all_pools": {
+          "type": "boolean"
+        },
+        "pools": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "queue": {
+                "type": "string"
+              },
+              "concurrency": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "reserved": {
+                "type": "boolean"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "extensions": {
+          "type": "object",
+          "properties": {
+            "drizzle": {
+              "type": "object",
+              "properties": {
+                "listen_notify": {
+                  "type": "boolean"
+                },
+                "poll_interval_ms": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "stale_threshold_ms": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "stale_sweeper_interval_ms": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "claim_heartbeat_interval_ms": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "additionalProperties": false
+            },
+            "bullmq": {
+              "type": "object",
+              "properties": {
+                "redis_url": {
+                  "type": "string"
+                },
+                "queue_prefix": {
+                  "type": "string"
+                },
+                "bull_board": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "mount_path": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "bridge": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "drizzle",
+            "memory"
+          ]
+        },
+        "multi_tenant": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "integration": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "drizzle",
+            "memory"
+          ]
+        },
+        "multi_tenant": {
+          "type": "boolean"
+        },
+        "differ": {
+          "type": "object",
+          "properties": {
+            "ignore": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "unignore": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "observability": {
+      "type": "object",
+      "properties": {
+        "reporters": {
+          "type": "object",
+          "properties": {
+            "bridgeMetrics": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "intervalMs": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "windowHours": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "enabled"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "openapi": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "path": {
+          "type": "string",
+          "default": "/docs"
+        },
+        "title": {
+          "type": "string",
+          "default": "API"
+        },
+        "version": {
+          "type": "string",
+          "default": "0.0.0"
+        },
+        "description": {
+          "type": "string"
+        },
+        "auth": {
+          "type": "string",
+          "enum": [
+            "bearer",
+            "none"
+          ],
+          "default": "bearer"
+        }
+      },
+      "additionalProperties": false
+    },
+    "cache": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "drizzle",
+            "memory"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "storage": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "local",
+            "memory"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
