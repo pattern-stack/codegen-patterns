@@ -13,15 +13,8 @@ import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { SerializedDomainGraph } from '@studio-shared';
 
-// The component library is read from source (tsconfig `paths`), so its own
-// `react` import resolves to a second copy under the library's node_modules,
-// whose hooks have no dispatcher inside this app's renderer. For this test the
-// library's copy is pointed at this app's one.
-import * as React from 'react';
-import { createRequire } from 'node:module';
-import path from 'node:path';
-const libraryDir = path.resolve(import.meta.dir, '../../../../packages/graph-components/src');
-mock.module(createRequire(path.join(libraryDir, 'index.ts')).resolve('react'), () => React);
+// One React for the run: the library's copy is pointed at this app's by the test preload
+// (`_single-react.ts`, bunfig.toml), before any file loads the library.
 
 const real = await import('@xyflow/react');
 let flowProps: Record<string, unknown> = {};
