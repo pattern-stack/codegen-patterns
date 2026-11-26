@@ -29,7 +29,7 @@ processFields(fields, { entityName, enumResolver, columns }) = facts + render(fa
 | Piece | Holds | Never holds |
 |---|---|---|
 | `FieldFacts` (`src/derived/columns/types.ts`) | `name`, `camelName`, `type`, `elementType`, `isArray`, `nullable`, `required`, `hasDefault`, `default`, `withTimezone`, `choices`, `hasChoices`, `enumName`, `enumDbName`, `enumImport`, `minLength`, `maxLength` | builder text, Zod chains, TypeScript type strings, SQL |
-| `drizzlePgColumns` (`src/targets/drizzle-pg/columns.ts`) | the type maps, `buildDrizzleChain`, `renderColumnDefault`, `varcharColumn`, the select-model `tsType` | facts it could derive itself |
+| `drizzlePgColumns` (`src/targets/drizzle-pg/columns.ts`) | the type maps, `buildDrizzleChain`, `renderColumnDefault`, `varcharColumn`, the select-model `tsType`, and `importFor(builder)` (the `pg-core` import a builder needs, read by `collectDrizzleImports`) | facts it could derive itself |
 | `target:` (`codegen.config.yaml`) | `{ data: drizzle-pg }`, the default and only value | any other axis (ADR-047 §2) |
 
 - **`tsType` is rendered by the target.** It is TypeScript, but its values are the data layer's: `decimal` is
@@ -105,6 +105,8 @@ processFields(fields, { entityName, enumResolver, columns }) = facts + render(fa
    `processUniqueIndexes`, the constraints block), and move `timestampColumn`
    (`src/schema/field-timestamp.ts`) behind the renderer.
 2. **The relationship pipeline's copy.** Decide on its decimal, date, json and choices differences, then make it
-   read the shared facts.
+   read the shared facts. Until then it is drizzle-pg only and does not go through the target: it imports
+   `renderColumnDefault` / `varcharColumn` from `src/targets/drizzle-pg/columns.ts` directly and keeps its own
+   `DRIZZLE_IMPORT_MAP`.
 3. **A second `DataTarget`.** It needs its renderer, plus the parts of the repository template and the base classes
    that are typed on `PgTable`.

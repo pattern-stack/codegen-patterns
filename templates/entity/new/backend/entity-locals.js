@@ -35,7 +35,6 @@ import '../../../../src/patterns/library/index.js';
 import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
 import { arrayElementType, deriveFieldFacts, isArrayType } from '../../../../src/derived/columns/fields.js';
 import { columnRendererFor } from '../../../../src/targets/columns.js';
-import { DRIZZLE_IMPORT_MAP } from '../../../../src/targets/drizzle-pg/columns.js';
 import {
   familyConstName,
   familyHelperName,
@@ -942,7 +941,7 @@ function fieldUniqueEntries(fields, tenancy = null) {
 /**
  * Collect drizzle imports needed for entity fields
  */
-function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraImports = []) {
+function collectDrizzleImports(columns, processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraImports = []) {
   const imports = new Set(['pgTable', 'uuid']);
 
   for (const field of processedFields) {
@@ -952,7 +951,8 @@ function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSof
       // needs no `pgEnum` import of its own.
       continue;
     }
-    const importName = DRIZZLE_IMPORT_MAP[field.drizzleType];
+    // The builder's import is the target's (TGT-0, ADR-047 §5): never a map read here.
+    const importName = columns.importFor(field.drizzleType);
     if (importName) imports.add(importName);
   }
 
@@ -2268,7 +2268,7 @@ export function buildBackendLocals(definition, baseLocals) {
     drizzleType: c.drizzleType,
     enumImport: c.enumImport,
   }));
-  const drizzleEntityImports = collectDrizzleImports([...processedFields, ...inheritanceColumnFields], belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraDrizzleImports);
+  const drizzleEntityImports = collectDrizzleImports(columns, [...processedFields, ...inheritanceColumnFields], belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraDrizzleImports);
 
   // ADR-046 — the generated API surface, derived once (`src/derived/api/`). Every
   // method name the repository prints, and whether it is emitted at all, comes

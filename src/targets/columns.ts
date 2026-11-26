@@ -25,6 +25,8 @@ export interface RenderedColumn {
 export interface ColumnRenderer {
 	readonly id: DataTarget;
 	render(field: FieldFacts): RenderedColumn;
+	/** The module import a column builder (a {@link RenderedColumn.drizzleType}) needs; `undefined` when it needs none. */
+	importFor(drizzleType: string): string | undefined;
 }
 
 /** Every data-access target's column renderer. Adding a `DataTarget` value without an entry is a type error. */

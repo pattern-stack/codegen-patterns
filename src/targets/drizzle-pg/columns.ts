@@ -25,7 +25,7 @@ const DRIZZLE_TYPE_MAP: Readonly<Record<string, string>> = {
 };
 
 /** The `drizzle-orm/pg-core` import each builder needs. An `enum` column calls its `pgEnum` and needs none. */
-export const DRIZZLE_IMPORT_MAP: Readonly<Record<string, string>> = {
+const DRIZZLE_IMPORT_MAP: Readonly<Record<string, string>> = {
 	text: 'text',
 	integer: 'integer',
 	numeric: 'numeric',
@@ -162,5 +162,8 @@ export const drizzlePgColumns: ColumnRenderer = {
 	render(f: FieldFacts): RenderedColumn {
 		const drizzleType = drizzleTypeOf(f);
 		return { drizzleType, drizzleChain: buildDrizzleChain(f, drizzleType), tsType: tsTypeOf(f) };
+	},
+	importFor(drizzleType: string): string | undefined {
+		return DRIZZLE_IMPORT_MAP[drizzleType];
 	},
 };
