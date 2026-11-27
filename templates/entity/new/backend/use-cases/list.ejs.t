@@ -15,7 +15,13 @@ const _E = classNames.entity;
 const _listFlat = apiSurface.service.methods.find((m) => m.kind === 'list_flat');
 const _countFlat = apiSurface.service.methods.find((m) => m.kind === 'count_flat');
 _%>
+<% if (plainWiring) { -%>
+<% if (isInheritanceChild) { -%>
+import { BadRequestError } from '<%= errorsImport %>';
+<% } -%>
+<% } else { -%>
 import { <% if (isInheritanceChild) { %>BadRequestException, <% } %>Injectable } from '@nestjs/common';
+<% } -%>
 import { buildPage, resolveListQuery, type ListQuery, type Page } from '<%= paginationImport %>';
 import { hasColumn, type RowFilter, type SortTerm } from '<%= baseRepositoryImport %>';
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
@@ -77,7 +83,9 @@ import type {
  * `timestamps` behavior to the YAML if you want cursor paging.
 <% } -%>
  */
+<% if (!plainWiring) { -%>
 @Injectable()
+<% } -%>
 export class <%= classNames.listUseCase %> {
   constructor(private readonly service: <%= classNames.service %>) {}
 
@@ -161,12 +169,19 @@ export class <%= classNames.listUseCase %> {
     // column with a filter is refused, not answered in another order. (A request that names no `sort_by` is not
     // refused: it gets the child-rooted default, `id desc`.)
     if (whereClause !== undefined && isBaseColumn && listQuery?.sort_by !== undefined) {
+<% if (plainWiring) { -%>
+      throw new BadRequestError(
+        `sort_by '${resolvedQuery.sortBy}' is a column of <%= familyChild.baseName %> and cannot be combined with this filter in v1: sort on a <%= entityName %> column, or drop the filter.`,
+        { code: 'sort_not_combinable' },
+      );
+<% } else { -%>
       throw new BadRequestException({
         statusCode: 400,
         error: 'Bad Request',
         code: 'sort_not_combinable',
         message: `sort_by '${resolvedQuery.sortBy}' is a column of <%= familyChild.baseName %> and cannot be combined with this filter in v1: sort on a <%= entityName %> column, or drop the filter.`,
       });
+<% } -%>
     }
     const sortTerms: SortTerm[] = childRooted
       ? isChildColumn

@@ -41,7 +41,9 @@ import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
  * events/<%= createEventType.type %>.yaml before shipping.
 <% } -%>
  */
+<% if (!plainWiring) { -%>
 @Injectable()
+<% } -%>
 export class <%= classNames.createUseCase %> {
   constructor(
     private readonly service: <%= classNames.service %>,
@@ -115,7 +117,9 @@ import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
  * EXTENSION POINT (EVT-7): verify payload mapping against
  * events/<%= createEventType.type %>.yaml before shipping.
  */
+<% if (!plainWiring) { -%>
 @Injectable()
+<% } -%>
 export class <%= classNames.createUseCase %> {
   constructor(
     private readonly service: <%= classNames.service %>,
@@ -149,7 +153,9 @@ export class <%= classNames.createUseCase %> {
   }
 }
 <% } else { -%>
+<% if (!plainWiring) { -%>
 import { Injectable } from '@nestjs/common';
+<% } -%>
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 import type { <%= classNames.createDto %> } from '../dto/create-<%= entityFileStem %>.dto';
 <% if (isInheritanceChild) { -%>
@@ -158,7 +164,9 @@ import type { <%= classNames.entity %>Flat } from '../<%= entityFileStem %>.repo
 import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 <% } -%>
 
+<% if (!plainWiring) { -%>
 @Injectable()
+<% } -%>
 export class <%= classNames.createUseCase %> {
   constructor(private readonly service: <%= classNames.service %>) {}
 

@@ -3,9 +3,13 @@ to: "<%= outputPaths.service %>"
 force: true
 ---
 <%- generatedBanner %>
+<% if (!plainWiring) { -%>
 import { Injectable, Inject, Optional<% if (junctionFanOut.length > 0) { %>, forwardRef<% } %> } from '@nestjs/common';
+<% } -%>
 import { WithAnalytics } from '<%= withAnalyticsImport %>';
+<% if (!plainWiring) { -%>
 import { EVENT_BUS } from '<%= drizzleTokenImport %>';
+<% } -%>
 import { <%= serviceBaseClass %> } from '<%= serviceBaseImport %>';
 import { <%= classNames.repository %> } from './<%= entityFileStem %>.repository';
 <%_
@@ -88,7 +92,9 @@ import type { <%= fan.counterpartyPascal %> } from '<%= fan.counterpartyEntityIm
 <%_ } _%>
 <%_ }) _%>
 
+<% if (!plainWiring) { -%>
 @Injectable()
+<% } -%>
 export class <%= classNames.service %> extends WithAnalytics(
   <%= serviceBaseClass %><<%= classNames.repository %>, <%= classNames.entity %>>,
 ) {
@@ -100,10 +106,12 @@ export class <%= classNames.service %> extends WithAnalytics(
   protected override readonly baseSliceKeys = <%= _C('BASE_KEYS') %>;
 <%_ } _%>
 
+<% if (!plainWiring) { -%>
   /** Injected by NestJS when EventsModule is registered. */
   @Optional() @Inject(EVENT_BUS)
   protected override eventBus: any = undefined;
 
+<% } -%>
   constructor(
     protected override readonly repository: <%= classNames.repository %>,
 <% if (eavEnabled) { -%>

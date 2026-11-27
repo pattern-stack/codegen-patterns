@@ -3,7 +3,11 @@ to: "<%= outputPaths.findByIdUseCase %>"
 force: true
 ---
 <%- generatedBanner %>
+<% if (plainWiring) { -%>
+import { NotFoundError } from '<%= errorsImport %>';
+<% } else { -%>
 import { Injectable, NotFoundException } from '@nestjs/common';
+<% } -%>
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 <% if (apiSurface.repository.typedInclude) { -%>
 import type {
@@ -19,7 +23,9 @@ import type {
 import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 <% } -%>
 
+<% if (!plainWiring) { -%>
 @Injectable()
+<% } -%>
 export class <%= classNames.findByIdUseCase %> {
   constructor(private readonly service: <%= classNames.service %>) {}
 
@@ -60,7 +66,7 @@ export class <%= classNames.findByIdUseCase %> {
     const entity = await this.service.findById(id);
 <% } -%>
     if (entity === null || entity === undefined) {
-      throw new NotFoundException(`<%= classNames.entity %> not found: ${id}`);
+      throw new <%= plainWiring ? 'NotFoundError' : 'NotFoundException' %>(`<%= classNames.entity %> not found: ${id}`);
     }
     return entity;
   }
