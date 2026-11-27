@@ -33,6 +33,7 @@ import { junctionsDirFor, relationshipsDirFor } from '../../config/junctions-dir
 import { findYamlFiles, listEntityYamls } from '../../utils/find-yaml-files';
 
 import type { Context } from './context.js';
+import { resolveRuntimeMode, runtimeImport, type RuntimeMode } from './runtime-import.js';
 import { entityModuleNaming } from '../../config/module-tree.js';
 import { configOrDefaults } from '../../config/project-config.js';
 import {
@@ -244,13 +245,24 @@ function relativeImport(fromFile: string, toFile: string): string {
 	return rel.replace(/\.ts$/, '');
 }
 
+/**
+ * The runtime module the barrel lists first: the global filter that answers a foreign-key or unique violation with
+ * a 4xx instead of a 500 (`runtime/nest-db-constraint-filter.ts`). In the barrel because the barrel is the one
+ * generated file every app imports into its `AppModule`, so regenerating is enough to get it.
+ */
+const DB_CONSTRAINT_MODULE = 'DbConstraintErrorsModule';
+const DB_CONSTRAINT_RUNTIME_PATH = 'nest-db-constraint-filter';
+
 export function buildModulesBarrel(
 	entities: EntityInfo[],
 	barrelFile: string,
-	paths: BarrelPaths
+	paths: BarrelPaths,
+	runtimeMode: RuntimeMode,
 ): string {
-	const imports: string[] = [];
-	const exportsList: string[] = [];
+	const imports: string[] = [
+		`import { ${DB_CONSTRAINT_MODULE} } from '${runtimeImport(runtimeMode, DB_CONSTRAINT_RUNTIME_PATH)}';`,
+	];
+	const exportsList: string[] = [DB_CONSTRAINT_MODULE];
 
 	for (const ent of entities) {
 		const { moduleFile, moduleClass } = entityFilePaths(ent, paths);
@@ -259,9 +271,6 @@ export function buildModulesBarrel(
 		exportsList.push(moduleClass);
 	}
 
-	if (entities.length === 0) {
-		return `${HEADER}export const GENERATED_MODULES = [] as const;\n`;
-	}
 
 	const body =
 		imports.join('\n') +
@@ -345,7 +354,7 @@ export async function regenerateBarrels(
 		].sort((a, b) => a.name.localeCompare(b.name)),
 	);
 	const modulesContent = generating(modulesAbs, () =>
-		buildModulesBarrel(entities, modulesRel, paths),
+		buildModulesBarrel(entities, modulesRel, paths, resolveRuntimeMode(ctx.config)),
 	);
 	const schemaContent = generating(schemaAbs, () =>
 		buildSchemaBarrel(entities, schemaRel, paths),

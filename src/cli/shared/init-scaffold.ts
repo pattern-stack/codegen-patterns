@@ -242,6 +242,9 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	{ runtime: 'shared/openapi/registry.tokens.ts', target: 'openapi/registry.tokens.ts' },
 	{ runtime: 'shared/openapi/errors.ts', target: 'openapi/errors.ts' },
 	{ runtime: 'shared/openapi/examples.ts', target: 'openapi/examples.ts' },
+	// The 4xx for a foreign-key / unique violation (the modules barrel lists the module first).
+	{ runtime: 'db-constraint-errors.ts', target: 'db-constraint-errors.ts' },
+	{ runtime: 'nest-db-constraint-filter.ts', target: 'nest-db-constraint-filter.ts' },
 	// OPENAPI-3: shared error response schema referenced by every generated
 	// controller's 4xx `@ApiResponse` `$ref`. Auto-registered in the registry
 	// constructor so consumer projects expose `ErrorResponseDto` on

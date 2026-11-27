@@ -460,7 +460,16 @@ export class AppModule {}
 ```
 
 `DatabaseModule` must come before `GENERATED_MODULES` so the `DRIZZLE`
-provider exists when generated modules instantiate. `OpenApiModule` is
+provider exists when generated modules instantiate.
+
+`GENERATED_MODULES` starts with `DbConstraintErrorsModule`
+(`runtime/nest-db-constraint-filter.ts`): one global exception filter that answers a write the database refused on
+a constraint with a 4xx instead of a 500 — a foreign key that names no row is **422** `foreign_key_violation`, a
+taken unique value **409** `unique_violation`, a delete of a row another still references **409**
+`still_referenced`. The body is the generated code's error shape, `{ statusCode, error, code, fields, constraint,
+message }`, where `fields` names the request's properties (`projectId`). Every other error keeps Nest's own handling.
+The classification is framework-free (`runtime/db-constraint-errors.ts`, `constraintViolationOf` +
+`constraintViolationBody`), so a non-Nest HTTP layer answers with the same body. `OpenApiModule` is
 `@Global()` so every generated module's `@Inject(OPENAPI_REGISTRY)`
 resolves without the feature module having to import anything extra —
 NestJS's DI doesn't propagate providers from a parent into imported

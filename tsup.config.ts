@@ -8,6 +8,11 @@ import { defineConfig } from "tsup";
  *   runtime/ **\/*.ts      → dist/runtime/**\/*.js (consumer-imported base
  *                             classes + subsystems, exposed via exports map)
  *
+ * The build script raises Node's heap to 8 GB (`NODE_OPTIONS=--max-old-space-size=8192 tsup`): tsup's `.d.ts`
+ * pass runs in a worker thread with Node's default heap (~4.2 GB here), and `runtime/**` had grown to its edge —
+ * one more runtime file, even a one-line one, made the worker die with ERR_WORKER_OUT_OF_MEMORY (2026-11-27; peak
+ * resident ~4.6 GB at 8 GB). Every path that packs (`just test-post-publish`, `publish-ci`) runs `bun run build`.
+ *
  * ESM-only output targeting Node 20+. Bun runs ESM natively. CJS consumers
  * are out of scope — @pattern-stack/codegen is a 2026-era tool.
  *

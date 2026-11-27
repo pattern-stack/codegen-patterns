@@ -112,7 +112,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "NODE_OPTIONS=--max-old-space-size=8192 tsup",
     "prepublishOnly": "bun run build",
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
     "cdp": "bun src/cli/index.ts",

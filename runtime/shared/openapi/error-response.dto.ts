@@ -16,6 +16,12 @@ export const errorResponseSchema = z.object({
   statusCode: z.number().int(),
   message: z.union([z.string(), z.array(z.string())]),
   error: z.string().optional(),
+  /** A stable wire code, e.g. `foreign_key_violation` / `unique_violation` / `still_referenced`. */
+  code: z.string().optional(),
+  /** A constraint violation's request fields, comma-separated (`runtime/db-constraint-errors.ts`). */
+  fields: z.string().optional(),
+  /** A constraint violation's constraint name. */
+  constraint: z.string().nullable().optional(),
 });
 
 export type ErrorResponseDto = z.infer<typeof errorResponseSchema>;
