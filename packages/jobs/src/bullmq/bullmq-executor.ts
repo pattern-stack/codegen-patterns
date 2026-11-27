@@ -116,7 +116,7 @@ export class BullmqExecutor implements Executor {
   private readonly pageSize: number;
   private readonly warn: (message: string) => void;
   private readonly inFlight = new Set<AbortController>();
-  private readonly killer = new AbortController();
+  private killer = new AbortController();
   /** Where the last sweep, on any process sharing them, left off. */
   private readonly sweepCursors: SweepCursors;
   private readonly sweepRuns: number;
@@ -264,11 +264,14 @@ export class BullmqExecutor implements Executor {
   }
 
   /**
-   * Accepts jobs again after a `stop()`. A new executor already accepts: the app's worker may fetch jobs before the
-   * app calls this, and a job skipped then would lose its run's wake-up until the next sweep.
+   * Accepts jobs again after a `stop()`, a stop without drain too (its aborted signal is replaced, so new work is not
+   * born aborted). A new executor already accepts: the app's worker may fetch jobs before the app calls this, and a
+   * job skipped then would lose its run's wake-up until the next sweep.
    */
   async start(): Promise<void> {
     this.accepting = true;
+    this.stopping = false;
+    if (this.killer.signal.aborted) this.killer = new AbortController();
   }
 
   /**

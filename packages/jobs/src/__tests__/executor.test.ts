@@ -56,3 +56,44 @@ describe('the tenant', () => {
     expect(second.run.id).toBe(first.run.id);
   });
 });
+
+import { InProcessExecutor } from '../adapters/in-process-executor.ts';
+
+// Review #969: one failed store call must not stop the in-process loop for good.
+describe('the in-process loop outlives a failed poll', () => {
+  test('claimChunks and sweepExpired each throw once; the loop reports it and a run still completes', async () => {
+    const job = defineJob({
+      key: 'loop.toy',
+      input: z.object({}),
+      output: z.object({ ok: z.boolean() }),
+      steps: (s) => s.add('noop', step({ run: async () => ({ ok: true }) })),
+    });
+    const registry = createRegistry([job]);
+    const store = new MemoryJobStore();
+    const failOnce = (name: 'claimChunks' | 'sweepExpired') => {
+      const real = store[name].bind(store) as (...a: unknown[]) => Promise<unknown>;
+      let thrown = false;
+      (store as unknown as Record<string, unknown>)[name] = (...args: unknown[]) => {
+        if (thrown) return real(...args);
+        thrown = true;
+        return Promise.reject(new Error(`${name}: connection dropped`));
+      };
+    };
+    failOnce('sweepExpired');
+    failOnce('claimChunks');
+    const warnings: string[] = [];
+    const executor = new InProcessExecutor({ store, registry, pollMs: 1, warn: (m) => warnings.push(m) });
+    await executor.start();
+    const { run } = await startRun(
+      { registry, store },
+      { jobKey: job.key, input: {}, tenantId: SYSTEM_TENANT, trigger: 'eval', requestedBy: null, budget: { maxItems: 1 } },
+    );
+    await executor.submit(run.id);
+    for (let i = 0; i < 500 && (await store.getRun(run.id)).status !== 'completed'; i++)
+      await new Promise((r) => setTimeout(r, 2));
+    await executor.stop();
+    expect((await store.getRun(run.id)).status).toBe('completed');
+    expect(warnings.some((w) => w.includes('sweepExpired: connection dropped'))).toBe(true);
+    expect(executor.error).toBeNull();
+  });
+});

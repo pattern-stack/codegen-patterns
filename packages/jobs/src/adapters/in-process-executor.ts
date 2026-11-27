@@ -36,6 +36,8 @@ import {
 } from '../ports/run-scope.ts';
 import { localLimiters } from './local-limiter.ts';
 import { systemClock } from './system-clock.ts';
+import { memorySweepCursors } from './memory-sweep-cursors.ts';
+import type { SweepCursors } from '../ports/sweep-cursors.ts';
 import { type DrainWindow, drainWindow } from '../engine/drain-window.ts';
 
 export interface InProcessOptions {
@@ -74,7 +76,17 @@ export interface InProcessOptions {
   leaseTtlMs?: number;
   /** Wraps every call into a job's code with its run's scope (`RunScope`): the host enters its tenant scope here. */
   around?: RunScope;
+  /**
+   * Where a poll that failed is reported (a store call that threw: a dropped connection). The loop carries on at the
+   * next poll; it never stops on one. Default stderr.
+   */
+  warn?: (message: string) => void;
+  /** Where the open sweep's and the due wake's pages left off. Default `memorySweepCursors()`, this process's own. */
+  sweepCursors?: SweepCursors;
 }
+
+/** Runs one open sweep, or one due wake, reads. */
+export const IN_PROCESS_SWEEP_PAGE = 100;
 
 interface Active {
   claim: ChunkClaim;
@@ -134,10 +146,8 @@ export class InProcessExecutor implements Executor {
   private readonly killer = new AbortController();
   private failure: unknown = null;
   private readonly drain: DrainWindow;
-  /** The last run the previous wake read woke, when its page was full. */
-  private dueAfter: string | undefined;
-  /** The last run the previous open sweep read, when its page was full. */
-  private openAfter: string | undefined;
+  private readonly sweepCursors: SweepCursors;
+  private readonly warn: (message: string) => void;
   private readonly openSweepEvery: number;
   private polls = 0;
   private readonly leaseTtlMs: number;
@@ -165,6 +175,12 @@ export class InProcessExecutor implements Executor {
     this.openSweepEvery = Math.max(1, options.openSweepEvery ?? 20);
     this.leaseTtlMs = options.leaseTtlMs ?? this.claimTtlMs;
     this.around = options.around;
+    this.sweepCursors = options.sweepCursors ?? memorySweepCursors();
+    this.warn =
+      options.warn ??
+      ((m) => {
+        process.stderr.write(`${m}\n`);
+      });
     this.drain = drainWindow(this.clock, options.versionGraceMs ?? 0);
     this.fixedConcurrency = options.chunkConcurrency;
     if (this.fixedConcurrency !== undefined)
@@ -298,9 +314,8 @@ export class InProcessExecutor implements Executor {
    * turns. A run of another version is left alone inside the drain window, as BullMQ's sweep leaves it.
    */
   private async sweepOpen(): Promise<void> {
-    const PAGE = 100;
-    const open = await this.store.openRunIds(PAGE, this.openAfter);
-    this.openAfter = open.length < PAGE ? undefined : open.at(-1);
+    const open = await this.store.openRunIds(IN_PROCESS_SWEEP_PAGE, await this.sweepCursors.get('open'));
+    await this.sweepCursors.set('open', open.length < IN_PROCESS_SWEEP_PAGE ? undefined : open.at(-1));
     for (const runId of open) {
       if (this.advancing.has(runId)) continue;
       const run = await this.store.getRun(runId).catch(() => null);
@@ -325,28 +340,21 @@ export class InProcessExecutor implements Executor {
     });
   }
 
+  /**
+   * The loop: a poll, then a wait. A poll that throws (a store call failed: a dropped connection) is reported and the
+   * loop carries on at the next poll; it never stops on one, since a stopped loop would claim, sweep and wake nothing
+   * while its heartbeat kept its leases from other processes.
+   */
   private async drive(): Promise<void> {
     while (this.running) {
-      await this.store.sweepExpired();
-      if (this.polls++ % this.openSweepEvery === 0) await this.sweepOpen();
-      await this.wakeDue();
-      const room = this.concurrency - this.active.size;
-      let claimed = 0;
-      if (room > 0) {
-        // Only chunks of jobs this executor can run: another job's, in a shared store, is never taken and failed.
-        const claims = await this.store.claimChunks(
-          this.owner,
-          room,
-          this.claimTtlMs,
-          this.jobKeys,
+      let retryIn: number | null = null;
+      try {
+        retryIn = await this.poll();
+      } catch (err) {
+        this.warn(
+          `@pattern-stack/jobs in-process: a poll failed, so the loop tries again at the next one: ${err instanceof Error ? err.message : String(err)}`,
         );
-        claimed = claims.length;
-        for (const claim of claims) this.launch(claim);
       }
-      const retryIn =
-        claimed === 0 && this.active.size === 0 && this.advancing.size === 0
-          ? await this.nextRetryIn()
-          : null;
       const woken = new AbortController();
       this.wakeUp = () => woken.abort();
       if (retryIn !== null)
@@ -372,6 +380,29 @@ export class InProcessExecutor implements Executor {
     }
   }
 
+  /** One poll: expired claims, the open sweep (every `openSweepEvery`), due waits, claims. Returns the idle wait. */
+  private async poll(): Promise<number | null> {
+    await this.store.sweepExpired();
+    if (this.polls++ % this.openSweepEvery === 0) await this.sweepOpen();
+    await this.wakeDue();
+    const room = this.concurrency - this.active.size;
+    let claimed = 0;
+    if (room > 0) {
+      // Only chunks of jobs this executor can run: another job's, in a shared store, is never taken and failed.
+      const claims = await this.store.claimChunks(
+        this.owner,
+        room,
+        this.claimTtlMs,
+        this.jobKeys,
+      );
+      claimed = claims.length;
+      for (const claim of claims) this.launch(claim);
+    }
+    return claimed === 0 && this.active.size === 0 && this.advancing.size === 0
+      ? await this.nextRetryIn()
+      : null;
+  }
+
   /**
    * The due waits, beside the sweep: each waiting run of a job this executor has whose step is due is advanced, and
    * the advance decides (carry on, or wait again). Paged past the last run woken, so a long list is read in turns.
@@ -379,13 +410,14 @@ export class InProcessExecutor implements Executor {
   private async wakeDue(): Promise<void> {
     const due = await this.store.dueRunIds(
       this.clock.now(),
-      100,
-      this.dueAfter,
+      IN_PROCESS_SWEEP_PAGE,
+      await this.sweepCursors.get('due'),
     );
-    this.dueAfter = due.length < 100 ? undefined : due.at(-1);
+    await this.sweepCursors.set('due', due.length < IN_PROCESS_SWEEP_PAGE ? undefined : due.at(-1));
     for (const runId of due) {
-      const run = await this.store.getRun(runId);
-      if (!this.registry.has(run.jobKey)) continue;
+      // One run's read failing (deleted since the page) stays that run's: the rest are still woken.
+      const run = await this.store.getRun(runId).catch(() => null);
+      if (!run || !this.registry.has(run.jobKey)) continue;
       this.remember(run);
       this.submitted.add(runId);
       this.kick(runId);
@@ -400,7 +432,11 @@ export class InProcessExecutor implements Executor {
     const now = this.clock.now().getTime();
     let earliest: number | null = null;
     for (const runId of this.submitted) {
-      const at = await this.nextDueAt(runId, now);
+      // One run's read failing (a deleted run) is that run's: it is no longer driven.
+      const at = await this.nextDueAt(runId, now).catch(() => {
+        this.submitted.delete(runId);
+        return null;
+      });
       if (at !== null) earliest = Math.min(earliest ?? Infinity, at);
     }
     return earliest === null ? null : earliest - now;

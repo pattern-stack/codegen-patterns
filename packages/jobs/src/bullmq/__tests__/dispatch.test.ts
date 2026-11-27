@@ -84,3 +84,18 @@ describe('dispatch', () => {
     expect(stats.chunkAdds).toBe(CHUNKS);
   });
 });
+
+// Review #969: a stop without drain aborted a signal start() never replaced, so a restarted executor aborted all work.
+describe('restart', () => {
+  test('start() after stop({ drain: false }) hands new work a live signal', async () => {
+    const store = new MemoryJobStore();
+    const registry = createRegistry([job]);
+    const executor = new BullmqExecutor(memoryQueue().queue, store, registry, {});
+    const runtime = () => (executor as unknown as { runtime(): { signal: AbortSignal; stoppingWithoutDrain(): boolean } }).runtime();
+    await executor.stop({ drain: false });
+    expect(runtime().signal.aborted).toBe(true);
+    await executor.start();
+    expect(runtime().signal.aborted).toBe(false);
+    expect(runtime().stoppingWithoutDrain()).toBe(false);
+  });
+});
