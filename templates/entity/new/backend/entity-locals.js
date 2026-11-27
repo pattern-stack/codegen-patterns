@@ -32,7 +32,7 @@ import { detectMethodCollisions } from '../../../../src/patterns/compose.js';
 import { resolvePatternComposition } from '../../../../src/patterns/resolve-composition.js';
 import '../../../../src/patterns/library/index.js';
 import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
-import { entityClassGraph, moduleImports } from '../../../../src/derived/wiring/classes.js';
+import { EAV_FIELD_VALUE_ENTITY, entityClassGraph, moduleImports } from '../../../../src/derived/wiring/classes.js';
 import { arrayElementType, deriveFieldFacts, isArrayType } from '../../../../src/derived/columns/fields.js';
 import { columnRendererFor } from '../../../../src/targets/columns.js';
 import { constraintRendererFor } from '../../../../src/targets/constraints.js';
@@ -1497,7 +1497,7 @@ export function buildBackendLocals(definition, baseLocals) {
   // from ITS YAML (#647, NAME-0) — `plural:` and `context:` place its folder,
   // never a hand-built '../field_values/'.
   const eavFieldValueNaming = eavEnabled
-    ? resolveTargetNaming('field_value', targetNaming, { required: true })
+    ? resolveTargetNaming(EAV_FIELD_VALUE_ENTITY, targetNaming, { required: true })
     : null;
   const eavFieldValueImportDir = eavFieldValueNaming ? eavFieldValueNaming.importDir : null;
   // The create/update use cases live one folder down (`<moduleDir>/use-cases/`,
@@ -1512,7 +1512,7 @@ export function buildBackendLocals(definition, baseLocals) {
   const eavFieldValuePluralStem = eavFieldValuePlural ? emittedStem(eavFieldValuePlural) : null;
   // NAME-2: the field-value entity's own file stem. Its name is the fixed
   // `field_value`; only its FOLDER comes from its YAML (#647).
-  const eavFieldValueStem = eavEnabled ? emittedStem('field_value') : null;
+  const eavFieldValueStem = eavEnabled ? emittedStem(EAV_FIELD_VALUE_ENTITY) : null;
 
   // EAV value-table shape (task #23) — when true, this entity IS the value
   // table. Templates emit compound methods (upsertFieldsTransactional,

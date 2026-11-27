@@ -39,6 +39,7 @@ import {
 	serviceClassName,
 	useCaseClassName,
 	type JunctionSide,
+	publishedWriteEvent,
 } from './names.js';
 import type {
 	EntityApiSurface,
@@ -906,7 +907,7 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 				// A delete that publishes `<entity>_deleted` reads the row first, because the payload reads it; a child
 				// reads the flat row, since the payload reads base fields too (RFC-0006 §5). A delete with no event
 				// makes no such read, so none is recorded.
-				...(kind === 'delete' && (definition.emits ?? []).includes(`${entityName}_deleted`)
+				...(kind === 'delete' && publishedWriteEvent(entityName, kind, definition.emits) !== null
 					? { preRead: serviceRef(entityName, family.child ? FAMILY_METHOD.findWithBase : 'findById') }
 					: {}),
 				origin: BASE,

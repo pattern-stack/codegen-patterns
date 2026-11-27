@@ -9,7 +9,7 @@
 
 import { junctionName } from '../../config/junction-naming.js';
 import type { EntityApiInput } from '../api/entity.js';
-import { repositoryClassName, serviceClassName } from '../api/names.js';
+import { publishedWriteEvent, repositoryClassName, serviceClassName } from '../api/names.js';
 import type { EntityApiSurface, MethodRef } from '../api/types.js';
 import type {
 	ClassEdge,
@@ -68,7 +68,6 @@ export function entityClassGraph(input: EntityApiInput, surface: EntityApiSurfac
 	const base = input.inheritanceBase?.name ?? null;
 	const eav = definition.eav === true;
 	const eavDefinition = definition.eav_value_table === true ? (definition.eav_definition_table ?? null) : null;
-	const emits = new Set(definition.emits ?? []);
 	const fieldValues = serviceOf(EAV_FIELD_VALUE_ENTITY);
 	const junctions = new Set(
 		input.junctions.filter((j) => j.between.length === 2).map((j) => junctionName([j.between[0] ?? '', j.between[1] ?? ''])),
@@ -111,8 +110,7 @@ export function entityClassGraph(input: EntityApiInput, surface: EntityApiSurfac
 	// ── The use cases ──
 	const listUseCase = surface.useCases.find((u) => u.kind === 'list')?.className;
 	for (const u of surface.useCases) {
-		const event = { create: 'created', update: 'updated', delete: 'deleted' }[u.kind as 'create' | 'update' | 'delete'];
-		const publishes = event !== undefined && emits.has(`${self}_${event}`);
+		const publishes = publishedWriteEvent(self, u.kind, definition.emits) !== null;
 		// A write takes `db` when it opens a transaction: to publish its event in it, or (create / update) to write
 		// an EAV entity's values in it.
 		const transactional = publishes || (eav && (u.kind === 'create' || u.kind === 'update'));
@@ -143,7 +141,7 @@ export function junctionClassGraph(junction: JunctionClassInput): ClassGraph {
 	const service = serviceClassName(junction.name);
 	const owner = { owner: junction.name, ownerKind: 'junction' as const };
 	g.nodes.push({ id: repository, ...owner, role: 'repository', systems: ['db'] });
-	g.nodes.push({ id: service, ...owner, role: 'service', systems: [] });
+	g.nodes.push({ id: service, ...owner, role: 'service', systems: ['event_bus'] });
 	g.add({ from: service, to: repository, toOwner: junction.name, toOwnerKind: 'junction', reason: 'own' });
 	g.add({ from: service, ...repositoryOf(junction.left), reason: 'junction_end' });
 	g.add({ from: service, ...repositoryOf(junction.right), reason: 'junction_end' });
@@ -213,8 +211,8 @@ export function mergeClassGraphs(graphs: readonly ClassGraph[]): ClassGraph {
 	for (const g of graphs) {
 		for (const n of g.nodes) {
 			const other = seen.get(n.id);
-			if (other !== undefined) throw new DuplicateClassError(n.id, other, n.owner);
-			seen.set(n.id, n.owner);
+			if (other !== undefined) throw new DuplicateClassError(n.id, other, `${n.ownerKind} ${n.owner}`);
+			seen.set(n.id, `${n.ownerKind} ${n.owner}`);
 			nodes.push(n);
 		}
 	}

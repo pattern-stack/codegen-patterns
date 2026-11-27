@@ -4,8 +4,8 @@
  * error naming it (`a → b → a`), as crew's `orderByNeeds` names a module cycle. Nest's `forwardRef` hid such
  * cycles; a flat composition can't construct one.
  *
- * Also: the cycles between contexts (d27, d29). A context's module may depend on another's only one way, so these
- * are reported for PW-3, which composes one module per context.
+ * Also: the cycles between contexts (d27, d29). A context's module may depend on another's only one way, so the
+ * step that composes one module per context (PW-3) calls `contextCycles` to refuse one.
  */
 
 import type { ClassGraph, ClassNode } from './types.js';
@@ -49,7 +49,8 @@ export function orderClasses(graph: ClassGraph): ClassNode[] {
 /**
  * The cycles between contexts: context A's classes take B's and B's take A's, through any chain, including one
  * through an owner with no context (a junction, for which `contextOf` returns undefined): A → junction → B is A → B.
- * Each cycle once, as the contexts on it, starting from its smallest (`['billing', 'crm', 'billing']`).
+ * Each cycle found is reported once, as the contexts on it, starting from its smallest
+ * (`['billing', 'crm', 'billing']`); every group of contexts that depend on each other has at least one.
  */
 export function contextCycles(graph: ClassGraph, contextOf: (owner: string) => string | undefined): string[][] {
 	const ownerOf = new Map(graph.nodes.map((n) => [n.id, n.owner]));
@@ -80,23 +81,32 @@ export function contextCycles(graph: ClassGraph, contextOf: (owner: string) => s
 		if (from === undefined) continue;
 		for (const to of reachedContexts(owner)) if (to !== from) deps.set(from, (deps.get(from) ?? new Set()).add(to));
 	}
+	// One depth-first walk, each context visited once: every edge back onto a context still on the walk closes a
+	// cycle. Time grows with the contexts and their links, never with the number of paths between them, so a
+	// densely linked set cannot hang `entity new`. Every cyclic group of contexts is reported at least once.
 	const cycles: string[][] = [];
 	const seen = new Set<string>();
-	const walk = (ctx: string, path: string[]) => {
-		const at = path.indexOf(ctx);
-		if (at !== -1) {
-			const cycle = path.slice(at);
-			const first = cycle.indexOf([...cycle].sort()[0] as string);
-			const rotated = [...cycle.slice(first), ...cycle.slice(0, first)];
-			const key = rotated.join('→');
-			if (!seen.has(key)) {
-				seen.add(key);
-				cycles.push([...rotated, rotated[0] as string]);
-			}
-			return;
+	const state = new Map<string, 'open' | 'done'>();
+	const path: string[] = [];
+	const walk = (ctx: string) => {
+		state.set(ctx, 'open');
+		path.push(ctx);
+		for (const next of [...(deps.get(ctx) ?? [])].sort()) {
+			const at = state.get(next);
+			if (at === 'open') {
+				const cycle = path.slice(path.indexOf(next));
+				const first = cycle.indexOf([...cycle].sort()[0] as string);
+				const rotated = [...cycle.slice(first), ...cycle.slice(0, first)];
+				const key = rotated.join('→');
+				if (!seen.has(key)) {
+					seen.add(key);
+					cycles.push([...rotated, rotated[0] as string]);
+				}
+			} else if (at === undefined) walk(next);
 		}
-		for (const next of [...(deps.get(ctx) ?? [])].sort()) walk(next, [...path, ctx]);
+		path.pop();
+		state.set(ctx, 'done');
 	};
-	for (const ctx of [...deps.keys()].sort()) walk(ctx, []);
+	for (const ctx of [...deps.keys()].sort()) if (!state.has(ctx)) walk(ctx);
 	return cycles;
 }

@@ -30,6 +30,7 @@ import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 import { projectEntityLookup } from "../../_shared/entity-naming.mjs";
 import { sqlTableName } from "../../../src/config/table-naming.js";
 import { camelCase } from "../../../src/config/file-naming.js";
+import { publishedWriteEvent } from "../../../src/derived/api/names.js";
 import { loadJunctionDefinitions } from "../../_shared/junction-fan-out.mjs";
 import {
   loadRuntimeMode,
@@ -448,12 +449,16 @@ export default {
     };
 
     const emitsEvents = resolveEmitsEvents();
-    const createEventType =
-      emitsEvents.find((e) => e.type === `${name}_created`) ?? null;
-    const updateEventType =
-      emitsEvents.find((e) => e.type === `${name}_updated`) ?? null;
-    const deleteEventType =
-      emitsEvents.find((e) => e.type === `${name}_deleted`) ?? null;
+    // Which write publishes which event is `publishedWriteEvent`'s (src/derived/api/names.ts), as the class graph
+    // and the delete's preRead read it.
+    const emittedTypes = emitsEvents.map((e) => e.type);
+    const writeEvent = (kind) => {
+      const type = publishedWriteEvent(name, kind, emittedTypes);
+      return type === null ? null : (emitsEvents.find((e) => e.type === type) ?? null);
+    };
+    const createEventType = writeEvent("create");
+    const updateEventType = writeEvent("update");
+    const deleteEventType = writeEvent("delete");
 
     // Mode-resolved runtime import specifiers (ADR-037), one table shared with
     // the unit tests that render backend bodies (`runtimeImportLocals`).

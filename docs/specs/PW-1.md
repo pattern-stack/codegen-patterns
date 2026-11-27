@@ -49,10 +49,12 @@ have:
   it (`A → B → C → A`), the way crew's `orderByNeeds` names a module cycle. A class that takes one nobody in the set
   emits is an error naming both. `contextCycles(graph, contextOf)` reports the cycles between `context:`s (d27, d29),
   for PW-3's one module per context. A chain through an owner with no context (a junction) counts: crm → junction →
-  billing is crm → billing. Each cycle is reported once, rotated to start at its smallest context, so two cycles
-  over the same contexts in opposite directions stay two.
-- `project.ts`, `deriveProjectClassGraph(relations)`: the whole set, merged (a class emitted twice is an error) and
-  ordered. `projectEntityApiInputs` (`src/derived/api/project.ts`) is now the one place that builds each entity's
+  billing is crm → billing. It walks the contexts once, depth first, and every link back onto a context still on
+  the walk closes a cycle, so its time grows with the contexts and their links, never with the paths between them;
+  every group of contexts that depend on each other is reported at least once, each cycle once, rotated to start at
+  its smallest context. It is not on the `entity new` hot path: the step that composes one module per context calls it.
+- `project.ts`, `deriveProjectClassGraph(relations)`: the whole set, merged (a class emitted twice is an error naming
+  both owners and their kinds) and ordered. `projectEntityApiInputs` (`src/derived/api/project.ts`) is now the one place that builds each entity's
   derivation input over a set; `deriveProjectApiSurface` reads it too.
 
 ### `module.ejs.t` prints from it
@@ -88,7 +90,9 @@ by name.
 scaffold, the relations / semantic / frontend goldens, the junction, cross-domain-junction and frontend smokes). For
 each set, the class graph orders with every edge pointing backwards, and the junction and inheritance sets carry
 their edges. Synthetic graphs check the cycle message, the unknown-target refusal, the context cycles and
-`moduleImports`' filing.
+`moduleImports`' filing. `src/__tests__/cli/class-graph-check.test.ts` runs the pre-flight on real on-disk sets: an
+EAV entity whose `field_value` belongs_to it (FieldValueService → ThingRepository → FieldValueService) and an entity
+named like a junction are each one rejection naming the defect.
 
 **Result: no class cycle in any fixture set**. The plan's guess holds, including for the family base classes and the
 junction ↔ parent pairs. No fixture set has a cycle between contexts either. The plan asked for a run over the

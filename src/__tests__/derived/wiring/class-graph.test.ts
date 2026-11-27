@@ -116,7 +116,7 @@ describe('contextCycles', () => {
 		expect(contextCycles(graph, (o) => ctx[o])).toEqual([['billing', 'crm', 'billing']]);
 	});
 
-	it('keeps two cycles over the same contexts in different directions apart', () => {
+	it('reports every cycle it walks once, starting from its smallest context', () => {
 		const graph: ClassGraph = {
 			nodes: [n('A', 'a'), n('B', 'b'), n('C', 'c')],
 			edges: [
@@ -129,8 +129,21 @@ describe('contextCycles', () => {
 			],
 		};
 		const cycles = contextCycles(graph, (o) => o).map((c) => c.join(' '));
-		expect(cycles).toContain('a b c a');
-		expect(cycles).toContain('a c b a');
+		expect(cycles).toEqual(['a b a', 'a b c a', 'b c b']);
+	});
+
+	it('stays fast on a densely linked set (no walk over every path)', () => {
+		// 14 contexts, each taking every other: the number of simple cycles is astronomical; one walk is not.
+		const names = Array.from({ length: 14 }, (_, i) => `c${String(i).padStart(2, '0')}`);
+		const graph: ClassGraph = {
+			nodes: names.map((x) => n(x, x)),
+			edges: names.flatMap((x) => names.filter((y) => y !== x).map((y) => e(x, y, y, 'composes'))),
+		};
+		const started = performance.now();
+		const cycles = contextCycles(graph, (o) => o);
+		expect(performance.now() - started).toBeLessThan(1000);
+		expect(cycles.length).toBeGreaterThan(0);
+		for (const c of cycles) expect(c[0]).toBe(c[c.length - 1]);
 	});
 });
 
