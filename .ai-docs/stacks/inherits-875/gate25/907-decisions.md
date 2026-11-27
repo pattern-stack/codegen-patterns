@@ -1,0 +1,2 @@
+- **D1** (R6 fails closed): a child declaring a pattern other than `Base`, or a capability, with no `columnsRead` is an R6 error naming it; `columnsRead` added to `CapabilityPatternDefinition` (Actor / Communication state `[]`); tests (f1f58e7b).
+- **RFC (all decisions):** new §11.3 "Decided at Gate 2.5", D1–D17; D2's §2.4 sentence deleted; D3's §2 naming line cites #921; D8 OQ-14 moved to §11.1; D11's OQ-5 row says relation key (f1f58e7b, plus the §11.3 wording fix in fa714b44).

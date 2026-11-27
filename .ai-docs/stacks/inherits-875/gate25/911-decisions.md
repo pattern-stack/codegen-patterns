@@ -1,0 +1,4 @@
+- **D12** (kind errors are domain errors only): the controller's unreachable `kindError` mapping and its stub test are deleted; the real-route test asserts the zod `invalid_enum_value` issue on `kind`; `createPath` names the child's service method (`MeetingService.create`) (19db4370).
+- **D13** (restore the Studio origin assertions): `'← generate.writes'` asserted again on both sections (19db4370).
+- **D5 / D6** (widen the no-name-derivation lint): two new patterns; #875's one hit (`_eLower` in `repository.ejs.t`) now comes from `familyHelperName` in `names.ts`, with no allowlist growth; the one pre-existing hit on `main` (`entity-locals.js` `configProperty:`) is a named expectation tied to issue #922 (19db4370 and follow-up).
+- **D4** (HTTP): `POST /documents` with `kind: memo` → 201; `kind: report` → 400 zod issue, nothing written (19db4370).
