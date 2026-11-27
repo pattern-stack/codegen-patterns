@@ -2,8 +2,8 @@
 import { z } from 'zod';
 
 export const TaskOutputSchema = z.object({
-  id: z.string().uuid(),
-  projectId: z.string().uuid(),
+  id: z.guid(),
+  projectId: z.guid(),
   title: z.string(),
 });
 

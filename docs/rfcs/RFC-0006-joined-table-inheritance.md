@@ -1774,7 +1774,7 @@ Dependency order: S1 → S2 → S3 → S4 → S5 → S6. S6's Studio part needs 
   reaches the first two (the create DTO has no child kind, the update DTO no `kind`), and the upsert that reaches the third
   has no route. A request that would have is refused earlier, by the DTO: `POST /communications` with `kind: meeting` is a
   **400** from `ZodValidationPipe` (`message: 'Validation failed'`, an `issues` entry with `path: 'kind'`,
-  `code: 'invalid_enum_value'`), which `inheritance-http.test.ts` asserts on the real route. They stay what they were in
+  `code: 'invalid_value'` since ZOD-1, Zod 4's code; `invalid_enum_value` on Zod 3), which `inheritance-http.test.ts` asserts on the real route. They stay what they were in
   `runtime/`: errors for a programmatic caller of the service or repository. `createPath` therefore names the child's
   **service method** (`MeetingService.create`, `FAMILY_METHOD.create` on `serviceClassName`), not an HTTP route. The earlier
   design (a private `kindError` in the controller, answering 400 / 409 with a `code`) was deleted with its stub-use-case

@@ -3,9 +3,9 @@ import { z } from 'zod';
 
 export const CreateFieldValueSchema = z.object({
   entityType: z.string(),
-  entityId: z.string().uuid(),
-  fieldDefinitionId: z.string().uuid(),
-  userId: z.string().uuid(),
+  entityId: z.guid(),
+  fieldDefinitionId: z.guid(),
+  userId: z.guid(),
   value: z.unknown(),
 });
 

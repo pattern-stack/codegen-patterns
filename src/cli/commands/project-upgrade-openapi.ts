@@ -484,7 +484,7 @@ export class ProjectUpgradeOpenapiCommand extends Command {
 		console.log('');
 		printInfo('Next steps:');
 		console.log(
-			`  1. ${theme.system('bun add @nestjs/swagger @anatine/zod-openapi')} (peer deps)`
+			`  1. ${theme.system('bun add @nestjs/swagger')} (peer dep)`
 		);
 		console.log(
 			`  2. ${theme.system('codegen subsystem install openapi-config')} (adds openapi: block to config)`

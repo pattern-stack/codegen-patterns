@@ -387,9 +387,9 @@ describe('buildTypesContent / buildSchemasContent — array field', () => {
 
 		const schemasContent = buildSchemasContent([ev]);
 		expect(schemasContent).toContain('entityTypes: z.array(z.string()),');
-		expect(schemasContent).toContain('ids: z.array(z.string().uuid()),');
+		expect(schemasContent).toContain('ids: z.array(z.guid()),');
 		expect(schemasContent).toContain(
-			'optionalIds: z.array(z.string().uuid()).nullable(),',
+			'optionalIds: z.array(z.guid()).nullable(),',
 		);
 	});
 });
@@ -414,15 +414,15 @@ describe('buildSchemasContent — non-empty', () => {
 		const content = buildSchemasContent([contactCreated, stripePaymentReceived]);
 
 		// contact_created → contactCreatedPayloadSchema
-		expect(content).toContain('export const contactCreatedPayloadSchema = z.object({');
-		expect(content).toContain('contactId: z.string().uuid(),');
-		expect(content).toContain('accountId: z.string().uuid().nullable(),');
-		expect(content).toContain('createdBy: z.string().uuid(),');
-		expect(content).toContain('}).strict();');
+		expect(content).toContain('export const contactCreatedPayloadSchema = z.strictObject({');
+		expect(content).toContain('contactId: z.guid(),');
+		expect(content).toContain('accountId: z.guid().nullable(),');
+		expect(content).toContain('createdBy: z.guid(),');
+		expect(content).not.toContain('.strict()');
 
 		// stripe_payment_received — varied field types
 		expect(content).toContain(
-			'export const stripePaymentReceivedPayloadSchema = z.object({',
+			'export const stripePaymentReceivedPayloadSchema = z.strictObject({',
 		);
 		expect(content).toContain('eventId: z.string(),');
 		expect(content).toContain('amountCents: z.number(),');
@@ -438,7 +438,7 @@ describe('buildSchemasContent — non-empty', () => {
 		);
 	});
 
-	test('empty payload emits z.object({}).strict()', () => {
+	test('empty payload emits z.strictObject({})', () => {
 		const ev: EventDefinition = {
 			type: 'empty_payload',
 			direction: 'change',
@@ -449,7 +449,7 @@ describe('buildSchemasContent — non-empty', () => {
 			pool: 'events_change',
 		};
 		const content = buildSchemasContent([ev]);
-		expect(content).toContain('export const emptyPayloadPayloadSchema = z.object({}).strict();');
+		expect(content).toContain('export const emptyPayloadPayloadSchema = z.strictObject({});');
 	});
 
 	test('boolean and json fields', () => {
@@ -467,7 +467,7 @@ describe('buildSchemasContent — non-empty', () => {
 		};
 		const content = buildSchemasContent([ev]);
 		expect(content).toContain('isActive: z.boolean(),');
-		expect(content).toContain('extras: z.record(z.unknown()).nullable(),');
+		expect(content).toContain('extras: z.record(z.string(), z.unknown()).nullable(),');
 	});
 });
 

@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Breaking: the generated code is Zod 4 (ZOD-1)
+
+The DTOs, `ListQuerySchema`, `ZodValidationPipe`, the OpenAPI registry, the event payload schemas and the
+integration detection schema are Zod 4, and so is codegen itself (`zod ^4.6.7`). An app generated before this
+release is on Zod 3; [docs/MIGRATION-zod4.md](docs/MIGRATION-zod4.md) is the upgrade: dependencies, regenerate,
+and what changes for API clients and hand-written code.
+
+- **400 bodies:** same shape, Zod 4's issue codes and wording (`invalid_enum_value` → `invalid_value`, …).
+- **ids:** `z.guid()` (any 8-4-4-4-12 hex, as Postgres accepts), not Zod 4's strict `uuid()`.
+- **OpenAPI:** components come from Zod 4's `z.toJSONSchema`; `@anatine/zod-openapi` is no longer used or listed
+  as a peer. `OpenApiPeerDepMissingError` is gone.
+- **`@pattern-stack/query-surface` peer `^0.4.0`** (its own zod peer is `^4`).
+- A `required: true` `json` field must now be present on create (Zod 4 requires a `z.unknown()` key).
+- `<Entity>OutputDto` is `z.infer<…>` again: the `Required<…>` wrap (#851) existed because Zod 3 inferred a
+  `z.unknown()` key as optional.
+- ZOD-0's two-Zod scaffolding is gone: the `zod4` alias, `fromZod3` and `zod-boundary.test.ts`. `detection:` and a
+  job arm's `read:` embed the runtime's `DetectionConfigSchema` directly, so the entity JSON Schema now describes it
+  in full.
+
+### Fixed (ZOD-1a, #953)
+
+- A PATCH leaves an omitted field as it is: update DTOs restate a defaulted create field without its default (Zod 4
+  applies a default under `.optional()`; Zod 3 ignored it).
+- A boolean's DTO default is its YAML `default:` (it printed `false` even for `default: true`).
+
 ## [0.34.0] — 2026-11-15
 
 The API surface and joined-table inheritance. The generated backend API is now derived once, in

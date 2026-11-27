@@ -11,7 +11,6 @@ import { z } from 'zod';
 import {
   OpenApiRegistry,
   DuplicateSchemaError,
-  OpenApiPeerDepMissingError,
 } from '../../../../runtime/shared/openapi';
 
 describe('OpenApiRegistry', () => {
@@ -103,28 +102,6 @@ describe('OpenApiRegistry', () => {
       description: 'My API',
     });
     expect(doc.info.description).toBe('My API');
-  });
-
-  it('throws OpenApiPeerDepMissingError when @anatine/zod-openapi cannot be resolved', async () => {
-    // Exercise the real try/catch by replacing the dynamic import target
-    // with a guaranteed-unresolvable module name. This runs the same
-    // `loadPeer` body as production; only the module specifier differs,
-    // so the catch branch + error mapping both fire for real.
-    class BrokenRegistry extends OpenApiRegistry {
-      protected async loadPeer(): Promise<never> {
-        try {
-          await import('@anatine/zod-openapi-does-not-exist' as never);
-          throw new Error('unreachable');
-        } catch {
-          throw new OpenApiPeerDepMissingError();
-        }
-      }
-    }
-    const reg = new BrokenRegistry();
-
-    await expect(reg.build({ title: 'T', version: '1' })).rejects.toBeInstanceOf(
-      OpenApiPeerDepMissingError,
-    );
   });
 
   it('reset() clears registered schemas and paths but re-seeds ErrorResponseDto', async () => {

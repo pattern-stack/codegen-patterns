@@ -2,8 +2,8 @@
 import { z } from 'zod';
 
 export const SyncCursorOutputSchema = z.object({
-  id: z.string().uuid(),
-  accountId: z.string().uuid(),
+  id: z.guid(),
+  accountId: z.guid(),
   position: z.string(),
 });
 

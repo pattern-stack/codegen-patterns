@@ -119,7 +119,7 @@ own (`codegen-messages.test.ts`: names the value, per parse only, nothing global
 - The boundary test reads imports with Bun's scanner (multi-line, re-exports, `import()`, `require()`, any extension),
   and fails on a seeded violation of each of its rules.
 
-## Step 2 (not here)
+## Step 2 (not here; done as ZOD-1, `docs/specs/ZOD-1.md`, which deleted this spec's two-Zod scaffolding)
 
 Move the emitted side to Zod 4: `runtime/`, the `.ejs.t` templates (the generated DTOs, `ListQuerySchema`), the
 detection schema and the event schemas. Consumers then need Zod 4, so it is a major, with migration notes for apps

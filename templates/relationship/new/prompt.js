@@ -160,10 +160,10 @@ const ZOD_TYPE_MAP = {
   integer: "z.number().int()",
   decimal: "z.number()",
   boolean: "z.boolean()",
-  uuid: "z.string().uuid()",
+  uuid: "z.guid()",
   date: "z.coerce.date()",
   datetime: "z.coerce.date()",
-  json: "z.record(z.unknown())",
+  json: "z.record(z.string(), z.unknown())",
 };
 
 const TS_TYPE_MAP = {

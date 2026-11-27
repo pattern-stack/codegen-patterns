@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const CreateCategorySchema = z.object({
-  parentCategoryId: z.string().uuid(),
+  parentCategoryId: z.guid(),
   name: z.string(),
 });
 

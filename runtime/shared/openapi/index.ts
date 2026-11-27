@@ -12,7 +12,7 @@ export type {
   OpenAPIObject,
 } from './registry';
 export { OPENAPI_REGISTRY } from './registry.tokens';
-export { OpenApiPeerDepMissingError, DuplicateSchemaError } from './errors';
+export { DuplicateSchemaError } from './errors';
 export {
   ERROR_RESPONSE_SCHEMA_NAME,
   errorResponseSchema,

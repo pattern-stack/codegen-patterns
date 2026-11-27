@@ -2,8 +2,8 @@
 import { z } from 'zod';
 
 export const CommunicationOutputSchema = z.object({
-  id: z.string().uuid(),
-  tenantId: z.string().uuid(),
+  id: z.guid(),
+  tenantId: z.guid(),
   kind: z.enum(['meeting', 'email', 'message']),
   occurredAt: z.coerce.date(),
   source: z.string(),

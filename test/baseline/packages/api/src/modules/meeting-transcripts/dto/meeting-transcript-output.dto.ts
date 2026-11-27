@@ -2,8 +2,8 @@
 import { z } from 'zod';
 
 export const MeetingTranscriptOutputSchema = z.object({
-  id: z.string().uuid(),
-  meetingId: z.string().uuid(),
+  id: z.guid(),
+  meetingId: z.guid(),
   language: z.string().nullable(),
 });
 

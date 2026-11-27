@@ -1055,7 +1055,7 @@ export class SubsystemInstallCommand extends Command {
 
 		printSuccess(`openapi config block ${outcome === 'skipped' ? 'already present' : 'installed'}.`);
 		printInfo(
-			'Install the peer deps: bun add @nestjs/swagger @anatine/zod-openapi',
+			'Install the peer dep: bun add @nestjs/swagger',
 		);
 		printInfo(
 			'Swagger UI mounts at /docs once main.ts calls SwaggerModule.setup(...) — see CONSUMER-SETUP.md §OpenAPI.',
@@ -2252,7 +2252,7 @@ export class SubsystemRemoveCommand extends Command {
 				"openapi-config has no vendored runtime to remove — it's a config-only pseudo-subsystem.",
 			);
 			printInfo(
-				'To uninstall: delete the `openapi:` block from codegen.config.yaml and uninstall the @nestjs/swagger / @anatine/zod-openapi peer deps.',
+				'To uninstall: delete the `openapi:` block from codegen.config.yaml and uninstall the @nestjs/swagger peer dep.',
 			);
 			return 1;
 		}

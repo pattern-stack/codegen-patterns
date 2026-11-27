@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const UserOutputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   email: z.string(),
 });
 

@@ -12,7 +12,7 @@ import { <%= familyChild.baseOutputSchema %> } from '<%= familyChild.baseOutputI
 // RFC-0006 §5: the columns THIS table owns, alone. `<%= familyChild.baseClass %>OfKindSchema` nests it under the kind key.
 <% } -%>
 export const <%= familyChild ? classNames.ownOutputSchema : classNames.outputSchema %> = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
 <%_ belongsToFkFields.forEach(fk => { _%>
   <%= fk.camelName %>: <%- fk.zodChainOutput %>,
 <%_ }) _%>
@@ -43,10 +43,4 @@ export const <%= classNames.outputSchema %> = <%= familyChild.baseOutputSchema %
 });
 <% } -%>
 
-<%_ if (outputDtoHasUnknownKey) { _%>
-// `Required<…>`: Zod 3 infers a `json` (`z.unknown()`) key as optional; the row
-// has it required. Every other key here is required already.
-export type <%= classNames.outputDto %> = globalThis.Required<z.infer<typeof <%= classNames.outputSchema %>>>;
-<%_ } else { _%>
 export type <%= classNames.outputDto %> = z.infer<typeof <%= classNames.outputSchema %>>;
-<%_ } _%>

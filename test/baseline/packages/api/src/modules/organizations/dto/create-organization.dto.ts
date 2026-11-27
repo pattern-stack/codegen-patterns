@@ -2,8 +2,8 @@
 import { z } from 'zod';
 
 export const CreateOrganizationSchema = z.object({
-  parentId: z.string().uuid().nullable().optional(),
-  tenantId: z.string().uuid(),
+  parentId: z.guid().nullable().optional(),
+  tenantId: z.guid(),
   name: z.string().max(255),
   domain: z.string().max(255).nullable().optional(),
 });

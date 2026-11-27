@@ -2,9 +2,9 @@
 import { z } from 'zod';
 
 export const CreateDealSchema = z.object({
-  ownerId: z.string().uuid(),
-  closedById: z.string().uuid().nullable().optional(),
-  accountId: z.string().uuid(),
+  ownerId: z.guid(),
+  closedById: z.guid().nullable().optional(),
+  accountId: z.guid(),
   name: z.string().max(255),
   amount: z.coerce.string().nullable().optional(),
   stage: z.enum(['prospecting', 'qualification', 'proposal', 'negotiation', 'closed_won', 'closed_lost']),

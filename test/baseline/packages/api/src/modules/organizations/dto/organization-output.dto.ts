@@ -2,9 +2,9 @@
 import { z } from 'zod';
 
 export const OrganizationOutputSchema = z.object({
-  id: z.string().uuid(),
-  parentId: z.string().uuid().nullable(),
-  tenantId: z.string().uuid(),
+  id: z.guid(),
+  parentId: z.guid().nullable(),
+  tenantId: z.guid(),
   name: z.string(),
   domain: z.string().nullable(),
 });

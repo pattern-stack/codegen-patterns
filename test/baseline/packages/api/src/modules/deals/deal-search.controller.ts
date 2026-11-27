@@ -13,7 +13,7 @@ import type { Deal } from './deal.entity';
  */
 const DealFiltersSchema = ListQuerySchema.extend({
   stage: z.enum(['prospecting', 'qualification', 'proposal', 'negotiation', 'closed_won', 'closed_lost']).optional(),
-  ownerId: z.string().uuid().optional(),
+  ownerId: z.guid().optional(),
   search: z.string().optional(),
 });
 

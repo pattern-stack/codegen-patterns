@@ -8,7 +8,7 @@ import { CreateCommunicationSchema } from '../../communications/dto/create-commu
 export const CreateEmailSchema = CreateCommunicationSchema
   .omit({ kind: true })
   .extend({
-    threadId: z.string().uuid().nullable().optional(),
+    threadId: z.guid().nullable().optional(),
     subject: z.string(),
   });
 

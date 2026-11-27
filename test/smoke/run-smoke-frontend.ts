@@ -64,7 +64,7 @@ const KEEP = process.env.KEEP_SMOKE_DIR === '1';
  * via `mergeFrontendDeps` — they are NOT duplicated here, so this harness can
  * never drift from the contract it is gating.
  */
-const TOOLCHAIN_DEPS = ['react@^19', 'react-dom@^19', 'zod@^3'];
+const TOOLCHAIN_DEPS = ['react@^19', 'react-dom@^19', 'zod@^4'];
 const TOOLCHAIN_DEV_DEPS = ['typescript@5', '@types/react@^19', '@types/react-dom@^19'];
 
 const t0 = Date.now();

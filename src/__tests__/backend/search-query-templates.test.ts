@@ -201,8 +201,8 @@ describe('backend search templates — controller rendering', () => {
     const output = render('search-controller.ejs.t', locals);
 
     // UUID (belongs_to FK)
-    expect(output).toContain('userId: z.string().uuid().optional()');
-    expect(output).toContain('accountId: z.string().uuid().optional()');
+    expect(output).toContain('userId: z.guid().optional()');
+    expect(output).toContain('accountId: z.guid().optional()');
     // Enum with choices
     expect(output).toContain("canonicalState: z.enum(['qualifying', 'developing', 'proposing', 'negotiating', 'closed_won', 'closed_lost']).optional()");
     // Boolean with coerce

@@ -13,7 +13,7 @@
  *
  * Ships in the package's `files` (the templates import it, `.ts` resolved by
  * bun), so it may import only node built-ins, `yaml`, codegen's Zod
- * (`src/schema/zod.ts`, the `zod4` dependency) and other shipped modules.
+ * (`src/schema/zod.ts`) and other shipped modules.
  */
 
 import fs from 'node:fs';

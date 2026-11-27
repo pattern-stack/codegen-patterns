@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const ParcelOutputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   kind: z.enum(['crate', 'loose']),
   weight: z.number().int(),
 });

@@ -222,12 +222,12 @@ const TS_TYPE_BY_FIELD: Record<Exclude<EventFieldType, 'array'>, string> = {
 };
 
 const ZOD_EXPR_BY_FIELD: Record<Exclude<EventFieldType, 'array'>, string> = {
-	uuid: 'z.string().uuid()',
+	uuid: 'z.guid()',
 	string: 'z.string()',
 	number: 'z.number()',
 	boolean: 'z.boolean()',
 	date: 'z.coerce.date()',
-	json: 'z.record(z.unknown())',
+	json: 'z.record(z.string(), z.unknown())',
 };
 
 function tsTypeForField(field: EventPayloadField): string {
@@ -547,18 +547,18 @@ export function buildSchemasContent(events: EventDefinition[]): string {
 		const payloadKeys = Object.keys(ev.payload).sort();
 
 		if (payloadKeys.length === 0) {
-			chunks.push(`export const ${schemaConst} = z.object({}).strict();`);
+			chunks.push(`export const ${schemaConst} = z.strictObject({});`);
 			chunks.push('');
 			continue;
 		}
 
-		chunks.push(`export const ${schemaConst} = z.object({`);
+		chunks.push(`export const ${schemaConst} = z.strictObject({`);
 		for (const key of payloadKeys) {
 			const field = ev.payload[key];
 			if (!field) continue;
 			chunks.push(`\t${toCamelCase(key)}: ${zodExprForField(field)},`);
 		}
-		chunks.push(`}).strict();`);
+		chunks.push(`});`);
 		chunks.push('');
 	}
 

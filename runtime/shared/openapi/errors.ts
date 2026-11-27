@@ -6,22 +6,6 @@
  */
 
 /**
- * Thrown by `OpenApiRegistry.build()` when `@anatine/zod-openapi` is not
- * resolvable. The peer is declared optional (`peerDependenciesMeta`) so
- * consumer apps that don't care about OpenAPI still boot; the cost is a
- * deferred failure here on first `build()`.
- */
-export class OpenApiPeerDepMissingError extends Error {
-  override readonly name = 'OpenApiPeerDepMissingError';
-  constructor(message?: string) {
-    super(
-      message ??
-        'OpenApiRegistry requires @anatine/zod-openapi. Install it: bun add @anatine/zod-openapi',
-    );
-  }
-}
-
-/**
  * Thrown by `OpenApiRegistry.registerSchema(name, ...)` when `name` is
  * already registered. Silent overwrite would make debugging
  * double-registration bugs (e.g. two entity pipelines both emitting a

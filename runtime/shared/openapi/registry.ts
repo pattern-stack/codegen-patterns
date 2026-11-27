@@ -2,19 +2,20 @@
  * OpenApiRegistry — collects Zod schemas and path specs, emits a
  * complete `OpenAPIObject` on `build()` (OPENAPI-1).
  *
- * Wraps `@anatine/zod-openapi` as an **optional peer dependency** via a
- * lazy `import()` inside `build()` — consumer apps that never call `build()`
- * still boot even if `@anatine/zod-openapi` isn't installed.
+ * Each registered schema becomes a component through Zod 4's own
+ * `z.toJSONSchema` (OpenAPI 3.0 target, the schema's input side — what a
+ * client sends). No peer dependency (ZOD-1; it was `@anatine/zod-openapi`,
+ * which reads only Zod 3).
  *
  * The registry is the single source of truth consumed by OPENAPI-2
  * (generated DTOs register their Zod schemas at module init), OPENAPI-3
  * (controller decorators reference those schemas), and OPENAPI-4
  * (Swagger UI bootstrap calls `build()` once at startup).
  */
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import { ERROR_RESPONSE_SCHEMA_NAME, errorResponseSchema } from './error-response.dto';
-import { OpenApiPeerDepMissingError, DuplicateSchemaError } from './errors';
+import { DuplicateSchemaError } from './errors';
 
 export type HttpMethod = 'get' | 'post' | 'patch' | 'delete' | 'put';
 
@@ -42,11 +43,7 @@ export interface OpenAPIInfo {
   description?: string;
 }
 
-/**
- * Minimal OpenAPIObject shape. We redeclare rather than pull
- * `openapi3-ts` types through the peer — the peer's `generateSchema`
- * returns a `SchemaObject`, but the final document assembly is ours.
- */
+/** Minimal OpenAPIObject shape: the document assembly is ours. */
 export interface OpenAPIObject {
   openapi: string;
   info: OpenAPIInfo;
@@ -56,14 +53,28 @@ export interface OpenAPIObject {
   };
 }
 
-interface PeerModule {
-  generateSchema: (zodRef: unknown, useOutput?: boolean, version?: '3.0' | '3.1') => unknown;
+/**
+ * One component's schema. A JSON value: a date has no JSON form, so it is
+ * written as the string a client sends (`format: date-time`), and the
+ * per-document `$schema` key is dropped.
+ */
+function componentSchema(schema: z.ZodType): unknown {
+  const { $schema: _dialect, ...component } = z.toJSONSchema(schema, {
+    target: 'openapi-3.0',
+    io: 'input',
+    unrepresentable: 'any',
+    override: ({ zodSchema, jsonSchema }) => {
+      if (zodSchema._zod.def.type === 'date') {
+        Object.assign(jsonSchema, { type: 'string', format: 'date-time' });
+      }
+    },
+  }) as Record<string, unknown>;
+  return component;
 }
 
 export class OpenApiRegistry {
   private zodSchemas = new Map<string, z.ZodType>();
   private pathEntries = new Map<string, Map<HttpMethod, PathSpec>>();
-  private peer: PeerModule | null = null;
 
   constructor() {
     // Auto-register the shared error response schema so controllers that
@@ -89,18 +100,15 @@ export class OpenApiRegistry {
   }
 
   /**
-   * Emit the full OpenAPI document. Lazy-imports `@anatine/zod-openapi`
-   * on first call; failure to resolve raises `OpenApiPeerDepMissingError`.
+   * Emit the full OpenAPI document.
    *
    * OpenAPI version is pinned to `3.0.3` — Swagger UI tooling is most
    * stable on 3.0.x (see OPENAPI-PHASE-1-PLAN §Four locked decisions).
    */
   async build(info: OpenAPIInfo): Promise<OpenAPIObject> {
-    const peer = await this.loadPeer();
-
     const schemas: Record<string, unknown> = {};
     for (const [name, zodSchema] of this.zodSchemas) {
-      schemas[name] = peer.generateSchema(zodSchema, false, '3.0');
+      schemas[name] = componentSchema(zodSchema);
     }
 
     const paths: Record<string, Record<string, PathSpec>> = {};
@@ -128,22 +136,6 @@ export class OpenApiRegistry {
   reset(): void {
     this.zodSchemas.clear();
     this.pathEntries.clear();
-    this.peer = null;
     this.zodSchemas.set(ERROR_RESPONSE_SCHEMA_NAME, errorResponseSchema);
-  }
-
-  protected async loadPeer(): Promise<PeerModule> {
-    if (this.peer) return this.peer;
-    try {
-      // Computed specifier: prevents tsc from resolving this import at
-      // typecheck time. Consumers vendor this file but may not install
-      // @anatine/zod-openapi (optional peer).
-      const specifier: string = '@anatine/zod-openapi';
-      const mod = (await import(specifier)) as PeerModule;
-      this.peer = mod;
-      return mod;
-    } catch {
-      throw new OpenApiPeerDepMissingError();
-    }
   }
 }

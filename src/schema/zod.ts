@@ -1,9 +1,7 @@
 /**
- * Codegen's Zod (ZOD-0): every schema codegen owns imports `z` from here, never from a package.
+ * Codegen's Zod (ZOD-0, ZOD-1): every schema codegen owns imports `z` from here.
  *
- * - **Zod 4**, from the `zod4` dependency (an npm alias of `zod@4`). The `zod` dependency stays Zod 3 for the code
- *   emitted apps import (`runtime/`, the `.ejs.t` templates) until ZOD-0 step 2 moves it; step 2 then imports `zod`
- *   here, deletes the `zod4` alias, `fromZod3` and the boundary test.
+ * - **Zod 4**, the `zod` dependency, the same Zod the generated apps run (ZOD-1).
  * - **{@link codegenMessages}**, the one message rule codegen adds to Zod's: an enum refusal names the value it
  *   refused. Zod 4 says `Invalid option: expected one of "string"|"integer"|…`; codegen adds `, received "strng"`, so
  *   a typo is visible in the CLI's one-line error and in Studio's marker. It is passed per parse
@@ -12,7 +10,7 @@
  *   shared by every Zod 4 copy in the process, consumers' pattern schemas included.
  */
 
-import { z } from 'zod4';
+import { z } from 'zod';
 
 const english = z.locales.en().localeError;
 

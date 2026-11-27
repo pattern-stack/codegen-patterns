@@ -4,7 +4,7 @@ import { ShipmentOutputSchema } from '../../shipments/dto/shipment-output.dto';
 
 // RFC-0006 §5: the columns THIS table owns, alone. `ShipmentOfKindSchema` nests it under the kind key.
 export const SeaFreightOwnOutputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   vessel: z.string(),
 });
 

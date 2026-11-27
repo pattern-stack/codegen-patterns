@@ -519,7 +519,7 @@ describe('belongs_to FK nullability default (#850)', () => {
       "conversationId: uuid('conversation_id').notNull().references(",
     );
     const fk = (locals.createFkFields as any[]).find((f) => f.camelName === 'conversationId');
-    expect(fk.zodChainCreate).toBe('z.string().uuid()');
+    expect(fk.zodChainCreate).toBe('z.guid()');
   });
 
   it('an FK field declared without nullable: is still NOT NULL', () => {
@@ -541,7 +541,7 @@ describe('belongs_to FK nullability default (#850)', () => {
       "conversationId: uuid('conversation_id').references(",
     );
     const fk = (locals.createFkFields as any[]).find((f) => f.camelName === 'conversationId');
-    expect(fk.zodChainCreate).toBe('z.string().uuid().nullable().optional()');
+    expect(fk.zodChainCreate).toBe('z.guid().nullable().optional()');
   });
 });
 
