@@ -25,14 +25,17 @@ export interface RuntimeCopyOptions {
 	depsTargetRoot?: string;
 	dryRun?: boolean;
 	/**
-	 * Refresh-only mode: skip any file whose destination does not already
-	 * exist (and don't follow its imports). Used by `codegen update`, which
-	 * re-syncs files that are already installed but must NOT install new ones
-	 * — adding files is `subsystem install`'s job. Without this, a project that
-	 * only vendored a subsystem's protocol (e.g. the events protocol at
-	 * `project init`) would have its whole subsystem materialised by `update`.
+	 * Refresh mode for an installed subsystem (`codegen update`): every file in
+	 * the subsystem's own source folder is written, new ones included (a new
+	 * runtime version can add one, e.g. PW-0's `core.ts`, which the refreshed
+	 * `index.ts` imports). A dependency outside that folder is refreshed only
+	 * when it is already installed, and its imports are not followed: adding
+	 * shared runtime is `subsystem install`'s and `VENDORED_RUNTIME_FILES`' job.
+	 * Without that limit, a project that only vendored a subsystem's protocol
+	 * (e.g. the events protocol at `project init`) would have its whole
+	 * subsystem materialised by `update`.
 	 */
-	onlyExisting?: boolean;
+	refreshInstalled?: boolean;
 }
 
 export interface RuntimeCopyResult {
@@ -84,7 +87,7 @@ function resolveSourceImport(
  * directory structure of targetDir.
  */
 export async function copyRuntime(opts: RuntimeCopyOptions): Promise<RuntimeCopyResult> {
-	const { sourceDir, targetDir, filter, resolveDeps, dryRun, onlyExisting } = opts;
+	const { sourceDir, targetDir, filter, resolveDeps, dryRun, refreshInstalled } = opts;
 
 	if (!fs.existsSync(sourceDir) || !fs.statSync(sourceDir).isDirectory()) {
 		throw new Error(`runtime source directory not found: ${sourceDir}`);
@@ -142,9 +145,10 @@ export async function copyRuntime(opts: RuntimeCopyOptions): Promise<RuntimeCopy
 		if (visited.has(next.src)) continue;
 		visited.add(next.src);
 
-		// Refresh-only mode (codegen update): never materialise a file that
-		// isn't already installed, and don't follow its imports.
-		if (onlyExisting && !fs.existsSync(next.dest)) {
+		// Refresh mode (codegen update): never materialise a dependency outside
+		// the subsystem's folder that isn't already installed, and don't follow
+		// its imports. The subsystem's own files are always written.
+		if (refreshInstalled && next.isDep && !fs.existsSync(next.dest)) {
 			continue;
 		}
 

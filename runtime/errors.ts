@@ -12,13 +12,21 @@
  * exactly as the Nest twin does (the REST parity gate, H-1).
  */
 
-/** The HTTP reason phrase for each status an application error can carry, as Nest prints it. */
-const REASONS = {
+/**
+ * The HTTP reason phrase for each status a generated error body carries, as Nest prints it: the application
+ * errors here (400, 404) and the constraint violations in `db-constraint-errors.ts` (409, 422).
+ */
+export const HTTP_REASONS = {
   400: 'Bad Request',
   404: 'Not Found',
+  409: 'Conflict',
+  422: 'Unprocessable Entity',
 } as const;
 
-export type AppErrorStatus = keyof typeof REASONS;
+export type ErrorBodyStatus = keyof typeof HTTP_REASONS;
+
+/** The statuses an application error can carry. */
+export type AppErrorStatus = Extract<ErrorBodyStatus, 400 | 404>;
 
 /** The keys `errorBody` owns; a detail can't shadow them. */
 const RESERVED_BODY_KEYS = ['statusCode', 'error', 'code', 'message'] as const;
@@ -76,18 +84,30 @@ export interface AppErrorBody {
   readonly [detail: string]: string | number | boolean | null | undefined;
 }
 
+/**
+ * The body every generated error with a code sends, in Nest's key order: `{ statusCode, error, code, ...details,
+ * message }`. `errorBody` and `constraintViolationBody` (`db-constraint-errors.ts`) both build theirs here.
+ */
+export function codedErrorBody<S extends ErrorBodyStatus, D extends AppErrorDetails>(
+  status: S,
+  code: string | undefined,
+  details: D | undefined,
+  message: string,
+): { readonly statusCode: S; readonly error: (typeof HTTP_REASONS)[S]; readonly code?: string; readonly message: string } & D {
+  return {
+    statusCode: status,
+    error: HTTP_REASONS[status],
+    ...(code === undefined ? {} : { code }),
+    ...details,
+    message,
+  } as { readonly statusCode: S; readonly error: (typeof HTTP_REASONS)[S]; readonly code?: string; readonly message: string } & D;
+}
+
 export function errorBody(err: AppError): AppErrorBody {
-  const error = REASONS[err.status];
   // Nest builds a message-only exception's body as `{ message, error, statusCode }`; the generated code passes
   // an object (`{ statusCode, error, code, …, message }`) whenever it has a code, and Nest sends that as given.
   if (err.code === undefined && err.details === undefined) {
-    return { message: err.message, error, statusCode: err.status };
+    return { message: err.message, error: HTTP_REASONS[err.status], statusCode: err.status };
   }
-  return {
-    statusCode: err.status,
-    error,
-    ...(err.code === undefined ? {} : { code: err.code }),
-    ...err.details,
-    message: err.message,
-  };
+  return codedErrorBody(err.status, err.code, err.details, err.message);
 }

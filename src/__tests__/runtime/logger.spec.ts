@@ -92,6 +92,25 @@ describe('the logger port', () => {
     }
   });
 
+  it('gates every console level on the LOG_LEVEL threshold, as parseLogLevels reads it', () => {
+    const log = spyOn(console, 'log').mockImplementation(() => undefined);
+    const warn = spyOn(console, 'warn').mockImplementation(() => undefined);
+    const saved = process.env.LOG_LEVEL;
+    try {
+      process.env.LOG_LEVEL = 'warn';
+      const logger = createLogger('Threshold');
+      logger.log('dropped');
+      logger.warn('kept');
+      expect(log).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith('[Threshold]', 'kept');
+    } finally {
+      log.mockRestore();
+      warn.mockRestore();
+      if (saved === undefined) delete process.env.LOG_LEVEL;
+      else process.env.LOG_LEVEL = saved;
+    }
+  });
+
   it('useNestLogger leaves a factory the app bound on purpose', () => {
     const { factory } = recorder();
     setLoggerFactory(factory);

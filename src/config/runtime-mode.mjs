@@ -46,14 +46,12 @@ export function subsystemsImport(mode, subsystem) {
 /**
  * Import specifier for a subsystem's Nest-free entry (PW-0,
  * `runtime/subsystems/<name>/core.ts`). Twin of `subsystemCoreImport` in
- * `runtime-import.ts`; `NEST_FREE_SUBSYSTEMS` there lists the names.
+ * `runtime-import.ts`.
  * @param {'package' | 'vendored'} mode
- * @param {'events' | 'auth' | 'integration'} subsystem
+ * @param {string} subsystem one of `NEST_FREE_SUBSYSTEMS` (`runtime-import.ts`)
  */
 export function subsystemCoreImport(mode, subsystem) {
-  return mode === "vendored"
-    ? `@shared/subsystems/${subsystem}/core`
-    : `${PACKAGE}/runtime/subsystems/${subsystem}/core`;
+  return runtimeImport(mode, `subsystems/${subsystem}/core`);
 }
 
 /**

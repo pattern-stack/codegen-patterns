@@ -204,6 +204,9 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	// listener; and its Nest binding, which the vendored events / jobs modules call when they load.
 	{ runtime: 'logger.ts', target: 'logger.ts' },
 	{ runtime: 'nest-logger.ts', target: 'nest-logger.ts' },
+	// The plain errors (PW-0) — the error-body owner db-constraint-errors.ts imports, and what a pattern-stack
+	// wiring project's use cases throw (PW-3).
+	{ runtime: 'errors.ts', target: 'errors.ts' },
 	{ runtime: 'base-classes/base-read-use-cases.ts', target: 'base-classes/base-read-use-cases.ts' },
 	// Types + constants reached via `@shared/types/*` and `@shared/constants/*`
 	{ runtime: 'types/drizzle.ts', target: 'types/drizzle.ts' },

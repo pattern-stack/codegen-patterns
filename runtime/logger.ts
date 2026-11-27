@@ -31,20 +31,50 @@ export interface Logger {
 /** Makes the logger for one context (a class or component name). */
 export type LoggerFactory = (context: string) => Logger;
 
-/** `debug` lines print only when `LOG_LEVEL` is `debug` or `verbose` (the threshold the Nest logger reads too). */
-const debugEnabled = (): boolean => {
-  const level = (typeof process === 'undefined' ? undefined : process.env.LOG_LEVEL)?.toLowerCase();
-  return level === 'debug' || level === 'verbose';
+/** Severity-ordered (lowest → highest), Nest's names; a `LOG_LEVEL` threshold enables its suffix. */
+export const LOG_LEVELS = ['verbose', 'debug', 'log', 'warn', 'error', 'fatal'] as const;
+export type LogLevel = (typeof LOG_LEVELS)[number];
+const DEFAULT_LOG_LEVEL: LogLevel = 'log';
+
+const envLogLevel = (): string | undefined =>
+  typeof process === 'undefined' ? undefined : process.env.LOG_LEVEL;
+
+/**
+ * The `LOG_LEVEL` rule, one for every logger: a single severity threshold enables that level and every level
+ * above it. `LOG_LEVEL=debug` → `['debug', 'log', 'warn', 'error', 'fatal']`. Unknown input warns and falls back
+ * to the default (`'log'` and above). The Nest logger (`createAppLogger`) and the console default both read it.
+ */
+export function parseLogLevels(threshold: string | undefined = envLogLevel()): LogLevel[] {
+  const idx = LOG_LEVELS.indexOf((threshold ?? DEFAULT_LOG_LEVEL).toLowerCase() as LogLevel);
+  if (idx === -1) {
+    console.warn(`[logging] unknown LOG_LEVEL '${threshold}' — defaulting to '${DEFAULT_LOG_LEVEL}'`);
+    return LOG_LEVELS.slice(LOG_LEVELS.indexOf(DEFAULT_LOG_LEVEL));
+  }
+  return LOG_LEVELS.slice(idx);
+}
+
+/** The levels `LOG_LEVEL` enables now, parsed once per value (so an unknown value warns once, not per line). */
+let parsed: { raw: string | undefined; enabled: ReadonlySet<LogLevel> } | undefined;
+const enabled = (level: LogLevel): boolean => {
+  const raw = envLogLevel();
+  if (!parsed || parsed.raw !== raw) parsed = { raw, enabled: new Set(parseLogLevels(raw)) };
+  return parsed.enabled.has(level);
 };
 
-/** The default: the console, each line prefixed with its context; `debug` only under `LOG_LEVEL=debug`. */
+/** The default: the console, each line prefixed with its context, each level gated on `LOG_LEVEL`. */
 export const consoleLoggerFactory: LoggerFactory = (context) => ({
   debug: (message, ...rest) => {
-    if (debugEnabled()) console.debug(`[${context}]`, message, ...rest);
+    if (enabled('debug')) console.debug(`[${context}]`, message, ...rest);
   },
-  log: (message, ...rest) => console.log(`[${context}]`, message, ...rest),
-  warn: (message, ...rest) => console.warn(`[${context}]`, message, ...rest),
-  error: (message, ...rest) => console.error(`[${context}]`, message, ...rest),
+  log: (message, ...rest) => {
+    if (enabled('log')) console.log(`[${context}]`, message, ...rest);
+  },
+  warn: (message, ...rest) => {
+    if (enabled('warn')) console.warn(`[${context}]`, message, ...rest);
+  },
+  error: (message, ...rest) => {
+    if (enabled('error')) console.error(`[${context}]`, message, ...rest);
+  },
 });
 
 let factory: LoggerFactory = consoleLoggerFactory;

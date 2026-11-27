@@ -70,9 +70,7 @@ export function subsystemsImport(mode: RuntimeMode, subsystem?: string): string 
  * @param subsystem one of {@link NEST_FREE_SUBSYSTEMS}.
  */
 export function subsystemCoreImport(mode: RuntimeMode, subsystem: NestFreeSubsystem): string {
-  return mode === 'vendored'
-    ? `@shared/subsystems/${subsystem}/core`
-    : `${PACKAGE}/runtime/subsystems/${subsystem}/core`;
+  return runtimeImport(mode, `subsystems/${subsystem}/core`);
 }
 
 /** The subsystems with a Nest-free entry (`runtime/subsystems/<name>/core.ts`). */

@@ -19,6 +19,7 @@ import {
 	SUBSYSTEMS,
 } from '../../cli/shared/subsystem-detect.js';
 import { copyRuntime } from '../../cli/shared/runtime-copier.js';
+import { ProjectUpdateCommand } from '../../cli/commands/project-update.js';
 import { loadContext } from '../../cli/shared/context.js';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
@@ -329,6 +330,34 @@ describe('subsystem — install (real)', () => {
 		// switching to the drizzle backend later must not require a
 		// follow-up scaffold step.
 		expect(fs.existsSync(path.join(installDir, 'domain-events.schema.ts'))).toBe(true);
+	});
+
+	test('project update writes a file the runtime added to an installed subsystem, but no new outside dependency', async () => {
+		// PW-0 added events/core.ts, which the refreshed index.ts imports. A project
+		// that installed events on an older version has no core.ts; update must
+		// write it, or every `@shared/subsystems/events` import stops resolving.
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		cli.register(ProjectUpdateCommand);
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--json', '--cwd', root])
+		);
+		const installDir = path.join(root, 'src/shared/subsystems/events');
+		const core = path.join(installDir, 'core.ts');
+		// A dependency outside events' folder that VENDORED_RUNTIME_FILES does not list.
+		const outsideDep = path.join(root, 'src/shared/subsystems/jobs/pg-notify.ts');
+		fs.rmSync(core);
+		fs.rmSync(outsideDep);
+
+		const { result } = await capture(() =>
+			cli.run(['project', 'update', '--force', '--skip-skills', '--json', '--cwd', root])
+		);
+		expect(result).toBe(0);
+		expect(fs.readFileSync(core, 'utf-8')).toBe(
+			fs.readFileSync(path.join(RUNTIME_ROOT, 'subsystems/events/core.ts'), 'utf-8')
+		);
+		expect(fs.existsSync(outsideDep)).toBe(false);
 	});
 
 	test('second install is idempotent without --force', async () => {

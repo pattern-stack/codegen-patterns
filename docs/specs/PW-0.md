@@ -84,7 +84,7 @@ import reaches Nest in three places a plain app can't avoid:
   `declare module '…/runtime/subsystems/events/index'` (`event-codegen-generator.ts`), and resolving that module loads
   the Nest half's types. The plain target's event codegen must augment `…/events/core` instead (the interface is the
   same symbol). Changing it here would change Nest output, so it waits for the plain branch of that generator.
-- The barrel split (each `index.ts` into a Nest-free `index.ts` and a `nest.ts`, the way `@repo/jobs` has `./nest`)
+- The barrel split (each `index.ts` into a Nest-free `index.ts` and a `nest.ts` entry for the Nest half)
   would change Nest import lines in generated code. Not done here; if wanted, it's its own PR.
 
 ## The gate
@@ -104,4 +104,7 @@ gate is the static half that PW-3 builds on.
 ## Byte-identity
 
 No template, emitter or generator output changes. The Nest goldens (`test-baseline`, every smoke, `test-junction`,
-`test-integration-emit`) are unchanged; vendored projects gain two runtime files (`logger.ts`, `nest-logger.ts`).
+`test-integration-emit`) are unchanged; vendored projects gain two runtime files (`logger.ts`, `nest-logger.ts`), and each installed events, auth or
+integration subsystem gains its `core.ts`. `codegen update` writes every file of an installed subsystem's own folder,
+new ones included (`refreshInstalled` in `runtime-copier.ts`), so a project installed on an older version gets
+`core.ts` when its `index.ts` starts importing it; a dependency outside that folder is still only refreshed.
