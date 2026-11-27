@@ -4,9 +4,15 @@
  * populated OpenAPI document.
  *
  * Runs inside the smoke harness's tmp project (passed as argv[2]). Imports
- * the generated `AppModule`, calls `registry.build()`, and asserts the
- * document shape required by the OPENAPI-4 spec:
+ * the generated `AppModule` and builds the document in the order the shipped
+ * `main.ts` does — `NestFactory.create()`, then `registry.build()`, with NO
+ * `app.init()` in between (main.ts cannot init first: `init()` installs the
+ * router's not-found handler, and Swagger mounted after it 404s). It used to
+ * call `app.init()` first, which ran every `onModuleInit` and so could not
+ * see that the shipped order left the registry empty (every entity `$ref` in
+ * `/docs-json` dangled in a fresh app; rehearsal of 0.35.0). Asserts:
  *
+ *   - every `$ref` in the document names a `components.schemas` entry.
  *   - OpenAPI version is 3.0.3.
  *   - components.schemas contains Create/Update/Output DTOs per entity
  *     plus the shared ErrorResponseDto.
@@ -25,6 +31,7 @@
  */
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { danglingRefs } from './_openapi-refs';
 
 interface Doc {
 	openapi: string;
@@ -107,7 +114,9 @@ async function main(): Promise<void> {
 		logger: false,
 		abortOnError: false,
 	});
-	await app.init();
+	// No `app.init()` here: main.ts builds the document before `app.listen()`,
+	// so this does too. Calling it would run `onModuleInit` and hide exactly the
+	// ordering defect this gate exists for.
 
 	try {
 		// Mirror main.ts's two-pass build (OPENAPI-4):
@@ -148,6 +157,15 @@ async function main(): Promise<void> {
 		};
 
 		// ── assertions ──────────────────────────────────────────────
+		// Every $ref must resolve. A validator alone does not catch a dangling
+		// component ref (@readme/openapi-parser's validate() accepted one).
+		const dangling = danglingRefs(document);
+		if (dangling.length > 0) {
+			fail(
+				`${dangling.length} $ref(s) do not resolve in the document: ${dangling.join(', ')} — present: ${Object.keys(document.components.schemas).join(', ')}`,
+			);
+		}
+
 		// Nest's SwaggerModule.createDocument emits '3.0.0'; our
 		// registry on its own emits '3.0.3'. Accept any 3.0.x — the
 		// locked decision is "3.0", not the patch level.

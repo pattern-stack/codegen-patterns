@@ -6,50 +6,80 @@ A complete working example lives at [`codegen-pattern-demo-app/`](https://github
 
 ## Who this is for
 
-You are running `@pattern-stack/codegen` (installed as a sibling repo, workspace dep, or `npx @pattern-stack/codegen` binary — see [ADR-015](./adrs/ADR-015-cli-command-architecture.md)) against your own NestJS application. Generated code imports from `@shared/*` path aliases and injects a `DRIZZLE` token. This doc tells you what those import paths and tokens must resolve to.
+You are running `@pattern-stack/codegen` (installed as a dependency, or as the `npx @pattern-stack/codegen` binary — see [ADR-015](./adrs/ADR-015-cli-command-architecture.md)) against your own NestJS application. This doc tells you what `codegen project init` writes, what you install, and what the generated code expects of the rest of the app.
 
 ## Prerequisites
 
 - **Bun** 1.0+ or **Node** 20+
-- **NestJS** 10+
-- **Drizzle ORM** on the 1.0 line — `drizzle-orm@^1.0.0-rc.4`, installed by you as a peer (see [Drizzle in a generated project](./consumer/drizzle.md))
+- **NestJS** 10, on Express (`@nestjs/platform-express`)
+- **Drizzle ORM** on the 1.0 line — `drizzle-orm@1.0.0-rc.4`, a peer you install (see [Drizzle in a generated project](./consumer/drizzle.md))
 - **Zod 4** — `zod@^4.6.7`. The generated DTOs, the validation pipe and the OpenAPI registry are Zod 4 (ZOD-1;
   upgrading an app generated before 0.35.0: [MIGRATION-zod4.md](./MIGRATION-zod4.md))
 - **TypeScript** 5+ with `"strict": true` and decorator metadata enabled
 - A running Postgres you can point at with a `DATABASE_URL`
 
+## Start a project
+
+```bash
+bun init -y                                   # or your own package.json + tsconfig.json
+bun add @pattern-stack/codegen
+bunx codegen project init --yes --with-tsconfig
+bun add @nestjs/common@10 @nestjs/core@10 @nestjs/platform-express@10 @nestjs/swagger@7 drizzle-orm@1.0.0-rc.4 pg@8 reflect-metadata@0.2 rxjs@7 zod@4
+bun add -D drizzle-kit@1.0.0-rc.4 typescript@5 @types/pg@8
+# write entities/<name>.yaml, then:
+bunx codegen entity new --all
+bunx tsc --noEmit
+DATABASE_URL=postgres://… bunx drizzle-kit push   # dev loop; versioned migrations: see "Atlas migration workflow"
+DATABASE_URL=postgres://… bun src/main.ts
+```
+
+The two `bun add` lines are the whole install (npm / pnpm: the same packages). `@nestjs/platform-express` is not a
+peer of the package, but the `main.ts` init writes boots on it. `codegen project init` prints the same two lines when
+it finishes. (`codegen init` is an alias of `codegen project init`.)
+
+`main.ts` refuses to serve an unauthenticated data plane: bind an `IUserContext` (install the auth subsystem), or set
+`auth: { devAllowAnonymous: true }` in `codegen.config.yaml` and regenerate, **for localhost only**. To serve
+`/docs` + `/docs-json`, set `openapi: { enabled: true }` the same way ([OpenAPI](./consumer/openapi.md)).
+
 ## Project structure expected
 
-Minimum layout the generator writes into and reads from:
+What `codegen project init` writes (the default `runtime: package`, `paths.backend_src: src`) and where generated
+code lands:
 
 ```
 <project-root>/
-├── codegen.config.yaml            # generator config
-├── tsconfig.json                  # must declare @shared/* and @modules/*
-├── schema.ts                      # one-line re-export of generated schema barrel
-├── drizzle.config.ts              # Drizzle Kit config (migrations)
+├── codegen.config.yaml            # generator config — starts with the editor-schema line and `target:`
+├── drizzle.config.ts              # drizzle-kit config (push / generate / export), pointed at the schema barrel
+├── tsconfig.json                  # merged: @shared/*, @modules/*, @generated/* aliases + decorator flags
 ├── entities/                      # your YAML entity definitions (input)
 │   └── account.yaml
-├── modules/                       # backend output lands here
-│   └── accounts/
-├── shared/                        # thin re-export shims (authored once)
-│   ├── base-classes/
-│   ├── constants/tokens.ts
-│   ├── database/database.module.ts
-│   └── types/drizzle.ts
 └── src/
-    ├── app.module.ts              # you author; wires DatabaseModule + GENERATED_MODULES
-    ├── main.ts
+    ├── app.module.ts              # wires DatabaseModule + OpenApiModule + GENERATED_MODULES (yours after init)
+    ├── main.ts                    # Nest bootstrap + Swagger (yours after init)
+    ├── schema.ts                  # one-line re-export of the generated schema barrel
+    ├── shared/
+    │   └── database/database.module.ts   # provides DRIZZLE (yours after init)
+    ├── modules/                   # backend output: one folder per entity
+    │   └── accounts/
     └── generated/                 # codegen owns this tree — don't edit
         ├── modules.ts             # GENERATED_MODULES barrel
-        └── schema.ts              # Drizzle schema barrel
+        ├── schema.ts              # Drizzle schema barrel
+        ├── relations.ts           # Drizzle 1.0 relations manifest
+        └── app-config.ts          # boot values from codegen.config.yaml (openapi, auth, jobs)
 ```
 
-Only three paths are codegen-owned: `<paths.generated>/*` (default `src/generated/`), the per-entity `modules/<plural>/` tree (backend), and whatever lands under `backend_src/` (full clean). Everything else is yours.
+Codegen owns `<paths.generated>/*` (default `src/generated/`) and the per-entity `src/modules/<plural>/` trees.
+Init writes the other files once and never overwrites them without `--force`; after that they are yours.
+
+In `runtime: package` the generated code and these files import the runtime from the package
+(`@pattern-stack/codegen/runtime/...`, `@pattern-stack/codegen/subsystems`), so nothing is copied into your tree.
+`runtime: vendored` (`project init --runtime vendored`) instead copies the runtime into `src/shared/` and imports it
+through `@shared/*` — see [`src/shared/` vendored runtime files](#srcshared-vendored-runtime-files-runtime-vendored).
 
 ## tsconfig path aliases
 
-Generated code imports from `@shared/*` and `@modules/*`. Your `tsconfig.json` must declare both:
+Generated code imports its own trees through `@modules/*` and `@generated/*` (and, in `runtime: vendored`,
+`@shared/*`). `project init` merges these into an existing `tsconfig.json` (or writes one with `--with-tsconfig`):
 
 ```jsonc
 {
@@ -62,23 +92,17 @@ Generated code imports from `@shared/*` and `@modules/*`. Your `tsconfig.json` m
     "strict": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "baseUrl": ".",
     "paths": {
-      "@shared/*": ["./shared/*"],
-      "@modules/*": ["./modules/*"]
+      "@shared/*": ["./src/shared/*"],
+      "@modules/*": ["./src/modules/*"],
+      "@generated/*": ["./src/generated/*"]
     }
   },
-  "include": [
-    "src/**/*",
-    "shared/**/*",
-    "modules/**/*",
-    "schema.ts",
-    "drizzle.config.ts"
-  ]
+  "include": ["src/**/*", "drizzle.config.ts"]
 }
 ```
 
-`@generated/*` is not currently a required alias — generated code imports from its own tree via relative paths. If you plan to reference the barrels from application code (e.g. `@generated/modules`), add `"@generated/*": ["./src/generated/*"]`.
+A merge into a `bun init` tsconfig also sets `verbatimModuleSyntax: false`, which decorator metadata needs.
 
 ## A SQLite project (`target: { database: sqlite, orm: drizzle }`)
 
@@ -109,22 +133,20 @@ target:
 
 ## `DatabaseModule` contract
 
-Every generated repository expects the `DRIZZLE` injection token to resolve to a Drizzle client. A `@Global()` `DatabaseModule` is the standard way to satisfy that. Minimum viable scaffold — author this once:
+Every generated repository expects the `DRIZZLE` injection token to resolve to a Drizzle client. `project init` writes
+this `@Global()` module (`runtime: package`):
 
 ```ts
-// shared/database/database.module.ts
+// src/shared/database/database.module.ts
 import { Module, Global } from '@nestjs/common';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import { DRIZZLE } from '../constants/tokens';
+import { DRIZZLE } from '@pattern-stack/codegen/runtime/constants/tokens';
+import { relations } from '../../generated/relations';
 
 export { DRIZZLE };
-export type DrizzleDB = NodePgDatabase;
+export type DrizzleDB = NodePgDatabase<typeof relations>;
 
-/**
- * DatabaseModule — provides the DRIZZLE injection token globally.
- * Import once in AppModule, before any generated module.
- */
 @Global()
 @Module({
   providers: [
@@ -132,9 +154,9 @@ export type DrizzleDB = NodePgDatabase;
       provide: DRIZZLE,
       useFactory: () => {
         const pool = new Pool({
-          connectionString: process.env.DATABASE_URL,
+          connectionString: process.env.DATABASE_URL ?? 'postgresql://localhost:5432/app_dev',
         });
-        return drizzle({ client: pool });
+        return drizzle({ client: pool, relations });
       },
     },
   ],
@@ -146,9 +168,9 @@ export class DatabaseModule {}
 Requirements the generator relies on:
 
 1. **`@Global()`** — generated repositories don't import `DatabaseModule` themselves; they inject `DRIZZLE` directly. Only a global provider satisfies that.
-2. **Provides `DRIZZLE`** — must use the exact token re-exported from `@shared/constants/tokens`.
+2. **Provides `DRIZZLE`** — the exact token from the runtime (`@pattern-stack/codegen/runtime/constants/tokens`; `@shared/constants/tokens` in `runtime: vendored`).
 3. **Exports `DRIZZLE`** — so other modules can consume it.
-4. **Client constructed with the 1.0 config object** — `drizzle({ client: pool })`. Drizzle 1.0 **removed** `schema` from the pg config (`DrizzlePgConfig = Omit<DrizzleConfig, 'schema'>`); the generic slot is now the `defineRelations()` manifest, which codegen does not emit yet. Generated repositories import their table directly, so nothing needs the schema object — `src/generated/schema.ts` exists for drizzle-kit. See [Drizzle in a generated project](./consumer/drizzle.md).
+4. **Client constructed with the 1.0 config object and the relations manifest** — `drizzle({ client: pool, relations })`. Drizzle 1.0 **removed** `schema` from the pg config; its generic slot is the `defineRelations()` manifest, which codegen emits to `<paths.generated>/relations.ts` on every `entity new` (REL-1). It is what types `db.query.<table>.findMany({ with: … })` and the generated include reads. See [Drizzle in a generated project](./consumer/drizzle.md).
 
 ## `DRIZZLE` injection token
 
@@ -158,15 +180,21 @@ Generated repositories do this:
 constructor(@Inject(DRIZZLE) db: DrizzleClient) { super(db); }
 ```
 
-`DRIZZLE` resolves to `@shared/constants/tokens`, which is a vendored copy of `codegen-patterns/runtime/constants/tokens`. The value is the string literal `'DRIZZLE'`. Do not declare a fresh token in your project — it must be the same identity as the runtime's, or `useFactory` will bind to one symbol and `@Inject()` will look for another.
+`DRIZZLE` is the runtime's token — the string literal `'DRIZZLE'`, imported from
+`@pattern-stack/codegen/runtime/constants/tokens` (or the vendored `@shared/constants/tokens`). Do not declare a fresh
+token in your project: it must be the same identity as the runtime's, or `useFactory` will bind to one symbol and
+`@Inject()` will look for another.
 
-## `src/shared/` vendored runtime files
+## `src/shared/` vendored runtime files (`runtime: vendored`)
 
-Generated code imports from stable `@shared/*` paths. Those paths have to resolve to something — the "something" is a **vendored copy** of the relevant runtime files in your `src/shared/` tree. `codegen project init` writes these files for you on first run.
+**Only in `runtime: vendored`.** In the default `runtime: package` nothing below is written: generated code imports
+these files from the package.
+
+In `runtime: vendored`, generated code imports from stable `@shared/*` paths. Those paths have to resolve to something — the "something" is a **vendored copy** of the relevant runtime files in your `src/shared/` tree. `codegen project init --runtime vendored` writes these files for you on first run.
 
 **Why vendor instead of re-export.** The naive approach is a one-line re-export from `codegen-patterns/runtime/...`. TypeScript treats identical types coming from different `node_modules` trees as distinct — two `PgTable<...>` values fail to unify even at identical `drizzle-orm` versions (the private `shouldInlineParams` field is the giveaway). A re-export shim compiles the consumer's generated code against two separate drizzle type graphs (its own and the runtime's), producing 20+ "Types have separate declarations of a private property 'shouldInlineParams'" errors. Vendoring bakes the runtime files into the consumer's own module graph, so only one drizzle-orm identity exists. See [ADR-017](./adrs/ADR-017-barrel-files-over-injects.md) for the broader "stable surface over inject" philosophy these vendored files extend.
 
-`codegen project init` writes the following files. You do not need to hand-author them — this list exists so you know what's generated and can spot-check the output.
+`codegen project init --runtime vendored` writes the following files. You do not need to hand-author them — this list exists so you know what's generated and can spot-check the output.
 
 ### Base classes + transitive deps
 
@@ -274,7 +302,7 @@ and external integration. They're auto-discovered by Claude Code from `.claude/s
 codegen skills install         # (re)vendor the skills into .claude/skills
 codegen skills install --dry-run
 codegen skills list            # available vs installed
-codegen init --no-skills       # scaffold without vendoring skills
+codegen project init --no-skills   # scaffold without vendoring skills
 ```
 
 Treat them as generated output — don't hand-edit; each file carries a
@@ -283,23 +311,27 @@ divergent copies. Commit them so your team's agents pick them up.
 
 ## `schema.ts` wiring
 
-Drizzle Kit and the `DatabaseModule` both need a single entry point for the schema. That entry point is a one-line re-export of the generated barrel:
+`project init` writes `<backend_src>/schema.ts`, a one-line re-export of the generated barrel — the schema root for
+code that wants every table:
 
 ```ts
-// schema.ts
-export * from './src/generated/schema';
+// src/schema.ts
+export * from './generated/schema';
 ```
 
-The generator writes `src/generated/schema.ts` on every run — do not edit it, do not include additional tables there. If you have hand-authored tables outside the codegen entity set, `schema.ts` can combine both:
+The generator writes `src/generated/schema.ts` on every run — do not edit it, do not include additional tables there.
+The `drizzle.config.ts` init writes points drizzle-kit at that barrel (`schema: './src/generated/schema.ts'`). If you
+have hand-authored tables outside the codegen entity set, re-export both from `src/schema.ts` and point
+`drizzle.config.ts`'s `schema:` at it instead:
 
 ```ts
-export * from './src/generated/schema';
+export * from './generated/schema';
 export * from './shared/database/auth-tables'; // hand-authored
 ```
 
 ## Atlas migration workflow
 
-Your schema lives in `schema.ts` (re-exporting `src/generated/schema.ts`). To promote schema changes into your database, use [Atlas](https://atlasgo.io/) — it inspects the Drizzle schema, diffs it against the database, and emits **versioned, reviewable** SQL migrations that you commit alongside the code change.
+Your schema lives in `src/generated/schema.ts` (re-exported by `src/schema.ts`). To promote schema changes into your database, use [Atlas](https://atlasgo.io/) — it inspects the Drizzle schema, diffs it against the database, and emits **versioned, reviewable** SQL migrations that you commit alongside the code change.
 
 **Why Atlas, not `drizzle-kit push`.** `drizzle-kit push` is a dev-loop convenience — it applies schema changes directly, produces no migration file, leaves no reviewable artifact, and silently runs destructive operations. That is acceptable for throwaway iteration; it is **not** acceptable for shared databases, CI, or production. Atlas gives you:
 
@@ -320,30 +352,32 @@ Your schema lives in `schema.ts` (re-exporting `src/generated/schema.ts`). To pr
   ```
   Verify with `atlas version`.
 - A reachable `DATABASE_URL` (local Postgres is fine; the generated SQL is database-agnostic for the columns codegen emits).
-- `drizzle-kit` already installed as a dev dependency — Atlas shells out to `drizzle-kit` to introspect your schema (no additional Drizzle plugin required).
+- `drizzle-kit` (1.0 line) installed as a dev dependency, and the `drizzle.config.ts` `project init` writes — Atlas runs `drizzle-kit export`, which prints your schema as SQL DDL (no additional Drizzle plugin required).
+- An empty **dev database** Atlas can use as scratch space to normalize that SQL (`dev =` below); a throwaway database on the same Postgres is fine, or `docker://postgres/16/dev`.
 - An `atlas.hcl` file at your project root (next to `drizzle.config.ts`).
 
 ### Example `atlas.hcl`
 
-Drop this at the project root and commit it. Atlas reads the schema by running `drizzle-kit`'s external-schema introspection — no duplication of your Drizzle wiring.
+Drop this at the project root and commit it. Atlas reads the schema by running `drizzle-kit export` (which reads
+`drizzle.config.ts`) — no duplication of your Drizzle wiring.
 
 ```hcl
 data "external_schema" "drizzle" {
-  program = [
-    "bunx",
-    "drizzle-kit",
-    "introspect:pg",
-    "--config=drizzle.config.ts",
-  ]
+  program = ["bunx", "drizzle-kit", "export"]
 }
 env "local" {
   src = data.external_schema.drizzle.url
+  dev = getenv("ATLAS_DEV_URL")   # an EMPTY scratch database, e.g. postgres://…/atlas_dev?sslmode=disable
   url = getenv("DATABASE_URL")
   migration {
     dir = "file://migrations"
   }
 }
 ```
+
+drizzle-kit 1.0 has no `introspect:pg` (its commands are `generate`, `migrate`, `pull`, `push`, `export`); `pull`
+reads a database, not your schema, so it is not the source here. Check the wiring with
+`atlas schema inspect --env local --url env://src` — it prints the tables your entities define.
 
 Swap `bunx` for `npx` if your project uses npm/pnpm. Add more `env "…"` blocks (e.g. `env "ci"`, `env "prod"`) as you grow — they all share the same `data "external_schema"` source.
 
@@ -410,7 +444,7 @@ module barrel:
 import { Global, Module } from '@nestjs/common';
 import { DatabaseModule } from './shared/database/database.module';
 import { GENERATED_MODULES } from './generated/modules';
-import { OPENAPI_REGISTRY, OpenApiRegistry } from './shared/openapi';
+import { OPENAPI_REGISTRY, OpenApiRegistry } from '@pattern-stack/codegen/runtime/shared/openapi'; // vendored: './shared/openapi'
 
 @Global()
 @Module({
@@ -452,7 +486,7 @@ block into your own bootstrap:
 ```ts
 // src/main.ts (excerpt — paste into your existing bootstrap)
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { OPENAPI_REGISTRY, OpenApiRegistry } from './shared/openapi';
+import { OPENAPI_REGISTRY, OpenApiRegistry } from '@pattern-stack/codegen/runtime/shared/openapi'; // vendored: './shared/openapi'
 import { openapiConfig } from './generated/app-config';
 
 // inside async function bootstrap(), after `await NestFactory.create(AppModule)`:
@@ -536,10 +570,15 @@ const logger = createAppLogger('warn'); // ignores LOG_LEVEL
 
 ## `codegen.config.yaml`
 
-Minimum viable config for a backend-only backend project:
+What `project init` writes (backend only), plus the `semantic` switch:
 
 ```yaml
-# codegen.config.yaml
+# yaml-language-server: $schema=./node_modules/@pattern-stack/codegen/src/schema/codegen-config.schema.json
+runtime: package                    # import the runtime from the package (ADR-037); `vendored` copies it into src/shared/
+
+target:                             # the data layer generated code is written for (ADR-047)
+  database: postgres
+  orm: drizzle
 
 paths:
   backend_src: src                  # backend writes to <backend_src>/modules/<plural>/
@@ -600,7 +639,7 @@ blocks are:
 the defaults that depend on another block are filled), so it cannot drift from the parse. Point the
 YAML language server (VS Code's Red Hat YAML extension, JetBrains, Zed, Neovim's `yamlls`) at it, and the editor
 completes every block and key, shows its description, offers only the supported `target:` pairs and underlines
-anything else. Put this first line in `codegen.config.yaml`:
+anything else. `project init` writes this first line into `codegen.config.yaml`; add it to a config you wrote yourself:
 
 ```yaml
 # yaml-language-server: $schema=./node_modules/@pattern-stack/codegen/src/schema/codegen-config.schema.json
@@ -926,7 +965,7 @@ Two incompatible `drizzle-orm` copies in the resolved module graph. The runtime 
 
 You have two copies of drizzle-orm installed — one in your project and one in codegen-patterns. This happens when `shared/base-classes/*.ts` re-exports from `../../codegen-patterns/runtime/` via relative paths instead of containing vendored copies.
 
-Fix: copy the runtime files into your project rather than re-exporting. Use `codegen init` to set up vendored copies, or copy `runtime/base-classes/` into `shared/base-classes/` manually. Each file should contain the actual code, not a `export * from '../../../codegen-patterns/runtime/...'` re-export.
+Fix: copy the runtime files into your project rather than re-exporting. Use `codegen project init --runtime vendored` to set up vendored copies, or copy `runtime/base-classes/` into `shared/base-classes/` manually. Each file should contain the actual code, not a `export * from '../../../codegen-patterns/runtime/...'` re-export.
 
 ### HTML-escaped entities in generated TypeScript (`&#39;` instead of `'`)
 

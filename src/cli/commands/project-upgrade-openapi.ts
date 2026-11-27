@@ -66,7 +66,7 @@ const OPEN_API_MODULE_SNIPPET = `/**
  * OpenApiModule — @Global() wrapper around the OPENAPI_REGISTRY singleton.
  *
  * OPENAPI-4: every generated entity module @Inject(OPENAPI_REGISTRY) to
- * register its Zod DTOs at onModuleInit (OPENAPI-2). NestJS's DI scoping
+ * register its Zod DTOs in its constructor (OPENAPI-2). NestJS's DI scoping
  * means providers declared in AppModule are NOT automatically visible
  * inside imported feature modules. Making the provider module @Global()
  * broadcasts the token to every module in the application graph.

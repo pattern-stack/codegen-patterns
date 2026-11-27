@@ -4,6 +4,13 @@
 **Depends on:** OPENAPI-1 (registry)
 **Blocks:** OPENAPI-3, OPENAPI-4
 
+> **Revision 2026-11-26 (registration moved to the constructor).** The generated module registers its schemas in its
+> **constructor**, not in `onModuleInit`. `main.ts` builds the document after `NestFactory.create()` and before
+> `app.listen()` (it must: `app.init()` installs the router's not-found handler, and a Swagger route mounted after it
+> 404s), and `create()` runs no lifecycle hook, so `onModuleInit` registration left `components.schemas` with only
+> `ErrorResponseDto` and every entity `$ref` dangling in a fresh app. Found by the 0.35.0 release rehearsal; the smoke
+> gate had hidden it by calling `app.init()` itself. The sketches below show the old hook; read them as the constructor.
+
 ## Scope
 
 Update Hygen DTO templates so every generated DTO **registers its Zod schema** with `OpenApiRegistry` at module init. Both pipelines — `templates/entity/new/backend/` (full Clean Architecture) and `templates/entity/new/clean-lite-ps/` (lite variant). Baseline snapshots refreshed.

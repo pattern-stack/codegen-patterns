@@ -78,7 +78,7 @@ const RUNTIME_DEPS = [
 	'pg@8',
 	'zod@4',
 ];
-const DEV_DEPS = ['typescript@5', '@types/bun', '@types/pg@8'];
+const DEV_DEPS = ['typescript@5', 'drizzle-kit@1.0.0-rc.4', '@types/bun', '@types/pg@8'];
 
 type Mode = 'vendored' | 'package';
 

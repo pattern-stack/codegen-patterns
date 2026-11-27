@@ -110,7 +110,7 @@ Each subsystem generates a protocol (interface), Drizzle backend (Postgres), mem
 ### Project Commands
 
 ```bash
-codegen init                     # scaffold a new consumer project
+codegen project init             # scaffold a new consumer project (alias: codegen init) — then docs/CONSUMER-SETUP.md › Start a project
 codegen project scan             # detect conventions → propose config
 codegen project config           # view resolved config
 ```

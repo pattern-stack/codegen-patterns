@@ -11,6 +11,7 @@ import os from 'node:os';
 import projectNoun from '../../cli/commands/project.js';
 import {
 	buildInitPlan,
+	CONFIG_SCHEMA_MODELINE,
 	writePlan,
 	mergeTsconfig,
 	mergeFrontendDeps,
@@ -399,6 +400,47 @@ describe('buildInitPlan', () => {
 
 		const config = plan.entries.find((e) => e.relPath === 'codegen.config.yaml');
 		expect(config?.content).toContain('runtime: package');
+	});
+
+	test('the config starts with the editor-schema line and declares the default target (ADR-047)', async () => {
+		const cwd = mkTempDir('plan-target');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true });
+		const config = plan.entries.find((e) => e.relPath === 'codegen.config.yaml')!.content!;
+		expect(config.split('\n')[0]).toBe(CONFIG_SCHEMA_MODELINE);
+		// The line points at a file the package ships.
+		const schemaRel = CONFIG_SCHEMA_MODELINE.split('$schema=./node_modules/@pattern-stack/codegen/')[1]!;
+		expect(fs.existsSync(path.resolve(import.meta.dir, '../../..', schemaRel))).toBe(true);
+		const parsed = (await import('yaml')).parse(config) as { target?: unknown };
+		expect(parsed.target).toEqual({ database: 'postgres', orm: 'drizzle' });
+	});
+
+	test('the written config parses through CodegenConfigSchema', async () => {
+		const cwd = mkTempDir('plan-config-parses');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true });
+		writePlan(plan);
+		const reloaded = await loadContext({ cwd, skipDetection: true });
+		expect(reloaded.config?.target).toEqual({ database: 'postgres', orm: 'drizzle' });
+	});
+
+	test('writes drizzle.config.ts pointed at the generated schema barrel', async () => {
+		const cwd = mkTempDir('plan-drizzle-config');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true });
+		const entry = plan.entries.find((e) => e.relPath === 'drizzle.config.ts');
+		expect(entry?.action).toBe('create');
+		expect(entry?.content).toContain("schema: './src/generated/schema.ts'");
+		expect(entry?.content).toContain("dialect: 'postgresql'");
+		expect(entry?.content).toContain('process.env.DATABASE_URL');
+	});
+
+	test('never overwrites an existing drizzle.config.ts without --force', async () => {
+		const cwd = mkTempDir('plan-drizzle-keep');
+		fs.writeFileSync(path.join(cwd, 'drizzle.config.ts'), '// mine\n');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true });
+		expect(plan.entries.find((e) => e.relPath === 'drizzle.config.ts')?.action).toBe('skip');
 	});
 
 	test('vendored mode: writes runtime: vendored into the config (ADR-037)', async () => {

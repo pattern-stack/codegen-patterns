@@ -1,5 +1,5 @@
 
-import { Inject, Module, forwardRef, type OnModuleInit } from '@nestjs/common';
+import { Inject, Module, forwardRef } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
 import { MemberSkillsModule } from '../member-skills/member-skills.module';
@@ -41,21 +41,17 @@ import { DeleteMemberUseCase } from './use-cases/delete-member.use-case';
   // such a repo elsewhere can't satisfy those deps. Use-case internals stay unexported.
   exports: [MemberService, MemberRepository],
 })
-export class MembersModule implements OnModuleInit {
-  // OPENAPI-2: register this entity's Zod schemas with the shared
-  // OpenApiRegistry at module init. OPENAPI-4 awaits `build()` at boot
-  // to emit the full /docs-json document.
-  constructor(
-    @Inject(OPENAPI_REGISTRY) private readonly openApi: OpenApiRegistry,
-  ) {}
-
-  onModuleInit(): void {
-    this.openApi.registerSchema('CreateMemberDto', CreateMemberSchema);
-    this.openApi.registerSchema('UpdateMemberDto', UpdateMemberSchema);
+export class MembersModule {
+  // OPENAPI-2: register this entity's Zod schemas when Nest constructs the
+  // module (in `NestFactory.create`), so they are in the registry before
+  // main.ts builds /docs-json. A lifecycle hook (`onModuleInit`) runs too late.
+  constructor(@Inject(OPENAPI_REGISTRY) openApi: OpenApiRegistry) {
+    openApi.registerSchema('CreateMemberDto', CreateMemberSchema);
+    openApi.registerSchema('UpdateMemberDto', UpdateMemberSchema);
     // The response schema is named <Entity>OutputDto (matches
     // classNames.outputDto); the OPENAPI-2 spec sketch uses "ResponseDto"
     // but the generated code publishes OutputDto everywhere, so we
     // keep consistency. OPENAPI-3 decorators reference the same name.
-    this.openApi.registerSchema('MemberOutputDto', MemberOutputSchema);
+    openApi.registerSchema('MemberOutputDto', MemberOutputSchema);
   }
 }

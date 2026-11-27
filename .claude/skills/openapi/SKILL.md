@@ -35,7 +35,7 @@ The OpenAPI subsystem is a **cross-cutting documentation surface**, not a Protoc
                                      │
                                      ▼
               ┌──────────────────────────────────────────────┐
-              │ ContactsModule.onModuleInit() {              │
+              │ ContactsModule constructor {                 │
               │   openapi.registerSchema('CreateContactDto', │ (OPENAPI-2)
               │     createContactSchema);                    │
               │   openapi.registerSchema(...);               │
@@ -127,7 +127,8 @@ Controllers reference registered schemas by **string name** via
   `OpenApiConfigSchema`, not in `??` fallbacks at the call site.
 - **Do not route Swagger UI setup through per-entity modules.**
   `SwaggerModule.setup()` is a bootstrap concern; the generated modules'
-  sole OpenAPI responsibility is `registerSchema` at `onModuleInit`. The
+  sole OpenAPI responsibility is `registerSchema` in the constructor (never
+  `onModuleInit`: `main.ts` builds before `listen()`, so a hook runs too late). The
   flow is:  modules populate registry → `main.ts` reads registry once →
   `SwaggerModule` mounts the HTML + JSON routes.
 

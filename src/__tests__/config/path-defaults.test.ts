@@ -278,10 +278,12 @@ describe('project init honours an existing config (#566, #612)', () => {
 		const plan = await buildInitPlan(ctx, { cwd, skipScan: true, runtimeMode: 'vendored', withTsconfig: true });
 		const rel = plan.entries.map((e) => e.relPath);
 		for (const r of rel) {
-			if (r === 'codegen.config.yaml' || r === 'tsconfig.json') continue;
+			// Project-root config files sit beside codegen.config.yaml; their contents follow paths.* (below).
+			if (r === 'codegen.config.yaml' || r === 'tsconfig.json' || r === 'drizzle.config.ts') continue;
 			expect(r).toMatch(/^(apps\/backend\/(src|codegen)\/|definitions\/entities)/);
 		}
 		const content = (r: string) => plan.entries.find((e) => e.relPath === r)!.content!;
+		expect(content('drizzle.config.ts')).toContain("schema: './apps/backend/codegen/schema.ts'");
 		expect(rel).toContain('apps/backend/src/shared/base-classes/base-repository.ts');
 		expect(content('apps/backend/src/app.module.ts')).toContain("from '../codegen/modules'");
 		expect(content('apps/backend/src/app.module.ts')).toContain("from './shared/database/database.module'");

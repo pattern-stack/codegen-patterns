@@ -222,7 +222,7 @@ describe('the parent templates render the fan-out', () => {
 
 	it('module: forwardRef joins the one import; the junction module is imported via forwardRef', () => {
 		const mod = render('module.ejs.t', localsFor(PERSON, [CREW_PERSON]));
-		expect(mod).toContain("import { Inject, Module, forwardRef, type OnModuleInit } from '@nestjs/common';");
+		expect(mod).toContain("import { Inject, Module, forwardRef } from '@nestjs/common';");
 		expect(mod).toContain("import { CrewPeopleModule } from '../crew-people/crew-people.module';");
 		expect(mod).toContain('    DatabaseModule,\n    forwardRef(() => CrewPeopleModule),\n');
 	});

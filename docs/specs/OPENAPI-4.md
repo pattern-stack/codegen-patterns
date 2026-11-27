@@ -5,6 +5,11 @@
 **Depends on:** OPENAPI-1, OPENAPI-2, OPENAPI-3
 **Blocks:** epic closes
 
+> **Revision 2026-11-26.** Generated modules register their schemas when constructed (OPENAPI-2's revision note), so
+> the registry is full before `main.ts` builds — `main.ts` does not and cannot call `app.init()` first. The smoke gate
+> (`test/smoke/verify-openapi.ts`) now builds in that same order, with no `app.init()`, and fails on any `$ref` that does
+> not resolve in the document. Note 3's "populated by generated modules at onModuleInit" was the defect.
+
 ## Scope
 
 Wire `SwaggerModule.setup()` into the generated `main.ts`, mounting Swagger UI at `/docs` (configurable). Introduce `openapi:` consumer config block. Document in CONSUMER-SETUP. Add skill.
