@@ -3,7 +3,7 @@
  *
  * Bound by the host (in a `@Global()` host module, so the package's module sees them):
  * - `JOBS_DRIZZLE`: the host's Drizzle database (`JobDatabase`, structural);
- * - `JOBS_TABLES`: the job tables as `packages/db` declares them, checked `satisfies JobTables` where bound (d84);
+ * - `JOBS_TABLES`: the job tables, the package's own `jobTables` (`JobTables` is `typeof jobTables`);
  * - `JOBS_REDIS`: the host's Redis/Valkey client (`RedisEvalClient`: one `eval`; the host owns its lifecycle);
  * - `JOBS_QUEUE`: the host's registered BullMQ queue (`JobEngineQueue`);
  * - `JOBS_DEFINITIONS`: the jobs (`readonly AnyJob[]`);

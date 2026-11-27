@@ -1,12 +1,8 @@
 import type { RunError, RunStatus, Spend } from './run.ts';
 import type { Counts } from './step-state.ts';
 
-export type ChunkStatus =
-  | 'pending'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'canceled';
+export const CHUNK_STATUSES = ['pending', 'running', 'completed', 'failed', 'canceled'] as const;
+export type ChunkStatus = (typeof CHUNK_STATUSES)[number];
 
 /**
  * A block of a map step's items: the unit the engine claims, tracks and retries. Adapter-facing; a job author never

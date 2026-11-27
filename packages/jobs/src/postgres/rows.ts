@@ -2,10 +2,10 @@ import { getColumns, type SQL, sql } from 'drizzle-orm';
 import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 import type { Slot } from '../model/children.ts';
-import type { Chunk, ChunkStatus } from '../model/chunk.ts';
-import type { Item } from '../model/item.ts';
-import type { Budget, Run } from '../model/run.ts';
-import type { StepState } from '../model/step-state.ts';
+import { type Chunk, CHUNK_STATUSES, type ChunkStatus } from '../model/chunk.ts';
+import { type Item, ITEM_STATUSES } from '../model/item.ts';
+import { type Budget, CACHE_MODES, PAUSE_REASONS, type Run, RUN_STATUSES, RUN_TRIGGERS } from '../model/run.ts';
+import { STEP_KINDS, STEP_STATUSES, type StepState, WAIT_KINDS } from '../model/step-state.ts';
 import type { JobRecentRun, StoredJobEvent } from './operator-reads.ts';
 
 /**
@@ -42,6 +42,17 @@ export const refOf = (col: AnyPgColumn, alias?: string): SQL =>
 export const tsOf = (d: Date): SQL => sql`${d.toISOString()}::timestamp(3)`;
 
 /** `(a, b, c)` for an `IN`; callers guard the empty list. */
+/**
+ * A list of the engine's own words as SQL literals, `('a', 'b')`: for a CHECK, a partial index's predicate, and an
+ * `ON CONFLICT … WHERE` arbiter, which must match that predicate's text (a bound parameter never does). Only the
+ * model's const lists reach it; a word that is not a plain identifier is refused.
+ */
+export const literalsOf = (values: readonly string[]): SQL => {
+  for (const v of values)
+    if (!/^[a-z][a-z._-]*$/.test(v)) throw new Error(`not a vocabulary word: ${v}`);
+  return sql.raw(`(${values.map((v) => `'${v}'`).join(', ')})`);
+};
+
 export const listOf = (values: readonly unknown[]): SQL =>
   sql`(${sql.join(
     values.map((v) => sql`${v}`),
@@ -49,18 +60,9 @@ export const listOf = (values: readonly unknown[]): SQL =>
   )})`;
 
 const date = z.number().transform((n) => new Date(n));
-const RUN_STATUS = z.enum([
-  'queued',
-  'pending',
-  'running',
-  'waiting',
-  'paused',
-  'completed',
-  'failed',
-  'canceled',
-]);
-const PAUSE_REASON = z.enum(['budget', 'deadline', 'operator', 'parent']);
-const WAIT_KIND = z.enum(['children', 'signal', 'gate']);
+const RUN_STATUS = z.enum(RUN_STATUSES);
+const PAUSE_REASON = z.enum(PAUSE_REASONS);
+const WAIT_KIND = z.enum(WAIT_KINDS);
 const num = z.coerce.number();
 
 const runRow = z.object({
@@ -70,13 +72,13 @@ const runRow = z.object({
   jobVersion: z.string(),
   status: RUN_STATUS,
   pauseReason: PAUSE_REASON.nullable(),
-  trigger: z.enum(['manual', 'eval', 'agent', 'schedule', 'event']),
+  trigger: z.enum(RUN_TRIGGERS),
   requestedByUserId: z.string().nullable(),
   dryRun: z.boolean(),
   dedupeKey: z.string().nullable(),
   subjectKind: z.string().nullable(),
   subjectId: z.string().nullable(),
-  cacheMode: z.enum(['read-write', 'refresh']),
+  cacheMode: z.enum(CACHE_MODES),
   chunkSize: num,
   chunkConcurrency: num.nullable(),
   maxItems: num,
@@ -158,15 +160,8 @@ const stepRow = z.object({
   runId: z.string(),
   name: z.string(),
   stepIndex: num,
-  kind: z.enum(['step', 'map', 'wait', 'children']),
-  status: z.enum([
-    'pending',
-    'running',
-    'waiting',
-    'completed',
-    'failed',
-    'skipped',
-  ]),
+  kind: z.enum(STEP_KINDS),
+  status: z.enum(STEP_STATUSES),
   attempts: num,
   ...counts,
   planned: z.boolean(),
@@ -245,7 +240,7 @@ const itemRow = z.object({
   chunkIndex: num,
   itemKey: z.string(),
   itemRef: z.string(),
-  status: z.enum(['pending', 'done', 'cached', 'failed', 'skipped']),
+  status: z.enum(ITEM_STATUSES),
   attempts: num,
   errorType: z.string().nullable(),
 });
@@ -269,7 +264,7 @@ const chunkRow = z.object({
   runId: z.string(),
   step: z.string(),
   chunkIndex: num,
-  status: z.enum(['pending', 'running', 'completed', 'failed', 'canceled']),
+  status: z.enum(CHUNK_STATUSES),
   attempts: num,
   runAt: date,
   leaseOwner: z.string().nullable(),
@@ -323,7 +318,7 @@ export const statusCountOf = (
 ): { status: ChunkStatus; n: number; step?: string } =>
   z
     .object({
-      status: z.enum(['pending', 'running', 'completed', 'failed', 'canceled']),
+      status: z.enum(CHUNK_STATUSES),
       n: num,
       step: z.string().optional(),
     })
@@ -454,7 +449,7 @@ const slotRow = z.object({
   key: z.string(),
   childRunId: z.string(),
   ordinal: num,
-  status: z.enum(['pending', 'done', 'cached', 'failed', 'skipped']),
+  status: z.enum(ITEM_STATUSES),
   attempts: num,
   errorType: z.string().nullable(),
 });

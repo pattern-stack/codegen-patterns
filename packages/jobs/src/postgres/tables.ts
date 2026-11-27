@@ -19,7 +19,29 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
-import type { JobTables } from './job-tables.ts';
+import { CHUNK_STATUSES, type ChunkStatus } from '../model/chunk.ts';
+import { JOB_EVENT_TYPES, type JobEventType } from '../model/events.ts';
+import { ITEM_STATUSES, type ItemStatus } from '../model/item.ts';
+import {
+  ACTIVE_RUN,
+  CACHE_MODES,
+  type CacheMode,
+  PAUSE_REASONS,
+  type PauseReason,
+  RUN_STATUSES,
+  RUN_TRIGGERS,
+  type RunStatus,
+  type RunTrigger,
+} from '../model/run.ts';
+import {
+  STEP_KINDS,
+  STEP_STATUSES,
+  type StepKind,
+  type StepStatus,
+  WAIT_KINDS,
+  type WaitKind,
+} from '../model/step-state.ts';
+import { literalsOf } from './rows.ts';
 
 /**
  * The job engine's tables (`@pattern-stack/jobs/postgres`), the one definition: an app's schema re-exports them (codegen
@@ -35,53 +57,9 @@ import type { JobTables } from './job-tables.ts';
  * The tenant is `text`, whatever the app's tenant ids are, and a single-tenant app writes `SYSTEM_TENANT`: no FK to
  * a tenants table (the engine's rows outlive nothing they point at). Every child carries `tenant_id` with a composite FK to `job_runs (tenant_id, id)`, so a child row can
  * never point at another tenant's run. Timestamps are `timestamptz(3)` (an instant, the millisecond a JS `Date` holds; codegen #796), and
- * every one is written from the store's clock, never SQL `now()`. The status vocabularies mirror
- * `src/model/*.ts`; `jobTables satisfies JobTables` turns drift into a type error.
+ * every one is written from the store's clock, never SQL `now()`. Each status column is typed with the model's type and
+ * its CHECK is built from the model's one const list (`literalsOf`), so a word added to the model reaches both.
  */
-
-export type JobRunStatusValue =
-  | 'queued'
-  | 'pending'
-  | 'running'
-  | 'waiting'
-  | 'paused'
-  | 'completed'
-  | 'failed'
-  | 'canceled';
-export type JobRunPauseReasonValue =
-  | 'budget'
-  | 'deadline'
-  | 'operator'
-  | 'parent';
-export type JobRunTriggerValue =
-  | 'manual'
-  | 'eval'
-  | 'agent'
-  | 'schedule'
-  | 'event';
-export type JobRunCacheModeValue = 'read-write' | 'refresh';
-export type JobRunStepKindValue = 'step' | 'map' | 'wait' | 'children';
-export type JobRunStepStatusValue =
-  | 'pending'
-  | 'running'
-  | 'waiting'
-  | 'completed'
-  | 'failed'
-  | 'skipped';
-// What a waiting step waits on. The TS unions name what the engine writes; the CHECKs hold the same words.
-export type JobRunWaitKindValue = 'children' | 'signal' | 'gate';
-export type JobRunItemStatusValue =
-  | 'pending'
-  | 'done'
-  | 'cached'
-  | 'failed'
-  | 'skipped';
-export type JobRunChunkStatusValue =
-  | 'pending'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'canceled';
 
 const ms = { precision: 3, withTimezone: true } as const;
 
@@ -95,20 +73,20 @@ export const jobRuns = pgTable(
     // The definition's version hash when the run was created.
     jobVersion: varchar('job_version', { length: 64 }).notNull(),
     status: varchar('status', { length: 16 })
-      .$type<JobRunStatusValue>()
+      .$type<RunStatus>()
       .default('pending')
       .notNull(),
     pauseReason: varchar('pause_reason', {
       length: 16,
-    }).$type<JobRunPauseReasonValue>(),
+    }).$type<PauseReason>(),
     trigger: varchar('trigger', { length: 16 })
-      .$type<JobRunTriggerValue>()
+      .$type<RunTrigger>()
       .notNull(),
     requestedByUserId: text('requested_by_user_id'),
     dryRun: boolean('dry_run').default(false).notNull(),
     dedupeKey: varchar('dedupe_key', { length: 255 }),
     cacheMode: varchar('cache_mode', { length: 16 })
-      .$type<JobRunCacheModeValue>()
+      .$type<CacheMode>()
       .default('read-write')
       .notNull(),
     chunkSize: integer('chunk_size').default(1000).notNull(),
@@ -149,11 +127,11 @@ export const jobRuns = pgTable(
   (table): PgTableExtraConfigValue[] => [
     check(
       'job_runs_status_check',
-      sql`${table.status} IN ('queued', 'pending', 'running', 'waiting', 'paused', 'completed', 'failed', 'canceled')`,
+      sql`${table.status} IN ${literalsOf(RUN_STATUSES)}`,
     ),
     check(
       'job_runs_pause_reason_check',
-      sql`${table.pauseReason} IS NULL OR (${table.pauseReason} IN ('budget', 'deadline', 'operator', 'parent') AND ${table.status} = 'paused')`,
+      sql`${table.pauseReason} IS NULL OR (${table.pauseReason} IN ${literalsOf(PAUSE_REASONS)} AND ${table.status} = 'paused')`,
     ),
     check(
       'job_runs_parent_check',
@@ -170,11 +148,11 @@ export const jobRuns = pgTable(
       .where(sql`${table.parentRunId} IS NOT NULL`),
     check(
       'job_runs_trigger_check',
-      sql`${table.trigger} IN ('manual', 'eval', 'agent', 'schedule', 'event')`,
+      sql`${table.trigger} IN ${literalsOf(RUN_TRIGGERS)}`,
     ),
     check(
       'job_runs_cache_mode_check',
-      sql`${table.cacheMode} IN ('read-write', 'refresh')`,
+      sql`${table.cacheMode} IN ${literalsOf(CACHE_MODES)}`,
     ),
     check(
       'job_runs_subject_check',
@@ -201,7 +179,7 @@ export const jobRuns = pgTable(
     uniqueIndex('job_runs_one_open_per_dedupe_key')
       .on(table.tenantId, table.jobKey, table.dryRun, table.dedupeKey)
       .where(
-        sql`${table.dedupeKey} IS NOT NULL AND ${table.status} IN ('pending', 'running', 'waiting', 'paused')`,
+        sql`${table.dedupeKey} IS NOT NULL AND ${table.status} IN ${literalsOf(ACTIVE_RUN)}`,
       ),
     index('job_runs_tenant_created_idx').on(
       table.tenantId,
@@ -245,9 +223,9 @@ export const jobRunSteps = pgTable(
     tenantId: text('tenant_id').notNull(),
     name: varchar('name', { length: 64 }).notNull(),
     stepIndex: integer('step_index').notNull(),
-    kind: varchar('kind', { length: 8 }).$type<JobRunStepKindValue>().notNull(),
+    kind: varchar('kind', { length: 8 }).$type<StepKind>().notNull(),
     status: varchar('status', { length: 16 })
-      .$type<JobRunStepStatusValue>()
+      .$type<StepStatus>()
       .default('running')
       .notNull(),
     attempts: integer('attempts').default(0).notNull(),
@@ -265,7 +243,7 @@ export const jobRunSteps = pgTable(
     errorMessage: text('error_message'),
     // The step's wait, held on its row. Kind and name stay after the wait settles (what it waited for); `wake_at`,
     // when the advance looks again, is cleared.
-    waitKind: varchar('wait_kind', { length: 16 }).$type<JobRunWaitKindValue>(),
+    waitKind: varchar('wait_kind', { length: 16 }).$type<WaitKind>(),
     // A gate's or signal's name (a code constant, never content); a children step's child job key.
     waitName: varchar('wait_name', { length: 128 }),
     waitSince: timestamp('wait_since', ms),
@@ -289,15 +267,15 @@ export const jobRunSteps = pgTable(
     }).onDelete('cascade'),
     check(
       'job_run_steps_kind_check',
-      sql`${table.kind} IN ('step', 'map', 'children', 'wait')`,
+      sql`${table.kind} IN ${literalsOf(STEP_KINDS)}`,
     ),
     check(
       'job_run_steps_status_check',
-      sql`${table.status} IN ('pending', 'running', 'waiting', 'completed', 'failed', 'skipped')`,
+      sql`${table.status} IN ${literalsOf(STEP_STATUSES)}`,
     ),
     check(
       'job_run_steps_wait_kind_check',
-      sql`${table.waitKind} IS NULL OR ${table.waitKind} IN ('children', 'signal', 'gate')`,
+      sql`${table.waitKind} IS NULL OR ${table.waitKind} IN ${literalsOf(WAIT_KINDS)}`,
     ),
     check(
       'job_run_steps_waiting_check',
@@ -332,7 +310,7 @@ export const jobRunItems = pgTable(
     itemKey: text('item_key').notNull(),
     itemRef: text('item_ref').notNull(),
     status: varchar('status', { length: 16 })
-      .$type<JobRunItemStatusValue>()
+      .$type<ItemStatus>()
       .default('pending')
       .notNull(),
     attempts: integer('attempts').default(0).notNull(),
@@ -361,7 +339,7 @@ export const jobRunItems = pgTable(
     }).onDelete('cascade'),
     check(
       'job_run_items_status_check',
-      sql`${table.status} IN ('pending', 'done', 'cached', 'failed', 'skipped')`,
+      sql`${table.status} IN ${literalsOf(ITEM_STATUSES)}`,
     ),
     // A claimed chunk's pending items.
     index('job_run_items_pending_idx')
@@ -383,7 +361,7 @@ export const jobRunChunks = pgTable(
     step: varchar('step', { length: 64 }).notNull(),
     chunkIndex: integer('chunk_index').notNull(),
     status: varchar('status', { length: 16 })
-      .$type<JobRunChunkStatusValue>()
+      .$type<ChunkStatus>()
       .default('pending')
       .notNull(),
     // Claims so far; a crash spends one too.
@@ -430,7 +408,7 @@ export const jobRunChunks = pgTable(
     }).onDelete('cascade'),
     check(
       'job_run_chunks_status_check',
-      sql`${table.status} IN ('pending', 'running', 'completed', 'failed', 'canceled')`,
+      sql`${table.status} IN ${literalsOf(CHUNK_STATUSES)}`,
     ),
     check(
       'job_run_chunks_reserved_check',
@@ -451,26 +429,6 @@ export const jobRunChunks = pgTable(
   ],
 );
 
-export type JobRunEventTypeValue =
-  | 'run.started'
-  | 'run.paused'
-  | 'run.resumed'
-  | 'run.completed'
-  | 'run.failed'
-  | 'run.canceled'
-  | 'step.started'
-  | 'step.progress'
-  | 'step.completed'
-  | 'step.failed'
-  | 'step.skipped'
-  | 'step.retried'
-  | 'step.waiting'
-  | 'step.woke'
-  | 'step.signaled'
-  | 'child.started'
-  | 'child.ended'
-  | 'item.failed';
-
 // The engine's event log: one row per event a run emitted (`JOB_EVENT_TYPES`), written by the backend's DB sink.
 // Ids, counts and types only, never content: an error by its type, an item by its key (a meaning and an id, never
 // text). One table for the engine, not one per job. No retention yet: the log grows with the runs it records and is
@@ -483,13 +441,13 @@ export const jobRunEvents = pgTable(
     runId: uuid('run_id').notNull(),
     jobKey: varchar('job_key', { length: 128 }).notNull(),
     type: varchar('type', { length: 32 })
-      .$type<JobRunEventTypeValue>()
+      .$type<JobEventType>()
       .notNull(),
     step: varchar('step', { length: 64 }),
     attempt: integer('attempt'),
     pauseReason: varchar('pause_reason', {
       length: 16,
-    }).$type<JobRunPauseReasonValue>(),
+    }).$type<PauseReason>(),
     errorType: varchar('error_type', { length: 128 }),
     chunkIndex: integer('chunk_index'),
     itemKey: text('item_key'),
@@ -499,7 +457,7 @@ export const jobRunEvents = pgTable(
     itemsFailed: integer('items_failed'),
     itemsSkipped: integer('items_skipped'),
     // A wait's kind and name (`step.waiting`, `step.woke`), and a child run (`child.started`, `child.ended`; no FK).
-    waitKind: varchar('wait_kind', { length: 16 }).$type<JobRunWaitKindValue>(),
+    waitKind: varchar('wait_kind', { length: 16 }).$type<WaitKind>(),
     waitName: varchar('wait_name', { length: 128 }),
     childRunId: uuid('child_run_id'),
     at: timestamp('at', ms).notNull(),
@@ -512,7 +470,7 @@ export const jobRunEvents = pgTable(
     }).onDelete('cascade'),
     check(
       'job_run_events_type_check',
-      sql`${table.type} IN ('run.started', 'run.paused', 'run.resumed', 'run.completed', 'run.failed', 'run.canceled', 'step.started', 'step.progress', 'step.completed', 'step.failed', 'step.skipped', 'step.retried', 'step.waiting', 'step.woke', 'step.signaled', 'child.started', 'child.ended', 'item.failed')`,
+      sql`${table.type} IN ${literalsOf(JOB_EVENT_TYPES)}`,
     ),
     check(
       'job_run_events_counts_check',
@@ -595,4 +553,7 @@ export const jobTables = {
   values: jobRunValues,
   results: jobItemResults,
   events: jobRunEvents,
-} satisfies JobTables;
+};
+
+/** The tables the Postgres store reads and writes: the package's own, the one definition. */
+export type JobTables = typeof jobTables;

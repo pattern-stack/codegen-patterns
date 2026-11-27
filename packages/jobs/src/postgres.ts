@@ -4,7 +4,7 @@
  */
 
 export { eventLogSink } from './postgres/event-log-sink.ts';
-export type { JobTables } from './postgres/job-tables.ts';
+export type { JobTables } from './postgres/tables.ts';
 export type {
   EventLogQuery,
   ItemKey,

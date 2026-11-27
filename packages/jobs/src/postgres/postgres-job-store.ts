@@ -16,6 +16,7 @@ import {
 import type { JobEvent } from '../model/events.ts';
 import type { Done, Failed, Item, ItemRef, ItemResult } from '../model/item.ts';
 import {
+  ACTIVE_RUN,
   budgetStop,
   canTransition,
   checkNewRun,
@@ -32,7 +33,7 @@ import {
 } from '../model/run.ts';
 import type { Speculation, StepState, WaitKind } from '../model/step-state.ts';
 import type { ItemRange, JobStore, Reservation } from '../ports/job-store.ts';
-import type { JobTables } from './job-tables.ts';
+import { type JobTables, jobTables } from './tables.ts';
 import type {
   EventLogQuery,
   JobOperatorReads,
@@ -49,6 +50,7 @@ import {
   itemOf,
   itemResultRowOf,
   listOf,
+  literalsOf,
   recentRunOf,
   refOf,
   reservedCallsOf,
@@ -83,8 +85,9 @@ export interface PostgresJobStoreOptions {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const OPEN = sql`('pending', 'running', 'waiting', 'paused')`;
-const TERMINAL = sql`('completed', 'failed', 'canceled')`;
+/** The model's lists as literals: `OPEN` must match the one-open-run index's predicate for `ON CONFLICT`. */
+const OPEN = literalsOf(ACTIVE_RUN);
+const TERMINAL = literalsOf(TERMINAL_RUN);
 /** Expired claims one sweep returns: bounded per call; the next sweep takes the rest. */
 const SWEEP_LIMIT = 1000;
 /** Rows per multi-row INSERT. */
@@ -125,7 +128,7 @@ export class PostgresJobStore implements JobStore, JobOperatorReads {
 
   constructor(
     private readonly db: JobDatabase,
-    private readonly tables: JobTables,
+    private readonly tables: JobTables = jobTables,
     options: PostgresJobStoreOptions = {},
   ) {
     this.now = options.now ?? (() => new Date());
