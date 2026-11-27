@@ -17,7 +17,12 @@ import { loadEntityFromYaml, loadEntitiesFromYaml } from '../../utils/yaml-loade
 import { analyzeDomain } from '../../index.js';
 import { junctionsDirFor, relationshipsDirFor } from '../../config/junctions-dir.js';
 import { preflightEntityTargets, renderEntityTargets } from '../shared/entity-render.js';
-import { emitComposition, wiringFilesBehind, type CompositionFile } from '../../emitters/composition/emit-composition.js';
+import {
+	emitComposition,
+	wiringFilesBehind,
+	type CompositionFile,
+	type CompositionInput,
+} from '../../emitters/composition/emit-composition.js';
 import { removeOtherWiringFiles } from '../../emitters/composition/stale-files.js';
 import { loadProjectApiContext } from '../../derived/api/project.js';
 import { isPatternStackWiring } from '../../targets/apps.js';
@@ -89,15 +94,17 @@ import type { NounModule } from '../noun-module.js';
 import { listJunctionYamls } from '../shared/barrel-generator.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 
-/** PW-3a: the pattern-stack composition for this project — planned (a dry run) or written. One place builds its input. */
-function planPatternStackComposition(
+/**
+ * PW-3a: the pattern-stack composition's input for this project. The one place that builds it: the composition and the
+ * staleness check (`wiringFilesBehind`) read the same relations and modules folder.
+ */
+function patternStackCompositionInput(
 	ctx: Context,
 	entitiesDir: string,
 	relationshipsDir: string,
 	generatedDir: string,
-	dryRun = true,
-): CompositionFile[] {
-	return emitComposition({
+): CompositionInput {
+	return {
 		relations: loadProjectApiContext(ctx.cwd, ctx.config as RelationsConfigInput | null | undefined, {
 			entitiesDir,
 			junctionsDir: junctionsDirFor(ctx.cwd),
@@ -108,8 +115,7 @@ function planPatternStackComposition(
 		drizzleTypeImport: runtimeImport(resolveRuntimeMode(ctx.config), 'types/drizzle'),
 		openApiImport: openApiImport(resolveRuntimeMode(ctx.config)),
 		banner: CODEGEN_BANNER,
-		dryRun,
-	});
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -462,7 +468,10 @@ export class EntityNewCommand extends Command {
 			});
 			let compositionFiles: string[];
 			try {
-				compositionFiles = planPatternStackComposition(ctx, entitiesDir, relationshipsDir, generatedDir).map((f) => f.path);
+				compositionFiles = emitComposition({
+					...patternStackCompositionInput(ctx, entitiesDir, relationshipsDir, generatedDir),
+					dryRun: true,
+				}).map((f) => f.path);
 			} catch (err: unknown) {
 				printError(err instanceof Error ? err.message : String(err));
 				return 1;
@@ -757,15 +766,17 @@ export class EntityNewCommand extends Command {
 		if (patternStackWiring) {
 			if (relationsFailed) return 1;
 			let composition: CompositionFile[];
+			let compositionInput: CompositionInput;
 			try {
-				composition = planPatternStackComposition(ctx, entitiesDir, relationshipsDir, generatedDir, false);
+				compositionInput = patternStackCompositionInput(ctx, entitiesDir, relationshipsDir, generatedDir);
+				composition = emitComposition(compositionInput);
 			} catch (err: unknown) {
 				return reportRegenerationFailure('entity new', err);
 			}
 			// The Nest files an earlier `wiring: nest` run left behind, and any context module no longer composed.
 			const removed = removeOtherWiringFiles({
 				wiring: 'pattern-stack',
-				modulesDir: projectLayout(ctx.cwd, ctx.config).modules,
+				modulesDir: compositionInput.modulesDir,
 				generatedDir,
 				keep: new Set(composition.map((f) => f.path)),
 			});
@@ -774,14 +785,7 @@ export class EntityNewCommand extends Command {
 				console.log('');
 				for (const f of composition) printInfo(`composition: ${path.relative(ctx.cwd, f.path)}`);
 				for (const f of removed) printInfo(`removed (wiring: nest output, or a context no longer composed): ${path.relative(ctx.cwd, f)}`);
-				const behind = wiringFilesBehind({
-					relations: loadProjectApiContext(ctx.cwd, ctx.config as RelationsConfigInput | null | undefined, {
-						entitiesDir,
-						junctionsDir: junctionsDirFor(ctx.cwd),
-						relationshipsDir,
-					}).relations,
-					modulesDir: projectLayout(ctx.cwd, ctx.config).modules,
-				});
+				const behind = wiringFilesBehind(compositionInput);
 				if (behind.length > 0) {
 					printWarning(
 						`the composition imports from every entity's .wiring.ts, and these are missing or were written by an ` +

@@ -41,9 +41,15 @@ its name stays.
 ### `<generated>/openapi.ts`
 
 - Each `<entity>.wiring.ts` exports `register<Entity>Schemas(openApi)`. It registers the create DTO (unless the
-  derivation removed the base's create, as the Nest module does), the update DTO and the output DTO.
+  derivation removed the base's create), the update DTO and the output DTO. The list is one local, `openApiSchemas`
+  (`entity-locals.js`, a row per schema: DTO name, schema name, import file), which the Nest module's constructor
+  prints too, so the two apps publish the same OpenAPI document.
 - `<generated>/openapi.ts` exports `registerOpenApiSchemas(openApi)`, which calls every entity's. An HTTP layer
-  (H-1), or a script that writes the document, calls it once before `openApi.build()`.
+  (H-1), or a script that writes the document, calls it once before `openApi.build()`. An entity whose register
+  function would share that name (`open_api`) is refused at generation.
+- What the composition imports from each `.wiring.ts` is one list (`wiringImports`), which the module.ts and
+  openapi.ts import lines print and `wiringFilesBehind` checks. The composition's generated file names are
+  `COMPOSITION_GENERATED_FILES`, which stale-files removes on a switch to nest.
 - It imports `OpenApiRegistry` from `openApiImport(mode)` (`src/cli/shared/runtime-import.ts`). That's a new TS twin of
   the templates' `openApiImport` local, and `nest-free.test.ts` holds the two equal. It is a twin, not an import of
   the `.mjs`, because no non-test file in `src` imports an `.mjs`. `runtime/shared/openapi` was

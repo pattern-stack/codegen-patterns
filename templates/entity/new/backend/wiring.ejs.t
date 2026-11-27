@@ -24,11 +24,9 @@ import type { <%= familyChild.baseRepositoryClass %> } from '<%= familyChild.bas
 import type { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.fileStem %>.repository';
 <%_ } _%>
 <%_ }) _%>
-<%_ if (patternStackWiringParts.registersCreateDto) { _%>
-import { <%= classNames.createSchema %> } from './dto/create-<%= entityFileStem %>.dto';
-<%_ } _%>
-import { <%= classNames.updateSchema %> } from './dto/update-<%= entityFileStem %>.dto';
-import { <%= classNames.outputSchema %> } from './dto/<%= entityFileStem %>-output.dto';
+<%_ openApiSchemas.forEach((s) => { _%>
+import { <%= s.schemaName %> } from '<%= s.importFile %>';
+<%_ }) _%>
 <%_ const _queries = patternStackWiringParts.useCases.filter((u) => u.kind === 'query'); _%>
 <%_ patternStackWiringParts.useCases.filter((u) => u.kind !== 'query').forEach((u) => { _%>
 import { <%= u.className %> } from '<%= u.importPath %>';
@@ -87,10 +85,8 @@ export type <%= classNames.entity %>Services = ReturnType<typeof <%= patternStac
 
 /** Registers <%= classNames.entity %>'s DTO schemas, as the Nest module's constructor does; `<generated>/openapi.ts` calls every entity's. */
 export function <%= patternStackWiringParts.registerSchemas %>(openApi: OpenApiRegistry): void {
-<%_ if (patternStackWiringParts.registersCreateDto) { _%>
-  openApi.registerSchema('<%= classNames.createDto %>', <%= classNames.createSchema %>);
-<%_ } _%>
-  openApi.registerSchema('<%= classNames.updateDto %>', <%= classNames.updateSchema %>);
-  openApi.registerSchema('<%= classNames.outputDto %>', <%= classNames.outputSchema %>);
+<%_ openApiSchemas.forEach((s) => { _%>
+  openApi.registerSchema('<%= s.dtoName %>', <%= s.schemaName %>);
+<%_ }) _%>
 }
 <%_ } _%>

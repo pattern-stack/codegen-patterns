@@ -2624,8 +2624,6 @@ export function buildBackendLocals(definition, baseLocals) {
         }),
         repositoryPort: repositoryPortName(entityName),
         registerSchemas: registerSchemasName(entityName),
-        // The create DTO is registered unless the derivation removed the base's create, as module.ejs.t registers it.
-        registersCreateDto: !apiSurface.createDisabledBy,
       }
     : null;
 
@@ -2681,6 +2679,16 @@ export function buildBackendLocals(definition, baseLocals) {
     listQueryDto: `List${entityNamePluralPascal}QueryDto`,
     listQuerySchema: `List${entityNamePluralPascal}QuerySchema`,
   };
+  // PW-3b: the DTO schemas the entity registers with the OpenAPI registry, in registration order, one row each. The
+  // Nest module's constructor and `<entity>.wiring.ts`'s register function both print this list; the create DTO is
+  // left out when the derivation removed the base's create (`createDisabledBy`).
+  const openApiSchemas = [
+    ...(apiSurface.createDisabledBy
+      ? []
+      : [{ kind: 'create', dtoName: classNames.createDto, schemaName: classNames.createSchema, importFile: `./dto/${dtoFileStem(entityName, 'create')}.dto` }]),
+    { kind: 'update', dtoName: classNames.updateDto, schemaName: classNames.updateSchema, importFile: `./dto/${dtoFileStem(entityName, 'update')}.dto` },
+    { kind: 'output', dtoName: classNames.outputDto, schemaName: classNames.outputSchema, importFile: `./dto/${dtoFileStem(entityName, 'output')}.dto` },
+  ];
   // The module imports each provider and controller by its `classNames` / `searchQuery` name and registers it by the
   // graph's id: one set of names, or the module fails to compile. Held here until #894 moves the class names.
   const knownClassNames = new Set([
@@ -3081,6 +3089,7 @@ export function buildBackendLocals(definition, baseLocals) {
 
     // Class names
     classNames,
+    openApiSchemas,
 
     // Field data
     processedFields: nonFkFields,

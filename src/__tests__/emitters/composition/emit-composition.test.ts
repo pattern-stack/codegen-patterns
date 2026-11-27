@@ -84,6 +84,15 @@ describe('the composition refuses and warns (PW-3b)', () => {
 		expect(() => plan(dir)).toThrow(/entity 'repositories' would be the key 'repositories' in module 'entities'/);
 	});
 
+	it("refuses an entity whose register function would be openapi.ts's own registerOpenApiSchemas", () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw3b-'));
+		fs.writeFileSync(
+			path.join(dir, 'open_api.yaml'),
+			'entity:\n  name: open_api\n  plural: open_apis\nfields:\n  label:\n    type: string\n',
+		);
+		expect(() => plan(dir)).toThrow(/entity 'open_api' would export 'registerOpenApiSchemas'/);
+	});
+
 	it('names every entity whose .wiring.ts is missing or lacks what the composition imports', () => {
 		const modulesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw3b-modules-'));
 		const relations = relationsOf(FIXTURES);

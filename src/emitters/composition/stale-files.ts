@@ -17,6 +17,7 @@ import path from 'node:path';
 
 import type { TargetWiring } from '../../targets/apps.js';
 import { isCodegenBanner } from '../../utils/generated-file.js';
+import { COMPOSITION_GENERATED_FILES } from './emit-composition.js';
 
 function isGenerated(file: string): boolean {
 	return isCodegenBanner(fs.readFileSync(file, 'utf8').split('\n', 1)[0] ?? '');
@@ -53,9 +54,7 @@ export function removeOtherWiringFiles(input: {
 				]
 			: [
 					...underModules.filter((f) => path.basename(f) === 'module.ts' || f.endsWith('.wiring.ts')),
-					path.join(generatedDir, 'wiring.ts'),
-					path.join(generatedDir, 'composition.ts'),
-					path.join(generatedDir, 'openapi.ts'),
+					...Object.values(COMPOSITION_GENERATED_FILES).map((f) => path.join(generatedDir, f)),
 				];
 	const stale = candidates.filter((f) => fs.existsSync(f) && isGenerated(f));
 	if (!input.dryRun) for (const f of stale) fs.rmSync(f);

@@ -32,13 +32,12 @@ import {
 	pascalCase,
 	registerSchemasName,
 	repositoriesBundleName,
-	repositoryClassName,
 	repositoryFactoryName,
 	repositoryPortName,
 	repositoryPropertyName,
 	servicesFactoryName,
 } from '../../derived/api/names.js';
-import { camelCase, emittedDir, emittedStem } from '../../config/file-naming.js';
+import { camelCase, emittedDir } from '../../config/file-naming.js';
 import { entityModuleNaming } from '../../config/module-tree.js';
 import { generating } from '../../utils/generated-file.js';
 import { relativeImport } from '../../utils/import-path.js';
@@ -48,6 +47,23 @@ export const ROOT_MODULE = 'entities';
 
 /** Names a context's module can't take: the root module's, and the systems' (`database`). */
 const RESERVED_MODULE_NAMES = new Set([ROOT_MODULE, 'database']);
+
+/** The files the composition writes under `paths.generated`; stale-files removes the same list on a switch to nest. */
+export const COMPOSITION_GENERATED_FILES = { registry: 'wiring.ts', composition: 'composition.ts', openApi: 'openapi.ts' } as const;
+
+/** The function `<generated>/openapi.ts` exports, which no entity's own register function may share a name with. */
+const REGISTER_OPENAPI_SCHEMAS = 'registerOpenApiSchemas';
+
+/**
+ * What the composition imports from an entity's `<entity>.wiring.ts`: a context's module.ts the two factories and the
+ * repository port, openapi.ts the schema registration. `wiringFilesBehind` checks a file exports every one.
+ */
+function wiringImports(entity: string): { module: string[]; openApi: string[] } {
+	return {
+		module: [repositoryFactoryName(entity), servicesFactoryName(entity), `type ${repositoryPortName(entity)}`],
+		openApi: [registerSchemasName(entity)],
+	};
+}
 
 export interface CompositionInput {
 	relations: ProjectApiContext['relations'];
@@ -114,6 +130,13 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 					`which holds the module's repository bundle; rename the entity`,
 			);
 		}
+		// openapi.ts imports each entity's register function beside its own `registerOpenApiSchemas`.
+		if (registerSchemasName(d.entity.name) === REGISTER_OPENAPI_SCHEMAS) {
+			throw new Error(
+				`[codegen] wiring: pattern-stack: entity '${d.entity.name}' would export '${REGISTER_OPENAPI_SCHEMAS}', the ` +
+					`function <generated>/openapi.ts declares; rename the entity`,
+			);
+		}
 		const plan = plans.get(name) ?? { name, file, entities: [] };
 		plan.entities.push(d.entity.name);
 		plans.set(name, plan);
@@ -132,7 +155,7 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 	const blockOf = new Map(definitions.map((d) => [d.entity.name, d.entity]));
 	const wiringFile = (entity: string) => entityModuleNaming(blockOf.get(entity)!, modulesDir).wiringFile;
 
-	const registryFile = path.join(generatedDir, 'wiring.ts');
+	const registryFile = path.join(generatedDir, COMPOSITION_GENERATED_FILES.registry);
 	const relationsFile = path.join(generatedDir, 'relations.ts');
 	const files: CompositionFile[] = [];
 
@@ -180,7 +203,7 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 			),
 			...plan.entities.map(
 				(e) =>
-					`import { ${repositoryFactoryName(e)}, ${servicesFactoryName(e)}, type ${repositoryPortName(e)} } from '${relativeImport(plan.file, wiringFile(e))}';`,
+					`import { ${wiringImports(e).module.join(', ')} } from '${relativeImport(plan.file, wiringFile(e))}';`,
 			),
 		];
 		const depsType = [
@@ -246,7 +269,7 @@ export interface SystemApis {
 export const { defineModule, defineSystem, compose } = createWiring<ModuleApis, SystemApis>();
 `,
 	});
-	const compositionFile = path.join(generatedDir, 'composition.ts');
+	const compositionFile = path.join(generatedDir, COMPOSITION_GENERATED_FILES.composition);
 	files.push({
 		path: compositionFile,
 		content: `${input.banner}
@@ -256,7 +279,7 @@ ${names.map((n) => `import { ${n}Module } from '${relativeImport(compositionFile
 export const MODULES = [${names.map((n) => `${n}Module`).join(', ')}] as const;
 `,
 	});
-	const openApiFile = path.join(generatedDir, 'openapi.ts');
+	const openApiFile = path.join(generatedDir, COMPOSITION_GENERATED_FILES.openApi);
 	const entities = definitions.map((d) => d.entity.name);
 	files.push({
 		path: openApiFile,
@@ -266,9 +289,9 @@ export const MODULES = [${names.map((n) => `${n}Module`).join(', ')}] as const;
  * script that writes the OpenAPI document, calls this once before \`openApi.build()\`.
  */
 import type { OpenApiRegistry } from '${input.openApiImport}';
-${entities.map((e) => `import { ${registerSchemasName(e)} } from '${relativeImport(openApiFile, wiringFile(e))}';`).join('\n')}
+${entities.map((e) => `import { ${wiringImports(e).openApi.join(', ')} } from '${relativeImport(openApiFile, wiringFile(e))}';`).join('\n')}
 
-export function registerOpenApiSchemas(openApi: OpenApiRegistry): void {
+export function ${REGISTER_OPENAPI_SCHEMAS}(openApi: OpenApiRegistry): void {
 ${entities.map((e) => `  ${registerSchemasName(e)}(openApi);`).join('\n')}
 }
 `,
@@ -285,9 +308,10 @@ export function wiringFilesBehind(input: Pick<CompositionInput, 'relations' | 'm
 	const behind: string[] = [];
 	for (const d of input.relations.definitions.values()) {
 		const e = d.entity.name;
-		const file = `${entityModuleNaming(d.entity, input.modulesDir).moduleDir}/${emittedStem(e)}.wiring.ts`;
+		const file = entityModuleNaming(d.entity, input.modulesDir).wiringFile;
 		const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
-		const exports = [`create${repositoryClassName(e)}`, `create${pascalCase(e)}Services`, repositoryPortName(e), registerSchemasName(e)];
+		const { module, openApi } = wiringImports(e);
+		const exports = [...module, ...openApi].map((name) => name.replace(/^type /, ''));
 		if (!exports.every((name) => new RegExp(`export (function|type) ${name}\\b`).test(text))) behind.push(e);
 	}
 	return behind.sort();
