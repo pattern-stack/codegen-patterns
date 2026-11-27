@@ -21,6 +21,8 @@ export const TARGET_PAIRS = [
 		databaseDescription: 'PostgreSQL: pg-core column builders, node-postgres driver on Node',
 		/** Postgres keeps 63 bytes of an identifier and truncates the rest without a word (C5). */
 		identifierMaxBytes: 63,
+		/** What `entity new` emits: the whole Nest app (`nest`), or the storage layer only (`storage`). */
+		layers: 'nest',
 	},
 	{
 		orm: 'drizzle',
@@ -30,6 +32,11 @@ export const TARGET_PAIRS = [
 			'SQLite: sqlite-core column builders, ISO TEXT instants, TEXT + CHECK enums; storage layer only until wiring: plain',
 		/** SQLite has no identifier length limit. */
 		identifierMaxBytes: null,
+		/**
+		 * The storage layer only: `sqliteTable` modules, `<entity>.sql`, the schema barrel. The Nest layers are
+		 * `node-postgres`-typed through runtime/base-classes; a SQLite project's stores come from `wiring: plain` (G7).
+		 */
+		layers: 'storage',
 	},
 ] as const;
 

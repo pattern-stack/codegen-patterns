@@ -1,8 +1,8 @@
 /**
  * TGT-2a parity gate: two independent renderings of the same table facts build the same SQLite schema.
  *
- * 1. The drizzle/sqlite renderers write a `sqlite-core` module for every baseline table (assembled here, the way the
- *    TGT-2b template will), and drizzle-kit's own `generate` turns it into SQL.
+ * 1. `renderSqliteTable` (what the sqlite entity template prints, TGT-2b) writes a `sqlite-core` module for every
+ *    baseline table, and drizzle-kit's own `generate` turns it into SQL.
  * 2. `renderSqliteDdl` writes the DDL directly.
  *
  * Both are applied to fresh `bun:sqlite` databases and compared through SQLite's own catalogue, per table: columns
@@ -24,10 +24,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join, resolve } from 'node:path';
 import { baselineSet } from '../../src/__tests__/derived/_inputs';
 import { backendLocalsFor } from '../../src/__tests__/derived/_render';
-import type { ConstraintFact } from '../../src/derived/constraints/types';
-import { renderSqliteColumn } from '../../src/targets/drizzle/sqlite/columns';
-import { drizzleSqliteConstraints as pg } from '../../src/targets/drizzle/sqlite/constraints';
-import { sqliteStorageChecks } from '../../src/targets/sqlite/checks';
+import { renderSqliteTable } from '../../src/targets/drizzle/sqlite/table';
 import { renderSqliteDdl, type SqliteTableFacts } from '../../src/targets/sqlite/ddl';
 
 const REPO = resolve(import.meta.dir, '../..');
@@ -38,25 +35,12 @@ afterAll(() => rmSync(WORK, { recursive: true, force: true }));
 const set = baselineSet();
 const tables: SqliteTableFacts[] = set.entities.map((d) => backendLocalsFor(set, d.entity.name).tableFacts as SqliteTableFacts);
 
-/** One table as a `sqlite-core` declaration, from the drizzle/sqlite renderers. */
+/** One table as a `sqlite-core` declaration: `renderSqliteTable`, the function the sqlite entity template prints. */
 function drizzleTable(t: SqliteTableFacts): string {
-	const refs = new Map(
-		t.constraints
-			.filter((c): c is Extract<ConstraintFact, { kind: 'reference' }> => c.kind === 'reference')
-			.map((c) => [c.fact.column, pg.columnReference(c.fact)]),
-	);
-	const cols = t.columns.map((c) => `    ${c.prop}: ${renderSqliteColumn(c).drizzleChain}${refs.get(c.name) ?? ''},`);
-	const extra: string[] = [];
-	for (const c of t.constraints) {
-		if (c.kind === 'index') extra.push(pg.index(c.fact, 'tCols'));
-		else if (c.kind === 'unique') extra.push(pg.unique(c.fact, 'tCols').expr);
-		else if (c.kind === 'foreignKey') extra.push(pg.foreignKey(c.fact, 'tCols'));
-		else if (c.kind === 'check') extra.push(pg.check(c.fact, 'tCols'));
-	}
-	for (const c of sqliteStorageChecks(t.name, t.columns)) extra.push(pg.check(c, 'tCols'));
+	const r = renderSqliteTable(t, 'tCols');
 	return (
-		`export const ${t.export} = sqliteTable('${t.name}', {\n${cols.join('\n')}\n  }, (tCols) => [\n` +
-		extra.map((e) => `    ${e},`).join('\n') +
+		`export const ${t.export} = sqliteTable('${t.name}', {\n${r.columns.map((c) => `    ${c},`).join('\n')}\n  }, (tCols) => [\n` +
+		r.extra.map((e) => `    ${e.expr},`).join('\n') +
 		'\n  ]);\n'
 	);
 }

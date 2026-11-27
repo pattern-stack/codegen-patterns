@@ -73,6 +73,8 @@ export interface BarrelGeneratorOptions {
 	generatedDir: string;
 	/** If true, compute content but don't touch the filesystem. */
 	dryRun?: boolean;
+	/** Write `modules.ts` (the Nest modules barrel). False for a storage-only target (TGT-2b). Default true. */
+	modulesBarrel?: boolean;
 }
 
 export interface BarrelResult {
@@ -301,6 +303,7 @@ export async function regenerateBarrels(
 		junctionsDir = junctionsDirFor(ctx.cwd),
 		generatedDir,
 		dryRun = false,
+		modulesBarrel = true,
 	} = opts;
 	const cwd = ctx.cwd;
 	// The resolved `paths` block (PATH-0): `modules_dir` places the modules.
@@ -346,10 +349,9 @@ export async function regenerateBarrels(
 
 	let written = false;
 	if (!dryRun) {
-		generating(modulesAbs, () => {
-			fs.mkdirSync(path.dirname(modulesAbs), { recursive: true });
-			fs.writeFileSync(modulesAbs, modulesContent);
-		});
+		fs.mkdirSync(path.dirname(schemaAbs), { recursive: true });
+		// A storage-only target (TGT-2b) has no Nest modules to import, so no modules barrel.
+		if (modulesBarrel) generating(modulesAbs, () => fs.writeFileSync(modulesAbs, modulesContent));
 		generating(schemaAbs, () => fs.writeFileSync(schemaAbs, schemaContent));
 		written = true;
 	}

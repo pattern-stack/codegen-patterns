@@ -34,6 +34,7 @@ import {
 import { loadRuntimeMode, runtimeImport } from "../../../src/config/runtime-mode.mjs";
 import { processFieldFeatures, processFields } from "../../entity/new/backend/entity-locals.js";
 import { renderersFor } from "../../../src/targets/renderers.js";
+import { sqlTableName } from "../../../src/config/table-naming.js";
 import { onDeleteAction } from "../../../src/derived/constraints/on-delete.js";
 import { loadOwnedTableNames } from "../../entity/new/prompt.js";
 import { configOrDefaults, loadProjectConfig } from "../../../src/config/project-config.js";
@@ -507,8 +508,8 @@ export default {
 
       // On-delete
       // TGT-1: the endpoints' `.references(…, { onDelete })` suffixes are the target's text.
-      leftReference: constraints.columnReference({ column: leftColumn, targetExport: leftTable, targetProp: "id", onDelete: onDeleteLeft }),
-      rightReference: constraints.columnReference({ column: rightColumn, targetExport: rightTable, targetProp: "id", onDelete: onDeleteRight }),
+      leftReference: constraints.columnReference({ column: leftColumn, targetExport: leftTable, targetTable: sqlTableName(entityLookup(leftEntity), config_.tables.prefix), targetColumn: "id", targetProp: "id", onDelete: onDeleteLeft }),
+      rightReference: constraints.columnReference({ column: rightColumn, targetExport: rightTable, targetTable: sqlTableName(entityLookup(rightEntity), config_.tables.prefix), targetColumn: "id", targetProp: "id", onDelete: onDeleteRight }),
 
       // Custom fields
       processedCustomFields,
