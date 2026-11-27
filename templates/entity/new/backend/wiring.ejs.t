@@ -24,7 +24,7 @@ import type { <%= familyChild.baseRepositoryClass %> } from '<%= familyChild.bas
 import type { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.fileStem %>.repository';
 <%_ } _%>
 <%_ }) _%>
-<%_ plainWiringParts.junctionServices.forEach((j) => { _%>
+<%_ patternStackWiringParts.junctionServices.forEach((j) => { _%>
 import type { <%= j.serviceClass %> } from '<%= j.importPath %>';
 <%_ }) _%>
 <%_ openApiSchemas.forEach((s) => { _%>
@@ -56,7 +56,7 @@ export function <%= patternStackWiringParts.repositoryFactory %>(
 }
 
 /**
- * What <%= classNames.entity %>'s service takes: its repository, then each composed entity's (#632)<% if (plainWiringParts.junctionServices.length > 0) { %>, then each
+ * What <%= classNames.entity %>'s service takes: its repository, then each composed entity's (#632)<% if (patternStackWiringParts.junctionServices.length > 0) { %>, then each
  * junction's service it fans out to (PW-3c)<% } %>.
  */
 export interface <%= classNames.entity %>ServiceDeps {
@@ -64,15 +64,15 @@ export interface <%= classNames.entity %>ServiceDeps {
 <%_ repositoryDeps.forEach((dep) => { _%>
   <%= dep.property %>: <%= dep.repositoryClass %>;
 <%_ }) _%>
-<%_ plainWiringParts.junctionServices.forEach((j) => { _%>
+<%_ patternStackWiringParts.junctionServices.forEach((j) => { _%>
   <%= j.property %>: <%= j.serviceClass %>;
 <%_ }) _%>
 }
 
 /** Builds <%= classNames.entity %>'s service and its use cases. */
 export function <%= patternStackWiringParts.servicesFactory %>(deps: <%= classNames.entity %>ServiceDeps) {
-  const service = new <%= classNames.service %>(deps.repository<% repositoryDeps.forEach((dep) => { %>, deps.<%= dep.property %><% }) %><% plainWiringParts.junctionServices.forEach((j) => { %>, deps.<%= j.property %><% }) %>);
-<%_ const _list = plainWiringParts.useCases.find((u) => u.kind === 'list'); _%>
+  const service = new <%= classNames.service %>(deps.repository<% repositoryDeps.forEach((dep) => { %>, deps.<%= dep.property %><% }) %><% patternStackWiringParts.junctionServices.forEach((j) => { %>, deps.<%= j.property %><% }) %>);
+<%_ const _list = patternStackWiringParts.useCases.find((u) => u.kind === 'list'); _%>
   const <%= _list.key %> = new <%= _list.className %>(service);
   return {
     service,

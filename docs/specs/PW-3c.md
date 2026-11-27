@@ -1,10 +1,10 @@
-# PW-3c: junctions under `wiring: plain`
+# PW-3c: junctions under `wiring: pattern-stack`
 
-**Status:** implemented · **Follows:** PW-3b · **Next:** PW-4 (`project init` for plain)
+**Status:** implemented · **Follows:** PW-3b · **Next:** PW-4 (`project init` for pattern-stack)
 
 ## Problem
 
-PW-3a refused junctions under plain wiring. Their templates were Nest-decorated end to end. Under Nest, a parent's
+PW-3a refused junctions under pattern-stack wiring. Their templates were Nest-decorated end to end. Under Nest, a parent's
 service gets its junction's service as an injected property (`@Inject(forwardRef(…))`), and a junction has a Nest
 module that imports both parents' modules. `junction new`, and `entity new` in a project with junction YAMLs, were
 refused by name.
@@ -13,7 +13,7 @@ refused by name.
 
 ### The junction's own files
 
-- `junction new` reads `target.wiring`. Under plain:
+- `junction new` reads `target.wiring`. Under pattern-stack:
   - the repository and service have no decorators, and `db` is a plain constructor parameter;
   - the service has no `@Optional() @Inject(EVENT_BUS)` property;
   - there is no Nest module, and `index.ts` exports the repository and service instead of a module;
@@ -24,11 +24,11 @@ refused by name.
 
 ### The parents: the fan-out becomes a constructor argument
 
-- Under plain, a parent's service takes each fanned-out junction's service as a constructor argument, after its
+- Under pattern-stack, a parent's service takes each fanned-out junction's service as a constructor argument, after its
   composed repositories. Nest still injects a property.
 - `<entity>.wiring.ts`'s `<Entity>ServiceDeps` lists the junction services after the repositories.
 - `entity-locals.js` checks the class graph's `junction_fan_out` edges against the parent's own fan-out. If they ever
-  differ, it throws under plain and names both. This is the same check PW-3a added for composed repositories.
+  differ, it throws under pattern-stack and names both. This is the same check PW-3a added for composed repositories.
 - `junctionServicePropertyName` (`src/derived/api/names.ts`) is now the one rule for the property name. Both the
   junction prompts (`junction-fan-out.mjs`) and the emitter call it.
 
@@ -55,24 +55,24 @@ refused by name.
 
 ### The CLI
 
-- `junction new` is no longer refused under plain.
+- `junction new` is no longer refused under pattern-stack.
   - It plans the composition in its pre-flight, before writing anything, so a refusal (a cycle) stops the run there.
     The dry run lists the planned files.
   - It writes the schema barrel with the junction tables and no modules barrel, then the relations manifest, then the
-    composition (`writePlainComposition`).
+    composition (`writePatternStackComposition`).
   - If the relations manifest fails, it skips the composition and still prints its summary (JSON included), then
     exits 1, as the Nest path does.
-  - The post-step lives in `src/cli/shared/plain-composition.ts`, which `entity new` and `junction new` share.
-- Under plain, `entity new` and `junction new` both refuse a project with relationship YAMLs (#679), through one
-  helper, `plainRelationshipYamlsRefusal` (`src/cli/shared/storage-only.ts`).
+  - The post-step lives in `src/cli/shared/pattern-stack-composition.ts`, which `entity new` and `junction new` share.
+- Under pattern-stack, `entity new` and `junction new` both refuse a project with relationship YAMLs (#679), through one
+  helper, `patternStackRelationshipYamlsRefusal` (`src/cli/shared/storage-only.ts`).
 - `regenerateBarrels` takes a separate `junctions` flag. It defaults to `modulesBarrel`, so the Nest and SQLite
   behaviour is unchanged. Before this, the flag that turned off the modules barrel also dropped the junction tables.
 
 ## The gate
 
-- `test-smoke-plain` adds:
+- `test-smoke-pattern-stack` adds:
   - a `tag` entity in crm;
-  - a junction `account_tag` (in `test/smoke/fixtures-plain-junctions/`, a sibling folder so the entity loaders never
+  - a junction `account_tag` (in `test/smoke/fixtures-pattern-stack-junctions/`, a sibling folder so the entity loaders never
     read it);
   - a run of `junction new --all` after `entity new --all`.
   The compile half type-checks the junction and its fan-out with no `@nestjs`.
@@ -88,7 +88,7 @@ refused by name.
 ## Found, not fixed here
 
 The junction service's `detach` deletes by `match.id`, but a junction table has no `id` column (its key is the pair).
-It throws `table has no column 'id'`, under Nest as well as plain. Fixing it changes the Nest output, so it's a
+It throws `table has no column 'id'`, under Nest as well as pattern-stack. Fixing it changes the Nest output, so it's a
 separate fix. The usage check removes its link row with Drizzle instead.
 
 ## Byte-identity

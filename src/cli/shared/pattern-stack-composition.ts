@@ -1,5 +1,5 @@
 /**
- * The plain-wiring composition as a CLI post-step (PW-3a, PW-3c): `entity new` and `junction new` both write it, from
+ * The pattern-stack wiring composition as a CLI post-step (PW-3a, PW-3c): `entity new` and `junction new` both write it, from
  * one place that builds its input.
  */
 
@@ -20,13 +20,13 @@ import { removeOtherWiringFiles } from '../../emitters/composition/stale-files.j
 import { openApiImport, resolveRuntimeMode, runtimeImport } from './runtime-import.js';
 import { printInfo, printWarning } from '../ui/output.js';
 
-export interface PlainCompositionDirs {
+export interface PatternStackCompositionDirs {
 	entitiesDir: string;
 	relationshipsDir: string;
 	generatedDir: string;
 }
 
-function relationsOf(ctx: Context, dirs: PlainCompositionDirs) {
+function relationsOf(ctx: Context, dirs: PatternStackCompositionDirs) {
 	return loadProjectApiContext(ctx.cwd, ctx.config as RelationsConfigInput | null | undefined, {
 		entitiesDir: dirs.entitiesDir,
 		junctionsDir: junctionsDirFor(ctx.cwd),
@@ -34,8 +34,8 @@ function relationsOf(ctx: Context, dirs: PlainCompositionDirs) {
 	}).relations;
 }
 
-/** The plain composition for this project — planned (a dry run) or written. Throws its refusals (a cycle, a name). */
-export function planPlainComposition(ctx: Context, dirs: PlainCompositionDirs, dryRun = true): CompositionFile[] {
+/** The pattern-stack composition for this project — planned (a dry run) or written. Throws its refusals (a cycle, a name). */
+export function planPatternStackComposition(ctx: Context, dirs: PatternStackCompositionDirs, dryRun = true): CompositionFile[] {
 	const mode = resolveRuntimeMode(ctx.config);
 	return emitComposition({
 		relations: relationsOf(ctx, dirs),
@@ -48,7 +48,7 @@ export function planPlainComposition(ctx: Context, dirs: PlainCompositionDirs, d
 	});
 }
 
-export interface PlainCompositionResult {
+export interface PatternStackCompositionResult {
 	files: CompositionFile[];
 	/** The other wiring's generated files, and any context module no longer composed, removed. */
 	removed: string[];
@@ -57,11 +57,11 @@ export interface PlainCompositionResult {
 }
 
 /** Write the composition, remove what it replaces, and name the `.wiring.ts` files it can't compile against. */
-export function writePlainComposition(ctx: Context, dirs: PlainCompositionDirs): PlainCompositionResult {
-	const files = planPlainComposition(ctx, dirs, false);
+export function writePatternStackComposition(ctx: Context, dirs: PatternStackCompositionDirs): PatternStackCompositionResult {
+	const files = planPatternStackComposition(ctx, dirs, false);
 	const modulesDir = projectLayout(ctx.cwd, ctx.config).modules;
 	const removed = removeOtherWiringFiles({
-		wiring: 'plain',
+		wiring: 'pattern-stack',
 		modulesDir,
 		generatedDir: dirs.generatedDir,
 		keep: new Set(files.map((f) => f.path)),
@@ -70,7 +70,7 @@ export function writePlainComposition(ctx: Context, dirs: PlainCompositionDirs):
 	return { files, removed, behind };
 }
 
-export function printPlainComposition(ctx: Context, result: PlainCompositionResult): void {
+export function printPatternStackComposition(ctx: Context, result: PatternStackCompositionResult): void {
 	for (const f of result.files) printInfo(`composition: ${path.relative(ctx.cwd, f.path)}`);
 	for (const f of result.removed) {
 		printInfo(`removed (wiring: nest output, or a context no longer composed): ${path.relative(ctx.cwd, f)}`);

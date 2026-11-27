@@ -3,9 +3,9 @@ to: "<%= outputPaths.wiring %>"
 force: true
 ---
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
-<%_ if (typeof plainWiring !== 'undefined' && plainWiring) { _%>
+<%_ if (typeof patternStackWiring !== 'undefined' && patternStackWiring) { _%>
 /**
- * <%= classNames.entity %>'s plain wiring (PW-3c): how the junction's classes are constructed, with no DI container.
+ * <%= classNames.entity %>'s pattern-stack wiring (PW-3c): how the junction's classes are constructed, with no DI container.
  *
  * Its repository is built with the other repositories; its service takes both ends' repositories, and both ends'
  * services take it (the fan-out). The module that holds both ends (`module.ts`) calls these in that order.

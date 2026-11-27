@@ -121,7 +121,7 @@ export function registerSchemasName(entityName: string): string {
 }
 
 /**
- * The property a parent service holds a fanned-out junction's service by (JUNC-0), and under plain wiring its key in
+ * The property a parent service holds a fanned-out junction's service by (JUNC-0), and under pattern-stack wiring its key in
  * `<Entity>ServiceDeps` (PW-3c). One rule for the junction prompts and the composition emitter.
  */
 export function junctionServicePropertyName(junctionName: string): string {

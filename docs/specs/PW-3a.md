@@ -49,7 +49,7 @@ CLI, hook and MCP apps.
   - `emits:` (the typed bus is decorated; S-1);
   - EAV;
   - an integration `surface:` (S-3);
-  - `relationship new` (`plainWiringRefusal`, `src/cli/shared/storage-only.ts`: #679; junctions came with PW-3c);
+  - `relationship new` (`patternStackWiringRefusal`, `src/cli/shared/storage-only.ts`: #679; junctions came with PW-3c);
   - `entity new` in a project that has relationship YAMLs, rather than generating with their tables silently missing
     from the schema barrel.
 

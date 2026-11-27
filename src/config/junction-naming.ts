@@ -32,7 +32,7 @@ export function junctionPlural(name: string): string {
 }
 
 /**
- * A junction's `.wiring.ts` under plain wiring (PW-3c): `<modules_dir>/<plural>/<name>.wiring.ts`. The junction prompt
+ * A junction's `.wiring.ts` under pattern-stack wiring (PW-3c): `<modules_dir>/<plural>/<name>.wiring.ts`. The junction prompt
  * writes it and the composition imports it, both from here.
  */
 export function junctionWiringFile(name: string, modulesDir: string): string {

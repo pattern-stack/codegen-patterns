@@ -124,8 +124,8 @@ export class <%= classNames.service %> extends WithAnalytics(
 <%_ repositoryDeps.forEach(dep => { _%>
     private readonly <%= dep.property %>: <%= dep.repositoryClass %>,
 <%_ }) _%>
-<%_ /* PW-3c — under plain wiring each fanned-out junction's service is a constructor argument (Nest injects a property) */ _%>
-<%_ if (plainWiring) junctionFanOut.forEach(fan => { _%>
+<%_ /* PW-3c — under pattern-stack wiring each fanned-out junction's service is a constructor argument (Nest injects a property) */ _%>
+<%_ if (patternStackWiring) junctionFanOut.forEach(fan => { _%>
     private readonly <%= fan.junction.serviceProperty %>: <%= fan.junction.serviceClass %>,
 <%_ }) _%>
   ) {
@@ -447,7 +447,7 @@ _%>
 <%_ if (m.kind === 'junction_attach') { _%>
 
   // <%= j.name %> — <%= fan.side %> side, fan-out to <%= fan.counterpartyPascal %>
-<%_ if (!plainWiring) { _%>
+<%_ if (!patternStackWiring) { _%>
   @Inject(forwardRef(() => <%= j.serviceClass %>))
   private readonly <%= j.serviceProperty %>!: <%= j.serviceClass %>;
 <%_ } _%>

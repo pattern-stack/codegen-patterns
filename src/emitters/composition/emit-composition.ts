@@ -169,7 +169,7 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 		// `junctions` (PW-3c).
 		if (RESERVED_MODULE_KEYS.has(camelCase(d.entity.name))) {
 			throw new Error(
-				`[codegen] wiring: plain: entity '${d.entity.name}' would be the key '${camelCase(d.entity.name)}' in module ` +
+				`[codegen] wiring: pattern-stack: entity '${d.entity.name}' would be the key '${camelCase(d.entity.name)}' in module ` +
 					`'${name}', which the module's API reserves (${[...RESERVED_MODULE_KEYS].join(', ')}); rename the entity`,
 			);
 		}
@@ -228,7 +228,7 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 			})
 			.map((j) => j.name);
 		throw new Error(
-			`[codegen] wiring: plain composes one module per context, and modules must depend on each other one way; ` +
+			`[codegen] wiring: pattern-stack composes one module per context, and modules must depend on each other one way; ` +
 				`these depend on each other in a cycle: ` +
 				`${cycle.join(' → ')}` +
 				(crossing.length > 0

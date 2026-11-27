@@ -17,7 +17,7 @@ import { analyzeDomain } from '../../index.js';
 import { relationshipsDirFor } from '../../config/junctions-dir.js';
 import { preflightEntityTargets, renderEntityTargets } from '../shared/entity-render.js';
 import { removeOtherWiringFiles } from '../../emitters/composition/stale-files.js';
-import { isPlainWiring } from '../../targets/apps.js';
+import { isPatternStackWiring } from '../../targets/apps.js';
 import { listEntityYamls } from '../../utils/find-yaml-files.js';
 import { invalidDefinitionError } from '../../utils/definition-invariant.js';
 import {
@@ -81,8 +81,8 @@ import { generating } from '../../utils/generated-file.js';
 import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
-import { planPlainComposition, printPlainComposition, writePlainComposition } from '../shared/plain-composition.js';
-import { plainRelationshipYamlsRefusal } from '../shared/storage-only.js';
+import { planPatternStackComposition, printPatternStackComposition, writePatternStackComposition } from '../shared/pattern-stack-composition.js';
+import { patternStackRelationshipYamlsRefusal } from '../shared/storage-only.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -410,10 +410,10 @@ export class EntityNewCommand extends Command {
 			'manifest, subsystem barrels, event / bridge / jobs codegen, orchestration, frontend and integrations ' +
 			'(they come with wiring: pattern-stack, G7).';
 
-		// PW-3a: plain wiring has no relationship pipeline yet (junctions came with PW-3c); a project that has
+		// PW-3a: pattern-stack wiring has no relationship pipeline yet (junctions came with PW-3c); a project that has
 		// relationship YAMLs is refused by name rather than generated with those tables silently missing from the schema
 		// barrel.
-		const relationshipRefusal = plainRelationshipYamlsRefusal(ctx, 'entity new');
+		const relationshipRefusal = patternStackRelationshipYamlsRefusal(ctx, 'entity new');
 		if (relationshipRefusal) {
 			printError(relationshipRefusal);
 			return 1;
@@ -427,7 +427,7 @@ export class EntityNewCommand extends Command {
 			});
 			let compositionFiles: string[];
 			try {
-				compositionFiles = planPlainComposition(ctx, { entitiesDir, relationshipsDir, generatedDir }).map((f) => f.path);
+				compositionFiles = planPatternStackComposition(ctx, { entitiesDir, relationshipsDir, generatedDir }).map((f) => f.path);
 			} catch (err: unknown) {
 				printError(err instanceof Error ? err.message : String(err));
 				return 1;
@@ -664,7 +664,7 @@ export class EntityNewCommand extends Command {
 				nonEntityDirs,
 				relationshipsDir,
 				generatedDir,
-				modulesBarrel: !storageOnly && !plainWiring,
+				modulesBarrel: !storageOnly && !patternStackWiring,
 				junctions: !storageOnly,
 			});
 		} catch (err: unknown) {
@@ -722,17 +722,17 @@ export class EntityNewCommand extends Command {
 		// frontend, integrations) come with S-1..S-3 and H-1; they are skipped by name, never silently.
 		if (patternStackWiring) {
 			if (relationsFailed) return 1;
-			let plainResult: ReturnType<typeof writePlainComposition>;
+			let patternStackResult: ReturnType<typeof writePatternStackComposition>;
 			try {
-				plainResult = writePlainComposition(ctx, { entitiesDir, relationshipsDir, generatedDir });
+				patternStackResult = writePatternStackComposition(ctx, { entitiesDir, relationshipsDir, generatedDir });
 			} catch (err: unknown) {
 				return reportRegenerationFailure('entity new', err);
 			}
-			const composition = plainResult.files;
+			const composition = patternStackResult.files;
 			const total = validated.length + invalid.length;
 			if (!isJsonMode()) {
 				console.log('');
-				printPlainComposition(ctx, plainResult);
+				printPatternStackComposition(ctx, patternStackResult);
 				printInfo(
 					'wiring: pattern-stack — skipped the post-steps that write Nest code or need a Nest app: subsystems, the ' +
 						'ScopeEntityType union, events, bridge, jobs, orchestration, the semantic model, frontend, integrations ' +
@@ -748,8 +748,8 @@ export class EntityNewCommand extends Command {
 					succeeded,
 					failed,
 					composition: composition.map((f) => f.path),
-					removed: plainResult.removed,
-					behind: plainResult.behind,
+					removed: patternStackResult.removed,
+					behind: patternStackResult.behind,
 				});
 			}
 			return failed.length === 0 ? 0 : 1;

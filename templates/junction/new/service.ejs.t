@@ -3,11 +3,11 @@ to: "<%= outputPaths.service %>"
 force: true
 ---
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 import { Injectable, Inject, Optional } from '@nestjs/common';
 <% } -%>
 import { WithAnalytics } from '<%= withAnalyticsImport %>';
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 import { EVENT_BUS } from '<%= drizzleTokenImport %>';
 <% } -%>
 import { BaseService } from '<%= baseServiceImport %>';
@@ -29,14 +29,14 @@ export type <%= entityNamePascal %>LinkInput = globalThis.Partial<
   >
 ><% if (linkInputRequiredKeys) { %> & globalThis.Pick<<%= classNames.entity %>, <%- linkInputRequiredKeys %>><% } %>;
 
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 @Injectable()
 <% } -%>
 export class <%= classNames.service %> extends WithAnalytics(
   BaseService<<%= classNames.repository %>, <%= classNames.entity %>>,
 ) {
   protected override readonly entityName = '<%= name %>';
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 
   /** Injected by NestJS when EventsModule is registered. */
   @Optional() @Inject(EVENT_BUS)

@@ -10,8 +10,8 @@ import path from 'node:path';
 import { loadProjectApiContext } from '../../../derived/api/project';
 import { planComposition, wiringFilesBehind } from '../../../emitters/composition/emit-composition';
 
-const FIXTURES = path.resolve(import.meta.dir, '../../../../test/smoke/fixtures-plain');
-const JUNCTIONS = path.resolve(import.meta.dir, '../../../../test/smoke/fixtures-plain-junctions');
+const FIXTURES = path.resolve(import.meta.dir, '../../../../test/smoke/fixtures-pattern-stack');
+const JUNCTIONS = path.resolve(import.meta.dir, '../../../../test/smoke/fixtures-pattern-stack-junctions');
 const ROOT = '/app/src';
 
 function relationsOf(entitiesDir: string, junctionsDir = JUNCTIONS) {

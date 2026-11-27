@@ -29,10 +29,10 @@ import { tscGateErrors } from './_consumer-errors';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI = `bun ${path.join(REPO_ROOT, 'src', 'cli', 'index.ts')}`;
-const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures-plain');
+const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures-pattern-stack');
 /** PW-3c: the junctions, a sibling folder so the entity loaders never read them as entities. */
-const JUNCTIONS_DIR = path.join(import.meta.dirname, 'fixtures-plain-junctions');
-const USAGE_FILE = path.join(import.meta.dirname, 'fixtures-plain-usage', 'crud-check.ts');
+const JUNCTIONS_DIR = path.join(import.meta.dirname, 'fixtures-pattern-stack-junctions');
+const USAGE_FILE = path.join(import.meta.dirname, 'fixtures-pattern-stack-usage', 'crud-check.ts');
 // `--postgres <url>` (the integration job): after the compile gate, push the schema into a fresh database on that
 // server and run CRUD through the composed use cases (`fixtures-pattern-stack-usage/crud-check.ts`).
 const POSTGRES_URL = (() => {
