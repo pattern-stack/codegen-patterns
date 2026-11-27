@@ -16,11 +16,9 @@ describe('docs/CONSUMER-SETUP.md carries the install lines project init prints',
 		expect(doc.split('\n')).toContain(line);
 	});
 
-	it('the pattern-stack lines install no Nest and the same drizzle pins (PW-4)', () => {
+	it('the pattern-stack lines install no Nest (PW-4); the shared pins are one declaration', () => {
 		expect(PATTERN_STACK_INSTALL_LINES.join(' ')).not.toMatch(/@nestjs|reflect-metadata/);
 		expect(PATTERN_STACK_INSTALL_LINES[0]).toContain('@pattern-stack/wiring');
-		expect(PATTERN_STACK_INSTALL_LINES[1]).toBe(CONSUMER_INSTALL_LINES[1]);
-		expect(PATTERN_STACK_INSTALL_LINES[0]).toContain(CONSUMER_INSTALL_LINES[0].match(/drizzle-orm@\S+/)![0]);
 	});
 
 	it('installs the platform adapter the generated main.ts boots on', () => {

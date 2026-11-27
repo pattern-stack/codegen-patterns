@@ -36,12 +36,12 @@ import { loadContext, type Context } from '../shared/context.js';
 import { checkGitSafety } from '../shared/git-safety.js';
 import {
 	vendoredRuntimeFiles,
-	VENDORED_RUNTIME_FILES,
+	otherWiringVendoredFiles,
 	loadRuntimeFile,
 	runtimeRoot,
 } from '../shared/init-scaffold.js';
 import { configOrDefaults } from '../../config/project-config.js';
-import { isPatternStackWiring } from '../../targets/apps.js';
+import { targetWiring } from '../../targets/apps.js';
 import { copyRuntime } from '../shared/runtime-copier.js';
 import { projectLayout } from '../shared/project-layout.js';
 import {
@@ -81,7 +81,7 @@ export function syncVendoredRuntime(ctx: Context, write: boolean): FileChange[] 
 	const changes: FileChange[] = [];
 	const { shared } = projectLayout(ctx.cwd, ctx.config);
 	// Under `wiring: pattern-stack`, the closure without the files that import `@nestjs/*` (PW-4).
-	const wiring = isPatternStackWiring(configOrDefaults(ctx.config).target) ? 'pattern-stack' : 'nest';
+	const wiring = targetWiring(configOrDefaults(ctx.config).target);
 	for (const v of vendoredRuntimeFiles(wiring)) {
 		const dest = path.join(shared, v.target);
 		const content = loadRuntimeFile(v.runtime);
@@ -98,15 +98,13 @@ export function syncVendoredRuntime(ctx: Context, write: boolean): FileChange[] 
 		}
 		changes.push({ path: rel(ctx.cwd, dest), action });
 	}
-	// Under pattern-stack, a Nest file left from an earlier init imports `@nestjs/*`, which the project no longer has:
-	// removed (PW-4).
-	if (wiring === 'pattern-stack') {
-		for (const v of VENDORED_RUNTIME_FILES.filter((f) => f.nest)) {
-			const dest = path.join(shared, v.target);
-			if (!fs.existsSync(dest)) continue;
-			if (write) fs.rmSync(dest);
-			changes.push({ path: rel(ctx.cwd, dest), action: 'removed' });
-		}
+	// A file only another wiring vendors (a Nest file left from an earlier init imports `@nestjs/*`, which a
+	// pattern-stack project no longer has) is removed (PW-4).
+	for (const v of otherWiringVendoredFiles(wiring)) {
+		const dest = path.join(shared, v.target);
+		if (!fs.existsSync(dest)) continue;
+		if (write) fs.rmSync(dest);
+		changes.push({ path: rel(ctx.cwd, dest), action: 'removed' });
 	}
 	return changes;
 }

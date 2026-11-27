@@ -736,15 +736,19 @@ describe('project init, wiring: pattern-stack (PW-4)', () => {
 		expect(merged.content).not.toContain('Decorator');
 	});
 
-	test('a second run writes nothing new, and keeps compose.ts and main.ts as the project left them', async () => {
+	test('a second run, even with --force, writes nothing new and keeps database.ts, compose.ts and main.ts as the project left them', async () => {
 		const cwd = mkTempDir('write-pattern-stack');
 		const opts = { cwd, skipScan: true, withTsconfig: true, runtimeMode: 'vendored', wiring: 'pattern-stack' } as const;
 		writePlan(await buildInitPlan(await loadContext({ cwd, skipDetection: true }), opts));
 		fs.writeFileSync(path.join(cwd, 'src/main.ts'), '// mine\n');
+		fs.writeFileSync(path.join(cwd, 'src/database.ts'), '// my pool\n');
 		const second = writePlan(await buildInitPlan(await loadContext({ cwd, skipDetection: true }), { ...opts, force: true }));
 		expect(second.created).toEqual([]);
 		expect(fs.readFileSync(path.join(cwd, 'src/main.ts'), 'utf8')).toBe('// mine\n');
-		expect(second.skipped.map((e) => e.relPath)).toEqual(expect.arrayContaining(['src/main.ts', 'src/compose.ts']));
+		expect(fs.readFileSync(path.join(cwd, 'src/database.ts'), 'utf8')).toBe('// my pool\n');
+		expect(second.skipped.map((e) => e.relPath)).toEqual(
+			expect.arrayContaining(['src/main.ts', 'src/compose.ts', 'src/database.ts']),
+		);
 	});
 });
 
@@ -810,7 +814,7 @@ describe('project init, wiring: pattern-stack — refusals and what it never ove
 describe('vendoredRuntimeFiles', () => {
 	test('a file is flagged `nest` exactly when it imports @nestjs or reflect-metadata', () => {
 		for (const v of VENDORED_RUNTIME_FILES) {
-			expect({ file: v.runtime, nest: NEST_IMPORT.test(loadRuntimeFile(v.runtime)) }).toEqual({ file: v.runtime, nest: v.nest === true });
+			expect({ file: v.runtime, nest: NEST_IMPORT.test(loadRuntimeFile(v.runtime)) }).toEqual({ file: v.runtime, nest: !vendoredRuntimeFiles('pattern-stack').includes(v) });
 		}
 	});
 

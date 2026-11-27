@@ -24,9 +24,10 @@ import {
 import { buildApiIncludes, emptyRelationsManifest, RELATIONS_MANIFEST_FILE } from '../../emitters/relations/index.js';
 import { DEFAULT_CODEGEN_CONFIG } from '../../config/project-config.js';
 import { DEFAULT_TARGET_PAIR } from '../../targets/pairs.js';
-import { isPatternStackWiring, type TargetWiring } from '../../targets/apps.js';
+import { DEFAULT_TARGET_APP, TARGET_WIRINGS, targetApp, targetWiring, type TargetWiring } from '../../targets/apps.js';
 import { configOrDefaults } from '../../config/project-config.js';
 import { emptyPatternStackComposition } from './pattern-stack-composition.js';
+import { DATABASE_SYSTEM } from '../../emitters/composition/emit-composition.js';
 import {
 	importSpecifier,
 	projectLayout,
@@ -165,8 +166,11 @@ export interface VendoredRuntimeFile {
 	 * (`ProjectLayout.shared`, the `@shared/*` alias target).
 	 */
 	target: string;
-	/** Imports `@nestjs/*`: not vendored under `wiring: pattern-stack` (PW-4). */
-	nest?: true;
+	/**
+	 * The wirings the file is vendored under; absent, every wiring. A file that imports `@nestjs/*` is `['nest']`
+	 * (PW-4).
+	 */
+	wirings?: readonly TargetWiring[];
 }
 
 export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
@@ -215,7 +219,7 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	// The runtime's logger port (PW-0) — imported by lifecycle-events.ts, the event scheduler and the jobs
 	// listener; and its Nest binding, which the vendored events / jobs modules call when they load.
 	{ runtime: 'logger.ts', target: 'logger.ts' },
-	{ runtime: 'nest-logger.ts', target: 'nest-logger.ts', nest: true },
+	{ runtime: 'nest-logger.ts', target: 'nest-logger.ts', wirings: ['nest'] },
 	// The plain errors (PW-0) — the error-body owner db-constraint-errors.ts imports, and what a pattern-stack
 	// wiring project's use cases throw (PW-3).
 	{ runtime: 'errors.ts', target: 'errors.ts' },
@@ -240,7 +244,7 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	{ runtime: 'subsystems/token-key.ts', target: 'subsystems/token-key.ts' },
 	// Pipes — ZodValidationPipe is wired on every generated controller
 	// @Body() to give runtime Zod validation at the controller boundary.
-	{ runtime: 'pipes/zod-validation.pipe.ts', target: 'pipes/zod-validation.pipe.ts', nest: true },
+	{ runtime: 'pipes/zod-validation.pipe.ts', target: 'pipes/zod-validation.pipe.ts', wirings: ['nest'] },
 	// Pagination-by-default (Page<T> envelope, ListQuerySchema, resolveListQuery,
 	// buildPage, opaque cursor codec) — imported by EVERY generated list
 	// controller/dto/use-case, and by the search controller/use-case, which page
@@ -263,7 +267,7 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	{ runtime: 'shared/openapi/examples.ts', target: 'openapi/examples.ts' },
 	// The 4xx for a foreign-key / unique violation (the modules barrel lists the module first).
 	{ runtime: 'db-constraint-errors.ts', target: 'db-constraint-errors.ts' },
-	{ runtime: 'nest-db-constraint-filter.ts', target: 'nest-db-constraint-filter.ts', nest: true },
+	{ runtime: 'nest-db-constraint-filter.ts', target: 'nest-db-constraint-filter.ts', wirings: ['nest'] },
 	// OPENAPI-3: shared error response schema referenced by every generated
 	// controller's 4xx `@ApiResponse` `$ref`. Auto-registered in the registry
 	// constructor so consumer projects expose `ErrorResponseDto` on
@@ -280,7 +284,13 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
  * `pattern-stack` (PW-4). `project init` writes it and `project update` re-syncs it.
  */
 export function vendoredRuntimeFiles(wiring: TargetWiring): VendoredRuntimeFile[] {
-	return wiring === 'pattern-stack' ? VENDORED_RUNTIME_FILES.filter((v) => !v.nest) : VENDORED_RUNTIME_FILES;
+	return VENDORED_RUNTIME_FILES.filter((v) => (v.wirings ?? TARGET_WIRINGS).includes(wiring));
+}
+
+/** The vendored files another wiring has and this one doesn't: `project update` removes them (PW-4). */
+export function otherWiringVendoredFiles(wiring: TargetWiring): VendoredRuntimeFile[] {
+	const own = new Set(vendoredRuntimeFiles(wiring));
+	return VENDORED_RUNTIME_FILES.filter((v) => !own.has(v));
 }
 
 function databaseModuleContent(mode: RuntimeMode, relationsImport: string): string {
@@ -587,7 +597,7 @@ import { defineSystem } from '${importSpecifier(from, path.join(layout.generated
 export function databaseSystem(connectionString = process.env.DATABASE_URL ?? 'postgresql://localhost:5432/app_dev') {
   const pool = new Pool({ connectionString });
   return defineSystem({
-    name: 'database',
+    name: '${DATABASE_SYSTEM}',
     uses: [],
     create: () => ({ db: drizzle({ client: pool, relations }) }),
     stop: () => pool.end(),
@@ -1015,9 +1025,13 @@ function relOf(cwd: string, abs: string): string {
  * (`consumer-setup-install.test.ts` holds the doc to this constant).
  * drizzle-orm / drizzle-kit are exact: prerelease pins are exact (charter §8).
  */
+const PIN = { drizzleOrm: 'drizzle-orm@1.0.0-rc.4', pg: 'pg@8', zod: 'zod@4' } as const;
+/** The dev tools, the same under every wiring. */
+const DEV_INSTALL_LINE = 'bun add -D drizzle-kit@1.0.0-rc.4 typescript@5 @types/pg@8';
+
 export const CONSUMER_INSTALL_LINES = [
-	'bun add @nestjs/common@10 @nestjs/core@10 @nestjs/platform-express@10 @nestjs/swagger@7 drizzle-orm@1.0.0-rc.4 pg@8 reflect-metadata@0.2 rxjs@7 zod@4',
-	'bun add -D drizzle-kit@1.0.0-rc.4 typescript@5 @types/pg@8',
+	`bun add @nestjs/common@10 @nestjs/core@10 @nestjs/platform-express@10 @nestjs/swagger@7 ${PIN.drizzleOrm} ${PIN.pg} reflect-metadata@0.2 rxjs@7 ${PIN.zod}`,
+	DEV_INSTALL_LINE,
 ] as const;
 
 /**
@@ -1025,9 +1039,15 @@ export const CONSUMER_INSTALL_LINES = [
  * composes the modules.
  */
 export const PATTERN_STACK_INSTALL_LINES = [
-	'bun add @pattern-stack/wiring drizzle-orm@1.0.0-rc.4 pg@8 zod@4',
-	'bun add -D drizzle-kit@1.0.0-rc.4 typescript@5 @types/pg@8',
+	`bun add @pattern-stack/wiring ${PIN.drizzleOrm} ${PIN.pg} ${PIN.zod}`,
+	DEV_INSTALL_LINE,
 ] as const;
+
+/** The install lines `project init` prints, by wiring. */
+export const INSTALL_LINES: Record<TargetWiring, readonly string[]> = {
+	nest: CONSUMER_INSTALL_LINES,
+	'pattern-stack': PATTERN_STACK_INSTALL_LINES,
+};
 
 /**
  * The first line of the `codegen.config.yaml` init writes: points yaml-language-server
@@ -1102,7 +1122,7 @@ export class InitRefusal extends Error {
 export function initWiringRefusal(ctx: Context, cwd: string, options: InitOptions): string | null {
 	const configExists = fs.existsSync(path.join(cwd, 'codegen.config.yaml'));
 	const target = configOrDefaults(ctx.config).target;
-	const configWiring: TargetWiring = isPatternStackWiring(target) ? 'pattern-stack' : 'nest';
+	const configWiring = targetWiring(target);
 	if (options.wiring && configExists && !options.force && options.wiring !== configWiring) {
 		return (
 			`--wiring ${options.wiring}, but codegen.config.yaml says target.wiring ${configWiring}. Set ` +
@@ -1129,8 +1149,8 @@ export async function buildInitPlan(
 	// model and vendors the runtime closure below.
 	const runtimeMode = options.runtimeMode === 'vendored' ? 'vendored' : 'package';
 	// `target.wiring` (PW-4): the flag, else the existing config's, else `nest`.
-	const wiring: TargetWiring =
-		options.wiring ?? (isPatternStackWiring(configOrDefaults(ctx.config).target) ? 'pattern-stack' : 'nest');
+	const wiring: TargetWiring = options.wiring ?? targetWiring(configOrDefaults(ctx.config).target);
+	const app = targetApp({ wiring });
 	const patternStack = wiring === 'pattern-stack';
 	const refusal = initWiringRefusal(ctx, cwd, options);
 	if (refusal) throw new InitRefusal(refusal);
@@ -1174,8 +1194,8 @@ export async function buildInitPlan(
 			target: {
 				database: DEFAULT_TARGET_PAIR.database,
 				orm: DEFAULT_TARGET_PAIR.orm,
-				// No HTTP layer yet under pattern-stack wiring (`{ wiring: pattern-stack, http: none }`, PW-3).
-				...(patternStack ? { wiring: 'pattern-stack', http: 'none' } : {}),
+				// The wiring's row of TARGET_APPS, written out unless it is the default (`{ wiring: pattern-stack, http: none }`).
+				...(app === DEFAULT_TARGET_APP ? {} : { wiring: app.wiring, http: app.http }),
 			},
 			paths: {
 				backend_src: DEFAULT_CODEGEN_CONFIG.paths.backend_src,
@@ -1253,7 +1273,7 @@ export async function buildInitPlan(
 	// (pattern-stack, PW-4).
 	entries.push(
 		patternStack
-			? fileEntry(cwd, layout.databaseSystem, patternStackDatabaseContent(layout), { force })
+			? fileEntry(cwd, layout.databaseSystem, patternStackDatabaseContent(layout), { skipReason: 'exists — yours to edit' })
 			: fileEntry(
 					cwd,
 					layout.databaseModule,

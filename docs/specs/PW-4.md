@@ -47,7 +47,7 @@ The other steps are the same under both wirings:
 
 - **`database.ts`** builds a `pg` pool from `url ?? DATABASE_URL`. Its `defineSystem` returns `{ db: drizzle({ client:
   pool, relations }) }` and ends the pool on stop. The pool connects on first use, so composing and stopping needs no
-  database.
+  database. Its system name is `DATABASE_SYSTEM` (emit-composition.ts), the name every generated module `uses`.
 - **`compose.ts`** returns `compose({ systems: [databaseSystem(url)], modules: [...MODULES] })`. The type `App` is its
   return.
 - **`main.ts`** composes, starts, runs `run(app)` and then stops. A SIGINT or SIGTERM stops the app, then exits.
@@ -56,6 +56,11 @@ The other steps are the same under both wirings:
   from `run`.
 - **The empty composition** comes from the same emitter (`emptyPatternStackComposition`, over an empty set). That
   way `compose.ts` and `main.ts` compile before the first `entity new`, which rewrites it.
+- **Which wiring.** `targetWiring(target)` (`src/targets/apps.ts`) resolves it from TARGET_APPS everywhere (init, its
+  refusal, `project update`), and init writes the row's own `wiring` and `http` when it isn't the default. Each
+  vendored file says which wirings get it (`wirings`, absent: every one); `vendoredRuntimeFiles(wiring)` filters on
+  it and `project update` removes `otherWiringVendoredFiles(wiring)`. The install lines are `INSTALL_LINES[wiring]`,
+  built from one set of pins.
 - **Ownership.** The project owns `database.ts`, `compose.ts` and `main.ts`. They are never overwritten, not even
   with `--force`, like `app.module.ts` and the Nest `main.ts`. The composition files are codegen's. Init writes them
   only when they're absent, even with `--force`: forcing the empty set would empty `MODULES` until the next `entity new`.
@@ -96,7 +101,7 @@ Unit tests (`project.test.ts`) cover:
 - the plan under pattern-stack;
 - the wiring read from an existing config;
 - tsconfig without decorators;
-- a second run that keeps a user-edited `main.ts`, even with `--force`;
+- a second run that keeps a user-edited `main.ts` and `database.ts`, even with `--force`;
 - the refusal of a `--wiring` the config disagrees with;
 - a composition `--force` doesn't empty;
 - `project update` removing a Nest file under pattern-stack;

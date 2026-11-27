@@ -6,6 +6,7 @@
 import path from 'node:path';
 
 import { CODEGEN_BANNER } from '../../utils/generated-file.js';
+import { TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
 import type { Context } from './context.js';
 import { projectLayout } from './project-layout.js';
 import { junctionsDirFor, relationshipsDirFor } from '../../config/junctions-dir.js';
@@ -36,10 +37,13 @@ function compositionInput(ctx: Context): CompositionInput {
 		}).relations,
 		modulesDir: layout.modules,
 		generatedDir: layout.generated,
-		drizzleTypeImport: runtimeImport(mode, 'types/drizzle'),
-		openApiImport: openApiImport(mode),
-		banner: CODEGEN_BANNER,
+		...emitterOptions(mode),
 	};
+}
+
+/** The emitter's options that follow from the runtime mode alone: every composition, `project init`'s empty one too. */
+function emitterOptions(mode: RuntimeMode): Pick<CompositionInput, 'drizzleTypeImport' | 'openApiImport' | 'banner'> {
+	return { drizzleTypeImport: runtimeImport(mode, 'types/drizzle'), openApiImport: openApiImport(mode), banner: CODEGEN_BANNER };
 }
 
 /** The pattern-stack composition for this project, planned (a dry run). Throws its refusals (a cycle, a name). */
@@ -56,12 +60,11 @@ export function emptyPatternStackComposition(
 	mode: RuntimeMode,
 ): CompositionFile[] {
 	return emitComposition({
-		relations: { entities: [], definitions: new Map(), junctions: [], tenancyColumn: 'tenant_id' },
+		// No entity, no junction; the tenancy column is the schema's default, as a config without `tenancy:` reads it.
+		relations: { entities: [], definitions: new Map(), junctions: [], tenancyColumn: TenancyConfigSchema.parse({}).column },
 		modulesDir: dirs.modulesDir,
 		generatedDir: dirs.generatedDir,
-		drizzleTypeImport: runtimeImport(mode, 'types/drizzle'),
-		openApiImport: openApiImport(mode),
-		banner: COMPOSITION_BANNER,
+		...emitterOptions(mode),
 		dryRun: true,
 	});
 }

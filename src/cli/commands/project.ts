@@ -53,9 +53,8 @@ import { printRejections, rejectionEntry, type RejectionEntry, type RunRejection
 import { loadContext, type Context } from '../shared/context.js';
 import {
 	buildInitPlan,
-	CONSUMER_INSTALL_LINES,
+	INSTALL_LINES,
 	InitRefusal,
-	PATTERN_STACK_INSTALL_LINES,
 	writePlan,
 	type InitPlan,
 } from '../shared/init-scaffold.js';
@@ -308,8 +307,7 @@ export class ProjectInitCommand extends Command {
 		console.log('');
 		printInfo('Next steps:');
 		console.log('  1. Install the peer and dev dependencies (npm / pnpm: same packages):');
-		const patternStack = plan.summary.wiring === 'pattern-stack';
-		for (const line of patternStack ? PATTERN_STACK_INSTALL_LINES : CONSUMER_INSTALL_LINES) {
+		for (const line of INSTALL_LINES[plan.summary.wiring]) {
 			console.log(`       ${theme.system(line)}`);
 		}
 		console.log(
