@@ -6,6 +6,7 @@
 
 import { configOrDefaults } from '../../config/project-config.js';
 import { targetPairRow } from '../../targets/pairs.js';
+import { isPlainWiring } from '../../targets/apps.js';
 import type { Context } from './context.js';
 
 /** The refusal message for `command` on a storage-only target, or `null` when the target has every layer. */
@@ -15,5 +16,19 @@ export function storageOnlyRefusal(ctx: Context, command: string): string | null
 	return (
 		`${command}: target ${target.database} emits the storage layer only, and the ${command.split(' ')[0]} pipeline ` +
 		'writes Postgres (pg-core) tables. It comes to this target with #679 / G8.'
+	);
+}
+
+/**
+ * PW-3a: plain wiring has no junction or relationship pipeline yet — their templates are Nest-decorated end to end
+ * (PW-3b brings junctions; relationships wait for #679). Their commands refuse a plain target by name, and so does
+ * `entity new` when such YAMLs exist, instead of writing Nest code into a project that installs none.
+ */
+export function plainWiringRefusal(ctx: Context, command: string): string | null {
+	const target = configOrDefaults(ctx.config).target;
+	if (!isPlainWiring(target)) return null;
+	return (
+		`${command}: target.wiring is plain, and the ${command.split(' ')[0]} pipeline writes NestJS classes. ` +
+		'Junctions come to plain wiring with PW-3b; relationship definitions with #679.'
 	);
 }

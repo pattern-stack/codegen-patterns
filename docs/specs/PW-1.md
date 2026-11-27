@@ -22,17 +22,20 @@ have:
 - `types.ts`: a `ClassNode` is `{ id (the class name), owner, ownerKind, role, useCaseKind?, systems }`, and a
   `ClassEdge` is `{ from, to, toOwner, toOwnerKind, reason }`. Reasons: `own`, `composes`, `inherits`,
   `junction_fan_out`, `junction_end`, `eav_field_values`, `eav_definition`, `list_use_case`, `route`. The system
-  dependencies are `db`, `typed_event_bus` and `event_bus`. Names and reasons only, with no import paths
+  dependencies are `db` and `typed_event_bus`. Names and reasons only, with no import paths
   (ADR-046 §4).
 - `classes.ts`, `entityClassGraph(input, surface)`. It reads the entity's **API surface** and its derivation input,
   and walks no YAML:
   - the repository takes `db`. A child's repository takes the base's repository (`inherits`), and an `eav: true`
-    entity's takes `FieldValueService`. Any repository-method delegate onto another entity adds an edge;
+    entity's takes `FieldValueService`. Those are its only edges: the graph's edges are constructor arguments;
   - the service takes its own repository, then EAV (`FieldValueService`, and an `eav_value_table`'s definition
-    repository), then every `service.methods[].delegatesTo` onto another owner. A repository delegate is a
-    `composes` edge (a `belongs_to` / `has_many`, #632), or `inherits` when it reaches the base. A service delegate
-    is a `junction_fan_out` when its owner is one of the set's junctions (named from `input.junctions`, never
-    inferred from the layer);
+    repository), then the delegate of each **relation** method (`relation_one` / `relation_many`) and **junction**
+    method onto another owner. A repository delegate is a `composes` edge (a `belongs_to` / `has_many`, #632), or
+    `inherits` when it reaches the base. A service delegate is a `junction_fan_out` when its owner is one of the
+    set's junctions (named from `input.junctions`, never inferred from the layer). Its other delegates onto another
+    entity (a child's flat reads onto its base) go through its own repository and are not edges (narrowed in
+    PW-3a, so that a service's edges are exactly its constructor arguments). Nest's optional `EVENT_BUS` property
+    is not a constructor argument, so it is not an edge;
   - the use cases come from `surface.useCases`. Each takes the service, except search, which takes the list use case
     (#744). Create and update take `FieldValueService` under EAV. A write takes `db` when it opens a transaction (to
     publish its `emits:` event, or for EAV) and the typed bus when it publishes;

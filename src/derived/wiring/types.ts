@@ -12,7 +12,7 @@
 export type ClassRole = 'repository' | 'service' | 'use_case' | 'controller';
 
 /** Something a class takes that the app provides rather than the generator: a system. */
-export type SystemDependency = 'db' | 'typed_event_bus' | 'event_bus';
+export type SystemDependency = 'db' | 'typed_event_bus';
 
 /** Why one class takes another. Each reason is one constructor (or Nest property) argument. */
 export type ClassEdgeReason =

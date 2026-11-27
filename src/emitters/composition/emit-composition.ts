@@ -30,6 +30,9 @@ import { generating } from '../../utils/generated-file.js';
 /** The module name of the entities that declare no `context:`. */
 export const ROOT_MODULE = 'entities';
 
+/** Names a context's module can't take: the root module's, and the systems' (`database`). */
+const RESERVED_MODULE_NAMES = new Set([ROOT_MODULE, 'database']);
+
 export interface CompositionInput {
 	relations: ProjectApiContext['relations'];
 	/** Absolute `paths.modules_dir`. */
@@ -74,9 +77,26 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 	const definitions = [...relations.definitions.values()].sort((a, b) => a.entity.name.localeCompare(b.entity.name));
 	const moduleOf = new Map<string, string>();
 	const plans = new Map<string, ModulePlan>();
+	const contextOfModule = new Map<string, string>();
 	for (const d of definitions) {
 		const context = d.entity.context;
 		const name = context ? camelCase(context) : ROOT_MODULE;
+		if (context) {
+			// A context's module name must be its own: not the root module's, not a system's, not another context's.
+			if (RESERVED_MODULE_NAMES.has(name)) {
+				throw new Error(
+					`[codegen] wiring: plain: context '${context}' (entity '${d.entity.name}') would be the module '${name}', ` +
+						`a name the composition reserves (${[...RESERVED_MODULE_NAMES].join(', ')}); rename the context`,
+				);
+			}
+			const other = contextOfModule.get(name);
+			if (other !== undefined && other !== context) {
+				throw new Error(
+					`[codegen] wiring: plain: contexts '${other}' and '${context}' would both be the module '${name}'; rename one`,
+				);
+			}
+			contextOfModule.set(name, context);
+		}
 		const file = context
 			? path.join(modulesDir, emittedDir(context), 'module.ts')
 			: path.join(modulesDir, 'module.ts');

@@ -2559,6 +2559,8 @@ export function buildBackendLocals(definition, baseLocals) {
     if (definition.entity?.surface || definition.surface) refuse('an integration `surface:`', 'S-3 (integrations on plain wiring)');
     if (junctionFanOut.length > 0) refuse('a junction fan-out (a junction names this entity)', 'PW-3b');
     const nestOnly = ['controller', 'searchController', 'module', 'integrationSourceModule'];
+    // `integrationSourceModule` always has a path; its template writes only for a `detection:` entity, so it is named
+    // only then.
     const skipped = nestOnly.filter(
       (k) => outputPaths[k] !== null && outputPaths[k] !== undefined && (k !== 'integrationSourceModule' || definition.detection),
     );
@@ -2584,6 +2586,23 @@ export function buildBackendLocals(definition, baseLocals) {
     query: outputPaths.declarativeQueries,
   };
   const fromModuleDir = (file) => `./${file.slice(moduleDir.length + 1).replace(/\.ts$/, '')}`;
+  // The composition (`emitComposition`) passes the service its composed repositories from the class graph's service
+  // edges; `<entity>.wiring.ts` declares them from `repositoryDeps`. One set, or the generated code fails to compile:
+  // held here, naming both, under plain (where the composition reads them).
+  if (plainWiring) {
+    const serviceNode = classGraph.nodes.find((n) => n.role === 'service');
+    const graphRepos = classGraph.edges
+      .filter((e) => e.from === serviceNode?.id && e.toOwner !== entityName && e.to.endsWith('Repository'))
+      .map((e) => e.toOwner)
+      .sort();
+    const localRepos = repositoryDeps.map((d) => d.entity).sort();
+    if (graphRepos.join(',') !== localRepos.join(',')) {
+      throw new Error(
+        `[codegen] '${entityName}': the class graph composes [${graphRepos.join(', ')}] but the service takes ` +
+          `[${localRepos.join(', ')}] — the two derivations disagree (PW-3a).`,
+      );
+    }
+  }
   const plainWiringParts = plainWiring
     ? {
         useCases: apiSurface.useCases.map((u) => {

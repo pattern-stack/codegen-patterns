@@ -38,6 +38,11 @@ export async function crudCheck(url: string): Promise<void> {
     const invoice = await billing.invoice.useCases.create.execute({ amountCents: 1200, accountId: account.id });
     assert(contact.accountId === account.id && invoice.accountId === account.id, 'the composed repositories write');
 
+    // A joined-table child: its repository writes the base row and its own in one transaction (RFC-0006).
+    const person = await crm.person.useCases.create.execute({ displayName: 'Ada L.', firstName: 'Ada' });
+    const personBack = await crm.person.useCases.findById.execute(person.id);
+    assert(personBack.firstName === 'Ada', 'a child is created through its base and read back');
+
     const page = await crm.account.useCases.list.execute();
     assert(page.items.some((a) => a.id === account.id), 'list pages it');
     const byStatus = await crm.account.useCases.findByStatus.execute('active');
