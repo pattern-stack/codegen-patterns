@@ -37,6 +37,8 @@ export interface FieldFacts {
 	readonly hasDefault: boolean;
 	/** The declared `default:` value, verbatim; `undefined` when there is none. */
 	readonly default: unknown;
+	/** The declared `example:` value (OpenAPI prefill), verbatim; `undefined` when there is none. */
+	readonly example: unknown;
 	/** A `datetime` keeps its time zone (#796, `src/schema/field-timestamp.ts`); `null` for any other type. */
 	readonly withTimezone: boolean | null;
 	/** The enum's values — the field's own `choices:`, or its `choices_of:` owner's. */

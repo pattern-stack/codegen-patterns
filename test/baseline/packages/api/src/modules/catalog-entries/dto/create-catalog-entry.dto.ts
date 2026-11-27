@@ -6,6 +6,8 @@ export const CreateCatalogEntrySchema = z.object({
   sku: z.string().max(64),
   title: z.string(),
   priceCents: z.number().int().nullable().optional(),
-});
+})
+  // What Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { userId: '00000000-0000-4000-8000-000000000001', sku: 'Example sku', title: 'Example title' } });
 
 export type CreateCatalogEntryDto = z.infer<typeof CreateCatalogEntrySchema>;

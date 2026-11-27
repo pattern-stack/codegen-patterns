@@ -6,6 +6,8 @@ export const UserOutputSchema = z.object({
   personId: z.guid().nullable(),
   tenantId: z.guid(),
   email: z.string(),
-});
+})
+  // The response sample in the API docs (src/derived/examples/).
+  .meta({ example: { id: '00000000-0000-4000-8000-000000000001', personId: '00000000-0000-4000-8000-000000000001', tenantId: '00000000-0000-4000-8000-000000000001', email: 'Example email' } });
 
 export type UserOutputDto = z.infer<typeof UserOutputSchema>;

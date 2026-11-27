@@ -519,7 +519,8 @@ describe('belongs_to FK nullability default (#850)', () => {
       "conversationId: uuid('conversation_id').notNull().references(",
     );
     const fk = (locals.createFkFields as any[]).find((f) => f.camelName === 'conversationId');
-    expect(fk.zodChainCreate).toBe('z.guid()');
+    // The chain, then the API-docs description (its example is a placeholder id; src/derived/examples/).
+    expect(fk.zodChainCreate).toMatch(/^z\.guid\(\)\.meta\(\{ description: /);
   });
 
   it('an FK field declared without nullable: is still NOT NULL', () => {
@@ -541,7 +542,7 @@ describe('belongs_to FK nullability default (#850)', () => {
       "conversationId: uuid('conversation_id').references(",
     );
     const fk = (locals.createFkFields as any[]).find((f) => f.camelName === 'conversationId');
-    expect(fk.zodChainCreate).toBe('z.guid().nullable().optional()');
+    expect(fk.zodChainCreate).toMatch(/^z\.guid\(\)\.nullable\(\)\.optional\(\)\.meta\(\{ description: /);
   });
 });
 

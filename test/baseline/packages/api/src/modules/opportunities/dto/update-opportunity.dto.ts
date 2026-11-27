@@ -2,6 +2,8 @@
 import { z } from 'zod';
 import { CreateOpportunitySchema } from './create-opportunity.dto';
 
-export const UpdateOpportunitySchema = CreateOpportunitySchema.partial();
+export const UpdateOpportunitySchema = CreateOpportunitySchema.partial()
+  // A minimal PATCH is what Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { tenantId: '00000000-0000-4000-8000-000000000001' } });
 
 export type UpdateOpportunityDto = z.infer<typeof UpdateOpportunitySchema>;

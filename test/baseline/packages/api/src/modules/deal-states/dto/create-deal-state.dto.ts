@@ -12,6 +12,8 @@ export const CreateDealStateSchema = z.object({
   weight: z.number().int().optional(),
   description: z.string().nullable().optional(),
   metadata: z.unknown().nullable().optional(),
-});
+})
+  // What Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { name: 'Example name', displayName: 'Example display name', stateType: 'open', sortOrder: 1, weight: 0 } });
 
 export type CreateDealStateDto = z.infer<typeof CreateDealStateSchema>;

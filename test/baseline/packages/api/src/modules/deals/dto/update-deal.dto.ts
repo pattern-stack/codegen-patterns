@@ -2,6 +2,8 @@
 import { z } from 'zod';
 import { CreateDealSchema } from './create-deal.dto';
 
-export const UpdateDealSchema = CreateDealSchema.partial();
+export const UpdateDealSchema = CreateDealSchema.partial()
+  // A minimal PATCH is what Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { name: 'Example name', stage: 'prospecting' } });
 
 export type UpdateDealDto = z.infer<typeof UpdateDealSchema>;

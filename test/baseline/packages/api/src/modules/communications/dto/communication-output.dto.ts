@@ -10,6 +10,8 @@ export const CommunicationOutputSchema = z.object({
   externalId: z.string(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
-});
+})
+  // The response sample in the API docs (src/derived/examples/).
+  .meta({ example: { id: '00000000-0000-4000-8000-000000000001', tenantId: '00000000-0000-4000-8000-000000000001', kind: 'meeting', occurredAt: '2026-01-15T09:30:00.000Z', source: 'Example source', externalId: 'Example external id', createdAt: '2026-01-15T09:30:00.000Z', updatedAt: '2026-01-15T09:30:00.000Z' } });
 
 export type CommunicationOutputDto = z.infer<typeof CommunicationOutputSchema>;

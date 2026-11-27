@@ -76,7 +76,7 @@ Codegen never runs drizzle-kit except `codegen dev`, which shells
 drizzle-kit (`bunx --no-install`), so install a kit that matches the ORM line.
 Migrations are yours.
 
-`defineConfig` is unchanged:
+`defineConfig` is unchanged. `codegen project init` writes this `drizzle.config.ts` (once; it is yours after):
 
 ```ts
 import { defineConfig } from 'drizzle-kit';

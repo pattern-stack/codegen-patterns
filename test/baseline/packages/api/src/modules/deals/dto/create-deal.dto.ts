@@ -2,14 +2,16 @@
 import { z } from 'zod';
 
 export const CreateDealSchema = z.object({
-  ownerId: z.guid(),
-  closedById: z.guid().nullable().optional(),
-  accountId: z.guid(),
+  ownerId: z.guid().meta({ description: 'The id of an existing user (GET /users lists them). The example is a placeholder: replace it with a real id before sending.' }),
+  closedById: z.guid().nullable().optional().meta({ description: 'The id of an existing user (GET /users lists them). The example is a placeholder: replace it with a real id before sending.' }),
+  accountId: z.guid().meta({ description: 'The id of an existing account (GET /accounts lists them). The example is a placeholder: replace it with a real id before sending.' }),
   name: z.string().max(255),
   amount: z.coerce.string().nullable().optional(),
   stage: z.enum(['prospecting', 'qualification', 'proposal', 'negotiation', 'closed_won', 'closed_lost']),
   closeDate: z.coerce.date().nullable().optional(),
   probability: z.number().int().nullable().optional(),
-});
+})
+  // What Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { ownerId: '00000000-0000-4000-8000-000000000001', accountId: '00000000-0000-4000-8000-000000000001', name: 'Example name', stage: 'prospecting' } });
 
 export type CreateDealDto = z.infer<typeof CreateDealSchema>;

@@ -51,7 +51,7 @@ import { definitionSetRejections } from '../shared/entity-render.js';
 import { printRejections, rejectionEntry, type RejectionEntry, type RunRejection } from '../shared/run-rejections.js';
 
 import { loadContext, type Context } from '../shared/context.js';
-import { buildInitPlan, writePlan, type InitPlan } from '../shared/init-scaffold.js';
+import { buildInitPlan, CONSUMER_INSTALL_LINES, writePlan, type InitPlan } from '../shared/init-scaffold.js';
 import { SUBSYSTEMS } from '../shared/subsystem-detect.js';
 import { ProjectUpgradeOpenapiCommand } from './project-upgrade-openapi.js';
 import { ProjectUpgradeAuthCommand } from './project-upgrade-auth.js';
@@ -282,11 +282,15 @@ export class ProjectInitCommand extends Command {
 		}
 		console.log('');
 		printInfo('Next steps:');
-		console.log(`  1. ${theme.system('bun add')} the peer deps (see docs/CONSUMER-SETUP.md)`);
+		console.log('  1. Install the peer and dev dependencies (npm / pnpm: same packages):');
+		for (const line of CONSUMER_INSTALL_LINES) console.log(`       ${theme.system(line)}`);
 		console.log(
 			`  2. ${theme.system('codegen entity new entities/<file>.yaml')} to generate your first entity`
 		);
 		console.log(`  3. ${theme.system('bunx tsc --noEmit')} to verify the scaffold typechecks`);
+		console.log(
+			`  4. ${theme.system('DATABASE_URL=… bunx drizzle-kit push')} to create the tables, then ${theme.system('bun src/main.ts')}`,
+		);
 
 		return 0;
 	}

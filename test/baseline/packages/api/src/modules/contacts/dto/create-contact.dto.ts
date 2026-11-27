@@ -2,14 +2,16 @@
 import { z } from 'zod';
 
 export const CreateContactSchema = z.object({
-  accountId: z.guid().nullable().optional(),
-  userId: z.guid(),
+  accountId: z.guid().nullable().optional().meta({ description: 'The id of an existing account (GET /accounts lists them). The example is a placeholder: replace it with a real id before sending.' }),
+  userId: z.guid().meta({ description: 'The id of an existing user (GET /users lists them). The example is a placeholder: replace it with a real id before sending.' }),
   firstName: z.string().max(100),
   lastName: z.string().max(100),
   email: z.string().max(255),
   title: z.string().max(200).nullable().optional(),
   phone: z.string().max(50).nullable().optional(),
   linkedinUrl: z.string().max(500).nullable().optional(),
-});
+})
+  // What Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { userId: '00000000-0000-4000-8000-000000000001', firstName: 'Example first name', lastName: 'Example last name', email: 'Example email' } });
 
 export type CreateContactDto = z.infer<typeof CreateContactSchema>;

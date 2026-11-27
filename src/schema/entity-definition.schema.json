@@ -172,6 +172,9 @@
           "default": {
             "description": "Default value"
           },
+          "example": {
+            "description": "Example value for the API docs (Swagger 'Try it out' prefill); must be a value this field accepts"
+          },
           "index": {
             "description": "Create database index",
             "type": "boolean"

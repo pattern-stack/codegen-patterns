@@ -7,6 +7,8 @@ import { UpdateToteSchema } from '../../totes/dto/update-tote.dto';
 export const UpdateBinSchema = UpdateToteSchema.extend({
   label: z.string().optional(),
   sealed: z.boolean().optional(),
-});
+})
+  // A minimal PATCH is what Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { label: 'Example label', sealed: true } });
 
 export type UpdateBinDto = z.infer<typeof UpdateBinSchema>;

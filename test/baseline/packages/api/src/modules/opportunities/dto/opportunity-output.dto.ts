@@ -12,6 +12,8 @@ export const OpportunityOutputSchema = z.object({
   currency: z.string().nullable(),
   expectedCloseDate: z.coerce.date().nullable(),
   closedAt: z.coerce.date().nullable(),
-});
+})
+  // The response sample in the API docs (src/derived/examples/).
+  .meta({ example: { id: '00000000-0000-4000-8000-000000000001', organizationId: '00000000-0000-4000-8000-000000000001', ownerId: '00000000-0000-4000-8000-000000000001', stateId: '00000000-0000-4000-8000-000000000001', tenantId: '00000000-0000-4000-8000-000000000001', name: 'Example name', amount: '10.00', currency: 'USD', expectedCloseDate: '2026-01-15', closedAt: '2026-01-15T09:30:00.000Z' } });
 
 export type OpportunityOutputDto = z.infer<typeof OpportunityOutputSchema>;

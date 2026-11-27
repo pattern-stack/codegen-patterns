@@ -9,6 +9,8 @@ export const UpdateMeetingSchema = UpdateCommunicationSchema.extend({
   startsAt: z.coerce.date().optional(),
   endsAt: z.coerce.date().nullable().optional(),
   link: z.string().nullable().optional(),
-});
+})
+  // A minimal PATCH is what Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { title: 'Example title' } });
 
 export type UpdateMeetingDto = z.infer<typeof UpdateMeetingSchema>;

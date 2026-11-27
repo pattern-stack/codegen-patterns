@@ -6,6 +6,8 @@ import { UpdateShipmentSchema } from '../../shipments/dto/update-shipment.dto';
 // optional and without a default, so a PATCH leaves an omitted field as it is (ZOD-1a).
 export const UpdateAirFreightSchema = UpdateShipmentSchema.extend({
   flight: z.string().optional(),
-});
+})
+  // A minimal PATCH is what Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { flight: 'Example flight' } });
 
 export type UpdateAirFreightDto = z.infer<typeof UpdateAirFreightSchema>;

@@ -55,7 +55,7 @@ A bad value (`auth: basic`, a misspelled key) fails that command, naming the
 key.
 
 Disable mode (`enabled: false`) leaves the registry singleton in place
-(generated modules still register their schemas at `onModuleInit`) but
+(generated modules still register their schemas when they are constructed) but
 skips the `SwaggerModule.setup()` call in `main.ts` — no `/docs` route, no
 `/docs-json` route. Because the switch is generated, a build that must not
 expose the spec is built from a config with `enabled: false`.
@@ -74,6 +74,30 @@ Every generated controller method appears under `paths.*` with
 `components.schemas.<EntityName>(Response|Output)Dto`), request body
 shapes for POST/PATCH/PUT, and a 4xx `$ref` to the shared
 `ErrorResponseDto`.
+
+### Prefilled requests ("Try it out")
+
+Every route opens in Swagger UI with a request that parses, so **Try it out → Execute** works without typing:
+
+| Where | Prefill |
+|---|---|
+| `POST` body | `Create<Entity>Dto`'s example: every required field, every field with a default, every declared `example:` |
+| `PATCH` body | `Update<Entity>Dto`'s example: a minimal PATCH (the first field, plus the first enum or boolean) |
+| response sample | `<Entity>OutputDto`'s example: the whole row |
+| `:id` | `00000000-0000-4000-8000-000000000001` |
+| `page` / `pageSize` | `1` / `50` (the defaults) |
+| `include` | the route's first `api.includes` path, only where the route has an allowlist (anywhere else any value is a 400) |
+
+A field's value comes from its YAML `example:`, else its `default:`, else its first choice, else a value made from
+its type and name (`consumer-skills/entities/yaml-reference.md`). The examples are each DTO's
+`.meta({ example })`, which `z.toJSONSchema` writes into the component; the derivation is `src/derived/examples/`.
+
+**Ids are placeholders.** No example can name a row that exists. A foreign key (`projectId`) and `:id` carry the
+placeholder guid and say so in their description: replace it with a real id (from a create or list response) before
+Execute, or the request is a 404 (`:id`) or a refused insert (a foreign key).
+
+The smoke gate (`test/smoke/verify-openapi.ts`) parses every body example through its own generated DTO and checks
+each `:id` example is a guid, so a prefill that would be a 400 fails CI.
 
 ### Security — BearerAuth by default
 
@@ -111,8 +135,9 @@ envelopes) register via the same `OPENAPI_REGISTRY` singleton:
 
 ```ts
 // src/observability/observability.module.ts
-import { Inject, Module, OnModuleInit } from '@nestjs/common';
-import { OPENAPI_REGISTRY, OpenApiRegistry } from '@shared/openapi';
+import { Inject, Module } from '@nestjs/common';
+// `runtime: package` (the default); a `runtime: vendored` project imports '@shared/openapi'.
+import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@pattern-stack/codegen/runtime/shared/openapi';
 import { z } from 'zod';
 
 const PaginationCursorSchema = z.object({
@@ -121,11 +146,11 @@ const PaginationCursorSchema = z.object({
 });
 
 @Module({})
-export class ObservabilityModule implements OnModuleInit {
-  constructor(@Inject(OPENAPI_REGISTRY) private readonly openapi: OpenApiRegistry) {}
-
-  onModuleInit(): void {
-    this.openapi.registerSchema('PaginationCursor', PaginationCursorSchema);
+export class ObservabilityModule {
+  // Register in the constructor, as the generated modules do — not in
+  // `onModuleInit`, which runs after main.ts has built the document (see below).
+  constructor(@Inject(OPENAPI_REGISTRY) openapi: OpenApiRegistry) {
+    openapi.registerSchema('PaginationCursor', PaginationCursorSchema);
   }
 }
 ```
@@ -160,26 +185,27 @@ Reference the registered name from a controller decorator:
 - **Registry is singleton-per-process.** `AppModule` provides
   `OPENAPI_REGISTRY` as `useValue: new OpenApiRegistry()`. Do **not**
   instantiate `new OpenApiRegistry()` anywhere else — every generated
-  entity module `@Inject(OPENAPI_REGISTRY)` to register its DTOs at
-  `onModuleInit`; a forked instance would produce a partial
+  entity module `@Inject(OPENAPI_REGISTRY)` to register its DTOs in its
+  constructor; a forked instance would produce a partial
   `/docs-json`.
 
 - **`registry.build()` is async** (it was when it lazy-imported its old peer,
   and stays so for callers). `main.ts` awaits once at bootstrap; nothing else
   should call `build()` in a hot path.
 
-- **Programmatic smoke tests must call `app.init()`.** `NestFactory.
-  create(AppModule)` resolves DI but does NOT fire lifecycle hooks —
-  `onModuleInit` is only invoked after `await app.init()` (or
-  `app.listen()`). Generated entity modules register their Zod schemas
-  in `onModuleInit`, so a programmatic `/docs-json` check must `await
-  app.init()` before `registry.build()` or the schemas map will be
-  empty. Only matters for tests; real `app.listen()` runs `init()`
-  internally.
+- **Register schemas at construction, never in a lifecycle hook.**
+  `main.ts` builds the document after `NestFactory.create(AppModule)` and
+  *before* `app.listen()`, and it cannot do otherwise: `app.init()` (which
+  `listen()` runs) installs the router's not-found handler, so a Swagger
+  route mounted after it answers 404. `create()` constructs every module but
+  runs no hook, so a schema registered in `onModuleInit` is not in the
+  document — its `$ref`s dangle. The generated modules register in their
+  constructors. A programmatic check should build the same way, with no
+  `app.init()` (the smoke gate, `test/smoke/verify-openapi.ts`, does, and
+  fails on any `$ref` that does not resolve):
     ```ts
     const app = await NestFactory.create(AppModule, { logger: false });
-    await app.init();                         // ← critical
-    const registry = app.get(OPENAPI_REGISTRY);
+    const registry = app.get(OPENAPI_REGISTRY); // no app.init(): main.ts has none either
     const doc = await registry.build({ title, version });
     ```
 

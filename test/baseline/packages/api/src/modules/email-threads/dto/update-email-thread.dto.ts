@@ -2,6 +2,8 @@
 import { z } from 'zod';
 import { CreateEmailThreadSchema } from './create-email-thread.dto';
 
-export const UpdateEmailThreadSchema = CreateEmailThreadSchema.partial();
+export const UpdateEmailThreadSchema = CreateEmailThreadSchema.partial()
+  // A minimal PATCH is what Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { topic: 'Example topic' } });
 
 export type UpdateEmailThreadDto = z.infer<typeof UpdateEmailThreadSchema>;

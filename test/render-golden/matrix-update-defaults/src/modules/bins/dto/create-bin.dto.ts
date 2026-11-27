@@ -1,5 +1,6 @@
 
 import { z } from 'zod';
+import { exampleOf } from '@shared/openapi';
 import { CreateToteSchema } from '../../totes/dto/create-tote.dto';
 
 // RFC-0006 §5: the base's schema is the owner of every base field; this child extends it. The kind is fixed
@@ -10,6 +11,8 @@ export const CreateBinSchema = CreateToteSchema
   .extend({
     label: z.string(),
     sealed: z.boolean().default(true),
-  });
+  })
+  // What Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { ...exampleOf(CreateToteSchema, 'kind'), label: 'Example label', sealed: true } });
 
 export type CreateBinDto = z.infer<typeof CreateBinSchema>;

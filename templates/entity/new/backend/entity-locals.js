@@ -51,7 +51,19 @@ import {
   moduleClassName,
   pascalCase,
   relationMethodName,
+  routePath,
 } from '../../../../src/derived/api/names.js';
+import {
+  createExample,
+  EXAMPLE_GUID,
+  exampleEntries,
+  exampleLiteral,
+  foreignKeyDescription,
+  idParamDescription,
+  outputExample,
+  updateExample,
+} from '../../../../src/derived/examples/index.js';
+import { includePathKey } from '../../../../src/emitters/relations/relation-key.js';
 import { camelCase, emittedStem } from '../../../../src/config/file-naming.js';
 import { resolvedBehaviorNames as resolveBehaviorNames } from '../../../../src/patterns/implied-behaviors.js';
 import { foreignKeyColumnNullable } from '../../../../src/schema/field-nullability.js';
@@ -2552,10 +2564,13 @@ export function buildBackendLocals(definition, baseLocals) {
   );
 
   // FK fields from belongs_to for the entity's output DTO (every belongs_to)
+  // A request's FK carries a description: its OpenAPI example is a placeholder id, which no example can avoid.
+  const fkMeta = (rel) =>
+    `.meta({ description: ${exampleLiteral(foreignKeyDescription(rel.relatedEntity, routePath(rel.relatedPlural)))} })`;
   const belongsToFkFields = belongsTo.map((rel) => ({
     camelName: rel.camelField,
-    zodChainCreate: rel.nullable ? 'z.guid().nullable().optional()' : 'z.guid()',
-    zodChainUpdate: rel.nullable ? 'z.guid().nullable().optional()' : 'z.guid().optional()',
+    zodChainCreate: (rel.nullable ? 'z.guid().nullable().optional()' : 'z.guid()') + fkMeta(rel),
+    zodChainUpdate: (rel.nullable ? 'z.guid().nullable().optional()' : 'z.guid().optional()') + fkMeta(rel),
     zodChainOutput: rel.nullable ? 'z.guid().nullable()' : 'z.guid()',
     nullable: rel.nullable,
   }));
@@ -2591,6 +2606,67 @@ export function buildBackendLocals(definition, baseLocals) {
     ...f,
     zodChainOutput: zodChainForOutput(f),
   }));
+
+  // OpenAPI examples (src/derived/examples/): what Swagger's "Try it out" prefills. Each is a JS expression the
+  // DTO templates print into `.meta({ example })`. A child's composes its base's (`exampleOf`, the runtime's
+  // `openapi/examples.ts`): the base's schema owns the base fields, as it owns their Zod.
+  const discriminatorCamel = family.base !== null ? camelCase(family.base.discriminator) : null;
+  const createExampleOverrides = {};
+  const createExampleOmit = new Set();
+  if (discriminatorCamel !== null) {
+    if (baseOnlyKinds.length > 0) createExampleOverrides[discriminatorCamel] = baseOnlyKinds[0];
+    else createExampleOmit.add(discriminatorCamel);
+  }
+  const ownCreateExample = createExample(createDtoFields, createFkFields, createExampleOverrides, createExampleOmit);
+  const ownUpdateExample = updateExample(
+    createDtoFields,
+    discriminatorCamel !== null ? new Set([discriminatorCamel]) : new Set(),
+  );
+  const ownOutputExample = outputExample(outputDtoFields, belongsToFkFields, {
+    externalId: hasExternalIdTracking,
+    timestamps: hasTimestamps,
+    softDelete: hasSoftDelete,
+  });
+  const fc = family.child;
+  const spread = (obj) => (Object.keys(obj).length === 0 ? '' : `, ${exampleEntries(obj)}`);
+  const dtoExamples = fc
+    ? {
+        create: `{ ...exampleOf(${fc.baseCreateSchema}, '${fc.discriminatorProp}')${spread(ownCreateExample)} }`,
+        update:
+          Object.keys(ownUpdateExample).length > 0
+            ? exampleLiteral(ownUpdateExample)
+            : `exampleOf(${fc.baseUpdateSchema})`,
+        ownOutput: exampleLiteral(ownOutputExample),
+        output: `{ ...exampleOf(${fc.baseOutputSchema}), ${fc.discriminatorProp}: '${fc.as}', ...exampleOf(${dtoSchemaNames(entityName).ownOutputSchema}, 'id') }`,
+      }
+    : {
+        create: exampleLiteral(ownCreateExample),
+        update: exampleLiteral(ownUpdateExample),
+        ownOutput: null,
+        output: exampleLiteral(ownOutputExample),
+      };
+  // The controller's parameter examples: `:id` is a placeholder guid (with the same caveat as a FK), and `?include=`
+  // shows the route's first allowlisted path — only where the route has an allowlist, since any value elsewhere is
+  // a 400.
+  const firstIncludePath = (route) => {
+    // The raw YAML (`api` may be absent, `false`, or a block): the whole-set pass validates the paths.
+    const api = definition.api;
+    const declared = api !== null && typeof api === 'object' ? api.includes?.[route]?.paths?.[0] : undefined;
+    return declared === undefined ? null : includePathKey(declared);
+  };
+  const paramExamples = {
+    id: EXAMPLE_GUID,
+    idDescriptionLiteral: exampleLiteral(idParamDescription(entityName, routePath(entityNamePlural))),
+    page: 1,
+    pageSize: 50,
+    include: { list: firstIncludePath('list'), find_by_id: firstIncludePath('find_by_id') },
+  };
+  // Which DTO files read a base's example (and so import `exampleOf`).
+  dtoExamples.importsExampleOf = {
+    create: dtoExamples.create.includes('exampleOf('),
+    update: dtoExamples.update.includes('exampleOf('),
+    output: dtoExamples.output.includes('exampleOf('),
+  };
 
   // Integration write-surface derivation (#374) — null unless pattern: Integrated.
   // Pass sinkPolicy (#490) so the delete knob and exclude_fields knob are applied
@@ -2870,6 +2946,8 @@ export function buildBackendLocals(definition, baseLocals) {
     // Field data
     processedFields: nonFkFields,
     createDtoFields: createDtoFieldsWithZod,
+    dtoExamples,
+    paramExamples,
     // ZOD-1a: the create fields whose chain applies a default; the update DTO restates them without it.
     updateDefaultOverrides: createDtoFieldsWithZod.filter((f) => f.createAppliesDefault),
     outputDtoFields: outputDtoFields,

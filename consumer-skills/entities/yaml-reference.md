@@ -70,6 +70,7 @@ fields:
     type: string           # string | integer | decimal | boolean | uuid | date | datetime | json | enum | string_array
     required: true         # NOT NULL + required in Create DTO
     max_length: 255        # varchar(255) column + z.string().max(255) on create/update
+    example: ada@example.com  # optional: the API docs' "Try it out" prefill (must be a value the field accepts)
     index: true            # single-column index
     unique: true           # unique index; per tenant under tenant_scoped
   status:
@@ -85,6 +86,11 @@ fields:
     nullable: false        # NOT NULL, optional on create: the DB fills the default
     default: 0
 ```
+
+`example:` is what Swagger's "Try it out" prefills for the field. Without it the prefill is the field's `default:`
+(when that is a value, not `now`), else its first choice, else a value from its type and name (`name` →
+`'Example name'`, integer `1`, decimal `'10.00'`, a fixed date, `{}` for json). A value the field does not accept
+(an enum example outside its choices, a string over `max_length`) is a validation error on the field.
 
 Nullability — `required` is the create contract, `nullable` the column:
 

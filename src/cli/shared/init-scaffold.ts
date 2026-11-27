@@ -23,6 +23,7 @@ import {
 } from '../../emitters/frontend/deps.js';
 import { buildApiIncludes, emptyRelationsManifest, RELATIONS_MANIFEST_FILE } from '../../emitters/relations/index.js';
 import { DEFAULT_CODEGEN_CONFIG } from '../../config/project-config.js';
+import { DEFAULT_TARGET_PAIR } from '../../targets/pairs.js';
 import {
 	importSpecifier,
 	projectLayout,
@@ -235,11 +236,12 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	// EAV helpers — referenced by generated services on `eav_value_table` entities
 	{ runtime: 'eav-helpers.ts', target: 'eav-helpers.ts' },
 	// OpenAPI registry (OPENAPI-1/2) — generated modules register Zod DTOs
-	// here at onModuleInit; OPENAPI-4 mounts Swagger UI off the same registry.
+	// here as Nest constructs them; OPENAPI-4 mounts Swagger UI off the same registry.
 	// Components come from Zod 4's own `z.toJSONSchema`; no peer dependency (ZOD-1).
 	{ runtime: 'shared/openapi/registry.ts', target: 'openapi/registry.ts' },
 	{ runtime: 'shared/openapi/registry.tokens.ts', target: 'openapi/registry.tokens.ts' },
 	{ runtime: 'shared/openapi/errors.ts', target: 'openapi/errors.ts' },
+	{ runtime: 'shared/openapi/examples.ts', target: 'openapi/examples.ts' },
 	// OPENAPI-3: shared error response schema referenced by every generated
 	// controller's 4xx `@ApiResponse` `$ref`. Auto-registered in the registry
 	// constructor so consumer projects expose `ErrorResponseDto` on
@@ -328,7 +330,7 @@ import { OPENAPI_REGISTRY, OpenApiRegistry } from '${openApiImport}';
  * OpenApiModule — @Global() wrapper around the OPENAPI_REGISTRY singleton.
  *
  * OPENAPI-4: every generated entity module \`@Inject(OPENAPI_REGISTRY)\` to
- * register its Zod DTOs at onModuleInit (OPENAPI-2). NestJS's DI scoping
+ * register its Zod DTOs in its constructor (OPENAPI-2). NestJS's DI scoping
  * means providers declared in AppModule are NOT automatically visible
  * inside imported feature modules — exports from AppModule only flow to
  * modules that explicitly import AppModule, which feature modules don't.
@@ -354,8 +356,8 @@ class OpenApiModule {}
  *
  * DatabaseModule must come first — it provides the DRIZZLE token that every
  * generated repository depends on. OpenApiModule follows so the registry
- * is in the global injector before any generated module's onModuleInit
- * fires. main.ts reads the built registry at boot to produce the Swagger
+ * is in the global injector before any generated module is constructed
+ * (that is when each registers its schemas). main.ts reads the built registry at boot to produce the Swagger
  * document (OPENAPI-4).
  */
 @Module({
@@ -466,8 +468,10 @@ async function bootstrap(): Promise<void> {
     // OPENAPI-4: build the document in two passes.
     //
     //   1. Our vendored \`OpenApiRegistry\` owns the component schemas
-    //      (Zod-derived DTOs registered by every generated module at
-    //      onModuleInit — OPENAPI-2).
+    //      (Zod-derived DTOs registered by every generated module when
+    //      \`NestFactory.create\` constructs it — OPENAPI-2). Build here,
+    //      before the server starts: \`init()\` installs the router's
+    //      not-found handler, and a Swagger route mounted after it 404s.
     //   2. \`SwaggerModule.createDocument\` scans controller decorators
     //      (@Api* — OPENAPI-3) and produces the \`paths\` map. Our
     //      schemas then get merged into the \`components.schemas\` it
@@ -867,6 +871,44 @@ function relOf(cwd: string, abs: string): string {
 	return path.relative(cwd, abs) || abs;
 }
 
+/**
+ * The two install lines a new project runs after `project init`: the NestJS + Drizzle
+ * peers the generated app imports (`@nestjs/platform-express` is not a peer of the
+ * package, but the generated `main.ts` boots on it) and the dev tools. `project init`
+ * prints them, and docs/CONSUMER-SETUP.md carries them verbatim
+ * (`consumer-setup-install.test.ts` holds the doc to this constant).
+ * drizzle-orm / drizzle-kit are exact: prerelease pins are exact (charter §8).
+ */
+export const CONSUMER_INSTALL_LINES = [
+	'bun add @nestjs/common@10 @nestjs/core@10 @nestjs/platform-express@10 @nestjs/swagger@7 drizzle-orm@1.0.0-rc.4 pg@8 reflect-metadata@0.2 rxjs@7 zod@4',
+	'bun add -D drizzle-kit@1.0.0-rc.4 typescript@5 @types/pg@8',
+] as const;
+
+/**
+ * The first line of the `codegen.config.yaml` init writes: points yaml-language-server
+ * (VS Code's YAML extension, Zed, Helix …) at the generated editor schema shipped in
+ * the package, for completion and validation of every key, `target:` included.
+ */
+export const CONFIG_SCHEMA_MODELINE =
+	'# yaml-language-server: $schema=./node_modules/@pattern-stack/codegen/src/schema/codegen-config.schema.json';
+
+/** `drizzle.config.ts` for a new project: drizzle-kit 1.0, Postgres, `DATABASE_URL`. */
+export function drizzleConfigContent(schemaRelPath: string): string {
+	const schema = schemaRelPath.startsWith('.') ? schemaRelPath : `./${schemaRelPath}`;
+	return `import { defineConfig } from 'drizzle-kit';
+
+// drizzle-kit's entry point. \`bunx drizzle-kit push\` applies the generated schema to
+// DATABASE_URL (a dev-loop convenience); \`bunx drizzle-kit generate\` writes reviewable
+// migrations to ./drizzle. Codegen writes this file once; it is yours to edit.
+export default defineConfig({
+  schema: '${schema}',
+  out: './drizzle',
+  dialect: 'postgresql',
+  dbCredentials: { url: process.env.DATABASE_URL! },
+});
+`;
+}
+
 function fileEntry(
 	cwd: string,
 	absPath: string,
@@ -950,6 +992,9 @@ export async function buildInitPlan(
 			// vendors `src/shared/**`. Existing vendored projects MUST set this to
 			// `vendored` explicitly — the default does not silently flip them.
 			runtime: runtimeMode,
+			// The generation target (ADR-047): written out so the key — and the editor
+			// completion the `$schema` line below gives it — is visible from day one.
+			target: { database: DEFAULT_TARGET_PAIR.database, orm: DEFAULT_TARGET_PAIR.orm },
 			paths: {
 				backend_src: DEFAULT_CODEGEN_CONFIG.paths.backend_src,
 				entities: DEFAULT_CODEGEN_CONFIG.paths.entities,
@@ -960,9 +1005,20 @@ export async function buildInitPlan(
 				frontend,
 			},
 		};
-		const content = stringifyYaml(config, { indent: 2 });
+		const content = `${CONFIG_SCHEMA_MODELINE}\n${stringifyYaml(config, { indent: 2 })}`;
 		entries.push(fileEntry(cwd, configPath, content, { force }));
 	}
+
+	// 1b. drizzle.config.ts — drizzle-kit's entry point (push / generate), pointed at
+	// the generated schema barrel. The project owns it after init.
+	entries.push(
+		fileEntry(
+			cwd,
+			path.join(cwd, 'drizzle.config.ts'),
+			drizzleConfigContent(relOf(cwd, path.join(layout.generated, 'schema.ts'))),
+			{ force },
+		),
+	);
 
 	// 2. tsconfig.json — idempotent merge
 	{

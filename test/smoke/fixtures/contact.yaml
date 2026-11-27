@@ -28,6 +28,8 @@ fields:
     type: string
     required: true
     max_length: 255
+    # The API docs' prefill (src/derived/examples/): a declared example wins over the value made from the name.
+    example: ada@example.com
 
 behaviors:
   - timestamps

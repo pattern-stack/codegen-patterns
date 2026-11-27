@@ -23,6 +23,35 @@ and what changes for API clients and hand-written code.
   job arm's `read:` embed the runtime's `DetectionConfigSchema` directly, so the entity JSON Schema now describes it
   in full.
 
+### Fixed: `/docs-json` has the entity schemas in a generated app
+
+- A generated module registers its Zod schemas in its **constructor**, not in `onModuleInit`. `main.ts` builds the
+  document after `NestFactory.create()` and before `app.listen()`, when no lifecycle hook has run, so every entity
+  `$ref` in `/docs-json` pointed at a schema that was not there (only `ErrorResponseDto` was). Regenerate to pick it
+  up; a hand-written module that registers schemas should do it in its constructor too (docs/consumer/openapi.md).
+- The OpenAPI smoke gate builds the document the way `main.ts` does (no `app.init()`) and fails on any `$ref` that
+  does not resolve.
+
+### Added: prefilled requests in the API docs
+
+- Every generated Create / Update / Output DTO carries an OpenAPI example (`.meta({ example })`), so Swagger's
+  "Try it out" prefills a request that parses: the Create body holds the required and defaulted fields, the Update
+  body is a minimal PATCH, the response sample is the whole row. `:id` gets a placeholder guid, `page` / `pageSize`
+  their defaults, `include` the route's first allowlisted path. A foreign key and `:id` say in their description
+  that the guid is a placeholder.
+- A field may declare `example:` (validated against the field). Without it the value is the field's default, its first
+  choice, or a value made from its type and name (`src/derived/examples/`).
+- The OpenAPI smoke gate parses every body example through its own generated DTO.
+
+### Changed: `project init` for a new project
+
+- Writes `drizzle.config.ts`, a `target:` key, and the `# yaml-language-server: $schema=…` first line in
+  `codegen.config.yaml`, and prints the two install lines (now in docs/CONSUMER-SETUP.md › Start a project too,
+  including `@nestjs/platform-express`).
+- docs/CONSUMER-SETUP.md describes the default `runtime: package` layout, the `DatabaseModule` init writes
+  (`drizzle({ client: pool, relations })`), and an Atlas recipe that works with drizzle-kit 1.0 (`drizzle-kit export`,
+  plus the `dev` database Atlas needs). README and CONSUMER-SETUP both say `codegen project init`.
+
 ### Fixed (ZOD-1a, #953)
 
 - A PATCH leaves an omitted field as it is: update DTOs restate a defaulted create field without its default (Zod 4

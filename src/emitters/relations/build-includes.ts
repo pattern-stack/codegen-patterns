@@ -28,6 +28,7 @@ import { inheritanceChildrenOf } from '../../schema/inheritance';
 import type { RelationGraph } from './build-graph';
 import { levenshtein } from '../../utils/edit-distance';
 import { camelCase, type RelationEdge, type RelationsEmitContext } from './types';
+export { includePathKey } from './relation-key';
 
 /** An allowlist declaration that cannot be compiled. Fails the command. */
 export class IncludeAllowlistError extends Error {

@@ -11,6 +11,8 @@ export const CatalogEntryOutputSchema = z.object({
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
   deletedAt: z.coerce.date().nullable(),
-});
+})
+  // The response sample in the API docs (src/derived/examples/).
+  .meta({ example: { id: '00000000-0000-4000-8000-000000000001', tenantId: '00000000-0000-4000-8000-000000000001', userId: '00000000-0000-4000-8000-000000000001', sku: 'Example sku', title: 'Example title', priceCents: 1, createdAt: '2026-01-15T09:30:00.000Z', updatedAt: '2026-01-15T09:30:00.000Z', deletedAt: null } });
 
 export type CatalogEntryOutputDto = z.infer<typeof CatalogEntryOutputSchema>;

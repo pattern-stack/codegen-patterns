@@ -13,6 +13,7 @@ export type {
 } from './registry';
 export { OPENAPI_REGISTRY } from './registry.tokens';
 export { DuplicateSchemaError } from './errors';
+export { exampleOf } from './examples';
 export {
   ERROR_RESPONSE_SCHEMA_NAME,
   errorResponseSchema,

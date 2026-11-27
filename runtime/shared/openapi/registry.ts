@@ -90,6 +90,14 @@ export class OpenApiRegistry {
     this.zodSchemas.set(name, schema);
   }
 
+  /**
+   * The Zod schema registered under `name` — what a request body named by `#/components/schemas/<name>` is
+   * validated with. The OpenAPI smoke gate parses each component's `example` through it.
+   */
+  schemaNamed(name: string): z.ZodType | undefined {
+    return this.zodSchemas.get(name);
+  }
+
   registerPath(path: string, method: HttpMethod, spec: PathSpec): void {
     let methods = this.pathEntries.get(path);
     if (!methods) {
