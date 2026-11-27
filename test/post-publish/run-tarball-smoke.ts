@@ -19,7 +19,7 @@
  *   3. Verifies the installed root package: files-manifest essentials
  *      (dist/runtime, raw runtime/*.ts, templates/, consumer-skills/),
  *      every `exports` entry imports under node, both bins run `--help`.
- *   4. Verifies each surface package's `.` and `./testing` exports import.
+ *   4. Verifies each surface package's exports import (every key of its `exports` map).
  *   5. Runs the full consumer workflow FROM the tarball (test/smoke/run-smoke.ts
  *      in SMOKE_TARBALL mode): project init → entity new --all → subsystem
  *      installs → tsc → /docs-json. Contents checks (1-4) prove the files
@@ -51,6 +51,8 @@ interface Pkg {
   dir: string;
   name: string;
   version: string;
+  /** The import specifiers of every `exports` key (surface packages only). */
+  exportSpecs?: string[];
 }
 
 function run(cmd: string, cwd: string): void {
@@ -86,7 +88,15 @@ const surfacePkgs: Pkg[] = readdirSync(join(ROOT, 'packages'))
   .filter((dir) => existsSync(join(dir, 'package.json')))
   .map((dir) => ({ dir, manifest: JSON.parse(readFileSync(join(dir, 'package.json'), 'utf-8')) }))
   .filter(({ manifest }) => manifest.private !== true && manifest.publishConfig?.access === 'public')
-  .map(({ dir, manifest }) => ({ dir, name: manifest.name, version: manifest.version }));
+  .map(({ dir, manifest }) => ({
+    dir,
+    name: manifest.name,
+    version: manifest.version,
+    // Every subpath the package exports ('.' → the name, './testing' → name/testing): each is imported below.
+    exportSpecs: Object.keys(manifest.exports ?? { '.': null }).map((key) =>
+      key === '.' ? manifest.name : `${manifest.name}/${key.replace(/^\.\//, '')}`,
+    ),
+  }));
 
 console.log(`Tarball smoke: ${rootPkg.name}@${rootPkg.version} + ${surfacePkgs.length} surface packages\n`);
 
@@ -225,7 +235,7 @@ for (const bin of ['codegen', 'cdp']) {
 
 for (const pkg of surfacePkgs) {
   console.log(`\n${pkg.name}@${pkg.version} — exports resolve under node:`);
-  for (const spec of [pkg.name, `${pkg.name}/testing`]) {
+  for (const spec of pkg.exportSpecs ?? [pkg.name]) {
     const res = tryRun(['node', '--input-type=module', '-e', `await import('${spec}')`], projectDir);
     check(`import('${spec}')`, res.ok, res.ok ? undefined : res.output);
   }

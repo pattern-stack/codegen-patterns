@@ -244,6 +244,12 @@ typecheck: build-jobs
 build-jobs:
     cd "{{justfile_directory()}}/packages/jobs" && rm -rf dist && "{{justfile_directory()}}/node_modules/.bin/tsc" -p tsconfig.json
 
+# @pattern-stack/wiring (PW-2): its tests (crew's, ported, plus start / stop), then `tsc` over the package,
+# tests included, so the type assertions (expect-error directives) are checked too.
+test-wiring:
+    bun test "{{justfile_directory()}}/packages/wiring/src/__tests__/"
+    cd "{{justfile_directory()}}/packages/wiring" && bunx tsc --noEmit -p tsconfig.json
+
 # Studio UI gate — `tsc` over `tools/studio` first, then its unit tests (the
 # graph → xyflow adapter, the Zod-issue → editor-line mapping, the API-surface
 # and edge-panel view models, the unified-diff parser, the run reducer, and the
@@ -269,7 +275,7 @@ test-studio:
 # Run all tests. Docker-free by design — `just test-integration` needs Docker
 # and runs as its own CI job (see .github/workflows/ci.yml) so a Docker flake
 # cannot mask this suite.
-test-all: typecheck test-unit test-jobs test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-capability test-junction test-sqlite test-integration-emit test-smoke-integration test-smoke-frontend test-studio
+test-all: typecheck test-unit test-jobs test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-capability test-junction test-sqlite test-integration-emit test-smoke-integration test-smoke-frontend test-studio test-wiring
 
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 
