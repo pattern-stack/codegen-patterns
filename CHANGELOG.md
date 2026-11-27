@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added: the integration subsystem under `wiring: pattern-stack` (S-3, part 1)
+
+- `codegen subsystem install integration` (drizzle or memory) is no longer refused under pattern-stack wiring. It
+  vendors the Nest-free closure: no `integration.module.ts`, no Nest barrel, no `ExecuteIntegrationUseCase`.
+- The next `entity new` writes `<generated>/integration-system.ts`, an `integration` system holding the cursor store,
+  the run recorder, the default differ and the multi-tenant flag, and lists it in `SYSTEMS`.
+- A run is `new IntegrationRunner({ ...app.system('integration'), source, sink })`.
+- Runtime:
+  - `IntegrationRunner` is the orchestrator without a framework; `ExecuteIntegrationUseCase` is it under Nest's tokens,
+    so generated Nest assemblies are unchanged;
+  - the differ and the cursor-store and run-recorder backends are plain classes. `IntegrationModule.forRoot` builds
+    the Drizzle pair through factories. A Nest module that provided `PostgresCursorStore` or
+    `DrizzleIntegrationRunRecorder` by class must now build it (`new PostgresCursorStore(db, multiTenant)`);
+  - `IntegrationModule` binds Nest's logger, so the run's log lines keep Nest's format;
+  - `integration/core` exports the runner, the differ and the memory backends.
+- docs/specs/S-3.md.
+
+### Fixed
+
+- `subsystem install events|integration --backend memory` wrote `backend: drizzle` into the config block, so the Nest
+  module and the pattern-stack system built the Drizzle backends the install had pruned. The block now prints the
+  installed backend.
+- `subsystem install integration --backend memory` pruned `detection-config.schema.ts` (a Zod schema, not a table)
+  with the Drizzle schemas, so the vendored `core.ts` did not compile. A memory install keeps it.
+
 ### Added: events under `wiring: pattern-stack` (S-1)
 
 - `emits:` is no longer refused under pattern-stack wiring. `codegen subsystem install events` (drizzle or memory)

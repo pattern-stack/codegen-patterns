@@ -38,7 +38,6 @@
  *    created-shape diff (`{from: null, to: <value>}` for every non-ignored
  *    field). Orchestrator sees this and records `operation: 'created'`.
  */
-import { Injectable } from '@nestjs/common';
 import type {
   DiffResult,
   FieldDiff,
@@ -101,7 +100,6 @@ export interface DeepEqualDifferOptions {
   readonly unignore?: readonly string[];
 }
 
-@Injectable()
 export class DeepEqualDiffer<T extends Record<string, unknown>>
   implements IFieldDiffer<T>
 {

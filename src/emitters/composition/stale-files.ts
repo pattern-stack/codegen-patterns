@@ -51,13 +51,14 @@ export function removeOtherWiringFiles(input: {
 					),
 					...underModules.filter((f) => path.basename(f) === 'module.ts' && !keep.has(f)),
 					path.join(generatedDir, 'modules.ts'),
-					// S-1: the events system, once the events subsystem is no longer installed.
-					...[path.join(generatedDir, 'events-system.ts')].filter((f) => !keep.has(f)),
+					// S-1 / S-3: the events and integration systems, once their subsystem is no longer installed.
+					...['events-system.ts', 'integration-system.ts'].map((f) => path.join(generatedDir, f)).filter((f) => !keep.has(f)),
 				]
 			: [
 					...underModules.filter((f) => path.basename(f) === 'module.ts' || f.endsWith('.wiring.ts')),
 					...Object.values(COMPOSITION_GENERATED_FILES).map((f) => path.join(generatedDir, f)),
 					path.join(generatedDir, 'events-system.ts'),
+					path.join(generatedDir, 'integration-system.ts'),
 				];
 	const stale = candidates.filter((f) => fs.existsSync(f) && isGenerated(f));
 	if (!input.dryRun) for (const f of stale) fs.rmSync(f);

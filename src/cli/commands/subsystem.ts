@@ -223,6 +223,9 @@ function isValidBackend(
 	return (desc.backends as string[]).includes(backend);
 }
 
+/** `*.schema.ts` files that hold no Drizzle table, so a memory install keeps them. */
+const NON_TABLE_SCHEMAS = new Set(['detection-config.schema.ts']);
+
 export function backendFileFilter(
 	backend: SubsystemBackend,
 	subsystemName: SubsystemName,
@@ -283,7 +286,8 @@ export function backendFileFilter(
 
 		if (backend === 'memory') {
 			if (file.endsWith('.drizzle-backend.ts')) return false;
-			if (file.endsWith('.schema.ts')) return false;
+			// Drizzle table schemas only: integration's `detection-config.schema.ts` is a Zod schema its core exports.
+			if (file.endsWith('.schema.ts') && !NON_TABLE_SCHEMAS.has(file)) return false;
 			return true;
 		}
 		// drizzle, local, or unknown — copy everything (memory backend is always
@@ -362,8 +366,8 @@ export class SubsystemInstallCommand extends Command {
 			return 2;
 		}
 
-		// S-1: under `target.wiring: pattern-stack` only events has a Nest-free system yet; every other subsystem is
-		// refused by name, with the step that brings it. Its Redis backend is Nest-only.
+		// Under `target.wiring: pattern-stack` only events (S-1) and integration (S-3) have a Nest-free system yet; every
+		// other subsystem is refused by name, with the step that brings it. Events' Redis backend is Nest-only.
 		const patternStack = isPatternStackWiring(configOrDefaults(ctx.config).target);
 		if (patternStack) {
 			const refusal = patternStackSubsystemRefusal(desc.name, backend, ctx);
@@ -499,6 +503,7 @@ export class SubsystemInstallCommand extends Command {
 						dryRun: this.dryRun,
 						json: isJsonMode(),
 						forceConfig: this.forceConfig,
+						backend,
 					})
 				: null;
 
@@ -780,7 +785,7 @@ export class SubsystemInstallCommand extends Command {
 		} else {
 			printInfo(appModuleWiringHint(desc.name, backend));
 		}
-		if (desc.name === 'integration') {
+		if (desc.name === 'integration' && !patternStack) {
 			printInfo(
 				`Per-entity: register ExecuteIntegrationUseCase + your IChangeSource/IIntegrationSink bindings in a feature module (see IntegrationModule docstring).`
 			);
@@ -1249,8 +1254,8 @@ interface ConfigBlockActionInput {
 	outcome: ConfigBlockOutcome;
 	json: boolean;
 	/**
-	 * The installed backend, for the blocks that print it (events): the pattern-stack system and the Nest module both
-	 * read `backend:` from the block, so a memory install must not write `drizzle`.
+	 * The installed backend, for the blocks that print it (events and integration): the pattern-stack system and the
+	 * Nest module both read `backend:` from the block, so a memory install must not write `drizzle`.
 	 */
 	backend?: SubsystemBackend;
 }
@@ -1575,7 +1580,7 @@ interface IntegrationScaffoldOutcome {
 function runIntegrationScaffold(
 	cwd: string,
 	config: Context['config'],
-	opts: { dryRun: boolean; json: boolean; forceConfig: boolean },
+	opts: { dryRun: boolean; json: boolean; forceConfig: boolean; backend: SubsystemBackend },
 ): IntegrationScaffoldOutcome {
 	const locals = resolveIntegrationScaffoldLocals({
 		cwd,
@@ -1634,6 +1639,7 @@ function runIntegrationScaffold(
 		subsystem: 'integration',
 		outcome: configBlockOutcome,
 		json: opts.json,
+		backend: opts.backend,
 	});
 
 	if (!configResult.ok) {

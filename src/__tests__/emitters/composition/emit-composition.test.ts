@@ -32,7 +32,21 @@ const EVENTS = {
 	generatedEventsDir: `${ROOT}/shared/subsystems/events/generated`,
 };
 
-function plan(entitiesDir = FIXTURES, junctionsDir = JUNCTIONS, events: typeof EVENTS | null = EVENTS) {
+type IntegrationInput = NonNullable<Parameters<typeof planComposition>[0]['integration']>;
+const INTEGRATION: IntegrationInput = {
+	backend: 'drizzle',
+	multiTenant: false,
+	coreImport: '@shared/subsystems/integration/core',
+	cursorStoreImport: '@shared/subsystems/integration/integration-cursor-store.drizzle-backend',
+	runRecorderImport: '@shared/subsystems/integration/integration-run-recorder.drizzle-backend',
+};
+
+function plan(
+	entitiesDir = FIXTURES,
+	junctionsDir = JUNCTIONS,
+	events: typeof EVENTS | null = EVENTS,
+	integration: IntegrationInput | null = null,
+) {
 	const files = planComposition({
 		relations: relationsOf(entitiesDir, junctionsDir),
 		modulesDir: `${ROOT}/modules`,
@@ -41,6 +55,7 @@ function plan(entitiesDir = FIXTURES, junctionsDir = JUNCTIONS, events: typeof E
 		openApiImport: '@shared/openapi',
 		banner: '// @generated',
 		events,
+		integration,
 		dryRun: true,
 	});
 	return (suffix: string) => {
@@ -266,5 +281,43 @@ describe('the events system in the composition (S-1)', () => {
 		})('/generated/events-system.ts');
 		expect(system).toContain('uses: [],');
 		expect(system).toContain('const bus = new MemoryEventBus(options);');
+	});
+});
+
+describe('the integration system in the composition (S-3)', () => {
+	it('writes integration-system.ts on the drizzle backends and lists it in SYSTEMS and SystemApis', () => {
+		const get = plan(FIXTURES, JUNCTIONS, EVENTS, INTEGRATION);
+		const system = get('/generated/integration-system.ts');
+		expect(system).toContain(
+			"import { DeepEqualDiffer, type ICursorStore, type IIntegrationRunRecorder } from '@shared/subsystems/integration/core';",
+		);
+		expect(system).toContain("import { PostgresCursorStore } from '@shared/subsystems/integration/integration-cursor-store.drizzle-backend';");
+		expect(system).toContain("uses: ['database'],");
+		expect(system).toContain('cursors: new PostgresCursorStore(database.db, false),');
+		expect(system).toContain('recorder: new DrizzleIntegrationRunRecorder(database.db, false),');
+		expect(system).toContain('differ: new DeepEqualDiffer(),');
+		expect(get('/generated/composition.ts')).toContain('export const SYSTEMS = [eventsSystem, integrationSystem] as const;');
+		expect(get('/generated/wiring.ts')).toContain('  integration: IntegrationApi;');
+	});
+
+	it('the memory backend uses no database; the config\'s multi-tenant flag and differ options reach the parts', () => {
+		const system = plan(FIXTURES, JUNCTIONS, EVENTS, {
+			...INTEGRATION,
+			backend: 'memory',
+			multiTenant: true,
+			differ: { unignore: ['deletedAt'] },
+		})('/generated/integration-system.ts');
+		expect(system).toContain('uses: [],');
+		expect(system).toContain('cursors: new MemoryCursorStore(),');
+		expect(system).toContain('recorder: new MemoryRunRecorder(),');
+		expect(system).toContain('differ: new DeepEqualDiffer({"unignore":["deletedAt"]}),');
+		expect(system).toContain('multiTenant: true,');
+		expect(system).not.toContain('drizzle-backend');
+	});
+
+	it('writes no integration system when the subsystem is not installed', () => {
+		const get = plan();
+		expect(() => get('/generated/integration-system.ts')).toThrow(/no file ending/);
+		expect(get('/generated/composition.ts')).toContain('export const SYSTEMS = [eventsSystem] as const;');
 	});
 });

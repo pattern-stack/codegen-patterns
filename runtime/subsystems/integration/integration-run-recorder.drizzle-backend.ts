@@ -27,10 +27,8 @@
  *     aren't guessable cross-tenant. Matches JOB-3's pattern of trusting
  *     the run-id for downstream mutations.
  */
-import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, desc, eq, type SQL } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';
-import { DRIZZLE } from '../../constants/tokens';
 import type {
   CompleteRunInput,
   IIntegrationRunRecorder,
@@ -40,16 +38,14 @@ import type {
 } from './integration-run-recorder.protocol';
 import { integrationRuns, integrationRunItems, integrationSubscriptions } from './integration-audit.schema';
 import { FieldDiffSchema } from './integration-field-diff.protocol';
-import { INTEGRATION_MULTI_TENANT } from './integration.tokens';
 import { assertTenantId } from './integration-errors';
 
-@Injectable()
 export class DrizzleIntegrationRunRecorder implements IIntegrationRunRecorder {
   private readonly multiTenant: boolean;
 
   constructor(
-    @Inject(DRIZZLE) private readonly db: DrizzleClient,
-    @Optional() @Inject(INTEGRATION_MULTI_TENANT) multiTenant?: boolean,
+    private readonly db: DrizzleClient,
+    multiTenant?: boolean,
   ) {
     this.multiTenant = multiTenant ?? false;
   }

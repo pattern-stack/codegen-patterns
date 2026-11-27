@@ -124,6 +124,18 @@ async function main(): Promise<number> {
 		}
 		log('events installed: the Nest-free closure, no Nest module or barrel');
 
+		// 3c. Integration (S-3): the drizzle backend, vendored Nest-free (no module, no barrel, no Nest use case).
+		run(`${CLI} subsystem install integration --yes`, tmpDir);
+		for (const f of ['core.ts', 'integration-runner.ts', 'integration-cursor-store.drizzle-backend.ts', 'integration-audit.schema.ts']) {
+			if (!fs.existsSync(path.join(tmpDir, 'src/shared/subsystems/integration', f))) fail(`subsystem install integration should vendor ${f}`);
+		}
+		for (const f of ['integration.module.ts', 'index.ts', 'execute-integration.use-case.ts']) {
+			if (fs.existsSync(path.join(tmpDir, 'src/shared/subsystems/integration', f))) {
+				fail(`subsystem install integration should not write ${f} under pattern-stack wiring`);
+			}
+		}
+		log('integration installed: the Nest-free closure, no Nest module, barrel or use case');
+
 		// 4. Fixtures, then generate.
 		const entitiesDir = path.join(tmpDir, 'entities');
 		fs.mkdirSync(entitiesDir, { recursive: true });
@@ -155,7 +167,7 @@ async function main(): Promise<number> {
 		const expectOne = (suffix: string) => {
 			if (!generated.some((f) => f.endsWith(suffix))) fail(`expected a generated file ending ${suffix}`);
 		};
-		for (const s of ['/crm/module.ts', '/billing/module.ts', 'modules/module.ts', '/wiring.ts', '/composition.ts', 'generated/openapi.ts', 'generated/events-system.ts', 'events/generated/bus.ts']) expectOne(s);
+		for (const s of ['/crm/module.ts', '/billing/module.ts', 'modules/module.ts', '/wiring.ts', '/composition.ts', 'generated/openapi.ts', 'generated/events-system.ts', 'generated/integration-system.ts', 'events/generated/bus.ts']) expectOne(s);
 		for (const s of ['/account.wiring.ts', '/contact.wiring.ts', '/invoice.wiring.ts', '/note.wiring.ts', '/person.wiring.ts']) expectOne(s);
 		const billing = fs.readFileSync(path.join(tmpDir, generated.find((f) => f.endsWith('/billing/module.ts'))!), 'utf8');
 		if (!/dependsOn: \['crm'\]/.test(billing)) fail("billing's module should dependsOn ['crm'] (invoice belongs_to account)");
@@ -179,7 +191,7 @@ async function main(): Promise<number> {
 		// 5c'. main.ts composes, starts, runs and stops (no database needed: the pool connects on first use).
 		const main = spawnSync('bun', ['src/main.ts'], { cwd: tmpDir, encoding: 'utf8' });
 		if (main.status !== 0) fail(`bun src/main.ts exited ${main.status}:\n${main.stdout}${main.stderr}`);
-		if (!/composed: database, events, .*crm.*billing/.test(main.stdout)) fail(`main.ts should print the composed order: ${main.stdout}`);
+		if (!/composed: database, events, integration, .*crm.*billing/.test(main.stdout)) fail(`main.ts should print the composed order: ${main.stdout}`);
 		log(`main.ts: ${main.stdout.trim()}`);
 
 		// 5d. The OpenAPI document needs no database: every schema registers, every $ref resolves, every prefill parses.
@@ -197,7 +209,7 @@ async function main(): Promise<number> {
 				execSync('bunx drizzle-kit push --force', { cwd: tmpDir, stdio: 'inherit', env: { ...process.env, DATABASE_URL: dbUrl } });
 				log('schema pushed');
 				run(`bun src/crud-check.ts '${dbUrl}'`, tmpDir);
-				log('CRUD through the composed use cases OK (create, findById, list, query, update, delete, NotFoundError)');
+				log('CRUD through the composed use cases OK (create, findById, list, query, update, delete, NotFoundError); an integration run on the integration system');
 			} finally {
 				admin(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
 			}

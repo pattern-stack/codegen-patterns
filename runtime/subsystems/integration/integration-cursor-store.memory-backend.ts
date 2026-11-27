@@ -26,14 +26,12 @@
  *   - SYNC-5 unit tests (`ExecuteIntegrationUseCase` against synthetic sources)
  *   - SYNC-6 module tests (`IntegrationModule.forRoot({ backend: 'memory' })`)
  */
-import { Injectable } from '@nestjs/common';
 import type {
   CursorSnapshot,
   ICursorStore,
 } from './integration-cursor-store.protocol';
 import type { MemoryIntegrationSubscription } from './integration-run-recorder.memory-backend';
 
-@Injectable()
 export class MemoryCursorStore implements ICursorStore {
   /**
    * Subscription-id → last persisted cursor. Public so tests can inspect
