@@ -4,24 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Fixed
+## [0.35.0] — 2026-11-27
 
-- **A write the database refuses on a constraint is a 4xx, not a 500.** A foreign key that names no row is **422**
-  `foreign_key_violation`, a taken unique value **409** `unique_violation`, and deleting a row another still
-  references (`on_delete: restrict`) **409** `still_referenced`. The body names the request's fields and the
-  constraint: `{ statusCode, error, code, fields, constraint, message }`, e.g. `fields: 'projectId'`,
-  `message: 'projectId 00000000-… does not name an existing projects row (constraint tasks_project_id_projects_id_fkey).'`.
-  One global filter owns it (`DbConstraintErrorsModule`, which the generated modules barrel now lists first, so
-  regenerating is enough); the classification is framework-free (`runtime/db-constraint-errors.ts`) for a non-Nest
-  HTTP layer. Swagger lists the 409 / 422 responses, and `ErrorResponseDto` describes `code`, `fields` and
-  `constraint`. A vendored project runs `codegen update` to get the two runtime files.
+Zod 4, and the generation target. The generated code is Zod 4, and so is codegen (ZOD-0 #945, ZOD-1a #953,
+ZOD-1b #956). `codegen.config.yaml` gains `target: { database, orm }`, with two pairs: Postgres + Drizzle (the
+default, the full NestJS app) and SQLite + Drizzle (the storage layer only; TGT-2a #954, TGT-2b #957). Field and
+constraint facts are separated from the text that renders them (TGT-0 #940, TGT-0b #941, TGT-1 #946), and Postgres
+output is byte-identical to before. A generated app's API docs now list every DTO, and Swagger's "Try it out"
+prefills a valid request; `project init` writes `drizzle.config.ts`, `target:` and the editor-schema line (#962). A foreign-key or unique violation is a 4xx naming the field, not a 500 (#965).
+Studio's canvas filter takes dbt-style selectors, and the spine order can be switched (STUDIO-5, STUDIO-6).
 
-### Breaking: the generated code is Zod 4 (ZOD-1)
+**Breaking: an app generated before 0.35.0 is on Zod 3.** Its upgrade is
+[docs/MIGRATION-zod4.md](docs/MIGRATION-zod4.md):
+
+1. `bun add zod@^4.6.7 @pattern-stack/codegen@^0.35.0`, then `bun remove @anatine/zod-openapi`. If you use
+   `@pattern-stack/query-surface`, move to `^0.4.0` (its zod peer is `^4`).
+2. `codegen update`, `codegen entity new --all` and `codegen junction new --all`. Every DTO is rewritten; no YAML
+   changes.
+3. Update API clients that switch on a 400 body's issue `code` (Zod 4 renames some), and any hand-written code that
+   uses Zod 3 APIs on the generated schemas. The migration doc lists both.
+
+### Breaking: the generated code is Zod 4 (ZOD-1b, #956)
 
 The DTOs, `ListQuerySchema`, `ZodValidationPipe`, the OpenAPI registry, the event payload schemas and the
-integration detection schema are Zod 4, and so is codegen itself (`zod ^4.6.7`). An app generated before this
-release is on Zod 3; [docs/MIGRATION-zod4.md](docs/MIGRATION-zod4.md) is the upgrade: dependencies, regenerate,
-and what changes for API clients and hand-written code.
+integration detection schema are Zod 4, and so is codegen itself (`zod ^4.6.7`).
 
 - **400 bodies:** same shape, Zod 4's issue codes and wording (`invalid_enum_value` → `invalid_value`, …).
 - **ids:** `z.guid()` (any 8-4-4-4-12 hex, as Postgres accepts), not Zod 4's strict `uuid()`.
@@ -35,40 +41,97 @@ and what changes for API clients and hand-written code.
   job arm's `read:` embed the runtime's `DetectionConfigSchema` directly, so the entity JSON Schema now describes it
   in full.
 
-### Fixed: `/docs-json` has the entity schemas in a generated app
+### Added
 
-- A generated module registers its Zod schemas in its **constructor**, not in `onModuleInit`. `main.ts` builds the
-  document after `NestFactory.create()` and before `app.listen()`, when no lifecycle hook has run, so every entity
-  `$ref` in `/docs-json` pointed at a schema that was not there (only `ErrorResponseDto` was). Regenerate to pick it
-  up; a hand-written module that registers schemas should do it in its constructor too (docs/consumer/openapi.md).
-- The OpenAPI smoke gate builds the document the way `main.ts` does (no `app.init()`) and fails on any `$ref` that
+- **`target:` in `codegen.config.yaml`** (ADR-047, TGT-0 #940, TGT-0b #941, TGT-2b #957): `{ database: postgres, orm:
+  drizzle }` (the default) or `{ database: sqlite, orm: drizzle }`.
+  - The supported pairs are one table, `TARGET_PAIRS`. Each row says which layers it generates (`nest` or
+    `storage`) and its identifier limit (Postgres 63 bytes, SQLite none).
+  - An unsupported pair is refused, naming the supported ones, and both keys are required once `target:` is
+    written.
+- **SQLite, as a storage-only target** (TGT-2a #954, TGT-2b #957): `target: { database: sqlite, orm: drizzle }`.
+  - **Generated, per entity:** a Drizzle `sqliteTable` module and an `<entity>.sql` (`CREATE TABLE` / `CREATE INDEX
+    IF NOT EXISTS`, foreign keys, and the CHECKs SQLite needs for enums and `max_length`), plus the schema barrel.
+    Each table's `.sql` reads only that table's facts.
+  - **Skipped, and named in the run and the dry run:** the NestJS layers and post-steps (the modules barrel, the
+    relations manifest, subsystems, events, the bridge, jobs, orchestration, the frontend, integrations).
+    `junction new` and `relationship new` refuse the target by name.
+  - **Storage:**
+    - a decimal is TEXT, which keeps it exact;
+    - an instant is ISO 8601 TEXT;
+    - a boolean is INTEGER 0/1;
+    - an id is uuid TEXT, made by the app;
+    - a nulls-not-distinct unique is an index over `ifnull(…)`.
+  - **Not yet:** tenant scoping, a SQLite `project init`, a CHECK on an enum array (SQLite forbids the subquery),
+    and ordering a decimal (needs a `CAST`). The specs are `docs/specs/TGT-2a.md` / `TGT-2b.md`.
+- **Editor completion for `codegen.config.yaml`** (TGT-0b): `src/schema/codegen-config.schema.json` ships in the
+  package, and `project init` writes the
+  `# yaml-language-server: $schema=./node_modules/@pattern-stack/codegen/src/schema/codegen-config.schema.json` line
+  that points at it (#962; CONSUMER-SETUP › Editor completion).
+- **Prefilled requests in the API docs** (#962). Every generated Create / Update / Output DTO carries an OpenAPI
+  example (`.meta({ example })`), so Swagger's "Try it out" prefills a request that parses:
+  - the Create body holds the required and defaulted fields, the Update body is a minimal PATCH, the response
+    sample is the whole row;
+  - `:id` gets a placeholder guid, `page` / `pageSize` their defaults, `include` the route's first allowlisted path;
+    a foreign key and `:id` say in their description that the guid is a placeholder;
+  - a field may declare `example:` (validated against the field); without one the value is its default, its first
+    choice, or a value from its type and name (`src/derived/examples/`).
+
+  The OpenAPI smoke gate parses every body example through its own generated DTO.
+- **`entity-definition.schema.json` is generated from the real entity schema** (ZOD-0, closes #696). It covers all 20
+  top-level keys, where the hand-kept copy had 7. It offers the behavior names, and it describes `detection:` in full
+  (ZOD-1b). A test fails when the committed file drifts.
+- **Studio**:
+  - the canvas filter takes dbt-style selectors (`name+`, `+name`, `N+name+M`), and double-clicking a card focuses
+    it (STUDIO-5, #933);
+  - a spine-order toggle (inheritance first / ownership first), and a floating-inheritance prototype (STUDIO-6,
+    #934).
+
+### Changed
+
+- **Codegen's own code is Zod 4** (ZOD-0, #945). The schema, config and YAML loaders run on Zod 4. Codegen's
+  messages are unchanged; Zod's own wording is Zod 4's, and an enum refusal names the refused value. A pattern's
+  `configSchema` is structural, so an app pattern written on either Zod validates.
+- **Facts apart from target text, byte-identical for Postgres** (TGT-0, TGT-1, TGT-2a, TGT-2b):
+  - a field's column facts (`deriveFieldFacts`), constraint facts (`src/derived/constraints/`) and a table's
+    column list (`deriveTableColumns`) are derived once;
+  - each pair's text comes from its renderers (`src/targets/drizzle/{postgres,sqlite}/`, `TARGET_RENDERERS`).
+
+  Facts are plain JSON data, and renderers read nothing else: `facts-are-data.test.ts` round-trips them and
+  renders the same bytes from the copy (ADR-047). No Postgres file changes from this. A DDL ↔ Drizzle parity gate
+  compiles the SQLite module the template prints.
+
+- **`project init` writes what a new app needs** (#962): `drizzle.config.ts`, `target: { database: postgres, orm:
+  drizzle }` and the editor-schema line in `codegen.config.yaml`, and it prints the two install lines (also in
+  CONSUMER-SETUP › Start a project, including `@nestjs/platform-express`). CONSUMER-SETUP describes the default
+  `runtime: package` layout and the `DatabaseModule` init writes (`drizzle({ client: pool, relations })`), its Atlas
+  recipe works with drizzle-kit 1.0 (`drizzle-kit export`, plus the `dev` database Atlas needs), and README and
+  CONSUMER-SETUP both say `codegen project init`.
+
+### Fixed
+
+- **A write the database refuses on a constraint is a 4xx, not a 500** (#965). A foreign key that names no row is **422**
+  `foreign_key_violation`, a taken unique value **409** `unique_violation`, and deleting a row another still
+  references (`on_delete: restrict`) **409** `still_referenced`. The body names the request's fields and the
+  constraint: `{ statusCode, error, code, fields, constraint, message }`, e.g. `fields: 'projectId'`,
+  `message: 'projectId 00000000-… does not name an existing projects row (constraint tasks_project_id_projects_id_fkey).'`.
+  One global filter owns it (`DbConstraintErrorsModule`, which the generated modules barrel now lists first, so
+  regenerating is enough); the classification is framework-free (`runtime/db-constraint-errors.ts`) for a non-Nest
+  HTTP layer. Swagger lists the 409 / 422 responses, and `ErrorResponseDto` describes `code`, `fields` and
+  `constraint`. A vendored project runs `codegen update` to get the two runtime files.
+- **A generated app's `/docs-json` lists every entity DTO** (#962). Each generated module registers its Zod schemas in
+  its constructor, not in `onModuleInit`: `main.ts` builds the document after `NestFactory.create()` and before
+  `app.listen()` (it cannot call `app.init()` first, which would 404 the Swagger routes), when no lifecycle hook has
+  run. Previously `components.schemas` held only `ErrorResponseDto`, and every entity `$ref` dangled. Regenerate to
+  pick it up; a hand-written module that registers schemas should do it in its constructor too
+  (docs/consumer/openapi.md). The OpenAPI smoke gate now builds in `main.ts`'s order and fails on any `$ref` that
   does not resolve.
-
-### Added: prefilled requests in the API docs
-
-- Every generated Create / Update / Output DTO carries an OpenAPI example (`.meta({ example })`), so Swagger's
-  "Try it out" prefills a request that parses: the Create body holds the required and defaulted fields, the Update
-  body is a minimal PATCH, the response sample is the whole row. `:id` gets a placeholder guid, `page` / `pageSize`
-  their defaults, `include` the route's first allowlisted path. A foreign key and `:id` say in their description
-  that the guid is a placeholder.
-- A field may declare `example:` (validated against the field). Without it the value is the field's default, its first
-  choice, or a value made from its type and name (`src/derived/examples/`).
-- The OpenAPI smoke gate parses every body example through its own generated DTO.
-
-### Changed: `project init` for a new project
-
-- Writes `drizzle.config.ts`, a `target:` key, and the `# yaml-language-server: $schema=…` first line in
-  `codegen.config.yaml`, and prints the two install lines (now in docs/CONSUMER-SETUP.md › Start a project too,
-  including `@nestjs/platform-express`).
-- docs/CONSUMER-SETUP.md describes the default `runtime: package` layout, the `DatabaseModule` init writes
-  (`drizzle({ client: pool, relations })`), and an Atlas recipe that works with drizzle-kit 1.0 (`drizzle-kit export`,
-  plus the `dev` database Atlas needs). README and CONSUMER-SETUP both say `codegen project init`.
-
-### Fixed (ZOD-1a, #953)
-
 - A PATCH leaves an omitted field as it is: update DTOs restate a defaulted create field without its default (Zod 4
-  applies a default under `.optional()`; Zod 3 ignored it).
-- A boolean's DTO default is its YAML `default:` (it printed `false` even for `default: true`).
+  applies a default under `.optional()`; Zod 3 ignored it) (ZOD-1a, #953).
+- A boolean's DTO default is its YAML `default:`: it printed `false` even for `default: true`, while the column said
+  `true` (ZOD-1a, #953).
+- Studio: a long origin chip no longer squeezes the API tab's signature to one letter per line (#929); one React for
+  the whole test run, so test order can't break the hook tests (#950).
 
 ## [0.34.0] — 2026-11-15
 
