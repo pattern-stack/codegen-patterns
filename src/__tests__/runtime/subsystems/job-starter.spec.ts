@@ -5,11 +5,16 @@
  */
 import 'reflect-metadata';
 import { describe, expect, it } from 'bun:test';
-import { createRegistry, defineJob, step, SYSTEM_TENANT, systemClock } from '@pattern-stack/jobs';
+import { Global, Module } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { defineJob, step, SYSTEM_TENANT } from '@pattern-stack/jobs';
+import { JOBS_EXECUTOR, JOBS_STORE } from '@pattern-stack/jobs/nest';
 import { MemoryJobStore } from '@pattern-stack/jobs/testing';
 import { z } from 'zod';
 
 import { withRequester } from '../../../../runtime/base-classes/tenant-context';
+import { DRIZZLE } from '../../../../runtime/constants/tokens';
+import { JobsEngineModule } from '../../../../runtime/subsystems/jobs/jobs-engine.module';
 import { JobStarter } from '../../../../runtime/subsystems/jobs/job-starter';
 
 const job = defineJob({
@@ -20,25 +25,34 @@ const job = defineJob({
   steps: (s) => s.add('ok', step({ run: () => ({ ok: true }) })),
 });
 
-function starterWith(opts: { worker?: boolean; submitFails?: boolean } = {}) {
+@Global()
+@Module({ providers: [{ provide: DRIZZLE, useValue: {} }], exports: [DRIZZLE] })
+class FakeDatabaseModule {}
+
+/**
+ * `JobStarter` as the app's container builds it, from `JobsEngineModule.forRoot` (review #969: built by hand with
+ * `worker: false`, the spec could not see that the container never handed it `JOBS_WORKER`). Only the store and the
+ * executor are replaced, so nothing reaches a database and the submits are counted.
+ */
+async function starterWith(opts: { worker?: boolean; submitFails?: boolean } = {}) {
   const submitted: string[] = [];
   const executor = {
     async submit(runId: string) {
       if (opts.submitFails) throw new Error('connection reset');
       submitted.push(runId);
     },
+    async start() {},
+    async stop() {},
   };
-  const starter = new JobStarter(
-    createRegistry([job]),
-    new MemoryJobStore(),
-    executor as never,
-    {} as never,
-    systemClock,
-    { emit: () => undefined },
-    undefined,
-    opts.worker,
-  );
-  return { starter, submitted };
+  const moduleRef = await Test.createTestingModule({
+    imports: [FakeDatabaseModule, JobsEngineModule.forRoot({ definitions: [job], worker: opts.worker ?? true })],
+  })
+    .overrideProvider(JOBS_STORE)
+    .useValue(new MemoryJobStore())
+    .overrideProvider(JOBS_EXECUTOR)
+    .useValue(executor)
+    .compile();
+  return { starter: moduleRef.get(JobStarter), submitted };
 }
 
 const requester = (tenantId: string | null) => ({
@@ -50,19 +64,19 @@ const requester = (tenantId: string | null) => ({
 
 describe('JobStarter — the run tenant', () => {
   it("the caller's tenant wins", async () => {
-    const { starter } = starterWith();
+    const { starter } = await starterWith();
     const { run } = await withRequester(requester('t-ambient'), () => starter.start('toy.start', {}, { tenantId: 't-1' }));
     expect(run.tenantId).toBe('t-1');
   });
 
   it("omitted, the ambient requester's tenant — a start inside a tenant's request stays in its partition", async () => {
-    const { starter } = starterWith();
+    const { starter } = await starterWith();
     const { run } = await withRequester(requester('t-ambient'), () => starter.start('toy.start', {}));
     expect(run.tenantId).toBe('t-ambient');
   });
 
   it('explicit null, or no requester at all, is SYSTEM_TENANT', async () => {
-    const { starter } = starterWith();
+    const { starter } = await starterWith();
     expect((await withRequester(requester('t-ambient'), () => starter.start('toy.start', {}, { tenantId: null }))).run.tenantId).toBe(
       SYSTEM_TENANT,
     );
@@ -72,20 +86,20 @@ describe('JobStarter — the run tenant', () => {
 
 describe('JobStarter — submit', () => {
   it('a worker process submits the run to its executor', async () => {
-    const { starter, submitted } = starterWith({ worker: true });
+    const { starter, submitted } = await starterWith({ worker: true });
     const { run } = await starter.start('toy.start', {});
     expect(submitted).toEqual([run.id]);
   });
 
-  it("a process that is no worker does not submit: the worker's sweep takes the run", async () => {
-    const { starter, submitted } = starterWith({ worker: false });
+  it("a process that is no worker (JobsEngineModule.forRoot({ worker: false })) does not submit: the worker's sweep takes the run", async () => {
+    const { starter, submitted } = await starterWith({ worker: false });
     const { run } = await starter.start('toy.start', {});
     expect(run.status).toBe('pending');
     expect(submitted).toEqual([]);
   });
 
   it('a failed submit is not thrown: the run was created, and the sweep resubmits it', async () => {
-    const { starter } = starterWith({ worker: true, submitFails: true });
+    const { starter } = await starterWith({ worker: true, submitFails: true });
     const { run, created } = await starter.start('toy.start', {});
     expect(created).toBe(true);
     expect(run.id).toBeTruthy();

@@ -3,8 +3,9 @@
  *
  * For each trigger the generated `bridgeRegistry` declares for the event's type, in the event's own transaction:
  *
- *   1. writes the `bridge_delivery (event_id, trigger_id)` row; the UNIQUE key makes an outbox replay, or a
- *      `publishAndStart` that already delivered the pair, a skip (`dedupSkips`);
+ *   1. claims the `bridge_delivery (event_id, trigger_id)` row through the delivery repo (`claimDelivery`, the ledger's
+ *      one writer, which asserts the tenant: a multi-tenant bridge refuses an event with no tenant); the UNIQUE key
+ *      makes an outbox replay, or a `publishAndStart` that already delivered the pair, a skip (`dedupSkips`);
  *   2. reads the trigger's `when` (false: `skipped`, `predicate_false`) and a job this process doesn't register
  *      (`skipped`, `trigger_unregistered`);
  *   3. starts the user's run with `JobStarter.start(..., tx)`: `startRun` over a store built on the same transaction,
@@ -16,40 +17,62 @@
  * reserved `events_*` pool and no runtime-typed child run (ADR-022's `BridgeDeliveryHandler` is gone). The run is found
  * by the jobs executor's open-run sweep once the drain commits.
  *
- * A trigger that cannot start (its `map` throws, the job refuses the input, a missing budget) fails ALONE: its start
- * runs in a savepoint, so its run rolls back, its delivery is marked `failed` with the error, and the event's other
+ * A trigger that cannot start through its OWN fault fails ALONE: its `when`, `map` or `dedupeKey` throws, or the
+ * engine refuses the start (a refused input, a definition error, a missing budget: `isTriggerFault`). Its start runs
+ * in a savepoint, so its run rolls back, its delivery is marked `failed` with the error, and the event's other
  * triggers, its subscribers and its `processed_at` go ahead. Rolling the whole event back instead would retry it on
  * every drain, for good, behind one bad trigger. A failed delivery is not retried (the UNIQUE row stands); it is the
- * ledger's record for an operator. Infrastructure errors on the event's own transaction still propagate.
+ * ledger's record for an operator. Any other error (a deadlock, a lock or statement timeout, a dropped connection)
+ * is no fault of the trigger: it propagates, the event rolls back, and the next drain retries it.
  */
-import { Inject, Injectable, Logger, type OnApplicationBootstrap, Optional } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { HttpException, Inject, Injectable, Logger, type OnApplicationBootstrap, Optional } from '@nestjs/common';
+import { NonRetryableError } from '@pattern-stack/jobs';
 
 import type { DomainEvent, DrizzleTransaction } from '../events/event-bus.protocol';
 import type { EventTypeName } from '../events/event-registry';
 import { JobStarter } from '../jobs/job-starter';
-import { bridgeDelivery } from './bridge-delivery.schema';
-import { BRIDGE_REGISTRY } from './bridge.tokens';
+import { BRIDGE_DELIVERY_REPO, BRIDGE_REGISTRY } from './bridge.tokens';
 import type {
   BridgeOutboxDrainResult,
   BridgeRegistry,
   BridgeTriggerEntry,
   IBridgeOutboxDrainHook,
+  IJobBridge,
 } from './bridge.protocol';
 
-/** The slice of Drizzle's transaction the hook writes the ledger through, and opens a trigger's savepoint on. */
-interface LedgerClient {
+/** The slice of Drizzle's transaction the hook opens a trigger's savepoint on. */
+interface SavepointClient {
   transaction<T>(fn: (savepoint: DrizzleTransaction) => Promise<T>): Promise<T>;
-  insert(table: typeof bridgeDelivery): {
-    values(v: typeof bridgeDelivery.$inferInsert): {
-      onConflictDoNothing(opts: { target: unknown[] }): {
-        returning(cols: { id: typeof bridgeDelivery.id }): Promise<{ id: string }[]>;
-      };
-    };
-  };
-  update(table: typeof bridgeDelivery): {
-    set(v: Partial<typeof bridgeDelivery.$inferInsert>): { where(cond: unknown): Promise<unknown> };
-  };
+}
+
+/** A trigger's own code threw (`when`, `map`, `dedupeKey`): its fault, whatever it threw. */
+class TriggerCodeError extends Error {
+  constructor(readonly thrown: unknown) {
+    super(thrown instanceof Error ? thrown.message : String(thrown));
+    this.name = thrown instanceof Error ? thrown.name : typeof thrown;
+  }
+}
+
+/**
+ * Whether a start failed through the trigger's own fault, so its delivery is `failed` and the event goes on: its own
+ * code threw, the engine refused it (`NonRetryableError`: a refused input, a definition error), or the start was a
+ * client error (a 4xx: a job with no limits and no `budget.maxItems`). Anything else is retried with the event.
+ */
+export function isTriggerFault(err: unknown): boolean {
+  return (
+    err instanceof TriggerCodeError ||
+    err instanceof NonRetryableError ||
+    (err instanceof HttpException && err.getStatus() < 500)
+  );
+}
+
+/** Runs a trigger's own code, marking what it throws as the trigger's fault. */
+function own<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (err) {
+    throw new TriggerCodeError(err);
+  }
 }
 
 @Injectable()
@@ -59,6 +82,7 @@ export class BridgeOutboxDrainHook implements IBridgeOutboxDrainHook, OnApplicat
 
   constructor(
     private readonly jobs: JobStarter,
+    @Inject(BRIDGE_DELIVERY_REPO) private readonly deliveries: IJobBridge,
     @Optional()
     @Inject(BRIDGE_REGISTRY)
     private readonly registry: BridgeRegistry = {},
@@ -90,50 +114,48 @@ export class BridgeOutboxDrainHook implements IBridgeOutboxDrainHook, OnApplicat
     }
     if (triggers.length === 0) return { delivered: 0, dedupSkips: 0, triggerCount: 0, auditBlocked: 0 };
 
-    const tenantId = (event.metadata?.['tenantId'] as string | null | undefined) ?? null;
-    const ledger = tx as unknown as LedgerClient;
+    // As the event carries it: `undefined` (no tenant metadata) is the repo's to refuse under a multi-tenant bridge.
+    const tenantId = event.metadata?.['tenantId'] as string | null | undefined;
     let delivered = 0;
     let dedupSkips = 0;
     for (const trigger of triggers) {
-      const [row] = await ledger
-        .insert(bridgeDelivery)
-        .values({ eventId: event.id, triggerId: trigger.triggerId, status: 'pending', tenantId })
-        .onConflictDoNothing({ target: [bridgeDelivery.eventId, bridgeDelivery.triggerId] })
-        .returning({ id: bridgeDelivery.id });
-      if (!row) {
+      const id = await this.deliveries.claimDelivery({ eventId: event.id, triggerId: trigger.triggerId, tenantId }, tx);
+      if (id === null) {
         dedupSkips++;
         continue;
       }
-      const mark = (set: Partial<typeof bridgeDelivery.$inferInsert>) =>
-        ledger.update(bridgeDelivery).set(set).where(and(eq(bridgeDelivery.id, row.id)));
       if (!this.jobs.has(trigger.jobKey)) {
-        await mark({ status: 'skipped', skipReason: 'trigger_unregistered' });
+        await this.deliveries.markSkipped(id, 'trigger_unregistered', tx);
         continue;
       }
-      if (trigger.when && !trigger.when(event as never)) {
-        await mark({ status: 'skipped', skipReason: 'predicate_false' });
-        continue;
-      }
-      let runId: string;
+      let runId: string | null;
       try {
-        runId = await ledger.transaction(async (savepoint) => {
+        runId = await (tx as unknown as SavepointClient).transaction(async (savepoint) => {
+          if (trigger.when && !own(() => trigger.when?.(event as never))) return null;
+          const input = own(() => trigger.map(event as never));
+          const dedupeKey = trigger.dedupeKey ? own(() => trigger.dedupeKey?.(event as never)) : undefined;
           const { run } = await this.jobs.start(
             trigger.jobKey,
-            trigger.map(event as never),
-            { tenantId, trigger: 'event', ...(trigger.dedupeKey ? { dedupeKey: trigger.dedupeKey(event as never) } : {}) },
+            input,
+            { tenantId: tenantId ?? null, trigger: 'event', ...(dedupeKey !== undefined ? { dedupeKey } : {}) },
             savepoint,
           );
           return run.id;
         });
       } catch (err) {
-        const error = { type: err instanceof Error ? err.name : typeof err, message: err instanceof Error ? err.message : String(err) };
-        await mark({ status: 'failed', error });
+        if (!isTriggerFault(err)) throw err;
+        const error = { type: (err as Error).name, message: (err as Error).message };
+        await this.deliveries.markFailed(id, error, tx);
         this.logger.warn(
           `bridge trigger '${trigger.triggerId}' on event ${event.id} (${event.type}) did not start: ${error.type}: ${error.message}`,
         );
         continue;
       }
-      await mark({ status: 'delivered', userRunId: runId, deliveredAt: new Date() });
+      if (runId === null) {
+        await this.deliveries.markSkipped(id, 'predicate_false', tx);
+        continue;
+      }
+      await this.deliveries.markDelivered(id, runId, tx);
       delivered++;
     }
     return { delivered, dedupSkips, triggerCount: triggers.length, auditBlocked: 0 };

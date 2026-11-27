@@ -86,6 +86,17 @@ export interface IJobBridge {
   ): Promise<void>;
 
   /**
+   * The outbox drain's claim on one `(event_id, trigger_id)`: inserts its `pending` row and returns the row's id, or
+   * `null` when the pair already has one (an outbox replay, or `publishAndStart`'s Case B pre-write). Every backend
+   * answers a duplicate the same way, by `null`, never a throw. Asserts the tenant as `insertDelivery` does (a
+   * multi-tenant bridge refuses an event with no tenant, `MissingTenantIdError`).
+   */
+  claimDelivery(
+    row: Pick<BridgeDeliveryInsert, 'eventId' | 'triggerId' | 'tenantId'>,
+    tx?: DrizzleTransaction,
+  ): Promise<string | null>;
+
+  /**
    * Lookup a delivery by its idempotency key. Returns `null` when no row
    * matches. Used in tests / dashboards for the canonical (event, trigger)
    * lookup.
@@ -392,11 +403,10 @@ export interface IBridgeOutboxDrainHook {
    *      the drain proceeds to dispatch user subscribers + stamp
    *      `processed_at`.
    *   2. For each matched trigger:
-   *      - `INSERT INTO bridge_delivery (event_id, trigger_id, status,
-   *        tenant_id, ...) VALUES (...) ON CONFLICT (event_id, trigger_id)
-   *        DO NOTHING RETURNING id`. Empty result ⇒ Case B / replay
-   *        collision; start nothing for this trigger; sibling triggers
-   *        still fire normally.
+   *      - `IJobBridge.claimDelivery` (`INSERT … ON CONFLICT (event_id,
+   *        trigger_id) DO NOTHING RETURNING id`, the tenant asserted). `null`
+   *        ⇒ Case B / replay collision; start nothing for this trigger;
+   *        sibling triggers still fire normally.
    *      - Its job not registered here ⇒ mark `skipped`
    *        (`trigger_unregistered`); its `when` false ⇒ mark `skipped`
    *        (`predicate_false`).
@@ -406,11 +416,14 @@ export interface IBridgeOutboxDrainHook {
    *        the drain commits.
    *   3. Returns the counts for observability.
    *
-   * Throwing aborts the per-event tx — bridge inserts roll back, the
-   * `processed_at` stamp is not made, and the event re-claims on the next
-   * drain cycle. Callers should let infra exceptions propagate; a missing
-   * registry entry is handled inline and does not throw. A `map` that
-   * throws, or an input the job refuses, throws (the event retries).
+   * A trigger that fails through its own fault (its `when`, `map` or
+   * `dedupeKey` throws, or the engine refuses its start) fails alone: its
+   * start runs in a savepoint, its delivery is marked `failed`, and the
+   * event and its other triggers commit. Any other error (a deadlock, a
+   * timeout, a dropped connection) is thrown: it aborts the per-event tx —
+   * bridge inserts roll back, the `processed_at` stamp is not made, and the
+   * event re-claims on the next drain cycle. A missing registry entry is
+   * handled inline and does not throw.
    */
   processEvent(
     event: DomainEvent,

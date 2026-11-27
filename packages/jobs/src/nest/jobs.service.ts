@@ -247,7 +247,7 @@ export class JobsService {
     let started: { run: Run; created: boolean };
     try {
       started = await startRun(
-        { registry: this.registry, store: this.store, around: this.around },
+        this.startDeps(),
         {
           jobKey,
           input,
@@ -672,7 +672,7 @@ export class JobsService {
     let started: { run: Run; created: boolean };
     try {
       started = await startRun(
-        { registry: this.registry, store: this.store, around: this.around },
+        this.startDeps(),
         {
           jobKey: job.key,
           input: input.input,
@@ -794,15 +794,20 @@ export class JobsService {
    * Creates a run (or finds the open one on its dedupe key) of any registered job in the actor's tenant, and
    * submits it: no audience, authority or limit ceiling, since the caller applied its own authority. An omitted budget
    * is the job's limits. The job's `admit` still runs, and the engine's refusals are thrown as they are.
+   *
+   * `inStore` is a store bound to the caller's transaction (the bridge's): the run commits or rolls back with the
+   * caller's writes, and is not submitted, since no other connection sees it before the commit; the worker's open-run
+   * sweep finds it after.
    */
   async startSystemRun(
     actor: JobSystemActor,
     request: SystemRunRequest,
+    options: { inStore?: JobStore } = {},
   ): Promise<{ run: Run; created: boolean }> {
     requireSystem(actor);
     const job = this.registeredJob(request.jobKey);
     const started = await startRun(
-      { registry: this.registry, store: this.store, around: this.around },
+      this.startDeps(options.inStore),
       {
         ...request,
         tenantId: actor.tenantId,
@@ -814,7 +819,7 @@ export class JobsService {
       },
     );
     // A dedupe incumbent is submitted again too: deduplicated, so harmless.
-    await this.submit(started.run.id);
+    if (!options.inStore) await this.submit(started.run.id);
     return started;
   }
 
@@ -1011,7 +1016,15 @@ export class JobsService {
     }
   }
 
-  /** Submits a run; a failed submit is logged, never thrown: the every-minute sweep resubmits open runs. */
+  /** What every start here runs over: `clock` and `events` say a replaced run's `run.canceled`. */
+  private startDeps(store: JobStore = this.store) {
+    return { registry: this.registry, store, around: this.around, clock: this.clock, events: this.events };
+  }
+
+  /**
+   * Submits a run; a failed submit is logged, never thrown: the every-minute sweep resubmits open runs. A process
+   * that is no worker never submits (`JOBS_WORKER`): the worker's sweep takes the run.
+   */
   private async submit(runId: string): Promise<void> {
     if (this.worker === false) return;
     try {

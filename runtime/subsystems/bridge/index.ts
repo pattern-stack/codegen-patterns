@@ -56,8 +56,6 @@ export { jobTriggers, type JobTriggerDeclaration } from './bridge.protocol';
 // Memory backend (BRIDGE-3)
 export { MemoryBridgeDeliveryRepo } from './bridge-delivery.memory-backend';
 
-// Framework handler (BRIDGE-5)
-
 // Drizzle backend + outbox-drain hook (BRIDGE-4)
 export { DrizzleBridgeDeliveryRepo } from './bridge-delivery.drizzle-backend';
 export { BridgeOutboxDrainHook } from './bridge-outbox-drain-hook';

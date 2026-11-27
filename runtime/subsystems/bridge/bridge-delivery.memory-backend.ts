@@ -27,7 +27,11 @@ import type {
   StatusHistogram,
 } from './bridge.protocol';
 import type { BridgeDeliveryRecord } from './bridge-delivery.schema';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+
+import { assertTenantId } from './assert-tenant-id';
 import { UniqueConstraintError } from './bridge-errors';
+import { BRIDGE_MULTI_TENANT } from './bridge.tokens';
 
 const BRIDGE_DELIVERY_UNIQUE_CONSTRAINT =
   'uq_bridge_delivery_event_trigger' as const;
@@ -36,10 +40,29 @@ function key(eventId: string, triggerId: string): string {
   return `${eventId}::${triggerId}`;
 }
 
+@Injectable()
 export class MemoryBridgeDeliveryRepo implements IJobBridge {
   private readonly deliveries = new Map<string, BridgeDeliveryRecord>();
 
+  /** The Drizzle backend's twin: `multiTenant` makes a delivery with no tenant `MissingTenantIdError`. */
+  constructor(
+    @Optional()
+    @Inject(BRIDGE_MULTI_TENANT)
+    private readonly multiTenant: boolean = false,
+  ) {}
+
+  async claimDelivery(
+    row: Pick<BridgeDeliveryInsert, 'eventId' | 'triggerId' | 'tenantId'>,
+  ): Promise<string | null> {
+    assertTenantId('MemoryBridgeDeliveryRepo.claimDelivery', this.multiTenant, row.tenantId);
+    if (this.deliveries.has(key(row.eventId, row.triggerId))) return null;
+    const id = randomUUID();
+    await this.insertDelivery({ ...row, id, status: 'pending' });
+    return id;
+  }
+
   async insertDelivery(row: BridgeDeliveryInsert): Promise<void> {
+    assertTenantId('MemoryBridgeDeliveryRepo.insertDelivery', this.multiTenant, row.tenantId);
     const k = key(row.eventId, row.triggerId);
     if (this.deliveries.has(k)) {
       throw new UniqueConstraintError(

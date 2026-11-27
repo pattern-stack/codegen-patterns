@@ -10,33 +10,16 @@
  *
  * The tenant is the run's: the caller's `tenantId`; when it names none (`undefined`), the ambient requester's tenant
  * (a request handler's, ADR-042), so a start inside a tenant's request never lands in another partition; else, or for
- * an explicit `null`, `SYSTEM_TENANT` (single-tenant apps, system work). A process that is no worker
- * (`worker: false`) does not submit: the worker's open-run sweep takes the run, so no job code runs here without a
- * lease heartbeat. A failed submit is logged, not thrown: the run is created, and the sweep resubmits it. The budget is the job's limits unless the caller names one (`budgetFor`); a job without limits needs
- * `budget.maxItems`.
+ * an explicit `null`, `SYSTEM_TENANT` (single-tenant apps, system work).
+ *
+ * It is a thin adapter over the package's system start (`JobsService.startSystemRun`), which owns the rest: the
+ * budget (the job's limits unless the caller names one; a job without limits needs `budget.maxItems`), a process that
+ * is no worker never submitting (`JOBS_WORKER`, so no job code runs here without a lease heartbeat), and a failed
+ * submit logged, not thrown (the sweep resubmits it).
  */
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import {
-  type Collision,
-  type Registry,
-  type Run,
-  type RunTrigger,
-  SYSTEM_TENANT,
-  startRun,
-} from '@pattern-stack/jobs';
-import {
-  type AskedBudget,
-  budgetFor,
-  JOBS_CLOCK,
-  JOBS_EVENTS,
-  JOBS_EXECUTOR,
-  JOBS_REGISTRY,
-  JOBS_RUN_SCOPE,
-  JOBS_STORE,
-  JOBS_TABLES,
-  JOBS_WORKER,
-} from '@pattern-stack/jobs/nest';
-import type { Clock, EventSink, Executor, JobStore, RunScope } from '@pattern-stack/jobs/ports';
+import { Inject, Injectable } from '@nestjs/common';
+import { type Collision, type Registry, type Run, type RunTrigger, SYSTEM_TENANT } from '@pattern-stack/jobs';
+import { type AskedBudget, JOBS_REGISTRY, JOBS_TABLES, JobsService } from '@pattern-stack/jobs/nest';
 import { type JobDatabase, type JobTables, PostgresJobStore } from '@pattern-stack/jobs/postgres';
 
 import { tryGetRequester } from '../../base-classes/tenant-context';
@@ -60,13 +43,8 @@ export interface JobStartOptions {
 export class JobStarter {
   constructor(
     @Inject(JOBS_REGISTRY) private readonly registry: Registry,
-    @Inject(JOBS_STORE) private readonly store: JobStore,
-    @Inject(JOBS_EXECUTOR) private readonly executor: Executor,
     @Inject(JOBS_TABLES) private readonly tables: JobTables,
-    @Inject(JOBS_CLOCK) private readonly clock: Clock,
-    @Inject(JOBS_EVENTS) private readonly events: EventSink,
-    @Optional() @Inject(JOBS_RUN_SCOPE) private readonly around?: RunScope,
-    @Optional() @Inject(JOBS_WORKER) private readonly worker?: boolean,
+    @Inject(JobsService) private readonly jobs: JobsService,
   ) {}
 
   /** Whether this process registers the job: the bridge skips a trigger whose job it doesn't have. */
@@ -80,38 +58,22 @@ export class JobStarter {
     options: JobStartOptions = {},
     tx?: unknown,
   ): Promise<{ run: Run; created: boolean }> {
-    const job = this.registry.get(jobKey);
-    const store = tx ? new PostgresJobStore(tx as JobDatabase, this.tables) : this.store;
-    const started = await startRun(
-      { registry: this.registry, store, around: this.around, clock: this.clock, events: this.events },
+    return this.jobs.startSystemRun(
+      { kind: 'system', tenantId: tenantOf(options.tenantId), userId: options.requestedBy ?? null },
       {
         jobKey,
         input,
-        tenantId: tenantOf(options.tenantId),
         trigger: options.trigger ?? 'agent',
-        requestedBy: options.requestedBy ?? null,
-        budget: budgetFor(job, options.budget, { now: this.clock.now(), ceiling: false }),
+        budget: options.budget,
         dedupeKey: options.dedupeKey,
         collision: options.collision,
         dedupeWindowMs: options.dedupeWindowMs,
         dryRun: options.dryRun,
       },
+      // In the caller's transaction: it commits with the caller's writes, and the sweep finds it after.
+      tx ? { inStore: new PostgresJobStore(tx as JobDatabase, this.tables) } : {},
     );
-    // A run created in the caller's transaction is found by the sweep once it commits; so is one started where no
-    // executor loop runs.
-    if (!tx && started.run.status === 'pending' && this.worker !== false) {
-      try {
-        await this.executor.submit(started.run.id);
-      } catch (err) {
-        this.logger.warn(
-          `job run ${started.run.id} was not submitted (${err instanceof Error ? err.name : typeof err}); the sweep resubmits it`,
-        );
-      }
-    }
-    return started;
   }
-
-  private readonly logger = new Logger(JobStarter.name);
 }
 
 /** The run's tenant: the caller's; omitted, the ambient requester's; else (or `null`) `SYSTEM_TENANT`. */
