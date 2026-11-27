@@ -80,6 +80,33 @@ Generated code imports from `@shared/*` and `@modules/*`. Your `tsconfig.json` m
 
 `@generated/*` is not currently a required alias — generated code imports from its own tree via relative paths. If you plan to reference the barrels from application code (e.g. `@generated/modules`), add `"@generated/*": ["./src/generated/*"]`.
 
+## A SQLite project (`target: { database: sqlite, orm: drizzle }`)
+
+TGT-2b. A SQLite target emits the **storage layer**: per entity, a Drizzle `sqliteTable` module
+(`<module>/<entity>.entity.ts`) and its SQLite DDL (`<module>/<entity>.sql`), plus the schema barrel
+(`<generated>/schema.ts`). It has no NestJS layer (repository, service, controller, module, DTOs, use cases) and no
+Nest post-steps: `entity new` says what it skipped. Those come with `wiring: plain`.
+
+```yaml
+# codegen.config.yaml
+target:
+  database: sqlite
+  orm: drizzle
+```
+
+- **Apply the DDL** at start-up: concatenate every `<entity>.sql` and run it (`CREATE … IF NOT EXISTS`, so it can run
+  again). SQLite checks foreign keys on write, so file order doesn't matter. Turn `PRAGMA foreign_keys = ON` on per
+  connection.
+- **Query through Drizzle** with the generated tables. On Bun, `drizzle-orm/sqlite-proxy` over your connection works
+  well; its callback must return rows as **positional arrays** (`Statement.values()`), not objects.
+- **Storage:**
+  - instants are ISO 8601 TEXT, and decimals are TEXT (exact strings; ordering by one is lexical);
+  - booleans are INTEGER 0/1, and JSON and arrays are TEXT;
+  - enums are TEXT with a `CHECK`, except an enum array, which has none on SQLite;
+  - `max_length` is a `CHECK`;
+  - ids are app-made uuids (TEXT);
+  - a tenant-scoped NULLS NOT DISTINCT unique is a unique index over `ifnull(col, X'00')`.
+
 ## `DatabaseModule` contract
 
 Every generated repository expects the `DRIZZLE` injection token to resolve to a Drizzle client. A `@Global()` `DatabaseModule` is the standard way to satisfy that. Minimum viable scaffold — author this once:
