@@ -126,3 +126,13 @@ keys `const` and described.
   is not generalised until a second pair's renderer shows what the two share. Decision 4's facts/text line is
   unchanged: SQL every SQL pair shares (a referential action's spelling, a predicate's text) is a fact; builder and
   template syntax is text.
+
+## Revision — 2026-11-26 (TGT-2a)
+
+- **A pair's renderers can exist before its row.** `ColumnRenderer` / `ConstraintRenderer` are generic over the pair
+  key, so `drizzle/sqlite` is built and tested (`docs/specs/TGT-2a.md`) while `TARGET_PAIRS` still has one row.
+  Decision 4 holds: the row lands with the templates that print the text and pass the same gates (TGT-2b).
+- **A database-level renderer sits beside the pair renderers.** SQLite DDL (`src/targets/sqlite/`) depends on the
+  database, not the ORM. Any ORM on SQLite shares it, and the DDL ↔ Drizzle parity gate holds the two together.
+- **Drizzle text the dialects share** (`sql` predicates, `index`, `foreignKey`, `check`) lives once in
+  `src/targets/drizzle/shared.ts`.
