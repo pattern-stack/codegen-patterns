@@ -2607,6 +2607,7 @@ export function buildBackendLocals(definition, baseLocals) {
       );
     }
     // PW-3c: the junction services it takes (the fan-out), likewise.
+    const serviceNode = classGraph.nodes.find((n) => n.role === 'service');
     const graphJunctions = classGraph.edges
       .filter((e) => e.from === serviceNode?.id && e.reason === 'junction_fan_out')
       .map((e) => e.toOwner)

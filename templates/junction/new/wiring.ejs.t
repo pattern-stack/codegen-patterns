@@ -8,7 +8,8 @@ force: true
  * <%= classNames.entity %>'s pattern-stack wiring (PW-3c): how the junction's classes are constructed, with no DI container.
  *
  * Its repository is built with the other repositories; its service takes both ends' repositories, and both ends'
- * services take it (the fan-out). The module that holds both ends (`module.ts`) calls these in that order.
+ * services take it (the fan-out). The module that composes this junction (see emit-composition.ts) calls these in
+ * that order.
  */
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
 import type { Relations } from '<%= relationsImport %>';
@@ -20,12 +21,12 @@ import type { <%= rightRepositoryClass %> } from '<%= rightRepoImportFromJunctio
 <%_ } _%>
 
 /** Builds <%= classNames.entity %>'s repository. */
-export function create<%= classNames.repository %>(db: DrizzleClient<Relations>): <%= classNames.repository %> {
+export function <%= wiringFactories.repository %>(db: DrizzleClient<Relations>): <%= classNames.repository %> {
   return new <%= classNames.repository %>(db);
 }
 
 /** Builds <%= classNames.entity %>'s service over its repository and both ends' repositories. */
-export function create<%= classNames.service %>(deps: {
+export function <%= wiringFactories.service %>(deps: {
   repository: <%= classNames.repository %>;
   left: <%= leftRepositoryClass %>;
   right: <%= rightRepositoryClass %>;

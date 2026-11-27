@@ -36,6 +36,7 @@ import { processFieldFeatures, processFields } from "../../entity/new/backend/en
 import { renderersFor } from "../../../src/targets/renderers.js";
 import { isPatternStackWiring } from "../../../src/targets/apps.js";
 import { junctionWiringFile } from "../../../src/config/junction-naming.js";
+import { junctionServiceFactoryName, repositoryFactoryName } from "../../../src/derived/api/names.js";
 import { sqlTableName } from "../../../src/config/table-naming.js";
 import { onDeleteAction } from "../../../src/derived/constraints/on-delete.js";
 import { loadOwnedTableNames } from "../../entity/new/prompt.js";
@@ -538,6 +539,11 @@ export default {
 
       // Class names
       classNames,
+      // PW-3c: the `.wiring.ts` factories, named where the composition that calls them names them (names.ts).
+      wiringFactories: {
+        repository: repositoryFactoryName(junction.name),
+        service: junctionServiceFactoryName(junction.name),
+      },
 
       // REL-2 (#587): the relation manifest specifier for this repository file.
       relationsImport,

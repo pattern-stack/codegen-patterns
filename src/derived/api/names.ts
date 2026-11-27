@@ -128,6 +128,11 @@ export function junctionServicePropertyName(junctionName: string): string {
 	return `${camelCase(junctionName)}Service`;
 }
 
+/** The `<junction>.wiring.ts` factory that builds a junction's service over both ends' repositories (PW-3c). */
+export function junctionServiceFactoryName(junctionName: string): string {
+	return `create${serviceClassName(junctionName)}`;
+}
+
 export function serviceClassName(entityName: string): string {
 	return `${pascalCase(entityName)}Service`;
 }

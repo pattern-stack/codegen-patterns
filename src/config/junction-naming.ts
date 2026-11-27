@@ -31,13 +31,17 @@ export function junctionPlural(name: string): string {
 	return pluralize(name);
 }
 
+/** A junction's folder: `<modules_dir>/<plural>`. `junctionNaming` (the junction prompt's) and `junctionWiringFile` read it. */
+export function junctionModuleDir(name: string, modulesDir: string): string {
+	return path.posix.normalize(entityModuleNaming({ name, plural: junctionPlural(name) }, modulesDir).moduleDir);
+}
+
 /**
  * A junction's `.wiring.ts` under pattern-stack wiring (PW-3c): `<modules_dir>/<plural>/<name>.wiring.ts`. The junction prompt
  * writes it and the composition imports it, both from here.
  */
 export function junctionWiringFile(name: string, modulesDir: string): string {
-	const moduleDir = path.posix.normalize(entityModuleNaming({ name, plural: junctionPlural(name) }, modulesDir).moduleDir);
-	return `${moduleDir}/${emittedStem(name)}.wiring.ts`;
+	return `${junctionModuleDir(name, modulesDir)}/${emittedStem(name)}.wiring.ts`;
 }
 
 /** The junction-YAML keys the SQL table name reads. */

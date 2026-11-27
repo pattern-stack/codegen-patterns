@@ -21,7 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'yaml';
-import { junctionName, junctionPlural } from '../../src/config/junction-naming.js';
+import { junctionModuleDir, junctionName, junctionPlural } from '../../src/config/junction-naming.js';
 import { junctionsDirFor } from '../../src/config/junctions-dir.js';
 import { findYamlFiles } from '../../src/utils/find-yaml-files.js';
 import { camelCase, emittedStem } from '../../src/config/file-naming.js';
@@ -41,7 +41,7 @@ export { junctionName };
 export function junctionNaming(name, modulesDir) {
   const plural = junctionPlural(name);
   const tree = entityModuleNaming({ name, plural }, modulesDir);
-  const moduleDir = path.posix.normalize(tree.moduleDir);
+  const moduleDir = junctionModuleDir(name, modulesDir);
   const pascal = pascalCase(name);
   return {
     name,

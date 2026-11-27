@@ -278,11 +278,7 @@ export class JunctionNewCommand extends Command {
 		let plannedComposition: string[] = [];
 		if (patternStackWiring) {
 			try {
-				plannedComposition = planPatternStackComposition(ctx, {
-					entitiesDir: projectLayout(ctx.cwd, ctx.config).entities,
-					relationshipsDir: relationshipsDirFor(ctx.cwd),
-					generatedDir: projectLayout(ctx.cwd, ctx.config).generated,
-				}).map((f) => f.path);
+				plannedComposition = planPatternStackComposition(ctx).map((f) => f.path);
 			} catch (err: unknown) {
 				printError(err instanceof Error ? err.message : String(err));
 				return 1;
@@ -391,7 +387,7 @@ export class JunctionNewCommand extends Command {
 		// A failed relations manifest skips it and falls through to the summary, as the Nest path does.
 		if (patternStackWiring && !relationsFailed) {
 			try {
-				patternStackResult = writePatternStackComposition(ctx, { entitiesDir, relationshipsDir, generatedDir });
+				patternStackResult = writePatternStackComposition(ctx);
 			} catch (err: unknown) {
 				return reportRegenerationFailure('junction new', err);
 			}
@@ -433,9 +429,11 @@ export class JunctionNewCommand extends Command {
 					`${parentResult.succeeded.length + parentResult.failed.length} parent entities · ${parentResult.failed.length} failed`,
 				);
 			}
-			if (patternStackResult) {
+			// The modules barrel is written under nest only, whether or not the composition ran (a failed relations
+			// manifest skips it).
+			if (patternStackWiring) {
 				printInfo(`schema barrel regenerated → ${path.relative(ctx.cwd, barrelResult.schemaBarrel)}`);
-				printPatternStackComposition(ctx, patternStackResult);
+				if (patternStackResult) printPatternStackComposition(ctx, patternStackResult);
 			} else {
 				printInfo(
 					`barrels regenerated (${barrelResult.entityCount} modules) → ${path.relative(ctx.cwd, barrelResult.modulesBarrel)}, ${path.relative(ctx.cwd, barrelResult.schemaBarrel)}`,

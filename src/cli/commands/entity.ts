@@ -427,7 +427,7 @@ export class EntityNewCommand extends Command {
 			});
 			let compositionFiles: string[];
 			try {
-				compositionFiles = planPatternStackComposition(ctx, { entitiesDir, relationshipsDir, generatedDir }).map((f) => f.path);
+				compositionFiles = planPatternStackComposition(ctx).map((f) => f.path);
 			} catch (err: unknown) {
 				printError(err instanceof Error ? err.message : String(err));
 				return 1;
@@ -724,7 +724,7 @@ export class EntityNewCommand extends Command {
 			if (relationsFailed) return 1;
 			let patternStackResult: ReturnType<typeof writePatternStackComposition>;
 			try {
-				patternStackResult = writePatternStackComposition(ctx, { entitiesDir, relationshipsDir, generatedDir });
+				patternStackResult = writePatternStackComposition(ctx);
 			} catch (err: unknown) {
 				return reportRegenerationFailure('entity new', err);
 			}

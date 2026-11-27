@@ -3,49 +3,48 @@
  * one place that builds its input.
  */
 
-import { CODEGEN_BANNER } from '../../utils/generated-file.js';
 import path from 'node:path';
 
+import { CODEGEN_BANNER } from '../../utils/generated-file.js';
 import type { Context } from './context.js';
 import { projectLayout } from './project-layout.js';
-import { junctionsDirFor } from '../../config/junctions-dir.js';
+import { junctionsDirFor, relationshipsDirFor } from '../../config/junctions-dir.js';
 import { loadProjectApiContext } from '../../derived/api/project.js';
 import type { RelationsConfigInput } from '../../emitters/relations/load-context.js';
 import {
 	emitComposition,
 	wiringFilesBehind,
 	type CompositionFile,
+	type CompositionInput,
 } from '../../emitters/composition/emit-composition.js';
 import { removeOtherWiringFiles } from '../../emitters/composition/stale-files.js';
 import { openApiImport, resolveRuntimeMode, runtimeImport } from './runtime-import.js';
 import { printInfo, printWarning } from '../ui/output.js';
 
-export interface PatternStackCompositionDirs {
-	entitiesDir: string;
-	relationshipsDir: string;
-	generatedDir: string;
-}
-
-function relationsOf(ctx: Context, dirs: PatternStackCompositionDirs) {
-	return loadProjectApiContext(ctx.cwd, ctx.config as RelationsConfigInput | null | undefined, {
-		entitiesDir: dirs.entitiesDir,
-		junctionsDir: junctionsDirFor(ctx.cwd),
-		relationshipsDir: dirs.relationshipsDir,
-	}).relations;
-}
-
-/** The pattern-stack composition for this project — planned (a dry run) or written. Throws its refusals (a cycle, a name). */
-export function planPatternStackComposition(ctx: Context, dirs: PatternStackCompositionDirs, dryRun = true): CompositionFile[] {
+/**
+ * The composition's input for this project: the one place that builds it. Every directory comes from `ctx`
+ * (`projectLayout`, the junctions and relationships folders), and the relations load once per call.
+ */
+function compositionInput(ctx: Context): CompositionInput {
 	const mode = resolveRuntimeMode(ctx.config);
-	return emitComposition({
-		relations: relationsOf(ctx, dirs),
-		modulesDir: projectLayout(ctx.cwd, ctx.config).modules,
-		generatedDir: dirs.generatedDir,
+	const layout = projectLayout(ctx.cwd, ctx.config);
+	return {
+		relations: loadProjectApiContext(ctx.cwd, ctx.config as RelationsConfigInput | null | undefined, {
+			entitiesDir: layout.entities,
+			junctionsDir: junctionsDirFor(ctx.cwd),
+			relationshipsDir: relationshipsDirFor(ctx.cwd),
+		}).relations,
+		modulesDir: layout.modules,
+		generatedDir: layout.generated,
 		drizzleTypeImport: runtimeImport(mode, 'types/drizzle'),
 		openApiImport: openApiImport(mode),
 		banner: CODEGEN_BANNER,
-		dryRun,
-	});
+	};
+}
+
+/** The pattern-stack composition for this project, planned (a dry run). Throws its refusals (a cycle, a name). */
+export function planPatternStackComposition(ctx: Context): CompositionFile[] {
+	return emitComposition({ ...compositionInput(ctx), dryRun: true });
 }
 
 export interface PatternStackCompositionResult {
@@ -57,16 +56,16 @@ export interface PatternStackCompositionResult {
 }
 
 /** Write the composition, remove what it replaces, and name the `.wiring.ts` files it can't compile against. */
-export function writePatternStackComposition(ctx: Context, dirs: PatternStackCompositionDirs): PatternStackCompositionResult {
-	const files = planPatternStackComposition(ctx, dirs, false);
-	const modulesDir = projectLayout(ctx.cwd, ctx.config).modules;
+export function writePatternStackComposition(ctx: Context): PatternStackCompositionResult {
+	const input = compositionInput(ctx);
+	const files = emitComposition(input);
 	const removed = removeOtherWiringFiles({
 		wiring: 'pattern-stack',
-		modulesDir,
-		generatedDir: dirs.generatedDir,
+		modulesDir: input.modulesDir,
+		generatedDir: input.generatedDir,
 		keep: new Set(files.map((f) => f.path)),
 	});
-	const behind = wiringFilesBehind({ relations: relationsOf(ctx, dirs), modulesDir });
+	const behind = wiringFilesBehind(input);
 	return { files, removed, behind };
 }
 

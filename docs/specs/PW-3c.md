@@ -18,8 +18,10 @@ refused by name.
   - the service has no `@Optional() @Inject(EVENT_BUS)` property;
   - there is no Nest module, and `index.ts` exports the repository and service instead of a module;
   - a new `<junction>.wiring.ts` (`templates/junction/new/wiring.ejs.t`) exports
-    `create<Junction>Repository(db)` and `create<Junction>Service({ repository, left, right })`. Its path is
-    `junctionWiringFile` (`src/config/junction-naming.ts`), which the prompt and the emitter both call.
+    `create<Junction>Repository(db)` and `create<Junction>Service({ repository, left, right })`, named by
+    `repositoryFactoryName` / `junctionServiceFactoryName` (`src/derived/api/names.ts`), which the prompt, the
+    composition's imports and calls, and `wiringFilesBehind` all read. Its path is `junctionWiringFile`
+    (`src/config/junction-naming.ts`), over `junctionModuleDir`, the folder `junctionNaming` reads too.
   The Nest text is unchanged byte for byte.
 
 ### The parents: the fan-out becomes a constructor argument
@@ -43,12 +45,12 @@ refused by name.
   `repositories`, so an entity that camelCases to either one is refused.
 - **A junction that both parents use, across two modules, is refused.** Its service takes both ends' repositories,
   and both ends' services take it, so the two modules would each depend on the other. The refusal names the cycle and
-  the junctions on it. A junction only one parent uses can span two modules: it lives in that parent's module, and
+  each junction the cycle needs (one whose edges, removed, leave no cycle); a cycle the entities make on their own
+  names no junction. A junction only one parent uses can span two modules: it lives in that parent's module, and
   reads the other end's repository from `deps.<module>.repositories`.
-- **Module cycles are now checked over the modules themselves.** The check runs over every class edge between
-  modules, and replaces PW-3a's `contextCycles` check in the emitter. `contextCycles` passes through owners with no
-  context, which are the junctions and the root `entities` module. So it missed a cycle through the root module
-  (crm → entities → crm) and one through a junction. The message is the same as before:
+- **Module cycles are checked over the modules themselves**: `contextCycles(graph, owner → module)`, with every
+  entity and every placed junction mapped to its module, so neither is a pass-through and no cycle through the root
+  module or a junction is missed. The message is the same as before:
   `… modules must depend on each other one way; these depend on each other in a cycle: crm → billing → crm`.
 - `wiringFilesBehind` names a junction whose `.wiring.ts` is missing or older than the composition. That happens
   when `entity new` runs before `junction new`. The warning says to run both with `--all`.
