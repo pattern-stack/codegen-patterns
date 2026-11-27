@@ -76,6 +76,11 @@ test-smoke-junction-cross-domain:
 test-junction:
     bun test "{{justfile_directory()}}/test/junction/"
 
+# SQLite DDL ↔ drizzle/sqlite parity (TGT-2a): the DDL renderer and drizzle-kit's SQL from the drizzle/sqlite renderers
+# build the same schema for every baseline table, compared through SQLite's own catalogue. Shells drizzle-kit; ~5s.
+test-sqlite-parity:
+    bun test "{{justfile_directory()}}/test/sqlite/"
+
 # Integration-emit snapshot (RFC-0001 §7) — locks the emitted src/integrations/**
 # tree (provider modules + adapters + barrel + aggregator + types.generated.ts)
 # for the checked-in integration-patterns fixture. Regenerate after intentional
@@ -256,7 +261,7 @@ test-studio:
 # Run all tests. Docker-free by design — `just test-integration` needs Docker
 # and runs as its own CI job (see .github/workflows/ci.yml) so a Docker flake
 # cannot mask this suite.
-test-all: typecheck test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-capability test-junction test-integration-emit test-smoke-integration test-smoke-frontend test-studio
+test-all: typecheck test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-capability test-junction test-sqlite-parity test-integration-emit test-smoke-integration test-smoke-frontend test-studio
 
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 

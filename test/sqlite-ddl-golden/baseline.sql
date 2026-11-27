@@ -1,13 +1,13 @@
 CREATE TABLE IF NOT EXISTS "accounts" (
   "id" TEXT PRIMARY KEY,
-  "name" TEXT NOT NULL,
+  "name" TEXT(255) NOT NULL,
   CONSTRAINT "accounts_name_len" CHECK (length(name) <= 255)
 );
 CREATE TABLE IF NOT EXISTS "catalog_entries" (
   "id" TEXT PRIMARY KEY,
   "tenant_id" TEXT NOT NULL,
   "user_id" TEXT NOT NULL,
-  "sku" TEXT NOT NULL,
+  "sku" TEXT(64) NOT NULL,
   "title" TEXT NOT NULL,
   "price_cents" TEXT,
   "created_at" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS "communications" (
   "tenant_id" TEXT NOT NULL,
   "kind" TEXT NOT NULL,
   "occurred_at" TEXT NOT NULL,
-  "source" TEXT NOT NULL,
+  "source" TEXT(32) NOT NULL,
   "external_id" TEXT NOT NULL,
   "created_at" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updated_at" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -35,15 +35,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS "communications_tenant_id_source_external_id_u
 CREATE INDEX IF NOT EXISTS "communications_tenant_id_idx" ON "communications" ("tenant_id");
 CREATE TABLE IF NOT EXISTS "tenants" (
   "id" TEXT PRIMARY KEY,
-  "name" TEXT NOT NULL,
+  "name" TEXT(255) NOT NULL,
   CONSTRAINT "tenants_name_len" CHECK (length(name) <= 255)
 );
 CREATE TABLE IF NOT EXISTS "persons" (
   "id" TEXT PRIMARY KEY,
   "tenant_id" TEXT NOT NULL REFERENCES "tenants"("id"),
-  "email" TEXT NOT NULL,
-  "first_name" TEXT NOT NULL,
-  "last_name" TEXT NOT NULL,
+  "email" TEXT(255) NOT NULL,
+  "first_name" TEXT(100) NOT NULL,
+  "last_name" TEXT(100) NOT NULL,
   "nicknames" TEXT,
   "preferred_channels" TEXT NOT NULL DEFAULT 'undefined',
   CONSTRAINT "persons_email_len" CHECK (length(email) <= 255),
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS "users" (
   "id" TEXT PRIMARY KEY,
   "person_id" TEXT REFERENCES "persons"("id") ON DELETE RESTRICT,
   "tenant_id" TEXT NOT NULL REFERENCES "tenants"("id"),
-  "email" TEXT NOT NULL,
+  "email" TEXT(255) NOT NULL,
   CONSTRAINT "users_email_len" CHECK (length(email) <= 255)
 );
 CREATE INDEX IF NOT EXISTS "users_tenant_id_idx" ON "users" ("tenant_id");
@@ -66,12 +66,12 @@ CREATE TABLE IF NOT EXISTS "contacts" (
   "id" TEXT PRIMARY KEY,
   "account_id" TEXT REFERENCES "accounts"("id") ON DELETE RESTRICT,
   "user_id" TEXT NOT NULL REFERENCES "users"("id") ON DELETE RESTRICT,
-  "first_name" TEXT NOT NULL,
-  "last_name" TEXT NOT NULL,
-  "email" TEXT NOT NULL,
-  "title" TEXT,
-  "phone" TEXT,
-  "linkedin_url" TEXT,
+  "first_name" TEXT(100) NOT NULL,
+  "last_name" TEXT(100) NOT NULL,
+  "email" TEXT(255) NOT NULL,
+  "title" TEXT(200),
+  "phone" TEXT(50),
+  "linkedin_url" TEXT(500),
   "external_id" TEXT,
   "provider" TEXT,
   "provider_metadata" TEXT,
@@ -91,12 +91,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uq_contacts_provider_external_id" ON "contact
 CREATE TABLE IF NOT EXISTS "deal_states" (
   "id" TEXT PRIMARY KEY,
   "tenant_id" TEXT REFERENCES "tenants"("id"),
-  "name" TEXT NOT NULL,
-  "display_name" TEXT NOT NULL,
+  "name" TEXT(50) NOT NULL,
+  "display_name" TEXT(100) NOT NULL,
   "state_type" TEXT NOT NULL,
   "sort_order" TEXT NOT NULL,
   "probability_default" TEXT,
-  "color" TEXT,
+  "color" TEXT(20),
   "weight" TEXT NOT NULL DEFAULT 'undefined',
   "description" TEXT,
   "metadata" TEXT,
@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS "deals" (
   "owner_id" TEXT NOT NULL REFERENCES "users"("id") ON DELETE RESTRICT,
   "closed_by_id" TEXT REFERENCES "users"("id") ON DELETE RESTRICT,
   "account_id" TEXT NOT NULL REFERENCES "accounts"("id") ON DELETE RESTRICT,
-  "name" TEXT NOT NULL,
+  "name" TEXT(255) NOT NULL,
   "amount" TEXT,
   "stage" TEXT NOT NULL,
   "close_date" TEXT,
@@ -165,8 +165,8 @@ CREATE TABLE IF NOT EXISTS "organizations" (
   "id" TEXT PRIMARY KEY,
   "parent_id" TEXT REFERENCES "organizations"("id") ON DELETE RESTRICT,
   "tenant_id" TEXT NOT NULL REFERENCES "tenants"("id"),
-  "name" TEXT NOT NULL,
-  "domain" TEXT,
+  "name" TEXT(255) NOT NULL,
+  "domain" TEXT(255),
   CONSTRAINT "organizations_name_len" CHECK (length(name) <= 255),
   CONSTRAINT "organizations_domain_len" CHECK (length(domain) <= 255)
 );
@@ -179,9 +179,9 @@ CREATE TABLE IF NOT EXISTS "opportunities" (
   "owner_id" TEXT NOT NULL REFERENCES "users"("id") ON DELETE RESTRICT,
   "state_id" TEXT NOT NULL REFERENCES "deal_states"("id") ON DELETE RESTRICT,
   "tenant_id" TEXT NOT NULL REFERENCES "tenants"("id"),
-  "name" TEXT NOT NULL,
+  "name" TEXT(255) NOT NULL,
   "amount" TEXT,
-  "currency" TEXT DEFAULT 'undefined',
+  "currency" TEXT(3) DEFAULT 'undefined',
   "expected_close_date" TEXT,
   "closed_at" TEXT,
   CONSTRAINT "opportunities_name_len" CHECK (length(name) <= 255),

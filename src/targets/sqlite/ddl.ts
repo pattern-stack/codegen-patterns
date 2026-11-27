@@ -42,8 +42,11 @@ function sqlExpression(segments: readonly PredicateSegment[]): string {
 	return segments.map((s) => ('text' in s ? s.text : s.column)).join('');
 }
 
+/** The declared type. A `max_length` string says its length (`TEXT(n)`, as Drizzle declares it); SQLite does not enforce
+ *  it, the length CHECK does. */
 function columnType(c: ColumnFact): string {
-	return !c.isArray && (c.kind === 'integer' || c.kind === 'boolean') ? 'INTEGER' : 'TEXT';
+	if (!c.isArray && (c.kind === 'integer' || c.kind === 'boolean')) return 'INTEGER';
+	return !c.isArray && c.kind === 'string' && c.maxLength !== null ? `TEXT(${c.maxLength})` : 'TEXT';
 }
 
 function defaultSql(c: ColumnFact): string {
