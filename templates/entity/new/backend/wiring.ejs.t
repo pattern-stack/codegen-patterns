@@ -24,13 +24,13 @@ import type { <%= familyChild.baseRepositoryClass %> } from '<%= familyChild.bas
 import type { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.fileStem %>.repository';
 <%_ } _%>
 <%_ }) _%>
-<%_ if (plainWiringParts.registersCreateDto) { _%>
+<%_ if (patternStackWiringParts.registersCreateDto) { _%>
 import { <%= classNames.createSchema %> } from './dto/create-<%= entityFileStem %>.dto';
 <%_ } _%>
 import { <%= classNames.updateSchema %> } from './dto/update-<%= entityFileStem %>.dto';
 import { <%= classNames.outputSchema %> } from './dto/<%= entityFileStem %>-output.dto';
-<%_ const _queries = plainWiringParts.useCases.filter((u) => u.kind === 'query'); _%>
-<%_ plainWiringParts.useCases.filter((u) => u.kind !== 'query').forEach((u) => { _%>
+<%_ const _queries = patternStackWiringParts.useCases.filter((u) => u.kind === 'query'); _%>
+<%_ patternStackWiringParts.useCases.filter((u) => u.kind !== 'query').forEach((u) => { _%>
 import { <%= u.className %> } from '<%= u.importPath %>';
 <%_ }) _%>
 <%_ if (_queries.length > 0) { _%>
@@ -42,7 +42,7 @@ import { <%= _queries.map((u) => u.className).join(', ') %> } from '<%= _queries
  * a context's code and its tests can take any object with them. The context's `<Context>Repositories` bundle lists one
  * per entity.
  */
-export type <%= plainWiringParts.repositoryPort %> = { [K in keyof <%= classNames.repository %>]: <%= classNames.repository %>[K] };
+export type <%= patternStackWiringParts.repositoryPort %> = { [K in keyof <%= classNames.repository %>]: <%= classNames.repository %>[K] };
 
 /** Builds <%= classNames.entity %>'s repository<% if (familyChild) { %>; a <%= entityName %> is a kind of <%= familyChild.baseName %>, so it takes the base's<% } %>. */
 export function <%= patternStackWiringParts.repositoryFactory %>(
@@ -86,8 +86,8 @@ export function <%= patternStackWiringParts.servicesFactory %>(deps: <%= classNa
 export type <%= classNames.entity %>Services = ReturnType<typeof <%= patternStackWiringParts.servicesFactory %>>;
 
 /** Registers <%= classNames.entity %>'s DTO schemas, as the Nest module's constructor does; `<generated>/openapi.ts` calls every entity's. */
-export function <%= plainWiringParts.registerSchemas %>(openApi: OpenApiRegistry): void {
-<%_ if (plainWiringParts.registersCreateDto) { _%>
+export function <%= patternStackWiringParts.registerSchemas %>(openApi: OpenApiRegistry): void {
+<%_ if (patternStackWiringParts.registersCreateDto) { _%>
   openApi.registerSchema('<%= classNames.createDto %>', <%= classNames.createSchema %>);
 <%_ } _%>
   openApi.registerSchema('<%= classNames.updateDto %>', <%= classNames.updateSchema %>);

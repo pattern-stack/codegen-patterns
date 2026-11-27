@@ -102,7 +102,7 @@ export function servicesFactoryName(entityName: string): string {
 }
 
 /**
- * Under plain wiring (PW-3b): the type a context holds an entity's repository by — the repository class's public
+ * Under pattern-stack wiring (PW-3b): the type a context holds an entity's repository by — the repository class's public
  * members, structurally, so a test can hand a context a fake. Declared in `<entity>.wiring.ts`, gathered into the
  * context's `<Context>Repositories` bundle by the composition.
  */
@@ -110,12 +110,12 @@ export function repositoryPortName(entityName: string): string {
 	return `${pascalCase(entityName)}RepositoryPort`;
 }
 
-/** Under plain wiring (PW-3b): a context module's repository bundle type — `crm` → `CrmRepositories` (d27). */
+/** Under pattern-stack wiring (PW-3b): a context module's repository bundle type — `crm` → `CrmRepositories` (d27). */
 export function repositoriesBundleName(moduleName: string): string {
 	return `${pascalCase(moduleName)}Repositories`;
 }
 
-/** Under plain wiring (PW-3b): the function in `<entity>.wiring.ts` that registers the entity's DTO schemas. */
+/** Under pattern-stack wiring (PW-3b): the function in `<entity>.wiring.ts` that registers the entity's DTO schemas. */
 export function registerSchemasName(entityName: string): string {
 	return `register${pascalCase(entityName)}Schemas`;
 }

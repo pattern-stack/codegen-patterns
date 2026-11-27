@@ -8,7 +8,7 @@
  * - Going **pattern-stack**: the Nest-only files — `*.controller.ts` and `*.module.ts` under `modules_dir` (not a context's
  *   `module.ts`) and `<generated>/modules.ts` — plus any context `module.ts` the current composition no longer writes
  *   (a context renamed or emptied).
- * - Going **nest**: the plain files — every context `module.ts`, every `*.wiring.ts`, `<generated>/wiring.ts`,
+ * - Going **nest**: the pattern-stack files — every context `module.ts`, every `*.wiring.ts`, `<generated>/wiring.ts`,
  *   `<generated>/composition.ts` and `<generated>/openapi.ts`.
  */
 

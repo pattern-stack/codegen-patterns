@@ -20,7 +20,7 @@ import { preflightEntityTargets, renderEntityTargets } from '../shared/entity-re
 import { emitComposition, wiringFilesBehind, type CompositionFile } from '../../emitters/composition/emit-composition.js';
 import { removeOtherWiringFiles } from '../../emitters/composition/stale-files.js';
 import { loadProjectApiContext } from '../../derived/api/project.js';
-import { isPlainWiring } from '../../targets/apps.js';
+import { isPatternStackWiring } from '../../targets/apps.js';
 import { openApiImport, runtimeImport } from '../shared/runtime-import.js';
 import type { RelationsConfigInput } from '../../emitters/relations/load-context.js';
 import { listEntityYamls } from '../../utils/find-yaml-files.js';
@@ -447,7 +447,7 @@ export class EntityNewCommand extends Command {
 			];
 			if (pending.length > 0) {
 				printError(
-					`entity new: target.wiring is plain, and these junction / relationship definitions have no plain pipeline yet ` +
+					`entity new: target.wiring is pattern-stack, and these junction / relationship definitions have no pattern-stack pipeline yet ` +
 						`(junctions: PW-3c; relationships: #679): ${pending.join(', ')}`,
 				);
 				return 1;

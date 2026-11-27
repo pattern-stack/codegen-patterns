@@ -28,7 +28,7 @@ async function accountNames(repositories: CrmRepositories): Promise<string[]> {
 export async function openApiCheck(): Promise<void> {
   const openApi = new OpenApiRegistry();
   registerOpenApiSchemas(openApi);
-  const doc = await openApi.build({ title: 'plain smoke', version: '0.0.0' });
+  const doc = await openApi.build({ title: 'pattern-stack smoke', version: '0.0.0' });
   const schemas = doc.components.schemas;
   for (const name of ['CreateAccountDto', 'UpdateAccountDto', 'AccountOutputDto', 'PersonOutputDto', 'NoteOutputDto']) {
     assert(name in schemas, `openapi.ts registers ${name}: ${Object.keys(schemas).join(', ')}`);

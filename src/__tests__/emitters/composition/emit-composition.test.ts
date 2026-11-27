@@ -1,5 +1,5 @@
 /**
- * The plain-wiring composition's text (PW-3a, PW-3b), over the plain smoke's fixtures. `test-smoke-plain` compiles
+ * The pattern-stack wiring composition's text (PW-3a, PW-3b), over the pattern-stack smoke's fixtures. `test-smoke-pattern-stack` compiles
  * and runs it; this pins what each file declares, so a change shows up here first.
  */
 import { describe, expect, it } from 'bun:test';
@@ -10,7 +10,7 @@ import path from 'node:path';
 import { loadProjectApiContext } from '../../../derived/api/project';
 import { planComposition, wiringFilesBehind } from '../../../emitters/composition/emit-composition';
 
-const FIXTURES = path.resolve(import.meta.dir, '../../../../test/smoke/fixtures-plain');
+const FIXTURES = path.resolve(import.meta.dir, '../../../../test/smoke/fixtures-pattern-stack');
 const ROOT = '/app/src';
 
 function relationsOf(entitiesDir: string) {

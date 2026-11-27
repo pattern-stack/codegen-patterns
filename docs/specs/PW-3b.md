@@ -1,6 +1,6 @@
-# PW-3b: each context's repository bundle, and `openapi.ts`, under `wiring: plain`
+# PW-3b: each context's repository bundle, and `openapi.ts`, under `wiring: pattern-stack`
 
-**Status:** implemented · **Follows:** PW-3a · **Next:** PW-3c (junctions on plain), PW-4 (`project init` for plain)
+**Status:** implemented · **Follows:** PW-3a · **Next:** PW-3c (junctions on pattern-stack), PW-4 (`project init` for pattern-stack)
 
 ## Problem
 
@@ -48,19 +48,19 @@ its name stays.
   the templates' `openApiImport` local, and `nest-free.test.ts` holds the two equal. It is a twin, not an import of
   the `.mjs`, because no non-test file in `src` imports an `.mjs`. `runtime/shared/openapi` was
   already one of the Nest-free entries.
-- Switching back to `wiring: nest` removes it with the other plain files (`stale-files.ts`).
+- Switching back to `wiring: nest` removes it with the other pattern-stack files (`stale-files.ts`).
 
 ## The gates
 
-- `src/__tests__/emitters/composition/emit-composition.test.ts` plans the composition over the plain smoke's
+- `src/__tests__/emitters/composition/emit-composition.test.ts` plans the composition over the pattern-stack smoke's
   fixtures. It checks:
   - each context's bundle and the `satisfies` check;
   - `openapi.ts`'s imports and calls;
   - the `repositories` refusal;
   - `wiringFilesBehind`.
-- `test-smoke-plain`:
+- `test-smoke-pattern-stack`:
   - expects `generated/openapi.ts`;
-  - its usage file (`fixtures-plain-usage/crud-check.ts`) gains a context-service-shaped function that takes
+  - its usage file (`fixtures-pattern-stack-usage/crud-check.ts`) gains a context-service-shaped function that takes
     `CrmRepositories` and is called with `crm.repositories`;
   - it also gains `openApiCheck`, which:
     - registers every schema and builds the document;
@@ -72,4 +72,4 @@ its name stays.
 
 ## Byte-identity
 
-The Nest output doesn't change. Only the `plainWiring` branches of `wiring.ejs.t` and the plain-only emitter changed.
+The Nest output doesn't change. Only the `patternStackWiring` branches of `wiring.ejs.t` and the pattern-stack-only emitter changed.

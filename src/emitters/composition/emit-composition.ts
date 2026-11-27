@@ -110,7 +110,7 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 		// The module's API keys each entity by its camelCase name beside `repositories`, the bundle (PW-3b).
 		if (camelCase(d.entity.name) === 'repositories') {
 			throw new Error(
-				`[codegen] wiring: plain: entity '${d.entity.name}' would be the key 'repositories' in module '${name}', ` +
+				`[codegen] wiring: pattern-stack: entity '${d.entity.name}' would be the key 'repositories' in module '${name}', ` +
 					`which holds the module's repository bundle; rename the entity`,
 			);
 		}
