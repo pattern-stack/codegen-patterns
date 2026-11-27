@@ -96,6 +96,13 @@ export interface BehaviorDefinition {
 	/** Fields added by this behavior */
 	fields: BehaviorField[];
 
+	/**
+	 * The columns that identify a row to the outside world, when the behavior has such an identity (for
+	 * `external_id_tracking`, the provider and its id for the row). Each names a field in {@link fields}. A natural
+	 * key over exactly these columns is the one a provider sync upserts on (RFC-0006 S7, D1).
+	 */
+	identityColumns?: string[];
+
 	/** Drizzle imports needed */
 	drizzleImports: string[];
 

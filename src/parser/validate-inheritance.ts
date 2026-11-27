@@ -12,7 +12,9 @@
  *   R2  each choice has at most one child; `as:` is one of the base's choices
  *   R3  one level: a base may not itself inherit
  *   R4  no name is declared on both a child and its base
- *   R6  a child declares a pattern only over its own columns
+ *   R6  a child declares a pattern only over its own columns (an Integrated child reads the `external_id_tracking`
+ *       columns through its base, D1)
+ *   D1  an Integrated child's base declares `external_id_tracking` and a `[provider, external_id]` natural key (S7)
  *   R7  a child's `queries:` name only its own columns
  *   R8  base and children share one RESOLVED sync mode
  *   R10 a `tenant_scoped` base declares its tenant column NOT NULL
@@ -23,13 +25,23 @@
  * them. Every message names the entities (and fields) involved.
  */
 
-import type { AnalysisIssue, ParsedEntity, ParsedRelationship } from '../analyzer/types.js';
+import type { AnalysisIssue, ParsedEntity, ParsedField, ParsedRelationship } from '../analyzer/types.js';
 import { getBehavior } from '../behaviors/index.js';
 import { declaredPatternNames } from '../patterns/compose.js';
 import { getPattern } from '../patterns/registry.js';
 import { resolveImpliedBehaviors } from '../patterns/implied-behaviors.js';
+import { excludeFieldIssues } from '../schema/entity-definition.schema.js';
 import { foreignKeyColumnNullable } from '../schema/field-nullability.js';
-import { enumChoices, inheritanceCounterpartNames, matchPairsOf } from '../schema/inheritance.js';
+import {
+	declaresExternalIdTracking,
+	flatChildShape,
+	type FlatChildInput,
+	enumChoices,
+	inheritanceCounterpartNames,
+	INTEGRATED_NATURAL_KEY,
+	isIntegratedNaturalKey,
+	matchPairsOf,
+} from '../schema/inheritance.js';
 import {
 	baseTenantColumnIssue,
 	tenantColumnName,
@@ -116,6 +128,32 @@ function implicitColumns(
 }
 
 /**
+ * What an Integrated child requires of its base (S7, D1) and the base does not provide — one sentence per missing piece,
+ * `[]` when the base meets them. The ONE statement of the requirement: D1 reports each piece, and R6 accepts the
+ * `external_id_tracking` columns on the child only while this is empty.
+ *
+ * The behavior must be DECLARED in the base's `behaviors:` (a pattern implying it does not count: Integrated on a base is
+ * refused, D2), and the natural key must be over exactly the two columns a provider sync matches on.
+ */
+function integratedBaseGaps(base: ParsedEntity): string[] {
+	const gaps: string[] = [];
+	const key = `[${INTEGRATED_NATURAL_KEY.join(', ')}]`;
+	if (!declaresExternalIdTracking(base.behaviors)) {
+		gaps.push(`declares no 'external_id_tracking' in its 'behaviors:'. Add 'external_id_tracking' to '${base.name}'.`);
+	}
+	const naturalKeys = base.uniqueIndexes.filter((u) => u.natural_key === true);
+	if (naturalKeys.length === 0) {
+		gaps.push(`declares no 'natural_key: true' unique_indexes entry. Add 'unique_indexes: [{ fields: ${key}, natural_key: true }]' to '${base.name}'.`);
+	} else if (!naturalKeys.some((u) => isIntegratedNaturalKey(u.fields))) {
+		gaps.push(
+			`has its natural key on [${naturalKeys[0]!.fields.join(', ')}], not ${key}. ` +
+				`A provider sync matches on ${key}: put 'natural_key: true' on a unique_indexes entry over exactly those columns of '${base.name}'.`,
+		);
+	}
+	return gaps;
+}
+
+/**
  * The literal choice list of an enum field, following ONE `choices_of:` hop; `undefined` when unknown. The parsed
  * model spells the key `choicesOf` and holds fields in a `Map`, so this only adapts the shape — the resolution is
  * `enumChoices`, the one the derivation and the templates read too.
@@ -172,6 +210,17 @@ function declaresColumn(e: ParsedEntity, column: string): 'field' | 'foreign key
 		if (rel.type === 'belongs_to' && rel.foreignKey === column) return 'foreign key column';
 	}
 	return undefined;
+}
+
+/** A parsed entity as the flat-shape walk reads it: the same keys the raw YAML has, over the parsed model's maps. */
+function flatInput(e: ParsedEntity): FlatChildInput<ParsedField, ParsedRelationship> {
+	return {
+		entity: { name: e.name },
+		...(e.inherits !== undefined ? { inherits: e.inherits } : {}),
+		...(e.discriminator !== undefined ? { discriminator: e.discriminator } : {}),
+		fields: Object.fromEntries(e.fields),
+		relationships: Object.fromEntries(e.relationships),
+	};
 }
 
 /** Cross-validate the whole entity set. Never throws. */
@@ -318,6 +367,12 @@ export function validateInheritance(
 		// R6: a child declares a pattern only over the columns it owns.
 		const baseColumns = new Set<string>([...baseOwn.keys(), ...baseImplicit.keys()]);
 		const baseOnly = (col: string) => baseColumns.has(col) && !childOwn.has(col);
+		// An Integrated child reads the `external_id_tracking` columns through its base (S7). R6 always accepts them;
+		// a base that falls short is reported once, by D1, not again as three R6 errors.
+		const baseGaps = declaredPatternNames(e).includes('Integrated') ? integratedBaseGaps(base) : [];
+		for (const gap of baseGaps) {
+			error(e, 'inherits_integrated_base', `D1 — '${name}' declares 'pattern: Integrated', and its base '${child.base}' ${gap}`);
+		}
 		for (const patternName of declaredPatternNames(e)) {
 			const definition = getPattern(patternName);
 			// Parsed through the pattern's own schema, as composition does: a config that fails it is
@@ -337,8 +392,12 @@ export function validateInheritance(
 				continue;
 			}
 			const read = definition.columnsRead(parsed?.success ? parsed.data : undefined);
+			// Only the pattern that DECLARES the read-through behavior reads its columns through the base.
+			const readThroughBase = new Set<string>(
+				(definition.readsThroughBase ?? []).flatMap((b) => (getBehavior(b)?.fields ?? []).map((f) => f.name)),
+			);
 			for (const col of read) {
-				if (baseOnly(col)) {
+				if (baseOnly(col) && !readThroughBase.has(col)) {
 					error(
 						e,
 						'inherits_pattern_config',
@@ -535,6 +594,23 @@ export function validateInheritance(
 				}
 				claimed.set(local, { rel: relName, target: rel.target, col: targetCol, type });
 			}
+		}
+	}
+
+	// ---- integration.sink.exclude_fields on a child is checked against its FLAT shape (base + own, S7a): a provider sync
+	// has no opinion on the family hierarchy, so a child may exclude whatever its flat twin could. The single-file check
+	// in the entity schema skips a child; this is the other half.
+	const flatInputs = entities.map(flatInput);
+	for (const e of entities) {
+		const excluded = e.integration?.sinkExcludeFields;
+		if (e.inherits === undefined || excluded === undefined || excluded.length === 0) continue;
+		const shape = flatChildShape(flatInput(e), flatInputs);
+		if (shape === null) continue; // the base is absent: R-base reports it
+		const fkColumns = shape.relationships.flatMap(({ relationship }) =>
+			relationship.type === 'belongs_to' ? [relationship.foreignKey] : [],
+		);
+		for (const issue of excludeFieldIssues(excluded, shape.fields.map((f) => f.name), fkColumns)) {
+			error(e, 'exclude_fields_invalid', issue.message, excluded[issue.index]);
 		}
 	}
 

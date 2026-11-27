@@ -275,6 +275,9 @@ export function transformToEntity(result: LoadResult, tablePrefix: string): Pars
 			}
 		}
 
+		const excludeFields = integrationDef.sink?.exclude_fields;
+		if (excludeFields !== undefined) parsedIntegration.sinkExcludeFields = [...excludeFields];
+
 		entity.integration = parsedIntegration;
 	}
 

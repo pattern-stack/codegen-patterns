@@ -36,7 +36,7 @@
 import { getBehavior, normalizeBehaviorConfig } from '../behaviors/index.js';
 import type { BehaviorConfig } from '../behaviors/types.js';
 import { camelCase } from '../config/file-naming.js';
-import { resolveImpliedBehaviors } from '../patterns/implied-behaviors.js';
+import { behaviorsReadThroughBase, resolveImpliedBehaviors } from '../patterns/implied-behaviors.js';
 import {
 	fieldColumnNullable,
 	foreignKeyColumnNullable,
@@ -188,13 +188,17 @@ export const BASE_ONLY_BEHAVIORS: readonly string[] = [
 ];
 
 /**
- * The base-only lifecycle behaviors an entity declares or implies (a pattern's
- * `impliedBehaviors` counts: `Integrated` implies `external_id_tracking`).
- * Empty for an entity that declares none. Used for R5 on a child.
+ * The base-only lifecycle behaviors a CHILD declares, or implies through a pattern (a pattern's `impliedBehaviors`
+ * counts: `Integrated` implies `external_id_tracking`). Empty for an entity that declares none. Used for R5.
+ *
+ * A behavior the child DECLARES in `behaviors:` always counts. One it only IMPLIES does not when a pattern it declares
+ * reads it through the base (`readsThroughBase`, RFC-0006 §4.2 / S7): the base supplies the columns, so the child's
+ * table gets none (and S7a's D1 checks the base does declare it).
  */
 export function lifecycleBehaviorsDeclared(def: TenancyEntityInput): string[] {
 	const explicit = (def.behaviors ?? []).map((b) => normalizeBehaviorConfig(b).name);
-	const implied = resolveImpliedBehaviors(def.entity ?? {});
+	const throughBase = behaviorsReadThroughBase(def.entity ?? {});
+	const implied = resolveImpliedBehaviors(def.entity ?? {}).filter((n) => !throughBase.includes(n));
 	return [...new Set([...explicit, ...implied])].filter((n) => BASE_ONLY_BEHAVIORS.includes(n));
 }
 

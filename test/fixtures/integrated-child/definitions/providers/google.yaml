@@ -1,0 +1,14 @@
+# S7a (#917) — one generic provider serving both the mail and the calendar surface, so every Integrated child of the family
+# is rendered; the family-blind gate and the validation tests read this file.
+slug: google
+display_name: Google
+auth:
+  type: oauth2
+  strategy: '@app/integrations/providers/google/google-oauth.strategy#GoogleOAuthStrategy'
+  scopes:
+    - https://www.googleapis.com/auth/gmail.readonly
+    - https://www.googleapis.com/auth/calendar.readonly
+client:
+  class: '@app/integrations/providers/google/google.client#GoogleClient'
+  base_url: https://www.googleapis.com
+surfaces: [calendar, mail]
