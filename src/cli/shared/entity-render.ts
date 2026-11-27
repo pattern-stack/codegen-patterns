@@ -43,6 +43,8 @@ import { loadJobs } from '../../parser/load-jobs.js';
 import { jobLoadRejections, jobSubsystemRejections } from './emit-jobs.js';
 import { resolveInstalledSubsystems } from './subsystem-detect.js';
 import { issueRejections, type RejectionEntry, type RunRejection } from './run-rejections.js';
+import { classGraphRejections } from './class-graph-check.js';
+import type { RelationsConfigInput } from '../../emitters/relations/load-context.js';
 import { printError, printInfo, printSuccess, printWarning } from '../ui/output.js';
 import { isJsonMode } from '../ui/json.js';
 
@@ -210,6 +212,12 @@ export async function preflightEntityTargets(
 	// and a role or `patterns:` entry naming it would resolve against the
 	// wrong registry (#664, from the #660 audit).
 	runRejections.push(...patternLoadRejections(await loadAppPatternsForCli(ctx), ctx.cwd));
+	// PW-1: the whole set's class graph has no cycle (needs the app patterns, which shape each surface).
+	if (runRejections.length === 0) {
+		runRejections.push(
+			...classGraphRejections(ctx.cwd, ctx.config as RelationsConfigInput | null | undefined, entitiesDirForEmits),
+		);
+	}
 
 	// Job definitions (RFC-0005 #7) — loaded ONCE, here, so their derived
 	// artifacts feed the event + bridge codegen in the SAME pass: each

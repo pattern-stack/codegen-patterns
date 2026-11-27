@@ -101,6 +101,8 @@ export interface EntityDefinitionInput {
 	unique_indexes?: readonly { natural_key?: boolean }[] | null;
 	eav?: boolean;
 	eav_value_table?: boolean;
+	/** The definition entity an `eav_value_table: true` entity's values belong to. */
+	eav_definition_table?: string | null;
 	/** `emits:` (EVT-7) — the event types the entity's writes publish. Absent / `[]`: none. */
 	emits?: readonly string[] | null;
 }

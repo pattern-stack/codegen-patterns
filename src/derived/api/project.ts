@@ -37,6 +37,7 @@ import { loadRelationshipFromYaml } from '../../utils/yaml-loader.js';
 import { invalidDefinitionError, relationshipFileFailure } from '../../utils/definition-invariant.js';
 import {
 	deriveEntityApiSurface,
+	type EntityApiInput,
 	type EntityBlockInput,
 	type EntityDefinitionInput,
 	type PatternCompositionInput,
@@ -123,17 +124,18 @@ const UNMODELLED_RELATIONSHIP =
 	"a `relationship:` definition's module is not derived yet — #679 folds `pattern: Junction` and " +
 	'`relationship:` into one concept first';
 
-export function deriveProjectApiSurface(ctx: ProjectApiContext): ProjectApiSurface {
-	const rel = ctx.relations;
+/**
+ * Each entity's derivation input over the whole set, in entity-name order: what `deriveEntityApiSurface` reads, and
+ * what the class graph (`src/derived/wiring/`) reads beside the surface. Every `has_many` target in the set is wired.
+ */
+export function projectEntityApiInputs(rel: ProjectApiContext['relations']): EntityApiInput[] {
 	const definitions = [...rel.definitions.values()].sort((a, b) => a.entity.name.localeCompare(b.entity.name));
 	const blocks = new Map<string, EntityBlockInput>(definitions.map((d) => [d.entity.name, d.entity]));
 	const entityLookup = (name: string): EntityBlockInput | null => blocks.get(name) ?? null;
 	const allNames = definitions.map((d) => d.entity.name);
-
-	const entities: Record<string, EntityApiSurface> = {};
-	for (const definition of definitions) {
+	return definitions.map((definition) => {
 		const input: EntityDefinitionInput = definition;
-		entities[definition.entity.name] = deriveEntityApiSurface({
+		return {
 			definition: input,
 			junctions: rel.junctions,
 			composition: patternComposition(definition.entity),
@@ -142,7 +144,17 @@ export function deriveProjectApiSurface(ctx: ProjectApiContext): ProjectApiSurfa
 			inheritanceBase: inheritanceBaseOf(definition, definitions),
 			discriminatorKinds: discriminatorKindsOf(definition, definitions),
 			entityLookup,
-		});
+		};
+	});
+}
+
+export function deriveProjectApiSurface(ctx: ProjectApiContext): ProjectApiSurface {
+	const rel = ctx.relations;
+	const definitions = [...rel.definitions.values()].sort((a, b) => a.entity.name.localeCompare(b.entity.name));
+
+	const entities: Record<string, EntityApiSurface> = {};
+	for (const input of projectEntityApiInputs(rel)) {
+		entities[input.definition.entity.name] = deriveEntityApiSurface(input);
 	}
 
 	// ── 1. REL-1's graph and allowlists — the same calls the manifest emitter makes ──

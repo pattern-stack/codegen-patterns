@@ -32,6 +32,7 @@ import { detectMethodCollisions } from '../../../../src/patterns/compose.js';
 import { resolvePatternComposition } from '../../../../src/patterns/resolve-composition.js';
 import '../../../../src/patterns/library/index.js';
 import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
+import { entityClassGraph, moduleImports } from '../../../../src/derived/wiring/classes.js';
 import { arrayElementType, deriveFieldFacts, isArrayType } from '../../../../src/derived/columns/fields.js';
 import { columnRendererFor } from '../../../../src/targets/columns.js';
 import { constraintRendererFor } from '../../../../src/targets/constraints.js';
@@ -1779,12 +1780,6 @@ export function buildBackendLocals(definition, baseLocals) {
     hasMany.filter((r) => r.targetExists),
   );
 
-  // The other entities' MODULES this module imports (ADR-002): a service that composes another entity's repository
-  // gets it from that entity's home module, which exports it — the only place the repository's own dependencies are
-  // wired (a joined-table child's repository injects its base's, an EAV repository its field-value service). A
-  // module that provided the repository itself would have to repeat that closure. Every such import prints
-  // `forwardRef(() => …)`: an ES-module cycle can close through a junction's module or the EAV block's import, which no
-  // graph computed here would see, and `forwardRef` on an import that is not in a cycle changes nothing at runtime.
   // JUNC-0 (#678): every junction naming this entity in `between:` is mirrored
   // onto its service + module here, from the junction YAML set — the parent's
   // own templates render the fan-out; nothing injects into them. A counterparty
@@ -1942,24 +1937,34 @@ export function buildBackendLocals(definition, baseLocals) {
     modulesDir,
     baseBehaviors: familyBaseBehaviors,
   });
-  // A joined-table child's repository injects its base's, which the base's module exports: the base is the FIRST
-  // entry, and one entry per entity — a child that also relates to its own base imports that module once.
-  const repositoryDepModules = [
-    ...(family.child ? [{ entity: family.child.baseName, importDir: family.child.baseModuleDir, inherits: true }] : []),
-    ...repositoryDeps
-      // The EAV definition's module is imported by the EAV block of the module template.
-      .filter((dep) => !(eavValueTable && dep.entity === eavDefinitionEntity)),
-  ]
-    .filter((dep, i, all) => all.findIndex((other) => other.entity === dep.entity) === i)
-    .map((dep) => {
-      const depNaming = entityModuleNaming(entityLookup(dep.entity), modulesDir);
-      return {
-        entity: dep.entity,
-        moduleClass: moduleClassName(depNaming.plural),
-        importPath: `${dep.importDir}/${emittedStem(depNaming.plural)}.module`,
-        inherits: dep.inherits === true,
-      };
-    });
+  // The import path of each module this module imports (ADR-002: a service that composes another entity's repository
+  // gets it from that entity's home module, which exports it — the only place the repository's own dependencies are
+  // wired). WHICH modules, in what order, is the class graph's answer (`moduleImports`, PW-1), computed below once the
+  // surface exists; this only says where each one is.
+  // Every such import prints `forwardRef(() => …)`: an ES-module cycle can close through a junction's module or the
+  // EAV block's import, and `forwardRef` on an import that is not in a cycle changes nothing at runtime.
+  const moduleImportPath = (owner, reason) => {
+    if (reason === 'junction_fan_out') {
+      const fan = junctionFanOut.find((f) => f.junction.name === owner);
+      if (!fan) throw new Error(`[codegen] '${entityName}': the class graph fans out to junction '${owner}', which no fan-out block names.`);
+      return { moduleClass: fan.junction.moduleClass, importPath: fan.junctionModuleImport };
+    }
+    if (reason === 'eav_field_values') {
+      return { moduleClass: `${eavFieldValueModulePascal}Module`, importPath: `${eavFieldValueImportDir}/${eavFieldValuePluralStem}.module` };
+    }
+    if (reason === 'eav_definition') {
+      return { moduleClass: `${eavDefinitionPluralPascal}Module`, importPath: `${eavDefinitionImportDir}/${eavDefinitionEntityPluralStem}.module` };
+    }
+    const importDir = reason === 'inherits' && family.child?.baseName === owner
+      ? family.child.baseModuleDir
+      : repositoryDeps.find((d) => d.entity === owner)?.importDir;
+    if (!importDir) throw new Error(`[codegen] '${entityName}': the class graph composes '${owner}', whose module folder is unknown here.`);
+    const depNaming = entityModuleNaming(entityLookup(owner), modulesDir);
+    return {
+      moduleClass: moduleClassName(depNaming.plural),
+      importPath: `${importDir}/${emittedStem(depNaming.plural)}.module`,
+    };
+  };
 
   // The entities that `inherits:` this one — the derivation's input (`inheritanceChildren`): a base's cross-kind
   // reads and a family member's typed include both follow from it (`apiSurface.repository.methods` / `.typedInclude`).
@@ -2403,7 +2408,7 @@ export function buildBackendLocals(definition, baseLocals) {
   // from what this function already holds: the definition, the junction set,
   // the resolved composition, the has_many targets that will exist, and the
   // cross-entity lookup.
-  const apiSurface = deriveEntityApiSurface({
+  const apiInput = {
     definition,
     junctions: baseLocals.junctions ?? [],
     composition: patternBase,
@@ -2412,7 +2417,16 @@ export function buildBackendLocals(definition, baseLocals) {
     inheritanceBase,
     discriminatorKinds: discriminatorKindsOf(definition, entityLookup?.definitions ? entityLookup.definitions() : []),
     entityLookup: (name) => (entityLookup ? entityLookup(name) : null),
-  });
+  };
+  const apiSurface = deriveEntityApiSurface(apiInput);
+  // PW-1 — the classes this entity emits and what each one's constructor takes (`src/derived/wiring/`). The module
+  // template prints its module imports, providers and controllers from it.
+  const classGraph = entityClassGraph(apiInput, apiSurface);
+  const wiring = {
+    moduleImports: moduleImports(classGraph, entityName).map((m) => ({ ...moduleImportPath(m.owner, m.reason), owner: m.owner, reason: m.reason })),
+    providers: classGraph.nodes.filter((n) => n.role !== 'controller'),
+    controllers: classGraph.nodes.filter((n) => n.role === 'controller').map((n) => n.id),
+  };
   // Whether writes are emitted is the derivation's answer (ADR-046): `generate.writes: false`; a base with a child for every kind has no create (RFC-0006 §4.1, S5).
   const hasUseCase = (kind) => apiSurface.useCases.some((u) => u.kind === kind);
 
@@ -2578,6 +2592,16 @@ export function buildBackendLocals(definition, baseLocals) {
     listQueryDto: `List${entityNamePluralPascal}QueryDto`,
     listQuerySchema: `List${entityNamePluralPascal}QuerySchema`,
   };
+  // The module imports each provider and controller by its `classNames` / `searchQuery` name and registers it by the
+  // graph's id: one set of names, or the module fails to compile. Held here until #894 moves the class names.
+  const knownClassNames = new Set([
+    ...Object.values(classNames),
+    ...(searchQueryResolved ? [searchQueryResolved.useCaseClassName] : []),
+  ]);
+  for (const n of classGraph.nodes) {
+    if (n.useCaseKind === 'query' || knownClassNames.has(n.id)) continue;
+    throw new Error(`[codegen] '${entityName}': the class graph names ${n.id} (${n.role}), which classNames does not — the two class-name sources disagree (#894).`);
+  }
 
   // Fields for create DTO: exclude id, behavior-managed fields, and FK fields
   // An adopted tenant column (#791) is stamped by the repository from the
@@ -3062,7 +3086,7 @@ export function buildBackendLocals(definition, baseLocals) {
 
     // #632: every other entity's repository the service composes, once each
     repositoryDeps: repositoryDeps,
-    repositoryDepModules,
+    wiring,
     // JUNC-0 (#678): the junction fan-out this entity's service + module carry
     junctionFanOut: junctionFanOut,
     // The EAV definition repository is imported + injected by its own block

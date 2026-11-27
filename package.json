@@ -63,6 +63,8 @@
     "src/derived/api/types.ts",
     "src/derived/api/names.ts",
     "src/derived/api/entity.ts",
+    "src/derived/wiring/classes.ts",
+    "src/derived/wiring/types.ts",
     "src/derived/columns/types.ts",
     "src/derived/columns/fields.ts",
     "src/derived/constraints/on-delete.ts",

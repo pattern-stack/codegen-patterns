@@ -25,23 +25,14 @@ _%>
  * root AppModule (global) so these tokens resolve at runtime.
  */
 <% } -%>
-import { Inject, Module<% if (junctionFanOut.length > 0 || repositoryDepModules.length > 0 || _eav || eavValueTable) { %>, forwardRef<% } %> } from '@nestjs/common';
+import { Inject, Module<% if (wiring.moduleImports.length > 0) { %>, forwardRef<% } %> } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '<%= openApiImport %>';
 import { DatabaseModule } from '@shared/database/database.module';
-<%_ /* ADR-002: the home module of each composed entity (belongs_to + has_many targets, deduped) exports its repository */ _%>
-<%_ repositoryDepModules.forEach(dep => { _%>
+<%_ /* PW-1 — the module of every class this module's classes take (the class graph's `moduleImports`): the base's, each
+   composed entity's (ADR-002: its home module exports its repository), each fanned-out junction's (JUNC-0), the EAV blocks' */ _%>
+<%_ wiring.moduleImports.forEach(dep => { _%>
 import { <%= dep.moduleClass %> } from '<%= dep.importPath %>';
 <%_ }) _%>
-<%_ /* JUNC-0 — the module of each junction this entity is mirrored onto */ _%>
-<%_ junctionFanOut.forEach(fan => { _%>
-import { <%= fan.junction.moduleClass %> } from '<%= fan.junctionModuleImport %>';
-<%_ }) _%>
-<% if (_eav) { -%>
-import { <%= eavFieldValueModulePascal %>Module } from '<%= eavFieldValueImportDir %>/<%= eavFieldValuePluralStem %>.module';
-<% } -%>
-<% if (eavValueTable) { -%>
-import { <%= eavDefinitionPluralPascal %>Module } from '<%= eavDefinitionImportDir %>/<%= eavDefinitionEntityPluralStem %>.module';
-<% } -%>
 
 import { <%= classNames.repository %> } from './<%= entityFileStem %>.repository';
 import { <%= classNames.service %> } from './<%= entityFileStem %>.service';
@@ -80,47 +71,27 @@ import { <%= classNames.searchController %> } from './<%= entityFileStem %>-sear
 @Module({
   imports: [
     DatabaseModule,
-<%_ repositoryDepModules.forEach(dep => { _%>
-<%_ if (dep.inherits) { _%>
-    // A <%= entityName %> is a kind of <%= dep.entity %>: its repository injects the base's, which that module exports.
+<%_ /* forwardRef: Nest's module graph has cycles the class graph doesn't (a junction's module imports this one for its repository) */ _%>
+<%_ wiring.moduleImports.forEach(dep => { _%>
+<%_ if (dep.reason === 'inherits') { _%>
+    // A <%= entityName %> is a kind of <%= dep.owner %>: its repository injects the base's, which that module exports.
 <%_ } _%>
     forwardRef(() => <%= dep.moduleClass %>),
 <%_ }) _%>
-<%_ /* JUNC-0 — forwardRef breaks the parent ↔ junction module cycle (the junction module imports this one for its repository) */ _%>
-<%_ junctionFanOut.forEach(fan => { _%>
-    forwardRef(() => <%= fan.junction.moduleClass %>),
-<%_ }) _%>
-<% if (_eav) { -%>
-    forwardRef(() => <%= eavFieldValueModulePascal %>Module),
-<% } -%>
-<% if (eavValueTable) { -%>
-    forwardRef(() => <%= eavDefinitionPluralPascal %>Module),
-<% } -%>
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
   ],
-  controllers: [<% if (_api) { %><%= classNames.controller %><% if (_searchRoute) { %>, <%= classNames.searchController %><% } %><% } %>],
+  controllers: [<%= wiring.controllers.join(', ') %>],
   providers: [
-    <%= classNames.repository %>,
-    <%= classNames.service %>,
-    <%= classNames.findByIdUseCase %>,
-    <%= classNames.listUseCase %>,
-<% if (_eav) { -%>
-    <%= classNames.findByIdWithFieldsUseCase %>,
-    <%= classNames.listWithFieldsUseCase %>,
-<% } -%>
-<% if (_create) { -%>
-    <%= classNames.createUseCase %>,
-<% } -%>
-<% if (_writes) { -%>
-    <%= classNames.updateUseCase %>,
-    <%= classNames.deleteUseCase %>,
-<% } -%>
-<% if (hasDeclarativeQueries) { -%>
+<%_ /* PW-1 — every class the graph lists for this entity, in its order; the declarative queries print as their one spread */ _%>
+<%_ wiring.providers.forEach((p, i) => { _%>
+<%_ if (p.useCaseKind === 'query') { _%>
+<%_ if (wiring.providers[i - 1]?.useCaseKind !== 'query') { _%>
     ...declarativeQueryClasses,
-<% } -%>
-<% if (_searchUseCase) { -%>
-    <%= searchQuery.useCaseClassName %>,
-<% } -%>
+<%_ } _%>
+<%_ } else { _%>
+    <%= p.id %>,
+<%_ } _%>
+<%_ }) _%>
   ],
   // ADR-002 (revised): the service is the public API; the repository is ALSO
   // exported so sibling modules that compose this entity cross-module (junction
