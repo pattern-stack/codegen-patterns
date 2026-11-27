@@ -405,6 +405,12 @@ For entities tagged with `surface:` (when `definitions/providers/*.yaml` exist),
 
 The author seam is just the vendor read methods plus any non-generic sink write logic.
 
+Under `target.wiring: pattern-stack` (S-3, `docs/specs/S-3.md`, `src/cli/shared/pattern-stack-integrations.ts`) the same
+set is wiring manifests: a system per provider (`<slug>Provider`, built by the author's emit-once
+`<slug>.provider.factory.ts`), a system per surface's adapters (`<surface>Adapters`), and the runs as the composition's
+`integrations` module (`crm.contact.salesforce` is an `IntegrationRunner`). The adapter scaffold, sinks and change
+emitter take a `wiring` parameter instead of having twins; their Nest bytes are the integration-emit golden's.
+
 ### Entity Families
 
 Base classes in `runtime/base-classes/`:

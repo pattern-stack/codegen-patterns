@@ -152,6 +152,7 @@ test-smoke-subsystems:
 # (node_modules/@pattern-stack/ must be linked). Set KEEP_SMOKE_DIR=1 to keep.
 test-smoke-integration:
     bun test/smoke-integration/run.ts
+    bun test/smoke-integration/run.ts --wiring pattern-stack
 
 # Run baseline test (generate + typecheck + compare to baseline)
 test-baseline:

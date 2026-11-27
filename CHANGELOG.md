@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added: integrations under `wiring: pattern-stack` (S-3, part 2)
+
+- An entity's `surface:` is no longer refused under pattern-stack wiring. With providers in `definitions/providers/`,
+  `entity new` writes the integration layer as `@pattern-stack/wiring` manifests:
+  - each provider is a system (`<slug>Provider`), built by an emit-once `<slug>.provider.factory.ts` where the author
+    constructs the `auth.strategy` and `client.class` classes;
+  - each surface's adapters are a system (`<surface>Adapters`): `adapters.<provider>`, and `sources()`, the folded
+    change-source registry;
+  - the runs are the `integrations` module: `app.module('integrations').crm.contact.salesforce` is an
+    `IntegrationRunner` over the adapter's change source, the entity's sink and the `integration` system.
+- The adapter scaffold, the sinks and the change emitter are the Nest generators' own, without decorators. The Nest
+  output is unchanged.
+- Switching `target.wiring` removes the other wiring's generated integration files, and names its author-owned
+  scaffolds.
+- `IntegrationRunner` takes any record type (an entity's projection interface).
+
 ### Added: the integration subsystem under `wiring: pattern-stack` (S-3, part 1)
 
 - `codegen subsystem install integration` (drizzle or memory) is no longer refused under pattern-stack wiring. It

@@ -26,6 +26,15 @@ import { eventsGeneratedDir } from './pattern-stack-subsystems.js';
 import { removeOtherWiringFiles } from '../../emitters/composition/stale-files.js';
 import { openApiImport, resolveRuntimeMode, runtimeImport, subsystemCoreImport, type RuntimeMode } from './runtime-import.js';
 import { printInfo, printWarning } from '../ui/output.js';
+import { listEntityYamls } from '../../utils/find-yaml-files.js';
+import { loadEntitiesFromYaml } from '../../utils/yaml-loader.js';
+import { collectEntitySurfaces, loadProviderSet } from './provider-module-generator.js';
+import {
+	emitPatternStackIntegrations,
+	planPatternStackIntegrations,
+	type EmitPatternStackIntegrationsResult,
+	type PatternStackIntegrationsInput,
+} from './pattern-stack-integrations.js';
 
 /** Is the events subsystem installed (S-1)? `isSubsystemInstalled`'s one rule (under pattern-stack, its `core.ts`). */
 export function eventsInstalled(ctx: Context): boolean {
@@ -68,6 +77,55 @@ export function patternStackEventsInput(ctx: Context, generatedDir: string): Com
 }
 
 /**
+ * The integration set's input (S-3): the providers (`definitions/providers/`) and the entity YAMLs, or null with no
+ * provider. The provider set was validated by the pre-flight; this reads it again, so the composition every command
+ * writes (`entity new`, `junction new`) lists the same systems.
+ */
+function integrationsSource(ctx: Context, entitiesDir: string): PatternStackIntegrationsInput | null {
+	const layout = projectLayout(ctx.cwd, ctx.config);
+	const loaded = loadEntitiesFromYaml(listEntityYamls(entitiesDir, layout.nonEntityDirs));
+	const entities = loaded.successes.map((s) => s.definition);
+	const providers = loadProviderSet({
+		providersDir: layout.providers,
+		entitySurfaces: collectEntitySurfaces(entities),
+		skipImportCheck: true,
+	});
+	// `entity new`'s pre-flight stops on these; `junction new` and a dry run reach here without it, and a provider that
+	// failed to load must not just drop out of the composition.
+	const blocking = providers.issues.filter((i) => i.severity === 'error');
+	if (blocking.length > 0) {
+		throw new Error(
+			`[codegen] definitions/providers: ${blocking.map((i) => `${i.message}${i.path ? ` (${i.path})` : ''}`).join('; ')}`,
+		);
+	}
+	if (providers.skipped || providers.loaded.length === 0) return null;
+	return {
+		providers: providers.loaded,
+		entities: entities as PatternStackIntegrationsInput['entities'],
+		outputRoot: path.join(layout.backendSrc, 'integrations'),
+		backendSrcAbs: layout.backendSrc,
+		modulesAbs: layout.modules,
+		mode: resolveRuntimeMode(ctx.config),
+	};
+}
+
+/** Write (or, on a dry run, plan) the pattern-stack integration files (S-3), or null with no provider. The `integrations` module is the composition's. */
+export function writePatternStackIntegrations(
+	ctx: Context,
+	dirs: { entitiesDir: string; generatedDir: string; aliases?: Record<string, string>; dryRun?: boolean },
+): EmitPatternStackIntegrationsResult | null {
+	const source = integrationsSource(ctx, dirs.entitiesDir);
+	if (!source) return null;
+	return emitPatternStackIntegrations({
+		...source,
+		wiringFile: path.join(dirs.generatedDir, 'wiring.ts'),
+		aliases: dirs.aliases ?? {},
+		tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
+		dryRun: dirs.dryRun ?? false,
+	});
+}
+
+/**
  * The composition's input for this project: the one place that builds it. Every directory comes from `ctx`
  * (`projectLayout`, the junctions and relationships folders), and the relations load once per call.
  */
@@ -85,6 +143,10 @@ function compositionInput(ctx: Context): CompositionInput {
 		...emitterOptions(mode),
 		events: patternStackEventsInput(ctx, layout.generated),
 		integration: patternStackIntegrationInput(ctx),
+		integrations: (() => {
+			const source = integrationsSource(ctx, layout.entities);
+			return source ? planPatternStackIntegrations(source) : null;
+		})(),
 	};
 }
 
@@ -132,6 +194,7 @@ export function writePatternStackComposition(ctx: Context): PatternStackComposit
 		wiring: 'pattern-stack',
 		modulesDir: input.modulesDir,
 		generatedDir: input.generatedDir,
+		integrationsDir: path.join(projectLayout(ctx.cwd, ctx.config).backendSrc, 'integrations'),
 		keep: new Set(files.map((f) => f.path)),
 	});
 	const behind = wiringFilesBehind(input);

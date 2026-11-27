@@ -61,7 +61,8 @@ import {
   type IntegrationAssemblyEntry,
   type IntegrationTokenEntry,
 } from "./assembly-emission-generator";
-import { subsystemsImport, type RuntimeMode } from "./runtime-import";
+import { subsystemCoreImport, subsystemsImport, type RuntimeMode } from "./runtime-import";
+import type { TargetWiring } from "../../targets/apps.js";
 import { emittedStem } from '../../config/file-naming.js';
 import { resolveTenancy, type TenantScopedDeclaration } from '../../schema/tenancy.js';
 import {
@@ -200,6 +201,16 @@ export const SURFACE_REGISTRY: Record<string, SurfaceSpec> = {
  * surface needs a singleton client. A surface unknown to `SURFACE_REGISTRY` is
  * treated as needing a client (conservative — keeps the legacy shape).
  */
+/**
+ * Does the pattern-stack adapter for (provider, surface) take a client (S-3)? Not on a read-primitive surface with
+ * entities (it builds one per connection), and never for a client-less provider (its factory builds none). The
+ * scaffold's constructor and the adapters system's `new` both read this, so they agree.
+ */
+export function adapterTakesClient(def: { surfaces: readonly string[] }, surface: string, entities: readonly string[]): boolean {
+  const readPrimitive = !!SURFACE_REGISTRY[surface]?.readPrimitive && entities.length > 0;
+  return !readPrimitive && !isClientlessProvider(def.surfaces);
+}
+
 export function isClientlessProvider(surfaces: readonly string[]): boolean {
   return (
     surfaces.length > 0 &&
@@ -340,6 +351,7 @@ function buildReadPrimitiveEmission(
   surface: string,
   entities: string[],
   entityDetection: Map<string, DetectionConfig> | undefined,
+  authType = "IAuthStrategy",
 ): ReadPrimitiveEmission {
   const canonicalTypes: string[] = [];
   const blocks: string[] = [];
@@ -377,7 +389,7 @@ export class ${className} extends IncrementalReadBase<${canonical}, ResolvedFilt
   // (e.g. Gmail \`q=\`); leave \`false\` to filter post-hydrate via \`matchesRecord\`.
   protected override readonly filterPushdown = false;${cursorOverride}
 
-  constructor(private readonly auth: IAuthStrategy) {
+  constructor(private readonly auth: ${authType}) {
     super();
   }
 
@@ -438,15 +450,21 @@ export function generateAdapterScaffold(
   entities: string[],
   entityDetection?: Map<string, DetectionConfig>,
   mode: RuntimeMode = "package",
+  wiring: TargetWiring = "nest",
 ): string {
   const spec = SURFACE_REGISTRY[surface];
   if (!spec) throw new Error(`no surface package for '${surface}'`);
   const n = names(def.slug, surface);
   const client = parseImportRef(def.client.class);
+  // S-3: under pattern-stack the adapter is a plain class the surface's adapters system constructs from the
+  // provider system's parts. `auth` and `client` are typed by the provider's own factory (author-owned), so the
+  // adapter needs no auth subsystem; the integration imports come from the Nest-free entry.
+  const patternStack = wiring === "pattern-stack";
+  const providerType = `${n.providerPascal}Provider`;
   // RFC-0001/0003 emitter imports the L1 strategies/read-primitive from the
   // runtime; the specifier is mode-resolved (ADR-037). The adapter scaffold
   // pulls from the `integration` subsystem barrel.
-  const subsystemsSpec = subsystemsImport(mode, "integration");
+  const subsystemsSpec = patternStack ? subsystemCoreImport(mode, "integration") : subsystemsImport(mode, "integration");
 
   const entitiesLiteral = entities.length
     ? `[${entities.map((e) => `'${e}'`).join(", ")}]`
@@ -462,6 +480,7 @@ export function generateAdapterScaffold(
         surface,
         entities,
         entityDetection,
+        patternStack ? `${providerType}['auth']` : "IAuthStrategy",
       )
     : null;
 
@@ -487,7 +506,7 @@ export function generateAdapterScaffold(
     ? `import { IncrementalReadBase } from '${subsystemsSpec}';\n`
     : "";
   const subsystemTypeImports = [
-    "IAuthStrategy",
+    ...(patternStack ? [] : ["IAuthStrategy"]),
     "IChangeSource",
     ...(rp
       ? [
@@ -506,22 +525,25 @@ export function generateAdapterScaffold(
   // field initializer) — under useDefineForClassFields, field initializers run
   // before constructor parameter-property assignment, so `this.auth`/`this.client`
   // would be undefined at field-init time.
+  const foldsInto = patternStack
+    ? `The \`${surface}Adapters\` system folds these into its\n   * \`sources()\` registry, and the \`integrations\` module runs each one.`
+    : `The surface aggregator folds these into the\n   * \`IEntityChangeSourceRegistry\` bound under \`${n.entitySourcesToken}\`.`;
+  const foldsInto2 = patternStack
+    ? `The\n   * \`${surface}Adapters\` system folds these into its \`sources()\` registry, and the\n   * \`integrations\` module runs each one.`
+    : `The\n   * surface aggregator folds these into the \`IEntityChangeSourceRegistry\`\n   * bound under \`${n.entitySourcesToken}\`.`;
   const changeSourcesAssign = rp
     ? `\n    this.changeSources = {\n${rp.changeSourceEntries.join("\n")}\n    };\n  `
     : "";
   const changeSourcesDecl = rp
     ? `  /**
    * Per-entity change sources contributed to the ${surface} registry, keyed by
-   * entity name. The surface aggregator folds these into the
-   * \`IEntityChangeSourceRegistry\` bound under \`${n.entitySourcesToken}\`.
+   * entity name. ${foldsInto}
    * Emit-once: edit the \`IncrementalReadBase\` subclasses above, not this map.
    */
   readonly changeSources: Record<string, IChangeSource<unknown>>;`
     : `  /**
    * Per-entity change sources this adapter contributes to the ${surface}
-   * registry (ADR-033 \`buildChangeSource\`), keyed by entity name. The
-   * surface aggregator folds these into the \`IEntityChangeSourceRegistry\`
-   * bound under \`${n.entitySourcesToken}\`. Author-owned — populate one entry
+   * registry (ADR-033 \`buildChangeSource\`), keyed by entity name. ${foldsInto2} Author-owned — populate one entry
    * per entity in \`capabilities.entities\`.
    */
   readonly changeSources: Record<string, IChangeSource<unknown>> = {};`;
@@ -555,27 +577,34 @@ export function generateAdapterScaffold(
   // `enumerate`/`hydrate` from `ctx.subscription.externalRef`. CRM (and any
   // non-read-primitive surface) keeps the client injection. Both the client type
   // import and the `<SLUG>_CLIENT` token import are therefore dropped under `rp`.
-  const clientTypeImport = rp
+  const clientTypeImport = rp || patternStack
     ? ""
     : `import type { ${client.exportName} } from '${client.path}';\n`;
-  const providerTokenImport = rp
-    ? `import { ${n.strategyToken} } from '../../../providers/${def.slug}/${def.slug}.provider.module';`
-    : `import { ${n.strategyToken}, ${n.clientToken} } from '../../../providers/${def.slug}/${def.slug}.provider.module';`;
-  const ctorClientParam = rp
-    ? ""
-    : `\n    @Inject(${n.clientToken}) private readonly client: ${client.exportName},`;
-  const ctorOpen = rp
-    ? `  constructor(@Inject(${n.strategyToken}) readonly auth: IAuthStrategy) {${changeSourcesAssign}}`
+  const providerTokenImport = patternStack
+    ? `import type { ${providerType} } from '../../../providers/${def.slug}/${def.slug}.provider.factory';`
+    : rp
+      ? `import { ${n.strategyToken} } from '../../../providers/${def.slug}/${def.slug}.provider.module';`
+      : `import { ${n.strategyToken}, ${n.clientToken} } from '../../../providers/${def.slug}/${def.slug}.provider.module';`;
+  const authType = patternStack ? `${providerType}['auth']` : "IAuthStrategy";
+  const injectAuth = patternStack ? "" : `@Inject(${n.strategyToken}) `;
+  const ctorClientParam = patternStack
+    ? adapterTakesClient(def, surface, entities)
+      ? `\n    private readonly client: ${providerType}['client'],`
+      : ""
+    : rp
+      ? ""
+      : `\n    @Inject(${n.clientToken}) private readonly client: ${client.exportName},`;
+  const ctorOpen = rp || (patternStack && !ctorClientParam)
+    ? `  constructor(${injectAuth}readonly auth: ${authType}) {${changeSourcesAssign}}`
     : `  constructor(
-    @Inject(${n.strategyToken}) readonly auth: IAuthStrategy,${ctorClientParam}
+    ${injectAuth}readonly auth: ${authType},${ctorClientParam}
   ) {${changeSourcesAssign}}`;
 
   return `${SCAFFOLD_SENTINEL}
 // Scaffolded once by @pattern-stack/codegen, then author-owned. Re-running
 // codegen detects the sentinel above and SKIPS this file — your edits are safe.
 // Source: definitions/providers/${def.slug}.yaml (surface: ${surface}).
-import { Inject, Injectable } from '@nestjs/common';
-import type {
+${patternStack ? "" : "import { Inject, Injectable } from '@nestjs/common';\n"}import type {
 ${surfaceTypeImports}
 } from '${spec.packageName}';
 import { ${spec.noCapsConst} } from '${spec.packageName}';
@@ -584,8 +613,7 @@ ${subsystemTypeImports}
 } from '${subsystemsSpec}';
 ${clientTypeImport}${providerTokenImport}
 ${preambleSection}
-@Injectable()
-export class ${n.adapterClass} implements ${spec.portType} {
+${patternStack ? "" : "@Injectable()\n"}export class ${n.adapterClass} implements ${spec.portType} {
   /** Declared capabilities. \`entities\` derives from \`surface: ${surface}\` entity YAML. */
   readonly capabilities: ${spec.capabilitiesType} = {
 ${capabilityBody}
@@ -681,6 +709,39 @@ export interface AdapterContribution {
  * here. Two providers serving the same entity is an ambiguous-source boot error
  * (the registry is entity-keyed; one entity resolves to one source).
  */
+/**
+ * The function that folds every adapter's contribution into one entity-keyed registry — printed by the Nest surface
+ * aggregator and the pattern-stack adapters system (S-3), so both say it once.
+ */
+export function entitySourcesFold(fnName: string, contributionType: string, opts: { globalThis?: boolean } = {}): string {
+  const g = opts.globalThis ? "globalThis." : "";
+  return `/**
+ * Fold every adapter contribution into one entity-keyed registry. Each entity
+ * resolves to exactly one change source; two providers serving the same entity
+ * is an ambiguous-source boot error.
+ */
+function ${fnName}(
+  contribs: ${contributionType}[],
+): IEntityChangeSourceRegistry {
+  const merged = new ${g}Map<string, IChangeSource<unknown>>();
+  const owner = new ${g}Map<string, string>();
+  for (const contrib of contribs ?? []) {
+    for (const [entity, source] of ${g}Object.entries(contrib.sources)) {
+      const prior = owner.get(entity);
+      if (prior !== undefined) {
+        throw new ${g}Error(
+          \`entity '\${entity}' is served by both '\${prior}' and '\${contrib.provider}' — ambiguous change source\`,
+        );
+      }
+      owner.set(entity, contrib.provider);
+      merged.set(entity, source);
+    }
+  }
+  return new MemoryEntityChangeSourceRegistry(merged);
+}
+`;
+}
+
 export function generateSurfaceAggregator(
   surface: string,
   providerSlugs: string[],
@@ -728,31 +789,7 @@ import {
   type AdapterContribution,
 } from './${surface}-adapters.tokens';
 
-/**
- * Fold every adapter contribution into one entity-keyed registry. Each entity
- * resolves to exactly one change source; two providers serving the same entity
- * is an ambiguous-source boot error.
- */
-function provide${n.surfacePascal}EntitySources(
-  contribs: AdapterContribution[],
-): IEntityChangeSourceRegistry {
-  const merged = new Map<string, IChangeSource<unknown>>();
-  const owner = new Map<string, string>();
-  for (const contrib of contribs ?? []) {
-    for (const [entity, source] of Object.entries(contrib.sources)) {
-      const prior = owner.get(entity);
-      if (prior !== undefined) {
-        throw new Error(
-          \`entity '\${entity}' is served by both '\${prior}' and '\${contrib.provider}' — ambiguous change source\`,
-        );
-      }
-      owner.set(entity, contrib.provider);
-      merged.set(entity, source);
-    }
-  }
-  return new MemoryEntityChangeSourceRegistry(merged);
-}
-
+${entitySourcesFold(`provide${n.surfacePascal}EntitySources`, "AdapterContribution")}
 @Module({
   imports: [${moduleClasses.join(", ")}],
   providers: [
@@ -953,6 +990,65 @@ export interface EmitAdaptersResult {
   skippedAssemblies: Array<{ surface: string; entity: string; reason: string }>;
 }
 
+/** The provider × surface set both wirings emit from (S-3: one owner of which surfaces and providers count). */
+export interface IntegrationSurfaces {
+  entitiesBySurface: Map<string, string[]>;
+  entityByName: Map<string, EmitAdaptersEntity>;
+  /** surface → provider slugs that serve it AND have an emittable port. */
+  bySurface: Map<string, string[]>;
+  /** The active providers ('planned' ones are catalog-only roadmap stubs). */
+  defBySlug: Map<string, ActiveProviderDefinition>;
+  skippedSurfaces: Array<{ provider: string; surface: string; reason: string }>;
+}
+
+export function integrationSurfaces(
+  providers: LoadedProvider[],
+  entities: EmitAdaptersEntity[],
+): IntegrationSurfaces {
+  const entitiesBySurface = collectEntitiesBySurface(entities);
+  // Index full entity definitions by name for the assembly/sink emission.
+  const entityByName = new Map(entities.map((e) => [e.entity.name, e]));
+  // 'planned' providers are catalog-only roadmap stubs — adapters/assemblies
+  // are emitted for active providers only.
+  const activeProviders = providers.filter((p) => isActiveProvider(p.definition));
+  const skippedSurfaces: IntegrationSurfaces["skippedSurfaces"] = [];
+  const bySurface = new Map<string, string[]>();
+  for (const { definition } of activeProviders) {
+    for (const surface of definition.surfaces) {
+      if (!SURFACE_REGISTRY[surface]) {
+        skippedSurfaces.push({
+          provider: definition.slug,
+          surface,
+          reason: `no surface package for '${surface}' yet — add codegen-${surface} (Track C) to emit its adapters`,
+        });
+        continue;
+      }
+      const list = bySurface.get(surface) ?? [];
+      list.push(definition.slug);
+      bySurface.set(surface, list);
+    }
+  }
+  const defBySlug = new Map(activeProviders.map((p) => [p.definition.slug, p.definition as ActiveProviderDefinition]));
+  return { entitiesBySurface, entityByName, bySurface, defBySlug, skippedSurfaces };
+}
+
+/**
+ * Why a `surface:` entity gets no assembly or default sink, or null when it does. The spine is the composed one
+ * (ADR-041 §2) — never `patterns[0]`, so `patterns: [Actor, Integrated]` assembles exactly like
+ * `pattern: Integrated`, matching what the repository inherits.
+ */
+export function notIntegratedReason(def: EmitAdaptersEntity | undefined, surface: string, entityName: string): string | null {
+  const declared = def ? declaredPatternNames(def.entity) : [];
+  const spine = composePatterns(declared, getPattern, { entity: entityName }).spineName;
+  if (spine === "Integrated") return null;
+  return (
+    `entity '${entityName}' declares surface '${surface}' but is not 'pattern: Integrated'` +
+    `${declared.length > 0 ? ` (spine '${spine}')` : " (no pattern declared)"} — ` +
+    `the integration assembly + default sink need the Integrated projection/upsert path. ` +
+    `Add 'pattern: Integrated' (or provide a hand-authored sink + assembly).`
+  );
+}
+
 /**
  * Emit the adapter/module/barrel/aggregator layer for every (provider ×
  * emittable surface). Emit-once scaffolds are never overwritten; everything
@@ -971,33 +1067,11 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
     integrationAggregatorsWritten: [],
     skippedAssemblies: [],
   };
-  const entitiesBySurface = collectEntitiesBySurface(opts.entities);
-  // Index full entity definitions by name for the assembly/sink emission.
-  const entityByName = new Map(opts.entities.map((e) => [e.entity.name, e]));
-
-  // 'planned' providers are catalog-only roadmap stubs — adapters/assemblies
-  // are emitted for active providers only.
-  const activeProviders = opts.providers.filter((p) => isActiveProvider(p.definition));
-
-  // surface → provider slugs that serve it AND have an emittable port.
-  const bySurface = new Map<string, string[]>();
-  for (const { definition } of activeProviders) {
-    for (const surface of definition.surfaces) {
-      if (!SURFACE_REGISTRY[surface]) {
-        result.skippedSurfaces.push({
-          provider: definition.slug,
-          surface,
-          reason: `no surface package for '${surface}' yet — add codegen-${surface} (Track C) to emit its adapters`,
-        });
-        continue;
-      }
-      const list = bySurface.get(surface) ?? [];
-      list.push(definition.slug);
-      bySurface.set(surface, list);
-    }
-  }
-
-  const defBySlug = new Map(activeProviders.map((p) => [p.definition.slug, p.definition as ActiveProviderDefinition]));
+  const { entitiesBySurface, entityByName, bySurface, defBySlug, skippedSurfaces } = integrationSurfaces(
+    opts.providers,
+    opts.entities,
+  );
+  result.skippedSurfaces.push(...skippedSurfaces);
 
   for (const [surface, slugs] of bySurface) {
     const surfaceDir = join(opts.outputRoot, surface);
@@ -1076,22 +1150,11 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
 
       for (const entityName of surfaceEntities) {
         const def = entityByName.get(entityName);
-        // The spine is the composed one (ADR-041 §2) — never `patterns[0]`, so
-        // `patterns: [Actor, Integrated]` assembles exactly like
-        // `pattern: Integrated`, matching what the repository inherits.
-        const declared = def ? declaredPatternNames(def.entity) : [];
-        const spine = composePatterns(declared, getPattern, { entity: entityName }).spineName;
-        if (spine !== "Integrated") {
+        const notIntegrated = notIntegratedReason(def, surface, entityName);
+        if (notIntegrated) {
           // Record once per surface entity (not per provider — the reason is
           // pattern-level, not provider-level).
-          result.skippedAssemblies.push({
-            surface,
-            entity: entityName,
-            reason: `entity '${entityName}' declares surface '${surface}' but is not 'pattern: Integrated'` +
-              `${declared.length > 0 ? ` (spine '${spine}')` : " (no pattern declared)"} — ` +
-              `the integration assembly + default sink need the Integrated projection/upsert path. ` +
-              `Add 'pattern: Integrated' (or provide a hand-authored sink + assembly).`,
-          });
+          result.skippedAssemblies.push({ surface, entity: entityName, reason: notIntegrated });
           continue;
         }
 

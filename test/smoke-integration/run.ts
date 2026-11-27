@@ -396,4 +396,115 @@ async function main(): Promise<number> {
 	return exitCode;
 }
 
-main().then((code) => process.exit(code));
+/**
+ * The pattern-stack leg (S-3): the same fixture under `target.wiring: pattern-stack`, with no Nest installed.
+ * Installs events (message declares `emit_changes`) and integration, generates, and asserts:
+ *   - no generated file imports @nestjs, and no Nest integration file was written (modules, tokens, assemblies);
+ *   - the provider and adapters systems, the factories, the integrations module and the sinks exist;
+ *   - `tsc` over the whole project, scoped by location only (as the Nest leg);
+ *   - `main.ts` composes every system and the integrations module, starts and stops (no database: the pool
+ *     connects on first use), and a usage file reads a run by its key, so the module's API is checked as code uses it.
+ */
+async function patternStackLeg(): Promise<number> {
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegen-integ-tsc-ps-'));
+	log(`tmp dir (pattern-stack): ${tmpDir}`);
+	let exitCode = 0;
+	try {
+		run('bun run build', path.join(REPO_ROOT, 'packages', 'wiring'));
+		run('bun init -y', tmpDir);
+		run(
+			`bun add drizzle-orm@1.0.0-rc.4 pg@8 zod@4 @pattern-stack/wiring@file:${path.join(REPO_ROOT, 'packages', 'wiring')}`,
+			tmpDir,
+		);
+		run(`bun add -D ${DEV_DEPS.join(' ')}`, tmpDir);
+		const tmpPs = path.join(tmpDir, 'node_modules/@pattern-stack');
+		fs.mkdirSync(tmpPs, { recursive: true });
+		fs.symlinkSync(REPO_ROOT, path.join(tmpPs, 'codegen'));
+		const psRoot = path.join(REPO_ROOT, 'node_modules/@pattern-stack');
+		for (const surface of SURFACE_PACKAGES) {
+			fs.symlinkSync(fs.realpathSync(path.join(psRoot, `codegen-${surface}`)), path.join(tmpPs, `codegen-${surface}`));
+		}
+		run(`bun ${CLI_PATH} project init --yes --with-tsconfig --wiring pattern-stack`, tmpDir);
+
+		const tsconfigPath = path.join(tmpDir, 'tsconfig.json');
+		const tsconfig = JSON.parse(fs.readFileSync(tsconfigPath, 'utf-8').replace(/\/\/.*$/gm, ''));
+		tsconfig.compilerOptions ??= {};
+		tsconfig.compilerOptions.paths ??= {};
+		const paths = tsconfig.compilerOptions.paths;
+		paths['@app/*'] = ['./src/*'];
+		paths['@pattern-stack/codegen/runtime/*'] = [`${RUNTIME_ROOT}/*`];
+		for (const surface of SURFACE_PACKAGES) paths[`@pattern-stack/codegen-${surface}`] = [surfaceSrcEntry(surface)];
+		fs.writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2));
+
+		const cfgPath = path.join(tmpDir, 'codegen.config.yaml');
+		let cfg = fs.readFileSync(cfgPath, 'utf-8');
+		if (!/^paths:/m.test(cfg)) cfg = `paths:\n${cfg}`;
+		if (!/providers:/.test(cfg)) cfg = cfg.replace(/^paths:\n/m, 'paths:\n  providers: definitions/providers\n');
+		fs.writeFileSync(cfgPath, cfg);
+
+		copyDir(path.join(FIXTURE_ROOT, 'entities'), path.join(tmpDir, 'entities'));
+		copyDir(path.join(FIXTURE_ROOT, 'providers'), path.join(tmpDir, 'definitions/providers'));
+		for (const provider of PROVIDER_STUBS) {
+			copyDir(path.join(STUBS_ROOT, '..', 'stubs-pattern-stack', provider), path.join(tmpDir, 'src/integrations/providers', provider));
+		}
+
+		run(`bun ${CLI_PATH} subsystem install events`, tmpDir);
+		run(`bun ${CLI_PATH} subsystem install integration`, tmpDir);
+		run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);
+		fs.copyFileSync(path.join(import.meta.dirname, 'pattern-stack-usage.ts'), path.join(tmpDir, 'src', 'integrations-usage.ts'));
+
+		const files = execSync(`find src -type f -name '*.ts'`, { cwd: tmpDir }).toString().split('\n').filter(Boolean);
+		const nest = files.filter((f) => /from\s+['"](@nestjs\/|reflect-metadata)/.test(fs.readFileSync(path.join(tmpDir, f), 'utf8')));
+		if (nest.length > 0) throw new Error(`files import @nestjs or reflect-metadata:\n  ${nest.join('\n  ')}`);
+		const nestShaped = files.filter((f) => f.startsWith('src/integrations/') && /\.(module|tokens)\.ts$/.test(f));
+		if (nestShaped.length > 0) throw new Error(`Nest integration files under pattern-stack:\n  ${nestShaped.join('\n  ')}`);
+		for (const f of [
+			'src/integrations/module.ts',
+			'src/integrations/providers/salesforce/salesforce.provider.ts',
+			'src/integrations/providers/salesforce/salesforce.provider.factory.ts',
+			'src/integrations/providers/google/google.provider.ts',
+			'src/integrations/crm/crm-adapters.system.ts',
+			'src/integrations/calendar/calendar-adapters.system.ts',
+			'src/integrations/crm/adapters/salesforce/salesforce-crm.adapter.ts',
+			'src/integrations/crm/sinks/contact.sink.ts',
+			'src/integrations/crm/sinks/message.change-emitter.ts',
+		]) {
+			if (!files.includes(f)) throw new Error(`expected ${f}`);
+		}
+		log(`src: ${files.length} .ts files; no @nestjs; the systems, factories, integrations module and sinks are there`);
+
+		log('running bunx tsc --noEmit --skipLibCheck');
+		const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', tmpDir);
+		const errors = tscGateErrors({ code: tsc.code, output: tsc.out }, tmpDir);
+		if (errors.length > 0) {
+			logError(`${errors.length} tsc error(s) in the pattern-stack project:`);
+			for (const l of errors) console.error(l);
+			exitCode = 1;
+		} else {
+			log('tsc OK — the pattern-stack integration tree compiles with no @nestjs');
+		}
+
+		const main = spawnSync('bun', ['src/main.ts'], { cwd: tmpDir, encoding: 'utf8' });
+		const order = /composed: (.*)/.exec(main.stdout)?.[1] ?? '';
+		const expected = ['salesforceProvider', 'googleProvider', 'crmAdapters', 'calendarAdapters', 'mailAdapters', 'transcriptAdapters', 'integrations'];
+		if (main.status !== 0 || !expected.every((n) => order.split(', ').includes(n))) {
+			throw new Error(`main.ts should compose ${expected.join(', ')}; exit ${main.status}:\n${main.stdout}${main.stderr}`);
+		}
+		if (order.split(', ').indexOf('integrations') < order.split(', ').indexOf('entities')) {
+			throw new Error(`the integrations module is composed before the entity module it reads: ${order}`);
+		}
+		log(`main.ts: composed ${order}`);
+	} catch (err: unknown) {
+		logError(err instanceof Error ? err.message : String(err));
+		exitCode = 1;
+	} finally {
+		cleanup(tmpDir);
+	}
+	log(exitCode === 0 ? 'smoke-integration (pattern-stack) PASS' : 'smoke-integration (pattern-stack) FAIL');
+	return exitCode;
+}
+
+(process.argv.includes('--wiring') && process.argv[process.argv.indexOf('--wiring') + 1] === 'pattern-stack'
+	? patternStackLeg()
+	: main()
+).then((code) => process.exit(code));

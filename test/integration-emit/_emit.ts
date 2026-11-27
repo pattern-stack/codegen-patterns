@@ -34,6 +34,7 @@ import {
   collectEntitySurfaces,
 } from '../../src/cli/shared/provider-module-generator';
 import { emitAdapters } from '../../src/cli/shared/adapter-emission-generator';
+import { emitPatternStackIntegrations } from '../../src/cli/shared/pattern-stack-integrations';
 
 export const FIXTURE_ROOT = resolve(
   import.meta.dir,
@@ -119,6 +120,39 @@ export function emitFixture(mode: RuntimeMode = 'package'): EmitResult {
       provider: s.provider,
       surface: s.surface,
     })),
+  };
+}
+
+/**
+ * The same fixture under `target.wiring: pattern-stack` (S-3): `emitPatternStackIntegrations`, the entry point
+ * `entity new` calls, into a fresh tmp dir. The `integrations` module is the composition's (its own unit tests); this
+ * tree is the providers' and surfaces' systems, the factories, the adapters, the sinks and the change emitter.
+ */
+export function emitFixturePatternStack(mode: RuntimeMode = 'package'): EmitResult {
+  const providersDir = join(FIXTURE_ROOT, 'providers');
+  const entitiesDir = join(FIXTURE_ROOT, 'entities');
+  const providers = loadProvidersFromYaml(findYamlFiles(providersDir)).successes.map((p) => ({
+    definition: p.definition,
+    filePath: p.filePath,
+  }));
+  const entities = loadEntitiesFromYaml(findYamlFiles(entitiesDir)).successes.map((e) => e.definition);
+  const tmp = mkdtempSync(join(tmpdir(), 'cgp-s3-fixture-'));
+  const backendSrcAbs = join(tmp, 'src');
+  const integrationsRoot = join(backendSrcAbs, 'integrations');
+  const result = emitPatternStackIntegrations({
+    providers,
+    entities,
+    outputRoot: integrationsRoot,
+    backendSrcAbs,
+    modulesAbs: join(backendSrcAbs, 'modules'),
+    aliases: { '@modules': join(backendSrcAbs, 'modules') },
+    mode,
+    wiringFile: join(backendSrcAbs, 'generated', 'wiring.ts'),
+    tenancyColumn: 'tenant_id',
+  });
+  return {
+    integrationsRoot,
+    skippedSurfaces: result.plan.skippedSurfaces.map((s) => ({ provider: s.provider, surface: s.surface })),
   };
 }
 

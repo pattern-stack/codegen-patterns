@@ -82,7 +82,8 @@
  * the decorator is dead under a `useFactory`. Omitted to keep the generated base lean.
  */
 
-import { subsystemsImport, type RuntimeMode } from "./runtime-import";
+import { subsystemCoreImport, subsystemsImport, type RuntimeMode } from "./runtime-import";
+import type { TargetWiring as Wiring } from "../../targets/apps.js";
 import { emittedStem } from '../../config/file-naming.js';
 
 // ============================================================================
@@ -181,6 +182,8 @@ export interface SinkEmitInput {
    * Default: `'delegate'` when omitted.
    */
   deleteMode?: 'delegate' | 'noop';
+  /** `target.wiring` (S-3): under pattern-stack the base imports `IIntegrationSink` from the Nest-free entry. */
+  wiring?: Wiring;
 }
 
 // ============================================================================
@@ -366,7 +369,7 @@ export function generateSinkBase(input: SinkEmitInput): string {
     `//   The bare passthrough preserves null (diff-soundness); coerce only on canonical widen.`;
 
   return `${banner}
-import type { IIntegrationSink } from '${subsystemsImport(input.mode ?? "package", "integration")}';
+import type { IIntegrationSink } from '${input.wiring === "pattern-stack" ? subsystemCoreImport(input.mode ?? "package", "integration") : subsystemsImport(input.mode ?? "package", "integration")}';
 import {
   ${n.repoClass},
   type ${n.projectionType},
@@ -398,7 +401,7 @@ ${findViewBody}
 // typed at TCanonical with NO body — a default body returning TCanonical would be TS2322
 // (Shape A failure — see RFC-0002 §4 and the §3b gate: sink-widened-canonical.gate.test.ts).
 // The bodies live in the standalone functions above; the emit-once subclass wires them in one
-// line each. No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
+// line each. ${input.wiring === "pattern-stack" ? "No decorator — the `integrations` module constructs it (S-3)." : "No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491)."}
 export abstract class ${n.sinkBaseClass}<TCanonical = ${n.projectionType}>
   implements IIntegrationSink<TCanonical> {
   constructor(

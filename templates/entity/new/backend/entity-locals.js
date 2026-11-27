@@ -2568,12 +2568,9 @@ export function buildBackendLocals(definition, baseLocals) {
   // PW-3: pattern-stack wiring (`target: { wiring: pattern-stack, http: none }`) emits the same table, DTOs, repository, service and use
   // cases without decorators, and no Nest-only file: the controllers, the Nest module and the integration-source
   // module are skipped by name (printed, never silent). The per-context composition is the whole-set post-step's.
-  // What pattern-stack cannot emit yet is refused by name, with the step that lifts it.
+  // An integration `surface:` is the integration post-step's (S-3); a `detection:` entity's integration-source module
+  // is Nest's, so it is skipped too.
   if (patternStackWiring) {
-    const refuse = (what, step) => {
-      throw new Error(`[codegen] '${entityName}': ${what} is not supported under target.wiring: pattern-stack yet — it comes with ${step}.`);
-    };
-    if (definition.entity?.surface || definition.surface) refuse('an integration `surface:`', 'S-3 (integrations on pattern-stack wiring)');
     const nestOnly = ['controller', 'searchController', 'module', 'integrationSourceModule'];
     // `integrationSourceModule` always has a path; its template writes only for a `detection:` entity, so it is named
     // only then.

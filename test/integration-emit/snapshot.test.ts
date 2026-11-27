@@ -15,9 +15,23 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { emitFixture, serializeTree } from './_emit';
+import { emitFixture, emitFixturePatternStack, serializeTree } from './_emit';
 
 describe('integration emission snapshot — integration-patterns fixture', () => {
+  // S-3: the pattern-stack tree is its own golden. The Nest one above is unchanged by it, byte for byte.
+  test('emitted src/integrations/** tree under wiring: pattern-stack matches snapshot (package mode)', () => {
+    const tree = serializeTree(emitFixturePatternStack('package').integrationsRoot);
+    expect(tree).not.toMatch(/@nestjs\/|@Inject|@Injectable|\.module'|\.tokens'/);
+    expect(tree).toMatchSnapshot();
+  });
+
+  test('under wiring: pattern-stack, vendored mode imports the Nest-free integration entry, never a barrel', () => {
+    const vend = serializeTree(emitFixturePatternStack('vendored').integrationsRoot);
+    expect(vend).toContain("from '@shared/subsystems/integration/core'");
+    expect(vend).not.toMatch(/from '@shared\/subsystems(\/integration|\/auth|\/events)?'/);
+    expect(vend).not.toContain('@pattern-stack/codegen/');
+  });
+
   test('emitted src/integrations/** tree matches snapshot (package mode)', () => {
     const { integrationsRoot } = emitFixture('package');
     expect(serializeTree(integrationsRoot)).toMatchSnapshot();

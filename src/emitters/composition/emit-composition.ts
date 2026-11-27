@@ -117,8 +117,38 @@ export interface CompositionInput {
 	 * `<generated>/integration-system.ts`, listed in `SYSTEMS` and `SystemApis`.
 	 */
 	integration?: CompositionIntegrationInput | null;
+	/**
+	 * The integrations (S-3), when providers serve a surface: the providers' and surfaces' adapters systems (written by
+	 * `emitPatternStackIntegrations`, listed here in `SYSTEMS` and `SystemApis`) and the runs, which this emitter
+	 * writes as the `integrations` module (it knows which module holds each entity's repository).
+	 */
+	integrations?: CompositionIntegrationsInput | null;
 	dryRun?: boolean;
 }
+
+/** The integrations' systems and runs (S-3, `planPatternStackIntegrations`). */
+export interface CompositionIntegrationsInput {
+	/** Absolute: where the `integrations` module goes. */
+	moduleFile: string;
+	/** The Nest-free integration entry. */
+	coreImport: string;
+	systems: Array<{ name: string; exportName: string; file: string; apiType: string }>;
+	runs: Array<{
+		surface: string;
+		entity: string;
+		provider: string;
+		adaptersSystem: string;
+		adapterKey: string;
+		sinkFile: string;
+		sinkClass: string;
+		repositoryFile: string;
+		projectionType: string;
+		emitter?: { file: string; className: string };
+	}>;
+}
+
+/** The module the integration runs are composed in (S-3). */
+export const INTEGRATIONS_MODULE = 'integrations';
 
 /** The `events` system's settings and imports (S-1): from `codegen.config.yaml`'s `events:` block and the runtime mode. */
 export interface CompositionEventsInput {
@@ -431,6 +461,8 @@ export const ${plan.name}Module = defineModule({
 	}
 
 	const names = [...plans.keys()].sort();
+	const integrationsModule = input.integrations ? integrationsModuleFile(input, plans, moduleOf, registryFile) : null;
+	if (integrationsModule) files.push({ path: integrationsModule.file, content: integrationsModule.content });
 	// The systems codegen generates, in order: each is imported by the registry (its API type, its `SystemApis` key)
 	// and by composition.ts (its manifest, in `SYSTEMS`), and its file is written. One list, so a new system is a row.
 	const systems = generatedSystems(input, eventsSystemFile);
@@ -445,10 +477,10 @@ import { createWiring } from '@pattern-stack/wiring';
 import type { DrizzleClient } from '${input.drizzleTypeImport}';
 import type { Relations } from './relations';
 ${systems.map((s) => `import type { ${s.apiType} } from '${relativeImport(registryFile, s.apiTypeFile)}';\n`).join('')}${names.map((n) => `import type { ${pascalCase(n)}Module } from '${relativeImport(registryFile, plans.get(n)!.file)}';`).join('\n')}
-
+${integrationsModule ? `import type { IntegrationsModule } from '${relativeImport(registryFile, integrationsModule.file)}';\n` : ''}
 export interface ModuleApis {
 ${names.map((n) => `  ${n}: ${pascalCase(n)}Module;`).join('\n')}
-}
+${integrationsModule ? '  integrations: IntegrationsModule;\n' : ''}}
 
 export interface SystemApis {
   ${DATABASE_SYSTEM}: { db: DrizzleClient<Relations> };
@@ -466,11 +498,11 @@ export const { defineModule, defineSystem, compose } = createWiring<ModuleApis, 
  * installed), for
  * the app's \`compose.ts\`: \`compose({ systems: [databaseSystem(), ...SYSTEMS], modules: MODULES })\`.
  */
-${systems.map((s) => `import { ${s.exportName} } from '${relativeImport(compositionFile, s.file)}';\n`).join('')}${names.map((n) => `import { ${n}Module } from '${relativeImport(compositionFile, plans.get(n)!.file)}';`).join('\n')}
+${systems.map((s) => `import { ${s.exportName} } from '${relativeImport(compositionFile, s.file)}';\n`).join('')}${integrationsModule ? `import { integrationsModule } from '${relativeImport(compositionFile, integrationsModule.file)}';\n` : ''}${names.map((n) => `import { ${n}Module } from '${relativeImport(compositionFile, plans.get(n)!.file)}';`).join('\n')}
 
 export const SYSTEMS = [${systems.map((s) => s.exportName).join(', ')}] as const;
 
-export const MODULES = [${names.map((n) => `${n}Module`).join(', ')}] as const;
+export const MODULES = [${[...names.map((n) => `${n}Module`), ...(integrationsModule ? ['integrationsModule'] : [])].join(', ')}] as const;
 `,
 	});
 	const openApiFile = path.join(generatedDir, COMPOSITION_GENERATED_FILES.openApi);
@@ -506,7 +538,7 @@ interface GeneratedSystem {
 	content: string | null;
 }
 
-/** The systems codegen generates for this input, in `SYSTEMS` order: events (S-1), integration (S-3). */
+/** The systems codegen generates for this input, in `SYSTEMS` order: events (S-1), integration (S-3), the integrations' (S-3b). */
 function generatedSystems(input: CompositionInput, eventsSystemFile: string): GeneratedSystem[] {
 	const integrationFile = path.join(input.generatedDir, INTEGRATION_SYSTEM_FILE);
 	return [
@@ -516,7 +548,145 @@ function generatedSystems(input: CompositionInput, eventsSystemFile: string): Ge
 		...(input.integration
 			? [{ key: 'integration', apiType: 'IntegrationApi', apiTypeFile: integrationFile, exportName: 'integrationSystem', file: integrationFile, content: integrationSystemContent(input.integration, input.banner) }]
 			: []),
+		// S-3b: each provider's and adapter set's system, which `emitPatternStackIntegrations` writes.
+		...(input.integrations?.systems ?? []).map((s) => ({
+			key: s.name,
+			apiType: s.apiType,
+			apiTypeFile: s.file,
+			exportName: s.exportName,
+			file: s.file,
+			content: null,
+		})),
 	];
+}
+
+/**
+ * The \`integrations\` module (S-3): one \`IntegrationRunner\` per (surface, Integrated entity, provider), keyed
+ * \`<surface>.<entity>.<provider>\`. Its source is the provider's adapter's \`changeSources[<entity>]\`, its sink the
+ * entity's sink over the entity module's repository, its substrate the \`integration\` system's parts; an
+ * \`emit_changes\` entity's runs also take its change emitter over the \`events\` system's typed bus. Null when no
+ * Integrated entity has a provider (the systems are still composed).
+ */
+function integrationsModuleFile(
+	input: CompositionInput,
+	plans: Map<string, ModulePlan>,
+	moduleOf: Map<string, string>,
+	registryFile: string,
+): { file: string; content: string } | null {
+	const ig = input.integrations!;
+	if (ig.runs.length > 0 && plans.has(INTEGRATIONS_MODULE)) {
+		throw new Error(
+			`[codegen] wiring: pattern-stack: a context's module is named '${INTEGRATIONS_MODULE}', the module the integration runs ` +
+				`are composed in; rename the context`,
+		);
+	}
+	const taken = new Set([...plans.keys(), DATABASE_SYSTEM, 'events', 'integration']);
+	for (const s of ig.systems) {
+		if (taken.has(s.name)) {
+			throw new Error(
+				`[codegen] wiring: pattern-stack: the integration system '${s.name}' would share its name with a module or ` +
+					`system of the composition; rename the provider or the context`,
+			);
+		}
+		taken.add(s.name);
+	}
+	if (ig.runs.length === 0) return null;
+	if (!input.integration) {
+		throw new Error(
+			`[codegen] wiring: pattern-stack: ${[...new Set(ig.runs.map((r) => r.entity))].join(', ')} ` +
+				`${ig.runs.length === 1 ? 'is' : 'are'} integrated from a provider, and the integration subsystem isn't installed: ` +
+				`run \`codegen subsystem install integration\`.`,
+		);
+	}
+	const emitting = ig.runs.filter((r) => r.emitter);
+	if (emitting.length > 0 && !input.events) {
+		throw new Error(
+			`[codegen] wiring: pattern-stack: ${[...new Set(emitting.map((r) => r.entity))].join(', ')} declare ` +
+				`\`integration.sink.emit_changes\`, and the events subsystem isn't installed: run \`codegen subsystem install events\`.`,
+		);
+	}
+	const file = ig.moduleFile;
+	const moduleFor = (entity: string): string => {
+		const m = moduleOf.get(entity);
+		if (!m) throw new Error(`[codegen] wiring: '${entity}' is integrated but has no entity YAML in the set`);
+		return m;
+	};
+	const dependsOn = [...new Set(ig.runs.map((r) => moduleFor(r.entity)))].sort();
+	const adapters = [...new Set(ig.runs.map((r) => r.adaptersSystem))].sort();
+	const uses = ['integration', ...adapters, ...(emitting.length > 0 ? ['events'] : [])];
+	const systemOf = new Map(ig.systems.map((s) => [s.name, s]));
+	const byEntity = new Map<string, (typeof ig.runs)[number]>();
+	for (const r of ig.runs) byEntity.set(r.entity, r);
+	const imports = [
+		`import { IntegrationRunner, type IChangeSource } from '${ig.coreImport}';`,
+		`import { defineModule } from '${relativeImport(file, registryFile)}';`,
+		`import type { IntegrationApi } from '${relativeImport(file, path.join(input.generatedDir, INTEGRATION_SYSTEM_FILE))}';`,
+		...(emitting.length > 0 ? [`import type { EventsApi } from '${relativeImport(file, path.join(input.generatedDir, EVENTS_SYSTEM_FILE))}';`] : []),
+		...adapters.map((a) => `import type { ${systemOf.get(a)!.apiType} } from '${relativeImport(file, systemOf.get(a)!.file)}';`),
+		...dependsOn.map((m) => `import type { ${pascalCase(m)}Module } from '${relativeImport(file, plans.get(m)!.file)}';`),
+		...[...byEntity.values()].flatMap((r) => [
+			`import type { ${r.projectionType} } from '${relativeImport(file, r.repositoryFile)}';`,
+			`import { ${r.sinkClass} } from '${relativeImport(file, r.sinkFile)}';`,
+			...(r.emitter ? [`import { ${r.emitter.className} } from '${relativeImport(file, r.emitter.file)}';`] : []),
+		]),
+	];
+	const depsType = [
+		'integration: IntegrationApi',
+		...adapters.map((a) => `${a}: ${systemOf.get(a)!.apiType}`),
+		...dependsOn.map((m) => `${m}: ${pascalCase(m)}Module`),
+		...(emitting.length > 0 ? ['events: EventsApi'] : []),
+	];
+	const surfaces = [...new Set(ig.runs.map((r) => r.surface))].sort();
+	const body = surfaces
+		.map((surface) => {
+			const entities = [...new Set(ig.runs.filter((r) => r.surface === surface).map((r) => r.entity))].sort();
+			return `    ${camelCase(surface)}: {\n${entities
+				.map((entity) => {
+					const runs = ig.runs.filter((r) => r.surface === surface && r.entity === entity);
+					return `      ${camelCase(entity)}: {\n${runs
+						.map((r) => {
+							const T = r.projectionType;
+							return (
+								`        ${r.adapterKey}: new IntegrationRunner<${T}>({\n` +
+								`          ...deps.integration,\n` +
+								`          source: deps.${r.adaptersSystem}.adapters.${r.adapterKey}.changeSources.${entity} as IChangeSource<${T}>,\n` +
+								`          sink: new ${r.sinkClass}(deps.${moduleFor(entity)}.repositories.${camelCase(entity)}, '${r.provider}'),\n` +
+								(r.emitter ? `          emitter: new ${r.emitter.className}(deps.events.typed),\n` : '') +
+								`        }),`
+							);
+						})
+						.join('\n')}\n      },`;
+				})
+				.join('\n')}\n    },`;
+		})
+		.join('\n');
+	const content = `${input.banner}
+/**
+ * The integrations module (S-3): one \`IntegrationRunner\` per (surface, entity, provider), keyed
+ * \`<surface>.<entity>.<provider>\` — \`app.module('integrations').${camelCase(ig.runs[0]!.surface)}.${camelCase(ig.runs[0]!.entity)}.${ig.runs[0]!.adapterKey}.execute(…)\`
+ * runs one. Each reads its adapter's change source, writes through the entity's sink over its module's repository, and
+ * keeps its cursor and run log on the \`integration\` system. An adapter whose \`changeSources\` has no entry for the
+ * entity yet makes that run fail when executed, not at compose.
+ */
+${imports.join('\n')}
+
+export function composeIntegrations(deps: { ${depsType.join('; ')} }) {
+  return {
+${body}
+  };
+}
+
+export type IntegrationsModule = ReturnType<typeof composeIntegrations>;
+
+export const integrationsModule = defineModule({
+  name: 'integrations',
+  kind: 'derived',
+  dependsOn: [${dependsOn.map((m) => `'${m}'`).join(', ')}],
+  uses: [${uses.map((u) => `'${u}'`).join(', ')}],
+  create: (deps) => composeIntegrations(deps),
+});
+`;
+	return { file, content };
 }
 
 /**
@@ -571,7 +741,7 @@ export const integrationSystem = defineSystem({
   create: (${row.usesDatabase ? '{ database }' : ''}): IntegrationApi => ({
     cursors: new ${row.cursorClass}(${dbArgs}),
     recorder: new ${row.recorderClass}(${dbArgs}),
-    differ: new DeepEqualDiffer(${differ}),
+    differ: new DeepEqualDiffer<object>(${differ}),
     multiTenant: ${integration.multiTenant},
   }),
 });

@@ -58,7 +58,6 @@ import type {
   IntegrationChangeAction,
 } from './integration-change-emitter.protocol';
 import { assertTenantId } from './integration-errors';
-import type { DeepEqualDiffer } from './deep-equal.differ';
 
 // ============================================================================
 // Inputs + result
@@ -106,7 +105,7 @@ export interface ExecuteIntegrationResult {
 // ============================================================================
 
 /** What a run is made of. The substrate (cursors, differ, recorder, multiTenant) is the `integration` system's. */
-export interface IntegrationRunnerParts<T extends Record<string, unknown>> {
+export interface IntegrationRunnerParts<T> {
   readonly source: IChangeSource<T>;
   readonly cursors: ICursorStore;
   readonly differ: IFieldDiffer<T>;
@@ -126,13 +125,11 @@ export interface IntegrationRunnerParts<T extends Record<string, unknown>> {
  * the default differ, the multi-tenant flag). A runner adds its source and sink:
  * `new IntegrationRunner({ ...substrate, source, sink })`.
  */
-export type IntegrationSubstrate = Pick<IntegrationRunnerParts<Record<string, unknown>>, 'cursors' | 'recorder'> & {
-  /** The default differ. A runner that needs its own takes it instead. */
-  readonly differ: DeepEqualDiffer<Record<string, unknown>>;
+export type IntegrationSubstrate = Pick<IntegrationRunnerParts<object>, 'cursors' | 'recorder' | 'differ'> & {
   readonly multiTenant: boolean;
 };
 
-export class IntegrationRunner<T extends Record<string, unknown>> {
+export class IntegrationRunner<T> {
   private readonly logger = createLogger(this.constructor.name);
   private readonly source: IChangeSource<T>;
   private readonly cursors: ICursorStore;
