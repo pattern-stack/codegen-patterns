@@ -21,6 +21,9 @@ import type { PredicateSegment } from './predicate.js';
  * all, so no fact).
  */
 export interface ColumnReferenceFact {
+	/** The referencing column of this table (the SQL name). Postgres's renderer prints the suffix on the column and
+	 *  does not read it; the SQLite DDL needs it. */
+	readonly column: string;
 	/** The referenced table's generated export — its `plural`, NOT its SQL name (TABLE-0). */
 	readonly targetExport: string;
 	/**
@@ -80,3 +83,14 @@ export interface CheckFact {
 	readonly name: string;
 	readonly expression: readonly PredicateSegment[];
 }
+
+/**
+ * One constraint of a table, tagged by what it is: the facts a table's renderers each write (TGT-2a). The DDL renders
+ * the whole list; the Drizzle templates render each where it sits.
+ */
+export type ConstraintFact =
+	| { readonly kind: 'reference'; readonly fact: ColumnReferenceFact }
+	| { readonly kind: 'index'; readonly fact: IndexFact }
+	| { readonly kind: 'unique'; readonly fact: UniqueFact }
+	| { readonly kind: 'foreignKey'; readonly fact: ForeignKeyFact }
+	| { readonly kind: 'check'; readonly fact: CheckFact };

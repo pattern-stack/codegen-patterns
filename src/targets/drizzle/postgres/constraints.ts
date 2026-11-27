@@ -8,32 +8,9 @@
  * Hygen-safe: reached from `entity-locals.js`, so it imports only modules that ship in the package's `files`.
  */
 
-import type { PredicateSegment } from '../../../derived/constraints/predicate.js';
-import type {
-	CheckFact,
-	ColumnReferenceFact,
-	ForeignKeyFact,
-	IndexFact,
-	UniqueFact,
-} from '../../../derived/constraints/types.js';
+import type { ColumnReferenceFact, UniqueFact } from '../../../derived/constraints/types.js';
 import type { ConstraintRenderer, RenderedConstraint } from '../../constraints.js';
-
-/** Escape text for a JS template literal. */
-function escapeTemplate(text: string): string {
-	return text.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
-}
-
-/**
- * The body of a Drizzle `sql\`…\`` template: text escaped for a template literal, a column as `${<tableParam>.<prop>}`
- * so drizzle-kit quotes it. Unquoted predicate text cannot hold `` ` ``, `\` or `$` (the tokenizer refuses them), so
- * escaping every text segment changes only quoted strings — exactly what the single-pass renderer did.
- */
-function predicate(segments: readonly PredicateSegment[], tableParam: string): string {
-	if (typeof tableParam !== 'string' || tableParam === '') {
-		throw new Error('predicate: the callback parameter name (tableParam) is required');
-	}
-	return segments.map((s) => ('text' in s ? escapeTemplate(s.text) : '${' + tableParam + '.' + s.prop + '}')).join('');
-}
+import { check, foreignKey, index, on, predicate } from '../shared.js';
 
 /**
  * `.references(…)` on the column. The callback is annotated `AnyPgColumn` on every FK (#631): a self-reference, or a
@@ -44,11 +21,6 @@ function columnReference(reference: ColumnReferenceFact): string {
 	return `.references((): AnyPgColumn => ${reference.targetExport}.${reference.targetProp}${action})`;
 }
 
-const on = (props: readonly string[], tableParam: string) => props.map((p) => `${tableParam}.${p}`).join(', ');
-
-function index(fact: IndexFact, tableParam: string): string {
-	return `index('${fact.name}').on(${on(fact.props, tableParam)})`;
-}
 
 /**
  * - partial (`where`) → `uniqueIndex(name).on(…).where(sql\`…\`)`. A partial index cannot be NULLS NOT DISTINCT on
@@ -92,19 +64,7 @@ function unique(fact: UniqueFact, tableParam: string): RenderedConstraint {
 	};
 }
 
-function foreignKey(fact: ForeignKeyFact, tableParam: string): string {
-	return (
-		`foreignKey({\n` +
-		`      name: '${fact.name}',\n` +
-		`      columns: [${on(fact.props, tableParam)}],\n` +
-		`      foreignColumns: [${on(fact.targetProps, fact.targetExport)}],\n` +
-		`    }).onDelete('${fact.onDelete}')`
-	);
-}
 
-function check(fact: CheckFact, tableParam: string): string {
-	return `check('${fact.name}', sql\`${predicate(fact.expression, tableParam)}\`)`;
-}
 
 export const drizzlePostgresConstraints: ConstraintRenderer = {
 	pair: 'drizzle/postgres',

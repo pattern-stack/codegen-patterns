@@ -27,8 +27,12 @@ export interface RenderedColumn {
 	readonly tsType: string;
 }
 
-export interface ColumnRenderer {
-	readonly pair: TargetPair;
+/**
+ * A pair's column renderer. Generic over the pair's key so a renderer can exist before its pair's row does (TGT-2a's
+ * `drizzle/sqlite`, registered in TGT-2b); everything that selects a renderer reads the default, a registered pair.
+ */
+export interface ColumnRenderer<P extends string = TargetPair> {
+	readonly pair: P;
 	render(field: FieldFacts): RenderedColumn;
 	/** The module import a column builder (a {@link RenderedColumn.drizzleType}) needs; `undefined` when it needs none. */
 	importFor(drizzleType: string): string | undefined;

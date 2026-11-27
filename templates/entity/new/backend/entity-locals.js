@@ -37,6 +37,7 @@ import { columnRendererFor } from '../../../../src/targets/columns.js';
 import { constraintRendererFor } from '../../../../src/targets/constraints.js';
 import { tokenizePredicate } from '../../../../src/derived/constraints/predicate.js';
 import { onDeleteAction } from '../../../../src/derived/constraints/on-delete.js';
+import { deriveTableColumns } from '../../../../src/derived/tables/columns.js';
 import {
   familyConstName,
   familyHelperName,
@@ -724,7 +725,7 @@ export function processFieldFeatures(renderedFields, fields, naming, ownedTables
           }
         }
         // Every FK callback is annotated (#631): see `hasFk`. The suffix is the target's text (TGT-1).
-        pf.drizzleChain += constraints.columnReference({ targetExport: relatedExport, targetProp: fkColumn });
+        pf.drizzleChain += constraints.columnReference({ column: pf.name, targetExport: relatedExport, targetProp: fkColumn });
         hasFieldFk = true;
       }
       // else: host-owned target — plain column, no FK, no import. `index: true`
@@ -748,38 +749,23 @@ export function processFieldFeatures(renderedFields, fields, naming, ownedTables
 }
 
 /**
- * Columns of the rendered `pgTable`, as `{ column, prop }` (#784). Built from
- * exactly the inputs the entity template renders (`id`; belongs_to FK columns;
- * non-FK fields; the external_id_tracking, tenant and timestamp/soft-delete
- * columns); a unit test pins it to the rendered column block.
+ * A constraint renderer that also records each fact it renders, tagged by kind (TGT-2a): the table's constraint facts
+ * are then by construction exactly the constraints it renders. `predicate` is a helper of `unique` / `check`, not a
+ * constraint, so it is passed through unrecorded.
  */
-function entityTableColumns({
-  belongsTo,
-  nonFkFields,
-  hasExternalIdTracking,
-  tenancy,
-  hasTimestamps,
-  hasSoftDelete,
-  extraColumns = [],
-}) {
-  const cols = [{ column: 'id', prop: 'id' }, ...extraColumns];
-  for (const rel of belongsTo) cols.push({ column: rel.field, prop: rel.camelField });
-  for (const f of nonFkFields) cols.push({ column: f.name, prop: f.camelName });
-  if (hasExternalIdTracking) {
-    cols.push(
-      { column: 'external_id', prop: 'externalId' },
-      { column: 'provider', prop: 'provider' },
-      { column: 'provider_metadata', prop: 'providerMetadata' },
-    );
-  }
-  // An ADOPTED tenant column (#791) is already in the list, as its field or
-  // belongs_to; only an emitted one is added here.
-  if (tenancy && !tenancy.adopted) cols.push({ column: tenancy.column, prop: tenancy.prop });
-  if (hasTimestamps) {
-    cols.push({ column: 'created_at', prop: 'createdAt' }, { column: 'updated_at', prop: 'updatedAt' });
-  }
-  if (hasSoftDelete) cols.push({ column: 'deleted_at', prop: 'deletedAt' });
-  return cols;
+function recordingConstraints(renderer, recorded) {
+  const record = (kind, render) => (fact, ...rest) => {
+    recorded.push({ kind, fact });
+    return render(fact, ...rest);
+  };
+  return {
+    ...renderer,
+    columnReference: record('reference', renderer.columnReference),
+    index: record('index', renderer.index),
+    unique: record('unique', renderer.unique),
+    foreignKey: record('foreignKey', renderer.foreignKey),
+    check: record('check', renderer.check),
+  };
 }
 
 /**
@@ -1392,8 +1378,14 @@ export function buildBackendLocals(definition, baseLocals) {
   // (`src/targets/columns.ts`). Required: prompt.js reads `target` from the
   // parsed config, whose schema owns the default (ADR-047).
   const columns = columnRendererFor(baseLocals.target, `buildBackendLocals(${entity.name})`);
-  // TGT-1: and its constraints (`src/targets/constraints.ts`).
-  const constraints = constraintRendererFor(baseLocals.target, `buildBackendLocals(${entity.name})`);
+  // TGT-1: and its constraints (`src/targets/constraints.ts`). TGT-2a: every constraint this table renders is also
+  // recorded as a fact (`recordedConstraints`), so the table's constraint facts are exactly what it renders — the
+  // SQLite DDL reads them (`tableFacts`).
+  const recordedConstraints = [];
+  const constraints = recordingConstraints(
+    constraintRendererFor(baseLocals.target, `buildBackendLocals(${entity.name})`),
+    recordedConstraints,
+  );
   // ADR-043 §6 `api: false` and REL-2 §2.5's typed include are decided once, in
   // the derivation (`apiEnabled` / `hasTypedInclude`, `src/derived/api/
   // entity.ts`); the templates read its answers as `apiSurface.http.enabled` /
@@ -1610,12 +1602,12 @@ export function buildBackendLocals(definition, baseLocals) {
   // Process entity fields. Pass the entity name so enum fields namespace their
   // pg type + exported const by entity (prevents same-named enum collisions
   // across entities — TS2308 / duplicate CREATE TYPE).
-  const processedFields = processFields(fields, {
-    entityName,
-    enumResolver: (fieldName, field) =>
-      resolveEnumField({ lookup: entityLookup, modulesDir, fromNaming: ownNaming, entityName, fieldName, field }),
-    columns,
-  });
+  const fieldEnumResolver = (fieldName, field) =>
+    resolveEnumField({ lookup: entityLookup, modulesDir, fromNaming: ownNaming, entityName, fieldName, field });
+  const processedFields = processFields(fields, { entityName, enumResolver: fieldEnumResolver, columns });
+  // TGT-2a: the same fields as FACTS, for the table's column facts. A processed record is the template's shape and
+  // leaves facts out (`elementType`, `isArray`, `withTimezone`), so the table reads the derivation itself.
+  const fieldFactsByName = new Map(deriveFieldFacts(fields, entityName, fieldEnumResolver).map((f) => [f.name, f]));
 
   // Behavior flags (re-read from behaviors array for backend use).
   //
@@ -1726,7 +1718,7 @@ export function buildBackendLocals(definition, baseLocals) {
       .filter((rel) => !rel.match)
       .map((rel) => [
         rel.field,
-        constraints.columnReference({ targetExport: rel.relatedTable, targetProp: 'id', onDelete: rel.onDelete }),
+        constraints.columnReference({ column: rel.field, targetExport: rel.relatedTable, targetProp: 'id', onDelete: rel.onDelete }),
       ]),
   );
 
@@ -2008,15 +2000,32 @@ export function buildBackendLocals(definition, baseLocals) {
 
   // Field-level `unique: true` (#511) and composite unique indexes (#356),
   // through one builder.
-  const tableColumns = entityTableColumns({
+  // TGT-2a: every column of the table, as facts — the one owner of the column list (`src/derived/tables/`). The
+  // template prints each group's own text; every column lookup reads this list, and the SQLite DDL renders it whole.
+  const tableColumnFacts = deriveTableColumns({
+    isChild,
+    inherited: isChild
+      ? {
+          kind: { column: inheritedChild.kind.column, prop: inheritedChild.kind.prop, as: inheritedChild.as },
+          tenant: inheritedChild.tenant,
+        }
+      : null,
+    matched: matched.derived.map((d) => ({
+      column: d.column,
+      prop: camelCase(d.column),
+      nullable: d.nullable,
+      kind: d.kind,
+      field: d.field,
+      enumRef: d.enumRef,
+    })),
     belongsTo,
-    nonFkFields,
-    hasExternalIdTracking,
-    tenancy,
-    hasTimestamps,
-    hasSoftDelete,
-    extraColumns: [...inheritedKeyColumns, ...matchDerivedColumns].map((c) => ({ column: c.column, prop: c.prop })),
+    fields: nonFkFields.map((f) => fieldFactsByName.get(f.name)),
+    externalIdTracking: hasExternalIdTracking,
+    tenant: tenancy && !tenancy.adopted ? { column: tenancy.column, prop: tenancy.prop } : null,
+    timestamps: hasTimestamps ? { withTimezone: timestampsWithTimezone } : null,
+    softDelete: hasSoftDelete ? { withTimezone: softDeleteWithTimezone } : null,
   });
+  const tableColumns = tableColumnFacts.map((c) => ({ column: c.name, prop: c.prop }));
   const uniqueIndexExpressions = processUniqueIndexes(
     [
       ...fieldUniqueEntries(fields, tenancy),
@@ -2115,6 +2124,28 @@ export function buildBackendLocals(definition, baseLocals) {
             source: 'external_id_tracking',
           },
     );
+    // Its text stays inline until TGT-1b (#917 rewrites this block); its fact is recorded here so the table's facts
+    // stay complete.
+    recordedConstraints.push({
+      kind: 'unique',
+      fact: tenantScoped
+        ? {
+            name: `uq_${entityTableName}_tenant_provider_external_id`,
+            props: [tenancy.prop, 'provider', 'externalId'],
+            where: null,
+            nullsNotDistinct: true,
+            referenced: false,
+            tenantScoped: true,
+          }
+        : {
+            name: `uq_${entityTableName}_provider_external_id`,
+            props: ['provider', 'externalId'],
+            where: null,
+            nullsNotDistinct: false,
+            referenced: false,
+            tenantScoped: false,
+          },
+    });
   }
 
   // RFC-0006 constraints (§2.1, §2.2, §2.4), appended after every other entry. Facts here; text from the target's
@@ -2786,6 +2817,9 @@ export function buildBackendLocals(definition, baseLocals) {
     // drizzle-orm (not pg-core) value imports: `sql` when a partial unique renders a predicate (#784).
     drizzleOrmImports,
     tableColumns,
+    // TGT-2a: the table as facts — its columns and every constraint it renders. No template reads it; the SQLite DDL
+    // renders it (TGT-2b writes the file), and the DDL golden pins it.
+    tableFacts: { name: entityTableName, export: entityNamePlural, columns: tableColumnFacts, constraints: recordedConstraints },
     // Every FK `references()` callback carries a `: AnyPgColumn` return-type
     // annotation (#631). An unannotated callback whose target table is on an
     // FK cycle with this one — a self-FK, or A → B → A across files — makes

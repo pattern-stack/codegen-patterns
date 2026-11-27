@@ -90,6 +90,16 @@ Corrected 2026-11-26 (gap-map's check against crew): `Message.from` and `Message
 | `MessageReceipt.at` (one timestamp per step) | no (queries use `state`) | json |
 | `Message.from`, `Message.to` (unions) | yes: room posts filter on `to.*` and `mail.sql:44` indexes it; `countInRoom` excludes `from` = me (`crew:src/modules/mail/infrastructure/sqlite/sqlite.mail-store.ts:211-226`) | columns |
 
+Two more facts from crew:
+- **Not every identity is a value object.** Team `(project, id)`, Agent, MessageReceipt, Room and RoomMember have
+  value-object identities. AgentSession, AgentNotification and Message keep a plain text `id` (`UNIQUE`, beside `seq`:
+  `teams.sql:34`, `notifications.sql:4`, `mail.sql:4`), so `identity:` must also accept a scalar field.
+- **`Agent.parent` changes shape.** Today crew stores only the parent's agent name and reuses `address`'s project and
+  team (`crew:src/modules/teams/infrastructure/sqlite/sqlite.teams-store.ts:76,107-109`). With `references: agent` on a
+  full `agent_address` it becomes three columns. Crew adapts: its use case already refuses a parent on another team
+  (`teams/application/teams.ts:207-212`). RoomMember's `room` and `agent` share project and team the same way, and
+  crew moves that check from the store to the use case (`assert-mail-repositories.ts:192`).
+
 ## Ordering: `order:` beside `identity:`
 
 G1 had two halves, and the value-object identity covers only one. A value-object identity (a composite primary key) has

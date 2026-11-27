@@ -16,11 +16,11 @@ describe('drizzle/postgres constraints', () => {
 	});
 
 	it('a column reference is an annotated .references callback (#631)', () => {
-		expect(pg.columnReference({ targetExport: 'accounts', targetProp: 'id' })).toBe(
+		expect(pg.columnReference({ column: 'account_id', targetExport: 'accounts', targetProp: 'id' })).toBe(
 			'.references((): AnyPgColumn => accounts.id)',
 		);
 		// belongs_to and junction endpoints carry the referential action (ADR-021).
-		expect(pg.columnReference({ targetExport: 'accounts', targetProp: 'id', onDelete: 'set null' })).toBe(
+		expect(pg.columnReference({ column: 'account_id', targetExport: 'accounts', targetProp: 'id', onDelete: 'set null' })).toBe(
 			".references((): AnyPgColumn => accounts.id, { onDelete: 'set null' })",
 		);
 	});
