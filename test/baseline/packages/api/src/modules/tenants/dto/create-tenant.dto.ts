@@ -3,6 +3,8 @@ import { z } from 'zod';
 
 export const CreateTenantSchema = z.object({
   name: z.string().max(255),
-});
+})
+  // What Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { name: 'Example name' } });
 
 export type CreateTenantDto = z.infer<typeof CreateTenantSchema>;

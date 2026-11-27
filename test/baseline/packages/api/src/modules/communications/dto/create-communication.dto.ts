@@ -6,6 +6,8 @@ export const CreateCommunicationSchema = z.object({
   occurredAt: z.coerce.date(),
   source: z.string().max(32),
   externalId: z.string(),
-});
+})
+  // What Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { kind: 'message', occurredAt: '2026-01-15T09:30:00.000Z', source: 'Example source', externalId: 'Example external id' } });
 
 export type CreateCommunicationDto = z.infer<typeof CreateCommunicationSchema>;

@@ -2,6 +2,8 @@
 import { z } from 'zod';
 import { CreateCatalogEntrySchema } from './create-catalog-entry.dto';
 
-export const UpdateCatalogEntrySchema = CreateCatalogEntrySchema.partial();
+export const UpdateCatalogEntrySchema = CreateCatalogEntrySchema.partial()
+  // A minimal PATCH is what Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { userId: '00000000-0000-4000-8000-000000000001' } });
 
 export type UpdateCatalogEntryDto = z.infer<typeof UpdateCatalogEntrySchema>;

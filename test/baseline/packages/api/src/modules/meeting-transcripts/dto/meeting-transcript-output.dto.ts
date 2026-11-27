@@ -5,6 +5,8 @@ export const MeetingTranscriptOutputSchema = z.object({
   id: z.guid(),
   meetingId: z.guid(),
   language: z.string().nullable(),
-});
+})
+  // The response sample in the API docs (src/derived/examples/).
+  .meta({ example: { id: '00000000-0000-4000-8000-000000000001', meetingId: '00000000-0000-4000-8000-000000000001', language: 'Example language' } });
 
 export type MeetingTranscriptOutputDto = z.infer<typeof MeetingTranscriptOutputSchema>;

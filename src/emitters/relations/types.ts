@@ -138,10 +138,7 @@ export function sortEntities(entities: EntityRegistryEntry[]): EntityRegistryEnt
 	return [...entities].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** snake_case / kebab-case → camelCase. Local by design (frontend emitter precedent). */
-export function camelCase(input: string): string {
-	return input.replace(/[-_\s]+([a-zA-Z0-9])/g, (_, c: string) => c.toUpperCase());
-}
+export { camelCase } from './relation-key';
 
 /**
  * Raised when two relations would claim the same key on the same table.

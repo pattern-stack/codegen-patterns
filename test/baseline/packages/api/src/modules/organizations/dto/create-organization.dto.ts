@@ -2,10 +2,12 @@
 import { z } from 'zod';
 
 export const CreateOrganizationSchema = z.object({
-  parentId: z.guid().nullable().optional(),
+  parentId: z.guid().nullable().optional().meta({ description: 'The id of an existing organization (GET /organizations lists them). The example is a placeholder: replace it with a real id before sending.' }),
   tenantId: z.guid(),
   name: z.string().max(255),
   domain: z.string().max(255).nullable().optional(),
-});
+})
+  // What Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { tenantId: '00000000-0000-4000-8000-000000000001', name: 'Example name' } });
 
 export type CreateOrganizationDto = z.infer<typeof CreateOrganizationSchema>;

@@ -18,6 +18,8 @@ export const DealOutputSchema = z.object({
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
   deletedAt: z.coerce.date().nullable(),
-});
+})
+  // The response sample in the API docs (src/derived/examples/).
+  .meta({ example: { id: '00000000-0000-4000-8000-000000000001', ownerId: '00000000-0000-4000-8000-000000000001', closedById: '00000000-0000-4000-8000-000000000001', accountId: '00000000-0000-4000-8000-000000000001', name: 'Example name', amount: '10.00', stage: 'prospecting', closeDate: '2026-01-15', probability: 1, externalId: null, createdAt: '2026-01-15T09:30:00.000Z', updatedAt: '2026-01-15T09:30:00.000Z', deletedAt: null } });
 
 export type DealOutputDto = z.infer<typeof DealOutputSchema>;

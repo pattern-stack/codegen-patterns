@@ -13,6 +13,8 @@ export const DealStateOutputSchema = z.object({
   weight: z.number().int(),
   description: z.string().nullable(),
   metadata: z.unknown().nullable(),
-});
+})
+  // The response sample in the API docs (src/derived/examples/).
+  .meta({ example: { id: '00000000-0000-4000-8000-000000000001', tenantId: '00000000-0000-4000-8000-000000000001', name: 'Example name', displayName: 'Example display name', stateType: 'open', sortOrder: 1, probabilityDefault: 1, color: 'Example color', weight: 0, description: 'Example description', metadata: {} } });
 
 export type DealStateOutputDto = z.infer<typeof DealStateOutputSchema>;

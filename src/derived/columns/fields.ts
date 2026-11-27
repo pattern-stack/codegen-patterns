@@ -37,6 +37,7 @@ type DeclaredField = Readonly<Record<string, unknown>> & {
 	type?: string;
 	required?: boolean;
 	default?: unknown;
+	example?: unknown;
 	choices?: readonly string[];
 	choices_of?: string;
 	timezone?: boolean;
@@ -80,6 +81,7 @@ export function deriveFieldFacts(
 			required: field.required ?? false,
 			hasDefault: hasColumnDefault(field),
 			default: field.default,
+			example: field.example,
 			withTimezone: field.type === 'datetime' ? fieldWithTimezone(field) : null,
 			choices,
 			hasChoices,

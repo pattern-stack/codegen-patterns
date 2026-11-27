@@ -75,6 +75,30 @@ Every generated controller method appears under `paths.*` with
 shapes for POST/PATCH/PUT, and a 4xx `$ref` to the shared
 `ErrorResponseDto`.
 
+### Prefilled requests ("Try it out")
+
+Every route opens in Swagger UI with a request that parses, so **Try it out → Execute** works without typing:
+
+| Where | Prefill |
+|---|---|
+| `POST` body | `Create<Entity>Dto`'s example: every required field, every field with a default, every declared `example:` |
+| `PATCH` body | `Update<Entity>Dto`'s example: a minimal PATCH (the first field, plus the first enum or boolean) |
+| response sample | `<Entity>OutputDto`'s example: the whole row |
+| `:id` | `00000000-0000-4000-8000-000000000001` |
+| `page` / `pageSize` | `1` / `50` (the defaults) |
+| `include` | the route's first `api.includes` path, only where the route has an allowlist (anywhere else any value is a 400) |
+
+A field's value comes from its YAML `example:`, else its `default:`, else its first choice, else a value made from
+its type and name (`consumer-skills/entities/yaml-reference.md`). The examples are each DTO's
+`.meta({ example })`, which `z.toJSONSchema` writes into the component; the derivation is `src/derived/examples/`.
+
+**Ids are placeholders.** No example can name a row that exists. A foreign key (`projectId`) and `:id` carry the
+placeholder guid and say so in their description: replace it with a real id (from a create or list response) before
+Execute, or the request is a 404 (`:id`) or a refused insert (a foreign key).
+
+The smoke gate (`test/smoke/verify-openapi.ts`) parses every body example through its own generated DTO and checks
+each `:id` example is a guid, so a prefill that would be a 400 fails CI.
+
 ### Security — BearerAuth by default
 
 Setting `auth: bearer` registers a `bearer` HTTP security scheme:

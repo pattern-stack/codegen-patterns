@@ -7,6 +7,8 @@ export const OrganizationOutputSchema = z.object({
   tenantId: z.guid(),
   name: z.string(),
   domain: z.string().nullable(),
-});
+})
+  // The response sample in the API docs (src/derived/examples/).
+  .meta({ example: { id: '00000000-0000-4000-8000-000000000001', parentId: '00000000-0000-4000-8000-000000000001', tenantId: '00000000-0000-4000-8000-000000000001', name: 'Example name', domain: 'Example domain' } });
 
 export type OrganizationOutputDto = z.infer<typeof OrganizationOutputSchema>;

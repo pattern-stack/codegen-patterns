@@ -2,6 +2,8 @@
 import { z } from 'zod';
 import { CreatePersonSchema } from './create-person.dto';
 
-export const UpdatePersonSchema = CreatePersonSchema.partial();
+export const UpdatePersonSchema = CreatePersonSchema.partial()
+  // A minimal PATCH is what Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { tenantId: '00000000-0000-4000-8000-000000000001', preferredChannels: ['email'] } });
 
 export type UpdatePersonDto = z.infer<typeof UpdatePersonSchema>;

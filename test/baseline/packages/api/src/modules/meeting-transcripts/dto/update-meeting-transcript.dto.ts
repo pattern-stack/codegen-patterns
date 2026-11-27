@@ -2,6 +2,8 @@
 import { z } from 'zod';
 import { CreateMeetingTranscriptSchema } from './create-meeting-transcript.dto';
 
-export const UpdateMeetingTranscriptSchema = CreateMeetingTranscriptSchema.partial();
+export const UpdateMeetingTranscriptSchema = CreateMeetingTranscriptSchema.partial()
+  // A minimal PATCH is what Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { language: 'Example language' } });
 
 export type UpdateMeetingTranscriptDto = z.infer<typeof UpdateMeetingTranscriptSchema>;

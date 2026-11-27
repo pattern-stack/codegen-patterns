@@ -2,8 +2,10 @@
 import { z } from 'zod';
 
 export const CreateMeetingTranscriptSchema = z.object({
-  meetingId: z.guid(),
+  meetingId: z.guid().meta({ description: 'The id of an existing meeting (GET /meetings lists them). The example is a placeholder: replace it with a real id before sending.' }),
   language: z.string().nullable().optional(),
-});
+})
+  // What Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { meetingId: '00000000-0000-4000-8000-000000000001' } });
 
 export type CreateMeetingTranscriptDto = z.infer<typeof CreateMeetingTranscriptSchema>;

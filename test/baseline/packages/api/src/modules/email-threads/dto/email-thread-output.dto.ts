@@ -4,6 +4,8 @@ import { z } from 'zod';
 export const EmailThreadOutputSchema = z.object({
   id: z.guid(),
   topic: z.string().nullable(),
-});
+})
+  // The response sample in the API docs (src/derived/examples/).
+  .meta({ example: { id: '00000000-0000-4000-8000-000000000001', topic: 'Example topic' } });
 
 export type EmailThreadOutputDto = z.infer<typeof EmailThreadOutputSchema>;

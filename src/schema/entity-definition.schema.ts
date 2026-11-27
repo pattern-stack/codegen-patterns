@@ -6,11 +6,13 @@ import { reservedGlobalFor, reservedNameMessage } from "./reserved-entity-names.
 import { roleForeignKey } from "../roles/derive.js";
 import {
   FK_REQUIRED_FALSE_MESSAGE,
+  fieldColumnNullable,
   foreignKeyRequiredFalseWithoutNullable,
   NOT_NULL_WITHOUT_DEFAULT_MESSAGE,
   notNullWithoutDefault,
 } from "./field-nullability.js";
 import { fieldLengthIssues } from "./field-length.js";
+import { exampleMismatchMessage, valueFitsField } from "./field-example.js";
 import {
   TIMEZONE_ON_NON_DATETIME_MESSAGE,
   behaviorTimezoneOptionError,
@@ -253,6 +255,13 @@ const BaseFieldSchema = z.object({
   // Default value
   default: z.unknown().optional().describe("Default value"),
 
+  // OpenAPI example (src/derived/examples/): what Swagger's "Try it out" prefills for this field. Optional — without
+  // it the example is the field's default, else its first choice, else a value made from its type and name.
+  example: z
+    .unknown()
+    .optional()
+    .describe("Example value for the API docs (Swagger 'Try it out' prefill); must be a value this field accepts"),
+
   // Indexing
   index: z.boolean().optional().describe("Create database index"),
   // Single-column unique index (#511): `uniqueIndex('<table>_<col>_uniq')`, tenant-prefixed under `tenant_scoped`.
@@ -291,6 +300,21 @@ export const FieldDefinitionSchema = BaseFieldSchema.merge(UiMetadataSchema)
   .superRefine((data, ctx) => {
     for (const { key, message } of fieldLengthIssues(data)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message, path: [key] });
+    }
+  })
+  // `example:` must be a value the field's DTO accepts. A `choices_of:` field's choices are another entity's, so
+  // its example is checked against them later (src/derived/examples/), where they are resolved.
+  .superRefine((data, ctx) => {
+    if (data.example === undefined || data.choices_of !== undefined) return;
+    const field = {
+      type: data.type ?? "string",
+      nullable: fieldColumnNullable(data),
+      choices: data.choices,
+      minLength: typeof data.min_length === "number" ? data.min_length : null,
+      maxLength: typeof data.max_length === "number" ? data.max_length : null,
+    };
+    if (!valueFitsField(field, data.example)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: exampleMismatchMessage(field.type), path: ["example"] });
     }
   })
   .refine(

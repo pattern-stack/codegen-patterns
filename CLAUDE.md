@@ -452,7 +452,12 @@ Zod 4's strict `uuid()`. An update DTO never applies a default (`createChainAppl
 ZOD-1a). A pattern's `configSchema` is structural (`PatternConfigSchema`), so a consumer's pattern file works on
 either Zod. The editor schemas (`entity-definition.schema.json`, `codegen-config.schema.json`) are generated
 (`just gen-entity-schema`, `just gen-config-schema`) and tested for drift. OpenAPI components come from
-`z.toJSONSchema` in `runtime/shared/openapi/registry.ts`; there is no OpenAPI peer. Specs: `docs/specs/ZOD-0.md`,
+`z.toJSONSchema` in `runtime/shared/openapi/registry.ts`; there is no OpenAPI peer. Each generated DTO carries
+`.meta({ example })` — Swagger's "Try it out" prefill — derived once in `src/derived/examples/` (YAML `example:` →
+a fitting `default:` → first choice → a value by type; `valueFitsField` in `src/schema/field-example.ts` is the
+rule) and printed by the templates; a family child composes its base's through the runtime's `exampleOf`. Modules
+register their schemas in their **constructor** (`main.ts` builds before `listen()`, so `onModuleInit` is too
+late), and the smoke gate fails on a dangling `$ref` or a prefill its own DTO rejects (`test/smoke/_openapi-*.ts`). Specs: `docs/specs/ZOD-0.md`,
 `docs/specs/ZOD-1.md`; app upgrade: `docs/MIGRATION-zod4.md`.
 
 ### Testing

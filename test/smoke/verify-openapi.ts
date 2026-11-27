@@ -13,6 +13,8 @@
  * `/docs-json` dangled in a fresh app; rehearsal of 0.35.0). Asserts:
  *
  *   - every `$ref` in the document names a `components.schemas` entry.
+ *   - every prefill Swagger's "Try it out" makes is a valid request: each body example parses through its own
+ *     generated DTO, each `:id` has a guid example (`_openapi-examples.ts`).
  *   - OpenAPI version is 3.0.3.
  *   - components.schemas contains Create/Update/Output DTOs per entity
  *     plus the shared ErrorResponseDto.
@@ -31,6 +33,7 @@
  */
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { examplePrefillProblems, type ParsesInput } from './_openapi-examples';
 import { danglingRefs } from './_openapi-refs';
 
 interface Doc {
@@ -131,6 +134,7 @@ async function main(): Promise<void> {
 				version: string;
 				description?: string;
 			}) => Promise<Doc>;
+			schemaNamed: (name: string) => ParsesInput | undefined;
 		};
 
 		const registryDocument = await registry.build({
@@ -164,6 +168,13 @@ async function main(): Promise<void> {
 			fail(
 				`${dangling.length} $ref(s) do not resolve in the document: ${dangling.join(', ')} — present: ${Object.keys(document.components.schemas).join(', ')}`,
 			);
+		}
+
+		// Swagger's "Try it out" prefills each operation from these examples: every one must be a request the app
+		// accepts — each body example parses through its own generated Zod DTO (src/derived/examples/).
+		const prefill = examplePrefillProblems(document, (name) => registry.schemaNamed(name));
+		if (prefill.length > 0) {
+			fail(`${prefill.length} prefill problem(s):\n  ${prefill.join('\n  ')}`);
 		}
 
 		// Nest's SwaggerModule.createDocument emits '3.0.0'; our

@@ -2,6 +2,8 @@
 import { z } from 'zod';
 import { CreateUserSchema } from './create-user.dto';
 
-export const UpdateUserSchema = CreateUserSchema.partial();
+export const UpdateUserSchema = CreateUserSchema.partial()
+  // A minimal PATCH is what Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { tenantId: '00000000-0000-4000-8000-000000000001' } });
 
 export type UpdateUserDto = z.infer<typeof UpdateUserSchema>;

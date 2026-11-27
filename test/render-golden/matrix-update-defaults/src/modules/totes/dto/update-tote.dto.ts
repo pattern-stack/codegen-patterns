@@ -7,6 +7,8 @@ export const UpdateToteSchema = CreateToteSchema.omit({ kind: true }).partial().
   // A PATCH leaves an omitted field as it is: these restate the create schema's defaulted fields without the default
   // (ZOD-1a).
   fragile: z.boolean().optional(),
-});
+})
+  // A minimal PATCH is what Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { fragile: false } });
 
 export type UpdateToteDto = z.infer<typeof UpdateToteSchema>;

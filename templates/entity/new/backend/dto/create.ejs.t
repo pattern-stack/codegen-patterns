@@ -4,6 +4,9 @@ force: true
 ---
 <%- generatedBanner %>
 import { z } from 'zod';
+<% if (dtoExamples.importsExampleOf.create) { -%>
+import { exampleOf } from '<%= openApiImport %>';
+<% } -%>
 <% if (familyChild) { -%>
 import { <%= familyChild.baseCreateSchema %> } from '<%= familyChild.baseCreateImportPath %>';
 <% } -%>
@@ -26,9 +29,11 @@ export const <%= classNames.createSchema %> = z.object({
 <%= _in %><%= field.camelName %>: <%- field.zodChainCreate %>,
 <%_ }) _%>
 <% if (familyChild) { -%>
-  });
+  })
 <% } else { -%>
-});
+})
 <% } -%>
+  // What Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: <%- dtoExamples.create %> });
 
 export type <%= classNames.createDto %> = z.infer<typeof <%= classNames.createSchema %>>;

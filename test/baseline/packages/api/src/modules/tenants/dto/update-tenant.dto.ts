@@ -2,6 +2,8 @@
 import { z } from 'zod';
 import { CreateTenantSchema } from './create-tenant.dto';
 
-export const UpdateTenantSchema = CreateTenantSchema.partial();
+export const UpdateTenantSchema = CreateTenantSchema.partial()
+  // A minimal PATCH is what Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { name: 'Example name' } });
 
 export type UpdateTenantDto = z.infer<typeof UpdateTenantSchema>;

@@ -127,8 +127,8 @@ export class <%= _list.controller %> {
   }
 
   @ApiOperation({ summary: 'List <%= entityNamePlural %>', operationId: '<%= _list.operationId %>' })
-  @ApiQuery({ name: 'page', required: false, type: 'integer', description: '1-based page number (default 1).' })
-  @ApiQuery({ name: 'pageSize', required: false, type: 'integer', description: 'Page size (default 50, max 200).' })
+  @ApiQuery({ name: 'page', required: false, type: 'integer', example: <%= paramExamples.page %>, description: '1-based page number (default 1).' })
+  @ApiQuery({ name: 'pageSize', required: false, type: 'integer', example: <%= paramExamples.pageSize %>, description: 'Page size (default 50, max 200).' })
   @ApiQuery({ name: 'cursor', required: false, type: 'string', description: 'Opaque keyset cursor (accepted; v1 paginates by offset).' })
   @ApiQuery({ name: 'sort_by', required: false, type: 'string', description: "Sort column (default 'created_at')." })
   @ApiQuery({ name: 'sort_order', required: false, enum: ['asc', 'desc'], description: "Sort direction (default 'desc')." })
@@ -136,6 +136,9 @@ export class <%= _list.controller %> {
     name: 'include',
     required: false,
     type: 'string',
+<%_ if (paramExamples.include.list !== null) { _%>
+    example: '<%= paramExamples.include.list %>',
+<%_ } _%>
     description:
 <%_ if (_includeRoutes.includes('list')) { _%>
       'Comma-separated include paths, written as relation keys (camelCase), allowlisted by api.includes.list in the entity YAML. Anything else is a 400.',
@@ -192,11 +195,14 @@ export class <%= _list.controller %> {
   @ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/<%= classNames.outputDto %>' } })
   @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid', example: '<%= paramExamples.id %>', description: <%- paramExamples.idDescriptionLiteral %> })
   @ApiQuery({
     name: 'include',
     required: false,
     type: 'string',
+<%_ if (paramExamples.include.find_by_id !== null) { _%>
+    example: '<%= paramExamples.include.find_by_id %>',
+<%_ } _%>
     description:
 <%_ if (_includeRoutes.includes('find_by_id')) { _%>
       'Comma-separated include paths, written as relation keys (camelCase), allowlisted by api.includes.find_by_id in the entity YAML. Anything else is a 400.',
@@ -228,7 +234,7 @@ export class <%= _list.controller %> {
   @ApiResponse({ status: 200 })
   @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid', example: '<%= paramExamples.id %>', description: <%- paramExamples.idDescriptionLiteral %> })
   <%- _decorator(_findByIdWithFields) %>
   async <%= _findByIdWithFields.handler %>(
     @Param('id', ParseUUIDPipe) id: string,
@@ -259,7 +265,7 @@ export class <%= _list.controller %> {
   @ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid', example: '<%= paramExamples.id %>', description: <%- paramExamples.idDescriptionLiteral %> })
   <%- _decorator(_update) %>
   async <%= _update.handler %>(
     @Param('id', ParseUUIDPipe) id: string,
@@ -274,7 +280,7 @@ export class <%= _list.controller %> {
   @ApiResponse({ status: 204 })
   @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid', example: '<%= paramExamples.id %>', description: <%- paramExamples.idDescriptionLiteral %> })
   <%- _decorator(_delete) %>
   async <%= _delete.handler %>(
     @Param('id', ParseUUIDPipe) id: string,

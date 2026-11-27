@@ -7,6 +7,8 @@ export const UpdateShelfSchema = CreateShelfSchema.partial().extend({
   // (ZOD-1a).
   active: z.boolean().optional(),
   archived: z.boolean().optional(),
-});
+})
+  // A minimal PATCH is what Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { label: 'Example label', active: true } });
 
 export type UpdateShelfDto = z.infer<typeof UpdateShelfSchema>;

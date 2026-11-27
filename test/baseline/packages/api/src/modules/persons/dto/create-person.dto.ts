@@ -8,6 +8,8 @@ export const CreatePersonSchema = z.object({
   lastName: z.string().max(100),
   nicknames: z.array(z.string()).nullable().optional(),
   preferredChannels: z.array(z.enum(['email', 'phone', 'sms'])),
-});
+})
+  // What Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { tenantId: '00000000-0000-4000-8000-000000000001', email: 'Example email', firstName: 'Example first name', lastName: 'Example last name', preferredChannels: ['email'] } });
 
 export type CreatePersonDto = z.infer<typeof CreatePersonSchema>;

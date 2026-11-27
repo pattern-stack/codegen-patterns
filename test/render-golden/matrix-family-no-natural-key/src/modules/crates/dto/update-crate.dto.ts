@@ -6,6 +6,8 @@ import { UpdateParcelSchema } from '../../parcels/dto/update-parcel.dto';
 // optional and without a default, so a PATCH leaves an omitted field as it is (ZOD-1a).
 export const UpdateCrateSchema = UpdateParcelSchema.extend({
   label: z.string().optional(),
-});
+})
+  // A minimal PATCH is what Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { label: 'Example label' } });
 
 export type UpdateCrateDto = z.infer<typeof UpdateCrateSchema>;

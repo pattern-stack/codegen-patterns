@@ -241,6 +241,7 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	{ runtime: 'shared/openapi/registry.ts', target: 'openapi/registry.ts' },
 	{ runtime: 'shared/openapi/registry.tokens.ts', target: 'openapi/registry.tokens.ts' },
 	{ runtime: 'shared/openapi/errors.ts', target: 'openapi/errors.ts' },
+	{ runtime: 'shared/openapi/examples.ts', target: 'openapi/examples.ts' },
 	// OPENAPI-3: shared error response schema referenced by every generated
 	// controller's 4xx `@ApiResponse` `$ref`. Auto-registered in the registry
 	// constructor so consumer projects expose `ErrorResponseDto` on

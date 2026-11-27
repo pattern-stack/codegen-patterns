@@ -2,15 +2,17 @@
 import { z } from 'zod';
 
 export const CreateOpportunitySchema = z.object({
-  organizationId: z.guid(),
-  ownerId: z.guid(),
-  stateId: z.guid(),
+  organizationId: z.guid().meta({ description: 'The id of an existing organization (GET /organizations lists them). The example is a placeholder: replace it with a real id before sending.' }),
+  ownerId: z.guid().meta({ description: 'The id of an existing user (GET /users lists them). The example is a placeholder: replace it with a real id before sending.' }),
+  stateId: z.guid().meta({ description: 'The id of an existing deal_state (GET /deal_states lists them). The example is a placeholder: replace it with a real id before sending.' }),
   tenantId: z.guid(),
   name: z.string().max(255),
   amount: z.coerce.string().nullable().optional(),
   currency: z.string().max(3).nullable().optional(),
   expectedCloseDate: z.coerce.date().nullable().optional(),
   closedAt: z.coerce.date().nullable().optional(),
-});
+})
+  // What Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { organizationId: '00000000-0000-4000-8000-000000000001', ownerId: '00000000-0000-4000-8000-000000000001', stateId: '00000000-0000-4000-8000-000000000001', tenantId: '00000000-0000-4000-8000-000000000001', name: 'Example name', currency: 'USD' } });
 
 export type CreateOpportunityDto = z.infer<typeof CreateOpportunitySchema>;

@@ -32,6 +32,17 @@ and what changes for API clients and hand-written code.
 - The OpenAPI smoke gate builds the document the way `main.ts` does (no `app.init()`) and fails on any `$ref` that
   does not resolve.
 
+### Added: prefilled requests in the API docs
+
+- Every generated Create / Update / Output DTO carries an OpenAPI example (`.meta({ example })`), so Swagger's
+  "Try it out" prefills a request that parses: the Create body holds the required and defaulted fields, the Update
+  body is a minimal PATCH, the response sample is the whole row. `:id` gets a placeholder guid, `page` / `pageSize`
+  their defaults, `include` the route's first allowlisted path. A foreign key and `:id` say in their description
+  that the guid is a placeholder.
+- A field may declare `example:` (validated against the field). Without it the value is the field's default, its first
+  choice, or a value made from its type and name (`src/derived/examples/`).
+- The OpenAPI smoke gate parses every body example through its own generated DTO.
+
 ### Changed: `project init` for a new project
 
 - Writes `drizzle.config.ts`, a `target:` key, and the `# yaml-language-server: $schema=…` first line in

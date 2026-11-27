@@ -4,6 +4,9 @@ force: true
 ---
 <%- generatedBanner %>
 import { z } from 'zod';
+<% if (dtoExamples.importsExampleOf.output) { -%>
+import { exampleOf } from '<%= openApiImport %>';
+<% } -%>
 <% if (familyChild) { -%>
 import { <%= familyChild.baseOutputSchema %> } from '<%= familyChild.baseOutputImportPath %>';
 <% } -%>
@@ -32,7 +35,9 @@ export const <%= familyChild ? classNames.ownOutputSchema : classNames.outputSch
 <%_ if (hasSoftDelete) { _%>
   deletedAt: z.coerce.date().nullable(),
 <%_ } _%>
-});
+})
+  // The response sample in the API docs (src/derived/examples/).
+  .meta({ example: <%- familyChild ? dtoExamples.ownOutput : dtoExamples.output %> });
 <% if (familyChild) { -%>
 
 // The flat shape every HTTP read and write of a <%= entityName %> returns: the base's output with the kind fixed, and
@@ -40,7 +45,7 @@ export const <%= familyChild ? classNames.ownOutputSchema : classNames.outputSch
 export const <%= classNames.outputSchema %> = <%= familyChild.baseOutputSchema %>.extend({
   <%= familyChild.discriminatorProp %>: z.literal('<%= familyChild.as %>'),
   ...<%= classNames.ownOutputSchema %>.omit({ id: true }).shape,
-});
+}).meta({ example: <%- dtoExamples.output %> });
 <% } -%>
 
 export type <%= classNames.outputDto %> = z.infer<typeof <%= classNames.outputSchema %>>;

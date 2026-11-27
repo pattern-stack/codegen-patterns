@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { CreateCommunicationSchema } from './create-communication.dto';
 
 // RFC-0006 §4.1: a row does not change kind, so the update takes no `kind`; one in a body is stripped.
-export const UpdateCommunicationSchema = CreateCommunicationSchema.omit({ kind: true }).partial();
+export const UpdateCommunicationSchema = CreateCommunicationSchema.omit({ kind: true }).partial()
+  // A minimal PATCH is what Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { occurredAt: '2026-01-15T09:30:00.000Z' } });
 
 export type UpdateCommunicationDto = z.infer<typeof UpdateCommunicationSchema>;

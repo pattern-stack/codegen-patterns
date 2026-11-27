@@ -2,9 +2,11 @@
 import { z } from 'zod';
 
 export const CreateUserSchema = z.object({
-  personId: z.guid().nullable().optional(),
+  personId: z.guid().nullable().optional().meta({ description: 'The id of an existing person (GET /persons lists them). The example is a placeholder: replace it with a real id before sending.' }),
   tenantId: z.guid(),
   email: z.string().max(255),
-});
+})
+  // What Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: { tenantId: '00000000-0000-4000-8000-000000000001', email: 'Example email' } });
 
 export type CreateUserDto = z.infer<typeof CreateUserSchema>;

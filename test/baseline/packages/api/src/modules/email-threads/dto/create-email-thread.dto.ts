@@ -3,6 +3,8 @@ import { z } from 'zod';
 
 export const CreateEmailThreadSchema = z.object({
   topic: z.string().nullable().optional(),
-});
+})
+  // What Swagger's "Try it out" prefills (src/derived/examples/).
+  .meta({ example: {} });
 
 export type CreateEmailThreadDto = z.infer<typeof CreateEmailThreadSchema>;

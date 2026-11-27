@@ -65,8 +65,8 @@ export class MeetingController {
   }
 
   @ApiOperation({ summary: 'List meetings', operationId: 'listMeetings' })
-  @ApiQuery({ name: 'page', required: false, type: 'integer', description: '1-based page number (default 1).' })
-  @ApiQuery({ name: 'pageSize', required: false, type: 'integer', description: 'Page size (default 50, max 200).' })
+  @ApiQuery({ name: 'page', required: false, type: 'integer', example: 1, description: '1-based page number (default 1).' })
+  @ApiQuery({ name: 'pageSize', required: false, type: 'integer', example: 50, description: 'Page size (default 50, max 200).' })
   @ApiQuery({ name: 'cursor', required: false, type: 'string', description: 'Opaque keyset cursor (accepted; v1 paginates by offset).' })
   @ApiQuery({ name: 'sort_by', required: false, type: 'string', description: "Sort column (default 'created_at')." })
   @ApiQuery({ name: 'sort_order', required: false, enum: ['asc', 'desc'], description: "Sort direction (default 'desc')." })
@@ -74,6 +74,7 @@ export class MeetingController {
     name: 'include',
     required: false,
     type: 'string',
+    example: 'transcripts',
     description:
       'Comma-separated include paths, written as relation keys (camelCase), allowlisted by api.includes.list in the entity YAML. Anything else is a 400.',
   })
@@ -107,7 +108,7 @@ export class MeetingController {
   @ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/MeetingOutputDto' } })
   @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid', example: '00000000-0000-4000-8000-000000000001', description: 'The meeting\'s id (from a create or GET /meetings response). The example is a placeholder: replace it with a real id before sending.' })
   @ApiQuery({
     name: 'include',
     required: false,
@@ -146,7 +147,7 @@ export class MeetingController {
   @ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid', example: '00000000-0000-4000-8000-000000000001', description: 'The meeting\'s id (from a create or GET /meetings response). The example is a placeholder: replace it with a real id before sending.' })
   @Patch(':id')
   async update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -161,7 +162,7 @@ export class MeetingController {
   @ApiResponse({ status: 204 })
   @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid', example: '00000000-0000-4000-8000-000000000001', description: 'The meeting\'s id (from a create or GET /meetings response). The example is a placeholder: replace it with a real id before sending.' })
   @Delete(':id')
   async remove(
     @Param('id', ParseUUIDPipe) id: string,
