@@ -32,6 +32,7 @@ import { EAV_FIELD_VALUE_ENTITY, FIELD_VALUES_DEPS_FIELD, SYSTEM_DEPS_FIELD, use
 import type { SystemDependency } from '../../derived/wiring/types.js';
 import type { ProjectApiContext } from '../../derived/api/project.js';
 import {
+	commandsConstName,
 	pascalCase,
 	registerSchemasName,
 	repositoriesBundleName,
@@ -67,7 +68,13 @@ export const GENERATED_SYSTEM_NAMES = [DATABASE_SYSTEM, 'settings', 'jobs', 'eve
 const RESERVED_MODULE_NAMES = new Set<string>([ROOT_MODULE, ...GENERATED_SYSTEM_NAMES]);
 
 /** The files the composition writes under `paths.generated`; stale-files removes the same list on a switch to nest. */
-export const COMPOSITION_GENERATED_FILES = { registry: 'wiring.ts', composition: 'composition.ts', openApi: 'openapi.ts' } as const;
+export const COMPOSITION_GENERATED_FILES = {
+	registry: 'wiring.ts',
+	composition: 'composition.ts',
+	openApi: 'openapi.ts',
+	// H-1: the whole-set commands table.
+	commands: 'commands.ts',
+} as const;
 
 /** The function `<generated>/openapi.ts` exports, which no entity's own register function may share a name with. */
 const REGISTER_OPENAPI_SCHEMAS = 'registerOpenApiSchemas';
@@ -594,6 +601,37 @@ ${systems.map((s) => `import { ${s.exportName} } from '${relativeImport(composit
 export const SYSTEMS = [${systems.map((s) => s.exportName).join(', ')}] as const;
 
 export const MODULES = [${[...names.map((n) => `${n}Module`), ...(integrationsModule ? ['integrationsModule'] : []), ...(jobDeps ? ['jobDepsModule'] : [])].join(', ')}] as const;
+`,
+	});
+	// H-1: every entity's commands, each re-targeted onto the composed app: the one table HTTP, MCP and a CLI read.
+	const commandsFile = path.join(generatedDir, COMPOSITION_GENERATED_FILES.commands);
+	const commandsOf = (e: string) => wiringFile(e).replace(/\.wiring\.ts$/, '.commands.ts');
+	const allEntities = [...plans.values()].flatMap((p) => p.entities.map((e) => ({ entity: e, module: p.name }))).sort((a, b) => (a.entity < b.entity ? -1 : a.entity > b.entity ? 1 : 0));
+	files.push({
+		path: commandsFile,
+		content: `${input.banner}
+/**
+ * Every command the app answers (H-1): each entity's use cases, as every way in calls them (HTTP, MCP tools, a CLI).
+ * A command takes the composed app and reaches its use cases through its context's module. Call one with
+ * \`invokeCommand(command, app, input, ctx)\`, which checks the input first.
+ */
+import type { Wired } from '@pattern-stack/wiring';
+import { allOnApis, type Command } from '@pattern-stack/wiring/commands';
+import type { ModuleApis, SystemApis } from './wiring';
+${allEntities.map(({ entity }) => `import { ${commandsConstName(entity)} } from '${relativeImport(commandsFile, commandsOf(entity))}';`).join('\n')}
+
+/** The composed app, as \`compose\` returns it. */
+export type App = Wired<ModuleApis, SystemApis>;
+
+/** Each with its input and result typed loosely; an entity's own list (\`<entity>.commands.ts\`) keeps them exact. */
+export const COMMANDS: readonly Command<App>[] = [
+${allEntities.map(({ entity, module }) => `  ...allOnApis(${commandsConstName(entity)}, (app: App) => app.module('${module}').${camelCase(entity)}.useCases),`).join('\n')}
+];
+
+/** A command by name (\`contact create\`), or undefined. */
+export function commandNamed(name: string): Command<App> | undefined {
+  return COMMANDS.find((c) => c.name === name);
+}
 `,
 	});
 	const openApiFile = path.join(generatedDir, COMPOSITION_GENERATED_FILES.openApi);
@@ -1273,7 +1311,16 @@ export function wiringFilesBehind(input: Pick<CompositionInput, 'relations' | 'm
 		const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
 		const { module, openApi } = wiringImports(e);
 		const exports = [...module, ...openApi].map((name) => name.replace(/^type /, ''));
-		if (!exports.every((name) => new RegExp(`export (function|type) ${name}\\b`).test(text))) behind.push(e);
+		const commandsText = fs.existsSync(file.replace(/\.wiring\.ts$/, '.commands.ts'))
+			? fs.readFileSync(file.replace(/\.wiring\.ts$/, '.commands.ts'), 'utf8')
+			: '';
+		if (
+			!exports.every((name) => new RegExp(`export (function|type) ${name}\\b`).test(text)) ||
+			// H-1: the commands table imports each entity's commands.
+			!new RegExp(`export const ${commandsConstName(e)}\\b`).test(commandsText)
+		) {
+			behind.push(e);
+		}
 	}
 	// PW-3c: each junction's, which `junction new` writes.
 	for (const j of input.relations.junctions.filter((x) => x.between.length === 2)) {

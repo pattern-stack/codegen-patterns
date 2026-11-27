@@ -321,6 +321,145 @@
 			}
 		}
 	],
+	"commands": [
+		{
+			"name": "email-thread find",
+			"summary": "Find email_thread by id",
+			"useCase": "FindEmailThreadByIdUseCase",
+			"kind": "find_by_id",
+			"useCaseKey": "findById",
+			"effect": "read",
+			"input": {
+				"id": true,
+				"include": true
+			},
+			"http": {
+				"verb": "GET",
+				"path": "/email_threads/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [
+						"include"
+					],
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "email-thread list",
+			"summary": "List email_threads",
+			"useCase": "ListEmailThreadsUseCase",
+			"kind": "list",
+			"useCaseKey": "list",
+			"effect": "read",
+			"input": {
+				"id": false,
+				"include": true,
+				"query": "list"
+			},
+			"http": {
+				"verb": "GET",
+				"path": "/email_threads",
+				"binding": {
+					"path": [],
+					"query": "all",
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "email-thread create",
+			"summary": "Create email_thread",
+			"useCase": "CreateEmailThreadUseCase",
+			"kind": "create",
+			"useCaseKey": "create",
+			"effect": "side-effect",
+			"input": {
+				"id": false,
+				"include": false,
+				"dto": "create"
+			},
+			"http": {
+				"verb": "POST",
+				"path": "/email_threads",
+				"binding": {
+					"path": [],
+					"query": [],
+					"body": true
+				},
+				"success": 201
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "email-thread update",
+			"summary": "Update email_thread",
+			"useCase": "UpdateEmailThreadUseCase",
+			"kind": "update",
+			"useCaseKey": "update",
+			"effect": "idempotent",
+			"input": {
+				"id": true,
+				"include": false,
+				"dto": "update"
+			},
+			"http": {
+				"verb": "PATCH",
+				"path": "/email_threads/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [],
+					"body": true
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "email-thread delete",
+			"summary": "Delete email_thread",
+			"useCase": "DeleteEmailThreadUseCase",
+			"kind": "delete",
+			"useCaseKey": "delete",
+			"effect": "side-effect",
+			"input": {
+				"id": true,
+				"include": false
+			},
+			"http": {
+				"verb": "DELETE",
+				"path": "/email_threads/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [],
+					"body": false
+				},
+				"success": 204
+			},
+			"origin": {
+				"from": "base"
+			}
+		}
+	],
+	"commandsConst": "emailThreadCommands",
 	"http": {
 		"enabled": true,
 		"routes": [

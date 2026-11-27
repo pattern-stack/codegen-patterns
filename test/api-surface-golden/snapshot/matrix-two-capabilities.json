@@ -540,6 +540,145 @@
 					}
 				}
 			],
+			"commands": [
+				{
+					"name": "team find",
+					"summary": "Find team by id",
+					"useCase": "FindTeamByIdUseCase",
+					"kind": "find_by_id",
+					"useCaseKey": "findById",
+					"effect": "read",
+					"input": {
+						"id": true,
+						"include": true
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/teams/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [
+								"include"
+							],
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "team list",
+					"summary": "List teams",
+					"useCase": "ListTeamsUseCase",
+					"kind": "list",
+					"useCaseKey": "list",
+					"effect": "read",
+					"input": {
+						"id": false,
+						"include": true,
+						"query": "list"
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/teams",
+						"binding": {
+							"path": [],
+							"query": "all",
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "team create",
+					"summary": "Create team",
+					"useCase": "CreateTeamUseCase",
+					"kind": "create",
+					"useCaseKey": "create",
+					"effect": "side-effect",
+					"input": {
+						"id": false,
+						"include": false,
+						"dto": "create"
+					},
+					"http": {
+						"verb": "POST",
+						"path": "/teams",
+						"binding": {
+							"path": [],
+							"query": [],
+							"body": true
+						},
+						"success": 201
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "team update",
+					"summary": "Update team",
+					"useCase": "UpdateTeamUseCase",
+					"kind": "update",
+					"useCaseKey": "update",
+					"effect": "idempotent",
+					"input": {
+						"id": true,
+						"include": false,
+						"dto": "update"
+					},
+					"http": {
+						"verb": "PATCH",
+						"path": "/teams/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [],
+							"body": true
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "team delete",
+					"summary": "Delete team",
+					"useCase": "DeleteTeamUseCase",
+					"kind": "delete",
+					"useCaseKey": "delete",
+					"effect": "side-effect",
+					"input": {
+						"id": true,
+						"include": false
+					},
+					"http": {
+						"verb": "DELETE",
+						"path": "/teams/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [],
+							"body": false
+						},
+						"success": 204
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"commandsConst": "teamCommands",
 			"http": {
 				"enabled": true,
 				"routes": [

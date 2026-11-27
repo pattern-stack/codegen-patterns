@@ -321,6 +321,145 @@
 			}
 		}
 	],
+	"commands": [
+		{
+			"name": "tenant find",
+			"summary": "Find tenant by id",
+			"useCase": "FindTenantByIdUseCase",
+			"kind": "find_by_id",
+			"useCaseKey": "findById",
+			"effect": "read",
+			"input": {
+				"id": true,
+				"include": true
+			},
+			"http": {
+				"verb": "GET",
+				"path": "/tenants/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [
+						"include"
+					],
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "tenant list",
+			"summary": "List tenants",
+			"useCase": "ListTenantsUseCase",
+			"kind": "list",
+			"useCaseKey": "list",
+			"effect": "read",
+			"input": {
+				"id": false,
+				"include": true,
+				"query": "list"
+			},
+			"http": {
+				"verb": "GET",
+				"path": "/tenants",
+				"binding": {
+					"path": [],
+					"query": "all",
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "tenant create",
+			"summary": "Create tenant",
+			"useCase": "CreateTenantUseCase",
+			"kind": "create",
+			"useCaseKey": "create",
+			"effect": "side-effect",
+			"input": {
+				"id": false,
+				"include": false,
+				"dto": "create"
+			},
+			"http": {
+				"verb": "POST",
+				"path": "/tenants",
+				"binding": {
+					"path": [],
+					"query": [],
+					"body": true
+				},
+				"success": 201
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "tenant update",
+			"summary": "Update tenant",
+			"useCase": "UpdateTenantUseCase",
+			"kind": "update",
+			"useCaseKey": "update",
+			"effect": "idempotent",
+			"input": {
+				"id": true,
+				"include": false,
+				"dto": "update"
+			},
+			"http": {
+				"verb": "PATCH",
+				"path": "/tenants/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [],
+					"body": true
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "tenant delete",
+			"summary": "Delete tenant",
+			"useCase": "DeleteTenantUseCase",
+			"kind": "delete",
+			"useCaseKey": "delete",
+			"effect": "side-effect",
+			"input": {
+				"id": true,
+				"include": false
+			},
+			"http": {
+				"verb": "DELETE",
+				"path": "/tenants/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [],
+					"body": false
+				},
+				"success": 204
+			},
+			"origin": {
+				"from": "base"
+			}
+		}
+	],
+	"commandsConst": "tenantCommands",
 	"http": {
 		"enabled": true,
 		"routes": [

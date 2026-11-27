@@ -456,6 +456,145 @@
 					}
 				}
 			],
+			"commands": [
+				{
+					"name": "member find",
+					"summary": "Find member by id",
+					"useCase": "FindMemberByIdUseCase",
+					"kind": "find_by_id",
+					"useCaseKey": "findById",
+					"effect": "read",
+					"input": {
+						"id": true,
+						"include": true
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/members/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [
+								"include"
+							],
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "member list",
+					"summary": "List members",
+					"useCase": "ListMembersUseCase",
+					"kind": "list",
+					"useCaseKey": "list",
+					"effect": "read",
+					"input": {
+						"id": false,
+						"include": true,
+						"query": "list"
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/members",
+						"binding": {
+							"path": [],
+							"query": "all",
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "member create",
+					"summary": "Create member",
+					"useCase": "CreateMemberUseCase",
+					"kind": "create",
+					"useCaseKey": "create",
+					"effect": "side-effect",
+					"input": {
+						"id": false,
+						"include": false,
+						"dto": "create"
+					},
+					"http": {
+						"verb": "POST",
+						"path": "/members",
+						"binding": {
+							"path": [],
+							"query": [],
+							"body": true
+						},
+						"success": 201
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "member update",
+					"summary": "Update member",
+					"useCase": "UpdateMemberUseCase",
+					"kind": "update",
+					"useCaseKey": "update",
+					"effect": "idempotent",
+					"input": {
+						"id": true,
+						"include": false,
+						"dto": "update"
+					},
+					"http": {
+						"verb": "PATCH",
+						"path": "/members/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [],
+							"body": true
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "member delete",
+					"summary": "Delete member",
+					"useCase": "DeleteMemberUseCase",
+					"kind": "delete",
+					"useCaseKey": "delete",
+					"effect": "side-effect",
+					"input": {
+						"id": true,
+						"include": false
+					},
+					"http": {
+						"verb": "DELETE",
+						"path": "/members/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [],
+							"body": false
+						},
+						"success": 204
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"commandsConst": "memberCommands",
 			"http": {
 				"enabled": true,
 				"routes": [
@@ -973,6 +1112,145 @@
 					}
 				}
 			],
+			"commands": [
+				{
+					"name": "skill find",
+					"summary": "Find skill by id",
+					"useCase": "FindSkillByIdUseCase",
+					"kind": "find_by_id",
+					"useCaseKey": "findById",
+					"effect": "read",
+					"input": {
+						"id": true,
+						"include": true
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/skills/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [
+								"include"
+							],
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "skill list",
+					"summary": "List skills",
+					"useCase": "ListSkillsUseCase",
+					"kind": "list",
+					"useCaseKey": "list",
+					"effect": "read",
+					"input": {
+						"id": false,
+						"include": true,
+						"query": "list"
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/skills",
+						"binding": {
+							"path": [],
+							"query": "all",
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "skill create",
+					"summary": "Create skill",
+					"useCase": "CreateSkillUseCase",
+					"kind": "create",
+					"useCaseKey": "create",
+					"effect": "side-effect",
+					"input": {
+						"id": false,
+						"include": false,
+						"dto": "create"
+					},
+					"http": {
+						"verb": "POST",
+						"path": "/skills",
+						"binding": {
+							"path": [],
+							"query": [],
+							"body": true
+						},
+						"success": 201
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "skill update",
+					"summary": "Update skill",
+					"useCase": "UpdateSkillUseCase",
+					"kind": "update",
+					"useCaseKey": "update",
+					"effect": "idempotent",
+					"input": {
+						"id": true,
+						"include": false,
+						"dto": "update"
+					},
+					"http": {
+						"verb": "PATCH",
+						"path": "/skills/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [],
+							"body": true
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "skill delete",
+					"summary": "Delete skill",
+					"useCase": "DeleteSkillUseCase",
+					"kind": "delete",
+					"useCaseKey": "delete",
+					"effect": "side-effect",
+					"input": {
+						"id": true,
+						"include": false
+					},
+					"http": {
+						"verb": "DELETE",
+						"path": "/skills/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [],
+							"body": false
+						},
+						"success": 204
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"commandsConst": "skillCommands",
 			"http": {
 				"enabled": true,
 				"routes": [
@@ -1458,6 +1736,145 @@
 					}
 				}
 			],
+			"commands": [
+				{
+					"name": "workspace find",
+					"summary": "Find workspace by id",
+					"useCase": "FindWorkspaceByIdUseCase",
+					"kind": "find_by_id",
+					"useCaseKey": "findById",
+					"effect": "read",
+					"input": {
+						"id": true,
+						"include": true
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/workspaces/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [
+								"include"
+							],
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "workspace list",
+					"summary": "List workspaces",
+					"useCase": "ListWorkspacesUseCase",
+					"kind": "list",
+					"useCaseKey": "list",
+					"effect": "read",
+					"input": {
+						"id": false,
+						"include": true,
+						"query": "list"
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/workspaces",
+						"binding": {
+							"path": [],
+							"query": "all",
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "workspace create",
+					"summary": "Create workspace",
+					"useCase": "CreateWorkspaceUseCase",
+					"kind": "create",
+					"useCaseKey": "create",
+					"effect": "side-effect",
+					"input": {
+						"id": false,
+						"include": false,
+						"dto": "create"
+					},
+					"http": {
+						"verb": "POST",
+						"path": "/workspaces",
+						"binding": {
+							"path": [],
+							"query": [],
+							"body": true
+						},
+						"success": 201
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "workspace update",
+					"summary": "Update workspace",
+					"useCase": "UpdateWorkspaceUseCase",
+					"kind": "update",
+					"useCaseKey": "update",
+					"effect": "idempotent",
+					"input": {
+						"id": true,
+						"include": false,
+						"dto": "update"
+					},
+					"http": {
+						"verb": "PATCH",
+						"path": "/workspaces/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [],
+							"body": true
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "workspace delete",
+					"summary": "Delete workspace",
+					"useCase": "DeleteWorkspaceUseCase",
+					"kind": "delete",
+					"useCaseKey": "delete",
+					"effect": "side-effect",
+					"input": {
+						"id": true,
+						"include": false
+					},
+					"http": {
+						"verb": "DELETE",
+						"path": "/workspaces/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [],
+							"body": false
+						},
+						"success": 204
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"commandsConst": "workspaceCommands",
 			"http": {
 				"enabled": true,
 				"routes": [

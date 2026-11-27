@@ -412,6 +412,145 @@
 			}
 		}
 	],
+	"commands": [
+		{
+			"name": "user find",
+			"summary": "Find user by id",
+			"useCase": "FindUserByIdUseCase",
+			"kind": "find_by_id",
+			"useCaseKey": "findById",
+			"effect": "read",
+			"input": {
+				"id": true,
+				"include": true
+			},
+			"http": {
+				"verb": "GET",
+				"path": "/users/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [
+						"include"
+					],
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "user list",
+			"summary": "List users",
+			"useCase": "ListUsersUseCase",
+			"kind": "list",
+			"useCaseKey": "list",
+			"effect": "read",
+			"input": {
+				"id": false,
+				"include": true,
+				"query": "list"
+			},
+			"http": {
+				"verb": "GET",
+				"path": "/users",
+				"binding": {
+					"path": [],
+					"query": "all",
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "user create",
+			"summary": "Create user",
+			"useCase": "CreateUserUseCase",
+			"kind": "create",
+			"useCaseKey": "create",
+			"effect": "side-effect",
+			"input": {
+				"id": false,
+				"include": false,
+				"dto": "create"
+			},
+			"http": {
+				"verb": "POST",
+				"path": "/users",
+				"binding": {
+					"path": [],
+					"query": [],
+					"body": true
+				},
+				"success": 201
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "user update",
+			"summary": "Update user",
+			"useCase": "UpdateUserUseCase",
+			"kind": "update",
+			"useCaseKey": "update",
+			"effect": "idempotent",
+			"input": {
+				"id": true,
+				"include": false,
+				"dto": "update"
+			},
+			"http": {
+				"verb": "PATCH",
+				"path": "/users/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [],
+					"body": true
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "user delete",
+			"summary": "Delete user",
+			"useCase": "DeleteUserUseCase",
+			"kind": "delete",
+			"useCaseKey": "delete",
+			"effect": "side-effect",
+			"input": {
+				"id": true,
+				"include": false
+			},
+			"http": {
+				"verb": "DELETE",
+				"path": "/users/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [],
+					"body": false
+				},
+				"success": 204
+			},
+			"origin": {
+				"from": "base"
+			}
+		}
+	],
+	"commandsConst": "userCommands",
 	"http": {
 		"enabled": true,
 		"routes": [

@@ -513,6 +513,215 @@
 					}
 				}
 			],
+			"commands": [
+				{
+					"name": "lead find",
+					"summary": "Find lead by id",
+					"useCase": "FindLeadByIdUseCase",
+					"kind": "find_by_id",
+					"useCaseKey": "findById",
+					"effect": "read",
+					"input": {
+						"id": true,
+						"include": true
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/leads/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [
+								"include"
+							],
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "lead list",
+					"summary": "List leads",
+					"useCase": "ListLeadsUseCase",
+					"kind": "list",
+					"useCaseKey": "list",
+					"effect": "read",
+					"input": {
+						"id": false,
+						"include": true,
+						"query": "list"
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/leads",
+						"binding": {
+							"path": [],
+							"query": "all",
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "lead find-with-fields",
+					"summary": "Find lead with EAV fields",
+					"useCase": "FindLeadByIdWithFieldsUseCase",
+					"kind": "find_by_id_with_fields",
+					"useCaseKey": "findByIdWithFields",
+					"effect": "read",
+					"input": {
+						"id": true,
+						"include": false
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/leads/:id/with-fields",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [],
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "yaml",
+						"at": {
+							"doc": {
+								"kind": "entity",
+								"name": "lead"
+							},
+							"path": [
+								"eav"
+							]
+						}
+					}
+				},
+				{
+					"name": "lead list-with-fields",
+					"summary": "List leads with EAV fields",
+					"useCase": "ListLeadsWithFieldsUseCase",
+					"kind": "list_with_fields",
+					"useCaseKey": "listWithFields",
+					"effect": "read",
+					"input": {
+						"id": false,
+						"include": false
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/leads/with-fields",
+						"binding": {
+							"path": [],
+							"query": [],
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "yaml",
+						"at": {
+							"doc": {
+								"kind": "entity",
+								"name": "lead"
+							},
+							"path": [
+								"eav"
+							]
+						}
+					}
+				},
+				{
+					"name": "lead create",
+					"summary": "Create lead",
+					"useCase": "CreateLeadUseCase",
+					"kind": "create",
+					"useCaseKey": "create",
+					"effect": "side-effect",
+					"input": {
+						"id": false,
+						"include": false,
+						"dto": "create"
+					},
+					"http": {
+						"verb": "POST",
+						"path": "/leads",
+						"binding": {
+							"path": [],
+							"query": [],
+							"body": true
+						},
+						"success": 201
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "lead update",
+					"summary": "Update lead",
+					"useCase": "UpdateLeadUseCase",
+					"kind": "update",
+					"useCaseKey": "update",
+					"effect": "idempotent",
+					"input": {
+						"id": true,
+						"include": false,
+						"dto": "update"
+					},
+					"http": {
+						"verb": "PATCH",
+						"path": "/leads/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [],
+							"body": true
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "lead delete",
+					"summary": "Delete lead",
+					"useCase": "DeleteLeadUseCase",
+					"kind": "delete",
+					"useCaseKey": "delete",
+					"effect": "side-effect",
+					"input": {
+						"id": true,
+						"include": false
+					},
+					"http": {
+						"verb": "DELETE",
+						"path": "/leads/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [],
+							"body": false
+						},
+						"success": 204
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"commandsConst": "leadCommands",
 			"http": {
 				"enabled": true,
 				"routes": [

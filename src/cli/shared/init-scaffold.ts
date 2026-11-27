@@ -228,6 +228,9 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	{ runtime: 'errors.ts', target: 'errors.ts' },
 	// The settings loader (SET-1) — what a pattern-stack project's `<generated>/settings.ts` calls.
 	{ runtime: 'settings.ts', target: 'settings.ts', wirings: ['pattern-stack'] },
+	// H-1: the generated commands' runtime (pattern-stack), and the bad-input body both targets answer with.
+	{ runtime: 'commands.ts', target: 'commands.ts', wirings: ['pattern-stack'] },
+	{ runtime: 'validation-error.ts', target: 'validation-error.ts' },
 	{ runtime: 'base-classes/base-read-use-cases.ts', target: 'base-classes/base-read-use-cases.ts' },
 	// Types + constants reached via `@shared/types/*` and `@shared/constants/*`
 	{ runtime: 'types/drizzle.ts', target: 'types/drizzle.ts' },

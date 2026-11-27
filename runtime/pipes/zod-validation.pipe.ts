@@ -32,6 +32,7 @@ import {
   type ArgumentMetadata,
 } from '@nestjs/common';
 import type { z } from 'zod';
+import { validationErrorBody } from '../validation-error';
 
 @Injectable()
 export class ZodValidationPipe<TSchema extends z.ZodType = z.ZodType>
@@ -44,23 +45,7 @@ export class ZodValidationPipe<TSchema extends z.ZodType = z.ZodType>
     if (result.success) {
       return result.data;
     }
-    throw new BadRequestException({
-      statusCode: 400,
-      error: 'Bad Request',
-      message: 'Validation failed',
-      issues: formatIssues(result.error.issues),
-    });
+    throw new BadRequestException(validationErrorBody(result.error.issues));
   }
 }
 
-function formatIssues(issues: readonly z.core.$ZodIssue[]): Array<{
-  path: string;
-  code: string;
-  message: string;
-}> {
-  return issues.map((issue) => ({
-    path: issue.path.join('.'),
-    code: issue.code,
-    message: issue.message,
-  }));
-}

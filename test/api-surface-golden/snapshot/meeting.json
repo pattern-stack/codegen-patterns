@@ -803,6 +803,182 @@
 			}
 		}
 	],
+	"commands": [
+		{
+			"name": "meeting find",
+			"summary": "Find meeting by id",
+			"useCase": "FindMeetingByIdUseCase",
+			"kind": "find_by_id",
+			"useCaseKey": "findById",
+			"effect": "read",
+			"input": {
+				"id": true,
+				"include": true
+			},
+			"http": {
+				"verb": "GET",
+				"path": "/meetings/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [
+						"include"
+					],
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "meeting list",
+			"summary": "List meetings",
+			"useCase": "ListMeetingsUseCase",
+			"kind": "list",
+			"useCaseKey": "list",
+			"effect": "read",
+			"input": {
+				"id": false,
+				"include": true,
+				"query": "list"
+			},
+			"includeRoute": "list",
+			"http": {
+				"verb": "GET",
+				"path": "/meetings",
+				"binding": {
+					"path": [],
+					"query": "all",
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "meeting create",
+			"summary": "Create meeting",
+			"useCase": "CreateMeetingUseCase",
+			"kind": "create",
+			"useCaseKey": "create",
+			"effect": "side-effect",
+			"input": {
+				"id": false,
+				"include": false,
+				"dto": "create"
+			},
+			"http": {
+				"verb": "POST",
+				"path": "/meetings",
+				"binding": {
+					"path": [],
+					"query": [],
+					"body": true
+				},
+				"success": 201
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "meeting update",
+			"summary": "Update meeting",
+			"useCase": "UpdateMeetingUseCase",
+			"kind": "update",
+			"useCaseKey": "update",
+			"effect": "idempotent",
+			"input": {
+				"id": true,
+				"include": false,
+				"dto": "update"
+			},
+			"http": {
+				"verb": "PATCH",
+				"path": "/meetings/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [],
+					"body": true
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "meeting delete",
+			"summary": "Delete meeting",
+			"useCase": "DeleteMeetingUseCase",
+			"kind": "delete",
+			"useCaseKey": "delete",
+			"effect": "side-effect",
+			"input": {
+				"id": true,
+				"include": false
+			},
+			"http": {
+				"verb": "DELETE",
+				"path": "/meetings/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [],
+					"body": false
+				},
+				"success": 204
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "meeting search",
+			"summary": "Search meetings",
+			"useCase": "SearchMeetingsUseCase",
+			"kind": "search",
+			"useCaseKey": "search",
+			"effect": "read",
+			"input": {
+				"id": false,
+				"include": false,
+				"query": "search"
+			},
+			"http": {
+				"verb": "GET",
+				"path": "/meetings/search",
+				"binding": {
+					"path": [],
+					"query": "all",
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "yaml",
+				"at": {
+					"doc": {
+						"kind": "entity",
+						"name": "meeting"
+					},
+					"path": [
+						"queries",
+						0
+					]
+				}
+			}
+		}
+	],
+	"commandsConst": "meetingCommands",
 	"http": {
 		"enabled": true,
 		"routes": [

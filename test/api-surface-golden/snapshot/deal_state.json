@@ -353,6 +353,145 @@
 			}
 		}
 	],
+	"commands": [
+		{
+			"name": "deal-state find",
+			"summary": "Find deal_state by id",
+			"useCase": "FindDealStateByIdUseCase",
+			"kind": "find_by_id",
+			"useCaseKey": "findById",
+			"effect": "read",
+			"input": {
+				"id": true,
+				"include": true
+			},
+			"http": {
+				"verb": "GET",
+				"path": "/deal_states/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [
+						"include"
+					],
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "deal-state list",
+			"summary": "List deal_states",
+			"useCase": "ListDealStatesUseCase",
+			"kind": "list",
+			"useCaseKey": "list",
+			"effect": "read",
+			"input": {
+				"id": false,
+				"include": true,
+				"query": "list"
+			},
+			"http": {
+				"verb": "GET",
+				"path": "/deal_states",
+				"binding": {
+					"path": [],
+					"query": "all",
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "deal-state create",
+			"summary": "Create deal_state",
+			"useCase": "CreateDealStateUseCase",
+			"kind": "create",
+			"useCaseKey": "create",
+			"effect": "side-effect",
+			"input": {
+				"id": false,
+				"include": false,
+				"dto": "create"
+			},
+			"http": {
+				"verb": "POST",
+				"path": "/deal_states",
+				"binding": {
+					"path": [],
+					"query": [],
+					"body": true
+				},
+				"success": 201
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "deal-state update",
+			"summary": "Update deal_state",
+			"useCase": "UpdateDealStateUseCase",
+			"kind": "update",
+			"useCaseKey": "update",
+			"effect": "idempotent",
+			"input": {
+				"id": true,
+				"include": false,
+				"dto": "update"
+			},
+			"http": {
+				"verb": "PATCH",
+				"path": "/deal_states/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [],
+					"body": true
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "deal-state delete",
+			"summary": "Delete deal_state",
+			"useCase": "DeleteDealStateUseCase",
+			"kind": "delete",
+			"useCaseKey": "delete",
+			"effect": "side-effect",
+			"input": {
+				"id": true,
+				"include": false
+			},
+			"http": {
+				"verb": "DELETE",
+				"path": "/deal_states/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [],
+					"body": false
+				},
+				"success": 204
+			},
+			"origin": {
+				"from": "base"
+			}
+		}
+	],
+	"commandsConst": "dealStateCommands",
 	"http": {
 		"enabled": true,
 		"routes": [

@@ -658,6 +658,145 @@
 					}
 				}
 			],
+			"commands": [
+				{
+					"name": "call find",
+					"summary": "Find call by id",
+					"useCase": "FindCallByIdUseCase",
+					"kind": "find_by_id",
+					"useCaseKey": "findById",
+					"effect": "read",
+					"input": {
+						"id": true,
+						"include": true
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/calls/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [
+								"include"
+							],
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "call list",
+					"summary": "List calls",
+					"useCase": "ListCallsUseCase",
+					"kind": "list",
+					"useCaseKey": "list",
+					"effect": "read",
+					"input": {
+						"id": false,
+						"include": true,
+						"query": "list"
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/calls",
+						"binding": {
+							"path": [],
+							"query": "all",
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "call create",
+					"summary": "Create call",
+					"useCase": "CreateCallUseCase",
+					"kind": "create",
+					"useCaseKey": "create",
+					"effect": "side-effect",
+					"input": {
+						"id": false,
+						"include": false,
+						"dto": "create"
+					},
+					"http": {
+						"verb": "POST",
+						"path": "/calls",
+						"binding": {
+							"path": [],
+							"query": [],
+							"body": true
+						},
+						"success": 201
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "call update",
+					"summary": "Update call",
+					"useCase": "UpdateCallUseCase",
+					"kind": "update",
+					"useCaseKey": "update",
+					"effect": "idempotent",
+					"input": {
+						"id": true,
+						"include": false,
+						"dto": "update"
+					},
+					"http": {
+						"verb": "PATCH",
+						"path": "/calls/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [],
+							"body": true
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "call delete",
+					"summary": "Delete call",
+					"useCase": "DeleteCallUseCase",
+					"kind": "delete",
+					"useCaseKey": "delete",
+					"effect": "side-effect",
+					"input": {
+						"id": true,
+						"include": false
+					},
+					"http": {
+						"verb": "DELETE",
+						"path": "/calls/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [],
+							"body": false
+						},
+						"success": 204
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"commandsConst": "callCommands",
 			"http": {
 				"enabled": true,
 				"routes": [

@@ -1199,8 +1199,26 @@ function processSearchQueries(queriesBlock, processedFields, belongsTo, entityNa
 
   const searchField = typeof search.search === 'string' ? search.search : null;
 
+  // The filters schema's fields, one line each: the Nest search controller and the pattern-stack search command (H-1)
+  // both print the schema from these lines, so they can't drift.
+  const filterChain = (f) =>
+    f.isUuid
+      ? 'z.guid()'
+      : f.hasChoices
+        ? `z.enum([${f.choices.map((c) => `'${c}'`).join(', ')}])`
+        : f.isBoolean
+          ? 'z.coerce.boolean()'
+          : f.isNumber
+            ? 'z.coerce.number()'
+            : 'z.string()';
+  const filtersSchemaFields = [
+    ...resolvedFilters.map((f) => `  ${f.camelName}: ${filterChain(f)}.optional(),`),
+    ...(searchField ? ['  search: z.string().optional(),'] : []),
+  ];
+
   return {
     filters: resolvedFilters,
+    filtersSchemaFields,
     searchField,
     searchFieldCamel: searchField ? camelCase(searchField) : null,
     useCaseClassName: `Search${entityNamePluralPascal}UseCase`,
@@ -2563,6 +2581,8 @@ export function buildBackendLocals(definition, baseLocals) {
     sqliteDdl: null,
     // PW-3: the entity's pattern-stack wiring factories (`<entity>.wiring.ts`); null under wiring: nest.
     wiring: patternStackWiring ? ownNaming.wiringFile : null,
+    // H-1: its commands (`<entity>.commands.ts`), one per use case but a declarative query; pattern-stack only.
+    commands: patternStackWiring ? `${moduleDir}/${emittedStem(entityName)}.commands.ts` : null,
   };
 
   // PW-3: pattern-stack wiring (`target: { wiring: pattern-stack, http: none }`) emits the same table, DTOs, repository, service and use

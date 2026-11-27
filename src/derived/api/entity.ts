@@ -38,11 +38,15 @@ import {
 	searchControllerClassName,
 	serviceClassName,
 	useCaseClassName,
+	useCaseKey,
+	commandName,
+	commandsConstName,
 	type JunctionSide,
 	publishedWriteEvent,
 } from './names.js';
 import type {
 	EntityApiSurface,
+	EntityCommand,
 	MethodRef,
 	Origin,
 	Param,
@@ -1024,6 +1028,8 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 		}
 	}
 
+	const commands = deriveCommands(entityName, plural, useCases, routes, includeRoute);
+
 	const http: EntityApiSurface['http'] = { enabled, routes, includeRoutes, includesConst: includesConstName(plural) };
 	if (disabledBy) http.disabledBy = disabledBy;
 
@@ -1039,6 +1045,8 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 		},
 		service: { className: serviceClassName(entityName), baseClass: composition.serviceBaseClass, methods: service },
 		useCases,
+		commands,
+		commandsConst: commandsConstName(entityName),
 		http,
 		// Recorded only when writes are off, so an entity that emits them carries no new key.
 		...(writesOff ? { writesDisabledBy: ref(writesOff) } : {}),
@@ -1053,6 +1061,78 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 			: {}),
 	};
 }
+
+/**
+ * One command per use case but a declarative query (H-1): its name, effect and flat input, and, when routed, how a
+ * request carries that input. The include is always part of a find's and a list's input, so a way in that passes one
+ * where nothing is allowlisted is refused, as the Nest controller refuses `?include=` on such a route.
+ */
+export function deriveCommands(
+	entityName: string,
+	plural: string,
+	useCases: readonly UseCase[],
+	routes: readonly Route[],
+	includeRoute: (key: 'list' | 'find_by_id') => { includeRoute?: 'list' | 'find_by_id' },
+): EntityCommand[] {
+	const commands: EntityCommand[] = [];
+	for (const u of useCases) {
+		if (u.kind === 'query') continue;
+		const kind = u.kind;
+		const route = routes.find((r) => r.useCase === u.className);
+		const shape = COMMAND_SHAPES[kind];
+		const summary = shape.summary(entityName, plural);
+		const included = kind === 'list' ? includeRoute('list') : kind === 'find_by_id' ? includeRoute('find_by_id') : {};
+		commands.push({
+			name: commandName(kind, entityName),
+			summary,
+			useCase: u.className,
+			kind,
+			useCaseKey: useCaseKey(kind),
+			effect: shape.effect,
+			input: shape.input,
+			...included,
+			...(route
+				? {
+						http: {
+							verb: route.verb,
+							path: route.path,
+							binding: {
+								path: shape.input.id ? ['id'] : [],
+								query: shape.input.query ? 'all' : shape.input.include ? ['include'] : [],
+								body: shape.input.dto !== undefined,
+							},
+							success: shape.success,
+						},
+					}
+				: {}),
+			origin: u.origin,
+		});
+	}
+	return commands;
+}
+
+/** Each use case kind's command: its summary, effect and input. */
+const COMMAND_SHAPES: Readonly<
+	Record<
+		EntityCommand['kind'],
+		{
+			summary: (entityName: string, plural: string) => string;
+			effect: EntityCommand['effect'];
+			input: EntityCommand['input'];
+			/** A result's HTTP status, when routed. */
+			success: 200 | 201 | 204;
+		}
+	>
+> = {
+	list: { summary: (_e, p) => `List ${p}`, effect: 'read', input: { id: false, include: true, query: 'list' }, success: 200 },
+	find_by_id: { summary: (e) => `Find ${e} by id`, effect: 'read', input: { id: true, include: true }, success: 200 },
+	list_with_fields: { summary: (_e, p) => `List ${p} with EAV fields`, effect: 'read', input: { id: false, include: false }, success: 200 },
+	find_by_id_with_fields: { summary: (e) => `Find ${e} with EAV fields`, effect: 'read', input: { id: true, include: false }, success: 200 },
+	search: { summary: (_e, p) => `Search ${p}`, effect: 'read', input: { id: false, include: false, query: 'search' }, success: 200 },
+	create: { summary: (e) => `Create ${e}`, effect: 'side-effect', input: { id: false, include: false, dto: 'create' }, success: 201 },
+	update: { summary: (e) => `Update ${e}`, effect: 'idempotent', input: { id: true, include: false, dto: 'update' }, success: 200 },
+	delete: { summary: (e) => `Delete ${e}`, effect: 'side-effect', input: { id: true, include: false }, success: 204 },
+};
 
 function inherited(name: string, origin: Origin): RepositoryMethod {
 	return { name, kind: 'inherited', emitted: false, params: [], returns: 'forwarded', readOptions: 'none', origin };

@@ -103,6 +103,8 @@ export function runtimeImportLocals(mode) {
     drizzleTokenImport: runtimeImport(mode, "constants/tokens"),
     // PW-0/PW-3: the plain errors (`NotFoundError`, `BadRequestError`) a pattern-stack wiring use case throws.
     errorsImport: runtimeImport(mode, "errors"),
+    // H-1: the generated commands' runtime (refusals, `invokeCommand`), pattern-stack only.
+    commandsImport: runtimeImport(mode, "commands"),
     drizzleTypeImport: runtimeImport(mode, "types/drizzle"),
     // ADR-043 §5: use-cases read the acting principal from the ambient
     // RequesterContext (ALS), never from self-asserted request headers.

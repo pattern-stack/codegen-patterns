@@ -806,6 +806,145 @@
       }
      }
     ],
+    "commands": [
+     {
+      "name": "communication find",
+      "summary": "Find communication by id",
+      "useCase": "FindCommunicationByIdUseCase",
+      "kind": "find_by_id",
+      "useCaseKey": "findById",
+      "effect": "read",
+      "input": {
+       "id": true,
+       "include": true
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/communications/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [
+         "include"
+        ],
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication list",
+      "summary": "List communications",
+      "useCase": "ListCommunicationsUseCase",
+      "kind": "list",
+      "useCaseKey": "list",
+      "effect": "read",
+      "input": {
+       "id": false,
+       "include": true,
+       "query": "list"
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/communications",
+       "binding": {
+        "path": [],
+        "query": "all",
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication create",
+      "summary": "Create communication",
+      "useCase": "CreateCommunicationUseCase",
+      "kind": "create",
+      "useCaseKey": "create",
+      "effect": "side-effect",
+      "input": {
+       "id": false,
+       "include": false,
+       "dto": "create"
+      },
+      "http": {
+       "verb": "POST",
+       "path": "/communications",
+       "binding": {
+        "path": [],
+        "query": [],
+        "body": true
+       },
+       "success": 201
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication update",
+      "summary": "Update communication",
+      "useCase": "UpdateCommunicationUseCase",
+      "kind": "update",
+      "useCaseKey": "update",
+      "effect": "idempotent",
+      "input": {
+       "id": true,
+       "include": false,
+       "dto": "update"
+      },
+      "http": {
+       "verb": "PATCH",
+       "path": "/communications/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": true
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication delete",
+      "summary": "Delete communication",
+      "useCase": "DeleteCommunicationUseCase",
+      "kind": "delete",
+      "useCaseKey": "delete",
+      "effect": "side-effect",
+      "input": {
+       "id": true,
+       "include": false
+      },
+      "http": {
+       "verb": "DELETE",
+       "path": "/communications/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": false
+       },
+       "success": 204
+      },
+      "origin": {
+       "from": "base"
+      }
+     }
+    ],
+    "commandsConst": "communicationCommands",
     "http": {
      "enabled": true,
      "routes": [
@@ -1317,6 +1456,145 @@
       }
      }
     ],
+    "commands": [
+     {
+      "name": "communication-note find",
+      "summary": "Find communication_note by id",
+      "useCase": "FindCommunicationNoteByIdUseCase",
+      "kind": "find_by_id",
+      "useCaseKey": "findById",
+      "effect": "read",
+      "input": {
+       "id": true,
+       "include": true
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/communication_notes/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [
+         "include"
+        ],
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication-note list",
+      "summary": "List communication_notes",
+      "useCase": "ListCommunicationNotesUseCase",
+      "kind": "list",
+      "useCaseKey": "list",
+      "effect": "read",
+      "input": {
+       "id": false,
+       "include": true,
+       "query": "list"
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/communication_notes",
+       "binding": {
+        "path": [],
+        "query": "all",
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication-note create",
+      "summary": "Create communication_note",
+      "useCase": "CreateCommunicationNoteUseCase",
+      "kind": "create",
+      "useCaseKey": "create",
+      "effect": "side-effect",
+      "input": {
+       "id": false,
+       "include": false,
+       "dto": "create"
+      },
+      "http": {
+       "verb": "POST",
+       "path": "/communication_notes",
+       "binding": {
+        "path": [],
+        "query": [],
+        "body": true
+       },
+       "success": 201
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication-note update",
+      "summary": "Update communication_note",
+      "useCase": "UpdateCommunicationNoteUseCase",
+      "kind": "update",
+      "useCaseKey": "update",
+      "effect": "idempotent",
+      "input": {
+       "id": true,
+       "include": false,
+       "dto": "update"
+      },
+      "http": {
+       "verb": "PATCH",
+       "path": "/communication_notes/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": true
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication-note delete",
+      "summary": "Delete communication_note",
+      "useCase": "DeleteCommunicationNoteUseCase",
+      "kind": "delete",
+      "useCaseKey": "delete",
+      "effect": "side-effect",
+      "input": {
+       "id": true,
+       "include": false
+      },
+      "http": {
+       "verb": "DELETE",
+       "path": "/communication_notes/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": false
+       },
+       "success": 204
+      },
+      "origin": {
+       "from": "base"
+      }
+     }
+    ],
+    "commandsConst": "communicationNoteCommands",
     "http": {
      "enabled": true,
      "routes": [
@@ -2140,6 +2418,119 @@
       }
      }
     ],
+    "commands": [
+     {
+      "name": "communication-part find",
+      "summary": "Find communication_part by id",
+      "useCase": "FindCommunicationPartByIdUseCase",
+      "kind": "find_by_id",
+      "useCaseKey": "findById",
+      "effect": "read",
+      "input": {
+       "id": true,
+       "include": true
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/communication_parts/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [
+         "include"
+        ],
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication-part list",
+      "summary": "List communication_parts",
+      "useCase": "ListCommunicationPartsUseCase",
+      "kind": "list",
+      "useCaseKey": "list",
+      "effect": "read",
+      "input": {
+       "id": false,
+       "include": true,
+       "query": "list"
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/communication_parts",
+       "binding": {
+        "path": [],
+        "query": "all",
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication-part update",
+      "summary": "Update communication_part",
+      "useCase": "UpdateCommunicationPartUseCase",
+      "kind": "update",
+      "useCaseKey": "update",
+      "effect": "idempotent",
+      "input": {
+       "id": true,
+       "include": false,
+       "dto": "update"
+      },
+      "http": {
+       "verb": "PATCH",
+       "path": "/communication_parts/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": true
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication-part delete",
+      "summary": "Delete communication_part",
+      "useCase": "DeleteCommunicationPartUseCase",
+      "kind": "delete",
+      "useCaseKey": "delete",
+      "effect": "side-effect",
+      "input": {
+       "id": true,
+       "include": false
+      },
+      "http": {
+       "verb": "DELETE",
+       "path": "/communication_parts/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": false
+       },
+       "success": 204
+      },
+      "origin": {
+       "from": "base"
+      }
+     }
+    ],
+    "commandsConst": "communicationPartCommands",
     "http": {
      "enabled": true,
      "routes": [
@@ -2709,6 +3100,145 @@
       }
      }
     ],
+    "commands": [
+     {
+      "name": "communication-participant find",
+      "summary": "Find communication_participant by id",
+      "useCase": "FindCommunicationParticipantByIdUseCase",
+      "kind": "find_by_id",
+      "useCaseKey": "findById",
+      "effect": "read",
+      "input": {
+       "id": true,
+       "include": true
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/communication_participants/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [
+         "include"
+        ],
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication-participant list",
+      "summary": "List communication_participants",
+      "useCase": "ListCommunicationParticipantsUseCase",
+      "kind": "list",
+      "useCaseKey": "list",
+      "effect": "read",
+      "input": {
+       "id": false,
+       "include": true,
+       "query": "list"
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/communication_participants",
+       "binding": {
+        "path": [],
+        "query": "all",
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication-participant create",
+      "summary": "Create communication_participant",
+      "useCase": "CreateCommunicationParticipantUseCase",
+      "kind": "create",
+      "useCaseKey": "create",
+      "effect": "side-effect",
+      "input": {
+       "id": false,
+       "include": false,
+       "dto": "create"
+      },
+      "http": {
+       "verb": "POST",
+       "path": "/communication_participants",
+       "binding": {
+        "path": [],
+        "query": [],
+        "body": true
+       },
+       "success": 201
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication-participant update",
+      "summary": "Update communication_participant",
+      "useCase": "UpdateCommunicationParticipantUseCase",
+      "kind": "update",
+      "useCaseKey": "update",
+      "effect": "idempotent",
+      "input": {
+       "id": true,
+       "include": false,
+       "dto": "update"
+      },
+      "http": {
+       "verb": "PATCH",
+       "path": "/communication_participants/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": true
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication-participant delete",
+      "summary": "Delete communication_participant",
+      "useCase": "DeleteCommunicationParticipantUseCase",
+      "kind": "delete",
+      "useCaseKey": "delete",
+      "effect": "side-effect",
+      "input": {
+       "id": true,
+       "include": false
+      },
+      "http": {
+       "verb": "DELETE",
+       "path": "/communication_participants/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": false
+       },
+       "success": 204
+      },
+      "origin": {
+       "from": "base"
+      }
+     }
+    ],
+    "commandsConst": "communicationParticipantCommands",
     "http": {
      "enabled": true,
      "routes": [
@@ -3102,6 +3632,145 @@
       }
      }
     ],
+    "commands": [
+     {
+      "name": "communication-participant-role find",
+      "summary": "Find communication_participant_role by id",
+      "useCase": "FindCommunicationParticipantRoleByIdUseCase",
+      "kind": "find_by_id",
+      "useCaseKey": "findById",
+      "effect": "read",
+      "input": {
+       "id": true,
+       "include": true
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/communication_participant_roles/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [
+         "include"
+        ],
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication-participant-role list",
+      "summary": "List communication_participant_roles",
+      "useCase": "ListCommunicationParticipantRolesUseCase",
+      "kind": "list",
+      "useCaseKey": "list",
+      "effect": "read",
+      "input": {
+       "id": false,
+       "include": true,
+       "query": "list"
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/communication_participant_roles",
+       "binding": {
+        "path": [],
+        "query": "all",
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication-participant-role create",
+      "summary": "Create communication_participant_role",
+      "useCase": "CreateCommunicationParticipantRoleUseCase",
+      "kind": "create",
+      "useCaseKey": "create",
+      "effect": "side-effect",
+      "input": {
+       "id": false,
+       "include": false,
+       "dto": "create"
+      },
+      "http": {
+       "verb": "POST",
+       "path": "/communication_participant_roles",
+       "binding": {
+        "path": [],
+        "query": [],
+        "body": true
+       },
+       "success": 201
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication-participant-role update",
+      "summary": "Update communication_participant_role",
+      "useCase": "UpdateCommunicationParticipantRoleUseCase",
+      "kind": "update",
+      "useCaseKey": "update",
+      "effect": "idempotent",
+      "input": {
+       "id": true,
+       "include": false,
+       "dto": "update"
+      },
+      "http": {
+       "verb": "PATCH",
+       "path": "/communication_participant_roles/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": true
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "communication-participant-role delete",
+      "summary": "Delete communication_participant_role",
+      "useCase": "DeleteCommunicationParticipantRoleUseCase",
+      "kind": "delete",
+      "useCaseKey": "delete",
+      "effect": "side-effect",
+      "input": {
+       "id": true,
+       "include": false
+      },
+      "http": {
+       "verb": "DELETE",
+       "path": "/communication_participant_roles/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": false
+       },
+       "success": 204
+      },
+      "origin": {
+       "from": "base"
+      }
+     }
+    ],
+    "commandsConst": "communicationParticipantRoleCommands",
     "http": {
      "enabled": true,
      "routes": [
@@ -3962,6 +4631,145 @@
       }
      }
     ],
+    "commands": [
+     {
+      "name": "email find",
+      "summary": "Find email by id",
+      "useCase": "FindEmailByIdUseCase",
+      "kind": "find_by_id",
+      "useCaseKey": "findById",
+      "effect": "read",
+      "input": {
+       "id": true,
+       "include": true
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/emails/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [
+         "include"
+        ],
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "email list",
+      "summary": "List emails",
+      "useCase": "ListEmailsUseCase",
+      "kind": "list",
+      "useCaseKey": "list",
+      "effect": "read",
+      "input": {
+       "id": false,
+       "include": true,
+       "query": "list"
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/emails",
+       "binding": {
+        "path": [],
+        "query": "all",
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "email create",
+      "summary": "Create email",
+      "useCase": "CreateEmailUseCase",
+      "kind": "create",
+      "useCaseKey": "create",
+      "effect": "side-effect",
+      "input": {
+       "id": false,
+       "include": false,
+       "dto": "create"
+      },
+      "http": {
+       "verb": "POST",
+       "path": "/emails",
+       "binding": {
+        "path": [],
+        "query": [],
+        "body": true
+       },
+       "success": 201
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "email update",
+      "summary": "Update email",
+      "useCase": "UpdateEmailUseCase",
+      "kind": "update",
+      "useCaseKey": "update",
+      "effect": "idempotent",
+      "input": {
+       "id": true,
+       "include": false,
+       "dto": "update"
+      },
+      "http": {
+       "verb": "PATCH",
+       "path": "/emails/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": true
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "email delete",
+      "summary": "Delete email",
+      "useCase": "DeleteEmailUseCase",
+      "kind": "delete",
+      "useCaseKey": "delete",
+      "effect": "side-effect",
+      "input": {
+       "id": true,
+       "include": false
+      },
+      "http": {
+       "verb": "DELETE",
+       "path": "/emails/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": false
+       },
+       "success": 204
+      },
+      "origin": {
+       "from": "base"
+      }
+     }
+    ],
+    "commandsConst": "emailCommands",
     "http": {
      "enabled": true,
      "routes": [
@@ -4822,6 +5630,145 @@
       }
      }
     ],
+    "commands": [
+     {
+      "name": "email-communication-part find",
+      "summary": "Find email_communication_part by id",
+      "useCase": "FindEmailCommunicationPartByIdUseCase",
+      "kind": "find_by_id",
+      "useCaseKey": "findById",
+      "effect": "read",
+      "input": {
+       "id": true,
+       "include": true
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/email_communication_parts/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [
+         "include"
+        ],
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "email-communication-part list",
+      "summary": "List email_communication_parts",
+      "useCase": "ListEmailCommunicationPartsUseCase",
+      "kind": "list",
+      "useCaseKey": "list",
+      "effect": "read",
+      "input": {
+       "id": false,
+       "include": true,
+       "query": "list"
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/email_communication_parts",
+       "binding": {
+        "path": [],
+        "query": "all",
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "email-communication-part create",
+      "summary": "Create email_communication_part",
+      "useCase": "CreateEmailCommunicationPartUseCase",
+      "kind": "create",
+      "useCaseKey": "create",
+      "effect": "side-effect",
+      "input": {
+       "id": false,
+       "include": false,
+       "dto": "create"
+      },
+      "http": {
+       "verb": "POST",
+       "path": "/email_communication_parts",
+       "binding": {
+        "path": [],
+        "query": [],
+        "body": true
+       },
+       "success": 201
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "email-communication-part update",
+      "summary": "Update email_communication_part",
+      "useCase": "UpdateEmailCommunicationPartUseCase",
+      "kind": "update",
+      "useCaseKey": "update",
+      "effect": "idempotent",
+      "input": {
+       "id": true,
+       "include": false,
+       "dto": "update"
+      },
+      "http": {
+       "verb": "PATCH",
+       "path": "/email_communication_parts/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": true
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "email-communication-part delete",
+      "summary": "Delete email_communication_part",
+      "useCase": "DeleteEmailCommunicationPartUseCase",
+      "kind": "delete",
+      "useCaseKey": "delete",
+      "effect": "side-effect",
+      "input": {
+       "id": true,
+       "include": false
+      },
+      "http": {
+       "verb": "DELETE",
+       "path": "/email_communication_parts/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": false
+       },
+       "success": 204
+      },
+      "origin": {
+       "from": "base"
+      }
+     }
+    ],
+    "commandsConst": "emailCommunicationPartCommands",
     "http": {
      "enabled": true,
      "routes": [
@@ -5215,6 +6162,145 @@
       }
      }
     ],
+    "commands": [
+     {
+      "name": "email-thread find",
+      "summary": "Find email_thread by id",
+      "useCase": "FindEmailThreadByIdUseCase",
+      "kind": "find_by_id",
+      "useCaseKey": "findById",
+      "effect": "read",
+      "input": {
+       "id": true,
+       "include": true
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/email_threads/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [
+         "include"
+        ],
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "email-thread list",
+      "summary": "List email_threads",
+      "useCase": "ListEmailThreadsUseCase",
+      "kind": "list",
+      "useCaseKey": "list",
+      "effect": "read",
+      "input": {
+       "id": false,
+       "include": true,
+       "query": "list"
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/email_threads",
+       "binding": {
+        "path": [],
+        "query": "all",
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "email-thread create",
+      "summary": "Create email_thread",
+      "useCase": "CreateEmailThreadUseCase",
+      "kind": "create",
+      "useCaseKey": "create",
+      "effect": "side-effect",
+      "input": {
+       "id": false,
+       "include": false,
+       "dto": "create"
+      },
+      "http": {
+       "verb": "POST",
+       "path": "/email_threads",
+       "binding": {
+        "path": [],
+        "query": [],
+        "body": true
+       },
+       "success": 201
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "email-thread update",
+      "summary": "Update email_thread",
+      "useCase": "UpdateEmailThreadUseCase",
+      "kind": "update",
+      "useCaseKey": "update",
+      "effect": "idempotent",
+      "input": {
+       "id": true,
+       "include": false,
+       "dto": "update"
+      },
+      "http": {
+       "verb": "PATCH",
+       "path": "/email_threads/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": true
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "email-thread delete",
+      "summary": "Delete email_thread",
+      "useCase": "DeleteEmailThreadUseCase",
+      "kind": "delete",
+      "useCaseKey": "delete",
+      "effect": "side-effect",
+      "input": {
+       "id": true,
+       "include": false
+      },
+      "http": {
+       "verb": "DELETE",
+       "path": "/email_threads/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": false
+       },
+       "success": 204
+      },
+      "origin": {
+       "from": "base"
+      }
+     }
+    ],
+    "commandsConst": "emailThreadCommands",
     "http": {
      "enabled": true,
      "routes": [
@@ -6070,6 +7156,182 @@
       }
      }
     ],
+    "commands": [
+     {
+      "name": "meeting find",
+      "summary": "Find meeting by id",
+      "useCase": "FindMeetingByIdUseCase",
+      "kind": "find_by_id",
+      "useCaseKey": "findById",
+      "effect": "read",
+      "input": {
+       "id": true,
+       "include": true
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/meetings/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [
+         "include"
+        ],
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "meeting list",
+      "summary": "List meetings",
+      "useCase": "ListMeetingsUseCase",
+      "kind": "list",
+      "useCaseKey": "list",
+      "effect": "read",
+      "input": {
+       "id": false,
+       "include": true,
+       "query": "list"
+      },
+      "includeRoute": "list",
+      "http": {
+       "verb": "GET",
+       "path": "/meetings",
+       "binding": {
+        "path": [],
+        "query": "all",
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "meeting create",
+      "summary": "Create meeting",
+      "useCase": "CreateMeetingUseCase",
+      "kind": "create",
+      "useCaseKey": "create",
+      "effect": "side-effect",
+      "input": {
+       "id": false,
+       "include": false,
+       "dto": "create"
+      },
+      "http": {
+       "verb": "POST",
+       "path": "/meetings",
+       "binding": {
+        "path": [],
+        "query": [],
+        "body": true
+       },
+       "success": 201
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "meeting update",
+      "summary": "Update meeting",
+      "useCase": "UpdateMeetingUseCase",
+      "kind": "update",
+      "useCaseKey": "update",
+      "effect": "idempotent",
+      "input": {
+       "id": true,
+       "include": false,
+       "dto": "update"
+      },
+      "http": {
+       "verb": "PATCH",
+       "path": "/meetings/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": true
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "meeting delete",
+      "summary": "Delete meeting",
+      "useCase": "DeleteMeetingUseCase",
+      "kind": "delete",
+      "useCaseKey": "delete",
+      "effect": "side-effect",
+      "input": {
+       "id": true,
+       "include": false
+      },
+      "http": {
+       "verb": "DELETE",
+       "path": "/meetings/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": false
+       },
+       "success": 204
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "meeting search",
+      "summary": "Search meetings",
+      "useCase": "SearchMeetingsUseCase",
+      "kind": "search",
+      "useCaseKey": "search",
+      "effect": "read",
+      "input": {
+       "id": false,
+       "include": false,
+       "query": "search"
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/meetings/search",
+       "binding": {
+        "path": [],
+        "query": "all",
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "yaml",
+       "at": {
+        "doc": {
+         "kind": "entity",
+         "name": "meeting"
+        },
+        "path": [
+         "queries",
+         0
+        ]
+       }
+      }
+     }
+    ],
+    "commandsConst": "meetingCommands",
     "http": {
      "enabled": true,
      "routes": [
@@ -6557,6 +7819,145 @@
       }
      }
     ],
+    "commands": [
+     {
+      "name": "meeting-transcript find",
+      "summary": "Find meeting_transcript by id",
+      "useCase": "FindMeetingTranscriptByIdUseCase",
+      "kind": "find_by_id",
+      "useCaseKey": "findById",
+      "effect": "read",
+      "input": {
+       "id": true,
+       "include": true
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/meeting_transcripts/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [
+         "include"
+        ],
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "meeting-transcript list",
+      "summary": "List meeting_transcripts",
+      "useCase": "ListMeetingTranscriptsUseCase",
+      "kind": "list",
+      "useCaseKey": "list",
+      "effect": "read",
+      "input": {
+       "id": false,
+       "include": true,
+       "query": "list"
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/meeting_transcripts",
+       "binding": {
+        "path": [],
+        "query": "all",
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "meeting-transcript create",
+      "summary": "Create meeting_transcript",
+      "useCase": "CreateMeetingTranscriptUseCase",
+      "kind": "create",
+      "useCaseKey": "create",
+      "effect": "side-effect",
+      "input": {
+       "id": false,
+       "include": false,
+       "dto": "create"
+      },
+      "http": {
+       "verb": "POST",
+       "path": "/meeting_transcripts",
+       "binding": {
+        "path": [],
+        "query": [],
+        "body": true
+       },
+       "success": 201
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "meeting-transcript update",
+      "summary": "Update meeting_transcript",
+      "useCase": "UpdateMeetingTranscriptUseCase",
+      "kind": "update",
+      "useCaseKey": "update",
+      "effect": "idempotent",
+      "input": {
+       "id": true,
+       "include": false,
+       "dto": "update"
+      },
+      "http": {
+       "verb": "PATCH",
+       "path": "/meeting_transcripts/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": true
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "meeting-transcript delete",
+      "summary": "Delete meeting_transcript",
+      "useCase": "DeleteMeetingTranscriptUseCase",
+      "kind": "delete",
+      "useCaseKey": "delete",
+      "effect": "side-effect",
+      "input": {
+       "id": true,
+       "include": false
+      },
+      "http": {
+       "verb": "DELETE",
+       "path": "/meeting_transcripts/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": false
+       },
+       "success": 204
+      },
+      "origin": {
+       "from": "base"
+      }
+     }
+    ],
+    "commandsConst": "meetingTranscriptCommands",
     "http": {
      "enabled": true,
      "routes": [
@@ -7358,6 +8759,145 @@
       }
      }
     ],
+    "commands": [
+     {
+      "name": "message-communication-part find",
+      "summary": "Find message_communication_part by id",
+      "useCase": "FindMessageCommunicationPartByIdUseCase",
+      "kind": "find_by_id",
+      "useCaseKey": "findById",
+      "effect": "read",
+      "input": {
+       "id": true,
+       "include": true
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/message_communication_parts/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [
+         "include"
+        ],
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "message-communication-part list",
+      "summary": "List message_communication_parts",
+      "useCase": "ListMessageCommunicationPartsUseCase",
+      "kind": "list",
+      "useCaseKey": "list",
+      "effect": "read",
+      "input": {
+       "id": false,
+       "include": true,
+       "query": "list"
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/message_communication_parts",
+       "binding": {
+        "path": [],
+        "query": "all",
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "message-communication-part create",
+      "summary": "Create message_communication_part",
+      "useCase": "CreateMessageCommunicationPartUseCase",
+      "kind": "create",
+      "useCaseKey": "create",
+      "effect": "side-effect",
+      "input": {
+       "id": false,
+       "include": false,
+       "dto": "create"
+      },
+      "http": {
+       "verb": "POST",
+       "path": "/message_communication_parts",
+       "binding": {
+        "path": [],
+        "query": [],
+        "body": true
+       },
+       "success": 201
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "message-communication-part update",
+      "summary": "Update message_communication_part",
+      "useCase": "UpdateMessageCommunicationPartUseCase",
+      "kind": "update",
+      "useCaseKey": "update",
+      "effect": "idempotent",
+      "input": {
+       "id": true,
+       "include": false,
+       "dto": "update"
+      },
+      "http": {
+       "verb": "PATCH",
+       "path": "/message_communication_parts/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": true
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "message-communication-part delete",
+      "summary": "Delete message_communication_part",
+      "useCase": "DeleteMessageCommunicationPartUseCase",
+      "kind": "delete",
+      "useCaseKey": "delete",
+      "effect": "side-effect",
+      "input": {
+       "id": true,
+       "include": false
+      },
+      "http": {
+       "verb": "DELETE",
+       "path": "/message_communication_parts/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": false
+       },
+       "success": 204
+      },
+      "origin": {
+       "from": "base"
+      }
+     }
+    ],
+    "commandsConst": "messageCommunicationPartCommands",
     "http": {
      "enabled": true,
      "routes": [
@@ -7751,6 +9291,145 @@
       }
      }
     ],
+    "commands": [
+     {
+      "name": "party find",
+      "summary": "Find party by id",
+      "useCase": "FindPartyByIdUseCase",
+      "kind": "find_by_id",
+      "useCaseKey": "findById",
+      "effect": "read",
+      "input": {
+       "id": true,
+       "include": true
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/parties/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [
+         "include"
+        ],
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "party list",
+      "summary": "List parties",
+      "useCase": "ListPartiesUseCase",
+      "kind": "list",
+      "useCaseKey": "list",
+      "effect": "read",
+      "input": {
+       "id": false,
+       "include": true,
+       "query": "list"
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/parties",
+       "binding": {
+        "path": [],
+        "query": "all",
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "party create",
+      "summary": "Create party",
+      "useCase": "CreatePartyUseCase",
+      "kind": "create",
+      "useCaseKey": "create",
+      "effect": "side-effect",
+      "input": {
+       "id": false,
+       "include": false,
+       "dto": "create"
+      },
+      "http": {
+       "verb": "POST",
+       "path": "/parties",
+       "binding": {
+        "path": [],
+        "query": [],
+        "body": true
+       },
+       "success": 201
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "party update",
+      "summary": "Update party",
+      "useCase": "UpdatePartyUseCase",
+      "kind": "update",
+      "useCaseKey": "update",
+      "effect": "idempotent",
+      "input": {
+       "id": true,
+       "include": false,
+       "dto": "update"
+      },
+      "http": {
+       "verb": "PATCH",
+       "path": "/parties/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": true
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "party delete",
+      "summary": "Delete party",
+      "useCase": "DeletePartyUseCase",
+      "kind": "delete",
+      "useCaseKey": "delete",
+      "effect": "side-effect",
+      "input": {
+       "id": true,
+       "include": false
+      },
+      "http": {
+       "verb": "DELETE",
+       "path": "/parties/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": false
+       },
+       "success": 204
+      },
+      "origin": {
+       "from": "base"
+      }
+     }
+    ],
+    "commandsConst": "partyCommands",
     "http": {
      "enabled": true,
      "routes": [
@@ -8670,6 +10349,145 @@
       }
      }
     ],
+    "commands": [
+     {
+      "name": "transcript-communication-part find",
+      "summary": "Find transcript_communication_part by id",
+      "useCase": "FindTranscriptCommunicationPartByIdUseCase",
+      "kind": "find_by_id",
+      "useCaseKey": "findById",
+      "effect": "read",
+      "input": {
+       "id": true,
+       "include": true
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/transcript_communication_parts/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [
+         "include"
+        ],
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "transcript-communication-part list",
+      "summary": "List transcript_communication_parts",
+      "useCase": "ListTranscriptCommunicationPartsUseCase",
+      "kind": "list",
+      "useCaseKey": "list",
+      "effect": "read",
+      "input": {
+       "id": false,
+       "include": true,
+       "query": "list"
+      },
+      "http": {
+       "verb": "GET",
+       "path": "/transcript_communication_parts",
+       "binding": {
+        "path": [],
+        "query": "all",
+        "body": false
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "transcript-communication-part create",
+      "summary": "Create transcript_communication_part",
+      "useCase": "CreateTranscriptCommunicationPartUseCase",
+      "kind": "create",
+      "useCaseKey": "create",
+      "effect": "side-effect",
+      "input": {
+       "id": false,
+       "include": false,
+       "dto": "create"
+      },
+      "http": {
+       "verb": "POST",
+       "path": "/transcript_communication_parts",
+       "binding": {
+        "path": [],
+        "query": [],
+        "body": true
+       },
+       "success": 201
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "transcript-communication-part update",
+      "summary": "Update transcript_communication_part",
+      "useCase": "UpdateTranscriptCommunicationPartUseCase",
+      "kind": "update",
+      "useCaseKey": "update",
+      "effect": "idempotent",
+      "input": {
+       "id": true,
+       "include": false,
+       "dto": "update"
+      },
+      "http": {
+       "verb": "PATCH",
+       "path": "/transcript_communication_parts/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": true
+       },
+       "success": 200
+      },
+      "origin": {
+       "from": "base"
+      }
+     },
+     {
+      "name": "transcript-communication-part delete",
+      "summary": "Delete transcript_communication_part",
+      "useCase": "DeleteTranscriptCommunicationPartUseCase",
+      "kind": "delete",
+      "useCaseKey": "delete",
+      "effect": "side-effect",
+      "input": {
+       "id": true,
+       "include": false
+      },
+      "http": {
+       "verb": "DELETE",
+       "path": "/transcript_communication_parts/:id",
+       "binding": {
+        "path": [
+         "id"
+        ],
+        "query": [],
+        "body": false
+       },
+       "success": 204
+      },
+      "origin": {
+       "from": "base"
+      }
+     }
+    ],
+    "commandsConst": "transcriptCommunicationPartCommands",
     "http": {
      "enabled": true,
      "routes": [

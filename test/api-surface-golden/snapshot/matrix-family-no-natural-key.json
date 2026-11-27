@@ -649,6 +649,145 @@
 					}
 				}
 			],
+			"commands": [
+				{
+					"name": "parcel find",
+					"summary": "Find parcel by id",
+					"useCase": "FindParcelByIdUseCase",
+					"kind": "find_by_id",
+					"useCaseKey": "findById",
+					"effect": "read",
+					"input": {
+						"id": true,
+						"include": true
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/parcels/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [
+								"include"
+							],
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "parcel list",
+					"summary": "List parcels",
+					"useCase": "ListParcelsUseCase",
+					"kind": "list",
+					"useCaseKey": "list",
+					"effect": "read",
+					"input": {
+						"id": false,
+						"include": true,
+						"query": "list"
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/parcels",
+						"binding": {
+							"path": [],
+							"query": "all",
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "parcel create",
+					"summary": "Create parcel",
+					"useCase": "CreateParcelUseCase",
+					"kind": "create",
+					"useCaseKey": "create",
+					"effect": "side-effect",
+					"input": {
+						"id": false,
+						"include": false,
+						"dto": "create"
+					},
+					"http": {
+						"verb": "POST",
+						"path": "/parcels",
+						"binding": {
+							"path": [],
+							"query": [],
+							"body": true
+						},
+						"success": 201
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "parcel update",
+					"summary": "Update parcel",
+					"useCase": "UpdateParcelUseCase",
+					"kind": "update",
+					"useCaseKey": "update",
+					"effect": "idempotent",
+					"input": {
+						"id": true,
+						"include": false,
+						"dto": "update"
+					},
+					"http": {
+						"verb": "PATCH",
+						"path": "/parcels/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [],
+							"body": true
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "parcel delete",
+					"summary": "Delete parcel",
+					"useCase": "DeleteParcelUseCase",
+					"kind": "delete",
+					"useCaseKey": "delete",
+					"effect": "side-effect",
+					"input": {
+						"id": true,
+						"include": false
+					},
+					"http": {
+						"verb": "DELETE",
+						"path": "/parcels/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [],
+							"body": false
+						},
+						"success": 204
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"commandsConst": "parcelCommands",
 			"http": {
 				"enabled": true,
 				"routes": [
@@ -1399,6 +1538,145 @@
 					}
 				}
 			],
+			"commands": [
+				{
+					"name": "crate find",
+					"summary": "Find crate by id",
+					"useCase": "FindCrateByIdUseCase",
+					"kind": "find_by_id",
+					"useCaseKey": "findById",
+					"effect": "read",
+					"input": {
+						"id": true,
+						"include": true
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/crates/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [
+								"include"
+							],
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "crate list",
+					"summary": "List crates",
+					"useCase": "ListCratesUseCase",
+					"kind": "list",
+					"useCaseKey": "list",
+					"effect": "read",
+					"input": {
+						"id": false,
+						"include": true,
+						"query": "list"
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/crates",
+						"binding": {
+							"path": [],
+							"query": "all",
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "crate create",
+					"summary": "Create crate",
+					"useCase": "CreateCrateUseCase",
+					"kind": "create",
+					"useCaseKey": "create",
+					"effect": "side-effect",
+					"input": {
+						"id": false,
+						"include": false,
+						"dto": "create"
+					},
+					"http": {
+						"verb": "POST",
+						"path": "/crates",
+						"binding": {
+							"path": [],
+							"query": [],
+							"body": true
+						},
+						"success": 201
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "crate update",
+					"summary": "Update crate",
+					"useCase": "UpdateCrateUseCase",
+					"kind": "update",
+					"useCaseKey": "update",
+					"effect": "idempotent",
+					"input": {
+						"id": true,
+						"include": false,
+						"dto": "update"
+					},
+					"http": {
+						"verb": "PATCH",
+						"path": "/crates/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [],
+							"body": true
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "crate delete",
+					"summary": "Delete crate",
+					"useCase": "DeleteCrateUseCase",
+					"kind": "delete",
+					"useCaseKey": "delete",
+					"effect": "side-effect",
+					"input": {
+						"id": true,
+						"include": false
+					},
+					"http": {
+						"verb": "DELETE",
+						"path": "/crates/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [],
+							"body": false
+						},
+						"success": 204
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"commandsConst": "crateCommands",
 			"http": {
 				"enabled": true,
 				"routes": [

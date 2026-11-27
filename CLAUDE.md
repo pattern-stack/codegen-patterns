@@ -437,6 +437,16 @@ Every value an app reads at startup is a **setting**, declared once and derived 
 sources (the environment, `.env`, `layered`): a new place values come from (sops, a committed config file) is a new
 source, not a new kind of setting.
 
+### Commands (H-1, `docs/specs/H-1.md`)
+
+Under `wiring: pattern-stack` every use case but a declarative query is also a **command**: a name (`contact create`),
+an effect (`read` / `idempotent` / `side-effect`), one flat Zod input, and an `Outcome` (a result or a refusal). Derived
+once (`apiSurface.commands`), printed by `commands.ejs.t` into `<entity>.commands.ts`, gathered into
+`<generated>/commands.ts` (`COMMANDS`). `Command` / `Outcome` live in `@pattern-stack/wiring/commands`. What a use case
+throws for a caller's mistake becomes a refusal by one table, `runtime/commands.ts` (`refusalOf`), whose `data` is the
+body the Nest target sends for it, from that error's own owner (`errorBody`, `constraintViolationBody`,
+`validationErrorBody`). Every way in (HTTP, MCP, a CLI) calls `invokeCommand`; never re-translate errors in a view.
+
 ### Entity Families
 
 Base classes in `runtime/base-classes/`:

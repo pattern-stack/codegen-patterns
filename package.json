@@ -116,6 +116,7 @@
   ],
   "scripts": {
     "build": "NODE_OPTIONS=--max-old-space-size=8192 tsup",
+    "prepare": "cd packages/wiring && bun run build",
     "prepublishOnly": "bun run build",
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
     "cdp": "bun src/cli/index.ts",
@@ -198,6 +199,7 @@
     "@pattern-stack/codegen-mail": "workspace:*",
     "@pattern-stack/codegen-messaging": "workspace:*",
     "@pattern-stack/codegen-transcript": "workspace:*",
+    "@pattern-stack/wiring": "workspace:*",
     "@pattern-stack/query-surface": "0.4.0",
     "@testcontainers/postgresql": "^12.0.0",
     "@types/bun": "latest",

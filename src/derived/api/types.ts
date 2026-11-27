@@ -199,6 +199,42 @@ export interface Route {
 	origin: Origin;
 }
 
+/**
+ * A command (H-1): one use case as every way in calls it (HTTP, MCP tools, a CLI), with one flat input object. Every
+ * use case but a declarative query has one; `http` is present when the use case is routed.
+ */
+export interface EntityCommand {
+	/** As a caller types it: `contact create`. */
+	name: string;
+	summary: string;
+	useCase: string;
+	kind: Exclude<UseCase['kind'], 'query'>;
+	/** The use case's key in the entity's `useCases`: `findById`. */
+	useCaseKey: string;
+	/** Whether running it twice is safe: find / list / search read; update is idempotent; create / delete are not. */
+	effect: 'read' | 'idempotent' | 'side-effect';
+	/**
+	 * What the input holds: the row's `id`; an `include` (checked against `includeRoute`'s allowlist, or refused when
+	 * there's none); the create or update DTO's fields; the list query's (paging, sort), or the search's filters too.
+	 */
+	input: {
+		id: boolean;
+		include: boolean;
+		dto?: 'create' | 'update';
+		query?: 'list' | 'search';
+	};
+	/** The `api.includes` key the include resolves against; absent ⇒ every include is refused. */
+	includeRoute?: 'list' | 'find_by_id';
+	/** How the input arrives over HTTP: which fields the path, the query and the body carry, and a result's status. */
+	http?: {
+		verb: Route['verb'];
+		path: string;
+		binding: { path: string[]; query: 'all' | string[]; body: boolean };
+		success: 200 | 201 | 204;
+	};
+	origin: Origin;
+}
+
 export interface EntityApiSurface {
 	entity: string;
 	plural: string;
@@ -206,6 +242,10 @@ export interface EntityApiSurface {
 	repository: { className: string; baseClass: string; typedInclude: boolean; methods: RepositoryMethod[] };
 	service: { className: string; baseClass: string; methods: ServiceMethod[] };
 	useCases: UseCase[];
+	/** One per use case but a declarative query (H-1). */
+	commands: EntityCommand[];
+	/** The export in `<entity>.commands.ts` that lists them. */
+	commandsConst: string;
 	/**
 	 * The declaration that turned the write side off: no `create` / `update` / `delete` use case, route or
 	 * provider — `generate.writes: false`. Absent when the entity emits writes.

@@ -34,22 +34,9 @@ import type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
  * and sorts exactly as `GET /<%= entityNamePlural %>` does (#744).
  */
 const <%= searchQuery.filtersSchemaName %> = ListQuerySchema.extend({
-<% searchQuery.filters.forEach((f) => { -%>
-<% if (f.isUuid) { -%>
-  <%= f.camelName %>: z.guid().optional(),
-<% } else if (f.hasChoices) { -%>
-  <%= f.camelName %>: z.enum([<%- f.choices.map((c) => `'${c}'`).join(', ') %>]).optional(),
-<% } else if (f.isBoolean) { -%>
-  <%= f.camelName %>: z.coerce.boolean().optional(),
-<% } else if (f.isNumber) { -%>
-  <%= f.camelName %>: z.coerce.number().optional(),
-<% } else { -%>
-  <%= f.camelName %>: z.string().optional(),
-<% } -%>
+<% searchQuery.filtersSchemaFields.forEach((line) => { -%>
+<%- line %>
 <% }) -%>
-<% if (searchQuery.searchField) { -%>
-  search: z.string().optional(),
-<% } -%>
 });
 
 /**

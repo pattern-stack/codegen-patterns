@@ -18,6 +18,8 @@ import { connections } from './modules/connections/connection.entity';
 import { composeApp } from './compose';
 import { registerOpenApiSchemas } from './generated/openapi';
 import { NotFoundError } from './shared/errors';
+import { invokeCommand } from './shared/commands';
+import { COMMANDS, commandNamed, type App } from './generated/commands';
 import { OpenApiRegistry } from './shared/openapi';
 // test/smoke/_openapi-refs.ts, copied in beside this file: the Nest OpenAPI gate's own `$ref` closure check.
 import { danglingRefs } from './openapi-refs';
@@ -139,9 +141,91 @@ export async function crudCheck(url: string): Promise<void> {
       notFound = err;
     }
     assert(notFound instanceof NotFoundError && notFound.status === 404, 'a deleted id is a NotFoundError (404)');
+
+    await commandsCheck(app);
   } finally {
     await app.stop();
   }
+}
+
+/**
+ * The same CRUD through the commands table (H-1): each result, and each refusal with the body the Nest target answers
+ * it with.
+ */
+async function commandsCheck(app: App): Promise<void> {
+  const command = (name: string) => {
+    const c = commandNamed(name);
+    assert(c, `COMMANDS has '${name}': ${COMMANDS.map((x) => x.name).join(', ')}`);
+    return c!;
+  };
+  const call = (name: string, input: unknown) => invokeCommand(command(name), app, input, {});
+  const refusalOf = async (name: string, input: unknown) => {
+    const out = await call(name, input);
+    assert(!out.ok, `${name} is refused: ${JSON.stringify(out)}`);
+    return out.ok ? fail() : out.refusal;
+  };
+  const fail = (): never => {
+    throw new Error('crud-check: unreachable');
+  };
+
+  assert(command('account create').effect === 'side-effect', 'create is a side-effect command');
+  assert(command('account update').effect === 'idempotent', 'update is idempotent');
+  assert(command('account list').effect === 'read', 'list reads');
+
+  const created = await call('account create', { name: 'Initech', status: 'active' });
+  assert(created.ok, `account create runs: ${JSON.stringify(created)}`);
+  const account = (created as { ok: true; result: { id: string; name: string } }).result;
+
+  const found = await call('account find', { id: account.id });
+  assert(found.ok && (found.result as { name: string }).name === 'Initech', 'account find reads it back');
+
+  const listed = await call('account list', { pageSize: '5' });
+  assert(listed.ok && Array.isArray((listed.result as { items: unknown[] }).items), 'account list pages');
+
+  const searched = await call('account search', { status: 'active' });
+  assert(
+    searched.ok && (searched.result as { items: Array<{ id: string }> }).items.some((a) => a.id === account.id),
+    'account search filters',
+  );
+
+  const bad = await refusalOf('account create', { status: 'active' });
+  assert(bad.reason === 'invalid-input', `a body without name is invalid-input: ${bad.reason}`);
+  const badBody = bad.data as { statusCode: number; message: string; issues: Array<{ path: string }> };
+  assert(
+    badBody.statusCode === 400 && badBody.message === 'Validation failed' && badBody.issues.some((i) => i.path === 'name'),
+    `the invalid-input body is the validation pipe's: ${JSON.stringify(badBody)}`,
+  );
+
+  const include = await refusalOf('account find', { id: account.id, include: 'contacts' });
+  assert(include.reason === 'include-not-allowed', `an include no allowlist names is refused: ${include.reason}`);
+  assert(
+    JSON.stringify(include.data) ===
+      JSON.stringify({ statusCode: 400, error: 'Bad Request', code: 'include_not_allowed', path: 'contacts', message: "include not allowed: 'contacts'" }),
+    `the include refusal's body is the Nest controller's: ${JSON.stringify(include.data)}`,
+  );
+
+  const missing = '00000000-0000-4000-8000-000000000000';
+  const notFound = await refusalOf('account update', { id: missing, name: 'x' });
+  assert(notFound.reason === 'not-found', `an update of a missing row is not-found: ${notFound.reason}`);
+  assert(
+    JSON.stringify(notFound.data) === JSON.stringify({ message: `Account ${missing} not found`, error: 'Not Found', statusCode: 404 }),
+    `the not-found body is Nest's: ${JSON.stringify(notFound.data)}`,
+  );
+  const findMissing = await refusalOf('account find', { id: missing });
+  assert(findMissing.reason === 'not-found', `a find of a missing row is not-found: ${findMissing.reason}`);
+
+  const orphan = await refusalOf('contact create', { email: 'o@x.test', accountId: missing });
+  assert(orphan.reason === 'foreign-key-violation', `a contact on a missing account is refused: ${orphan.reason}`);
+  assert((orphan.data as { statusCode: number }).statusCode === 422, 'its body is the 422 constraint body');
+
+  const contact = await call('contact create', { email: 'c@initech.test', accountId: account.id });
+  assert(contact.ok, `contact create runs: ${JSON.stringify(contact)}`);
+  const referenced = await refusalOf('account delete', { id: account.id });
+  assert(referenced.reason === 'still-referenced', `deleting a referenced account is refused: ${referenced.reason}`);
+
+  const contactId = (contact as { ok: true; result: { id: string } }).result.id;
+  assert((await call('contact delete', { id: contactId })).ok, 'contact delete runs');
+  assert((await call('account delete', { id: account.id })).ok, 'account delete runs');
 }
 
 type Row = { externalId: string; name: string };
