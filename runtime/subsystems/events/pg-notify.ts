@@ -87,6 +87,13 @@ export interface PgNotifyListenerOptions {
    * own claim cycle.
    */
   onNotify: (payload: string) => void;
+  /**
+   * Called each time `LISTEN` is in place: the first connect and every reconnect (ID-1). A cache that evicts on
+   * notifications clears itself here, since notifications sent while it was down are lost.
+   */
+  onConnect?: () => void;
+  /** Called when the listener connection drops or a connect fails, before the reconnect is scheduled (ID-1). */
+  onDrop?: () => void;
   /** Label used in log lines (e.g. 'jobs:interactive', 'events'). */
   label: string;
   backoffMinMs?: number;
@@ -204,6 +211,7 @@ export class PgNotifyListener {
         return;
       }
       this.client = client;
+      this.callHook('onConnect');
       // Recovery: only announce if we had previously warned about being down.
       if (this.warnedDown) {
         this.logger.log(
@@ -217,14 +225,25 @@ export class PgNotifyListener {
     }
   }
 
+  /** An owner's `onConnect` / `onDrop`; a throw is logged, as `onNotify`'s is, and never breaks the listener. */
+  private callHook(hook: 'onConnect' | 'onDrop'): void {
+    try {
+      this.opts[hook]?.();
+    } catch (err) {
+      this.logger.error(`${hook} threw: ${(err as Error).message}`);
+    }
+  }
+
   /** Connection dropped after being established → reconnect. */
   private handleDrop(): void {
     if (this.stopped) return;
+    this.callHook('onDrop');
     void this.releaseClient().finally(() => this.scheduleReconnect());
   }
 
   /** Initial / reconnect `connect()` threw. */
   private handleConnectFailure(err: unknown): void {
+    this.callHook('onDrop');
     this.scheduleReconnect(err);
   }
 

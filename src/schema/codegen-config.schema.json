@@ -412,7 +412,8 @@
               "openapi-config",
               "observability",
               "auth",
-              "auth-integrations"
+              "auth-integrations",
+              "identity"
             ]
           }
         }
@@ -571,6 +572,42 @@
               "items": {
                 "type": "string"
               }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "identity": {
+      "type": "object",
+      "properties": {
+        "workspace_from": {
+          "default": "header",
+          "type": "string",
+          "enum": [
+            "header",
+            "path"
+          ]
+        },
+        "requester": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "resolver": {
+              "default": "lookup",
+              "type": "string",
+              "enum": [
+                "lookup"
+              ]
+            },
+            "cache": {
+              "default": "postgres",
+              "type": "string",
+              "enum": [
+                "postgres",
+                "memory"
+              ]
             }
           },
           "additionalProperties": false

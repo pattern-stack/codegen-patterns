@@ -84,7 +84,8 @@ describe('appModuleWiringHint', () => {
 	}
 
 	test('the hand-registered table is exactly the non-composed subsystems install and remove reach', () => {
-		const shortCircuited = new Set(['openapi-config', 'auth-integrations']);
+		// ID-1: identity's install short-circuits too (it vendors and writes its own config block).
+		const shortCircuited = new Set(['openapi-config', 'auth-integrations', 'identity']);
 		const expected = SUBSYSTEMS.map((s) => s.name).filter((n) => !composesSubsystem(n) && !shortCircuited.has(n));
 		expect(Object.keys(HAND_REGISTERED).sort()).toEqual(expected.sort());
 	});

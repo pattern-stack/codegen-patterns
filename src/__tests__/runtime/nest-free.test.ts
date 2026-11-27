@@ -39,6 +39,8 @@ const ENTRIES = [
   // H-1: the commands' runtime and the bad-input body.
   'commands.ts',
   'validation-error.ts',
+  // ID-1: the requester port H-2's middleware calls.
+  'requester.ts',
   ...NEST_FREE_SUBSYSTEMS.map((name) => `subsystems/${name}/core.ts`),
   // S-1: the event bus backends the pattern-stack `events` system constructs (imported by path, the selected one only).
   'subsystems/events/event-bus.drizzle-backend.ts',

@@ -132,6 +132,11 @@ export interface RequesterContext {
    * Set via `withAllTenants(fn)`, never hand-assembled at a boundary.
    */
   readonly tenantScope?: 'tenant' | 'all';
+  /**
+   * The principal's role in `tenantId`'s workspace (ID-1): what the identity requester resolver found in the
+   * membership. Absent when no workspace was named, or when no identity subsystem resolved the request.
+   */
+  readonly role?: string;
 }
 
 const als = new AsyncLocalStorage<RequesterContext>();

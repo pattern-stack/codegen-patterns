@@ -54,6 +54,7 @@
     "templates",
     "consumer-skills",
     "examples/auth-integrations/**",
+    "examples/identity/**",
     "src/config/*.mjs",
     "src/patterns/registry.ts",
     "src/patterns/pattern-definition.ts",

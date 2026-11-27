@@ -38,16 +38,8 @@ export type SubsystemName =
 	| 'openapi-config'
 	| 'observability'
 	| 'auth'
-	| 'auth-integrations';
-/**
- * The file that marks a vendored subsystem as installed, per `target.wiring`. Nest: its module. Pattern-stack: events
- * (S-1), integration (S-3), auth (S-2), jobs and bridge (J-1) vendor no Nest module, so their Nest-free entry marks them.
- */
-const PATTERN_STACK_ENTRY_MARKED: ReadonlySet<string> = new Set(['events', 'integration', 'auth', 'jobs', 'bridge']);
-const INSTALL_MARKERS: Readonly<Record<TargetWiring, (name: SubsystemName) => string | null>> = {
-	nest: (name) => subsystemModuleFile(name),
-	'pattern-stack': (name) => (PATTERN_STACK_ENTRY_MARKED.has(name) ? 'core.ts' : subsystemModuleFile(name)),
-};
+	| 'auth-integrations'
+	| 'identity';
 
 export type SubsystemBackend =
 	| 'drizzle'
@@ -169,6 +161,15 @@ export const SUBSYSTEMS: SubsystemDescriptor[] = [
 		backends: ['drizzle'],
 		defaultBackend: 'drizzle',
 	},
+	{
+		// ID-1. Identity: workspaces, membership, the requester resolver and its cache. Pattern-stack wiring only; its
+		// requester cache picks its backend from the `identity:` block (a registry row), not from `--backend`.
+		// Detection: `core.ts` (no Nest module).
+		name: 'identity',
+		description: 'Workspaces, membership and the requester (pattern-stack wiring)',
+		backends: ['drizzle'],
+		defaultBackend: 'drizzle',
+	},
 ];
 
 const KNOWN_NAMES = SUBSYSTEMS.map((s) => s.name);
@@ -220,6 +221,7 @@ function inferBackend(dir: string, name: SubsystemName): SubsystemBackend {
 	// for the listing. auth-integrations is single-backend (drizzle only).
 	if (name === 'auth') return 'drizzle';
 	if (name === 'auth-integrations') return 'drizzle';
+	if (name === 'identity') return 'drizzle';
 	const hasDrizzle = fs.existsSync(path.join(dir, `${name.replace(/s$/, '')}-bus.drizzle-backend.ts`))
 		|| fs.readdirSync(dir).some((f) => f.endsWith('.drizzle-backend.ts'));
 	const hasMemory = fs.readdirSync(dir).some((f) => f.endsWith('.memory-backend.ts'));

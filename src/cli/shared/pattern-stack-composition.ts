@@ -8,7 +8,9 @@ import path from 'node:path';
 
 import { CODEGEN_BANNER } from '../../utils/generated-file.js';
 import { integrationsRoot } from '../../config/integration-layout.js';
-import { TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
+import { IdentityConfigSchema, TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
+import { principalSourceFile } from './identity-install.js';
+import { ROLES } from '../../../runtime/subsystems/identity/names.js';
 import type { Context } from './context.js';
 import { projectLayout } from './project-layout.js';
 import { junctionsDirFor, relationshipsDirFor } from '../../config/junctions-dir.js';
@@ -23,6 +25,7 @@ import {
 	type CompositionIntegrationInput,
 	type CompositionAuthInput,
 	type CompositionConnectionsInput,
+	type CompositionIdentityInput,
 	type CompositionJobsInput,
 	type CompositionFile,
 	type CompositionInput,
@@ -78,6 +81,24 @@ export function integrationInstalled(ctx: Context): boolean {
 
 export function authInstalled(ctx: Context): boolean {
 	return isSubsystemInstalled(ctx, 'auth');
+}
+
+export function identityInstalled(ctx: Context): boolean {
+	return isSubsystemInstalled(ctx, 'identity');
+}
+
+/** Identity's input (ID-1): the registry rows its `identity:` block names, or null when it isn't installed. */
+export function patternStackIdentityInput(ctx: Context): CompositionIdentityInput | null {
+	if (!identityInstalled(ctx)) return null;
+	const identity = IdentityConfigSchema.parse(configOrDefaults(ctx.config).identity ?? {});
+	return {
+		coreImport: subsystemCoreImport(resolveRuntimeMode(ctx.config), 'identity'),
+		workspaceFrom: identity.workspace_from,
+		resolver: identity.requester.resolver,
+		cache: identity.requester.cache,
+		principalSourceFile: principalSourceFile(ctx),
+		roles: ROLES,
+	};
 }
 
 /** The `auth` system's input (S-2), or null when the subsystem isn't installed. */
@@ -235,6 +256,7 @@ function compositionInput(ctx: Context): CompositionInput {
 		integration: patternStackIntegrationInput(ctx),
 		auth: patternStackAuthInput(ctx),
 		connections: patternStackConnectionsInput(ctx),
+		identity: patternStackIdentityInput(ctx),
 		integrations: (() => {
 			const source = integrationsSource(ctx, layout.entities);
 			return source ? planPatternStackIntegrations(source) : null;

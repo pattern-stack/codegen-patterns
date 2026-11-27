@@ -96,7 +96,7 @@ function capture<T>(fn: () => Promise<T>): Promise<{ result: T; out: string }> {
 // ---------------------------------------------------------------------------
 
 describe('subsystem — descriptor', () => {
-	test('knows all subsystems (six + openapi-config + observability + auth + auth-integrations)', () => {
+	test('knows all subsystems (six + openapi-config + observability + auth + auth-integrations + identity)', () => {
 		// OPENAPI-4: `openapi-config` is a config-only pseudo-subsystem.
 		// OBS-7: `observability` is a combiner pseudo-subsystem (ADR-025) —
 		// composes sibling read ports via @Optional() DI. Listed here so
@@ -110,6 +110,7 @@ describe('subsystem — descriptor', () => {
 				'auth-integrations',
 				'bridge',
 				'cache',
+				'identity',
 				'events',
 				'jobs',
 				'observability',
@@ -141,7 +142,7 @@ describe('subsystem — summary + list', () => {
 		);
 		const parsed = JSON.parse(out);
 		expect(parsed.command).toBe('subsystem list');
-		expect(parsed.subsystems).toHaveLength(10); // +openapi-config (OPENAPI-4), +observability (OBS-7), +auth +auth-integrations (#287)
+		expect(parsed.subsystems).toHaveLength(11); // +openapi-config (OPENAPI-4), +observability (OBS-7), +auth +auth-integrations (#287), +identity (ID-1)
 		for (const row of parsed.subsystems) {
 			expect(row.status).toBe('available');
 		}

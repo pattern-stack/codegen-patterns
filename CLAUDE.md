@@ -411,6 +411,21 @@ the `connections` system (which builds its own `ConnectionRepository`, because p
 a system can't depend on a module). With `connections` composed, each provider factory takes the store as its second
 argument. The OAuth routes, `IUserContext` and the guard are H-2's.
 
+**Identity under pattern-stack (ID-1, `docs/specs/ID-1.md`).** `subsystem install identity` (pattern-stack only; refused
+under Nest) vendors `runtime/subsystems/identity/` and `runtime/requester.ts` (the requester port H-2's middleware
+calls: `resolve(RequestFacts) → { requester } | { refusal }`, each refusal with `instead`), the `user` / `workspace` /
+`membership` YAMLs into `<entities>/identity/` (`context: identity`; workspace and membership `writes: false`), the
+`identity:` block and `tenancy.column: workspace_id`, and an emit-once `<backend_src>/identity/principal-source.ts`
+(lets nobody in until sign-in is bound). Every option is a registry row, never a branch on a config value:
+`WORKSPACE_SOURCES` (header, path), `REQUESTER_RESOLVERS` (lookup), `REQUESTER_CACHES` (postgres, memory), each typed
+`Record<Name, Factory>` over a leaf name list (`identity/names.ts`) the config schema's enums come from. The composition
+writes the `requester` system (`<generated>/requester-system.ts`: it builds its own membership repository, and picks
+each port with `REGISTRY['<value>']`) and the `workspaces` module (`WorkspaceService`: the only writer of workspaces and
+memberships; rights are the `ROLE_RIGHTS` table; the last owner stays, checked on owners locked in the write's
+transaction). The Postgres cache invalidates with `pg_notify` on the change's own transaction (`evict` follows the
+commit), stops caching while its `PgNotifyListener` is down (`onDrop`) and clears on every connect (`onConnect`, both
+optional hooks on the listener); a fill racing an eviction never stores (`CacheEntries`).
+
 ### Integration Codegen (RFC-0001/0002/0003)
 
 For entities tagged with `surface:` (when `definitions/providers/*.yaml` exist), the `entity new` post-step emits the **full** integration layer per `(surface, provider, entity)`, not just the read side:

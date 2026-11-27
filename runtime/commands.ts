@@ -29,6 +29,10 @@ export const REFUSALS = {
   'unique-violation': 'use a value no other row has, or update the row that has it',
   'foreign-key-violation': 'reference a row that exists',
   'still-referenced': 'delete or re-point the rows that reference it first',
+  // ID-1's application errors (401, 403, 409).
+  unauthenticated: 'sign in, then try again',
+  forbidden: 'ask a member who may do this, or use a workspace you can',
+  conflict: 'change the request so it no longer conflicts, as the message says',
 } as const;
 
 export type RefusalReason = keyof typeof REFUSALS;
@@ -42,7 +46,10 @@ const CONSTRAINT_REASONS: Readonly<Record<ConstraintViolationCode, RefusalReason
 /** Each application error's reason, by its status: a status `runtime/errors.ts` adds doesn't compile until it's here. */
 const APP_ERROR_REASONS: Readonly<Record<AppErrorStatus, RefusalReason>> = {
   400: 'bad-request',
+  401: 'unauthenticated',
+  403: 'forbidden',
   404: 'not-found',
+  409: 'conflict',
 };
 
 /** `data` is a response body: an interface (no index signature), so it is taken as an object and carried as one. */
