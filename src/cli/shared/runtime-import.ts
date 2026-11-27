@@ -73,6 +73,15 @@ export function subsystemCoreImport(mode: RuntimeMode, subsystem: NestFreeSubsys
   return runtimeImport(mode, `subsystems/${subsystem}/core`);
 }
 
+/**
+ * Import specifier for the OpenAPI registry (`runtime/shared/openapi`). Vendored mode drops the leading `shared/`
+ * (`@shared/openapi`); package mode keeps the runtime relpath. The twin of `runtimeImportLocals(mode).openApiImport`
+ * in `src/config/runtime-mode.mjs`, which the templates print; a test holds the two equal.
+ */
+export function openApiImport(mode: RuntimeMode): string {
+  return mode === 'vendored' ? '@shared/openapi' : `${PACKAGE}/runtime/shared/openapi`;
+}
+
 /** The subsystems with a Nest-free entry (`runtime/subsystems/<name>/core.ts`). */
 export const NEST_FREE_SUBSYSTEMS = ['events', 'auth', 'integration'] as const;
 export type NestFreeSubsystem = (typeof NEST_FREE_SUBSYSTEMS)[number];

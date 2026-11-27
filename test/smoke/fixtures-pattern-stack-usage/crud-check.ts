@@ -8,11 +8,42 @@ import { Pool } from 'pg';
 import { relations } from './generated/relations';
 import { compose, defineSystem } from './generated/wiring';
 import { MODULES } from './generated/composition';
+import { registerOpenApiSchemas } from './generated/openapi';
 import { NotFoundError } from './shared/errors';
+import { OpenApiRegistry } from './shared/openapi';
+// test/smoke/_openapi-refs.ts, copied in beside this file: the Nest OpenAPI gate's own `$ref` closure check.
+import { danglingRefs } from './openapi-refs';
+import type { CrmRepositories } from './modules/crm/module';
 
 const assert = (ok: unknown, what: string): void => {
   if (!ok) throw new Error(`crud-check: ${what}`);
 };
+
+/** A hand-written context service's shape (d27, PW-3b): it takes the context's repository bundle, not the classes. */
+async function accountNames(repositories: CrmRepositories): Promise<string[]> {
+  return (await repositories.account.list()).map((a) => a.name);
+}
+
+/** Every entity's DTO schemas register, and the document carries them (PW-3b). Needs no database. */
+export async function openApiCheck(): Promise<void> {
+  const openApi = new OpenApiRegistry();
+  registerOpenApiSchemas(openApi);
+  const doc = await openApi.build({ title: 'plain smoke', version: '0.0.0' });
+  const schemas = doc.components.schemas;
+  for (const name of ['CreateAccountDto', 'UpdateAccountDto', 'AccountOutputDto', 'PersonOutputDto', 'NoteOutputDto']) {
+    assert(name in schemas, `openapi.ts registers ${name}: ${Object.keys(schemas).join(', ')}`);
+  }
+  const dangling = danglingRefs(doc);
+  assert(dangling.length === 0, `every $ref resolves: ${dangling.join(', ')}`);
+  // Each request DTO's prefill is one its own schema accepts, as the Nest gate holds Try it out to.
+  for (const [name, component] of Object.entries(schemas)) {
+    if (!/^(Create|Update)\w+Dto$/.test(name)) continue;
+    const example = (component as { example?: unknown }).example;
+    if (example === undefined) continue;
+    const parsed = openApi.schemaNamed(name)!.safeParse(example);
+    assert(parsed.success, `${name}'s example parses with its own schema: ${JSON.stringify(parsed.error?.issues)}`);
+  }
+}
 
 export async function crudCheck(url: string): Promise<void> {
   const pool = new Pool({ connectionString: url });
@@ -43,6 +74,8 @@ export async function crudCheck(url: string): Promise<void> {
     const personBack = await crm.person.useCases.findById.execute(person.id);
     assert(personBack.firstName === 'Ada', 'a child is created through its base and read back');
 
+    assert((await accountNames(crm.repositories)).includes('Acme'), 'a context service reads through the bundle');
+
     const page = await crm.account.useCases.list.execute();
     assert(page.items.some((a) => a.id === account.id), 'list pages it');
     const byStatus = await crm.account.useCases.findByStatus.execute('active');
@@ -68,7 +101,8 @@ export async function crudCheck(url: string): Promise<void> {
 
 if (import.meta.main) {
   const url = process.argv[2];
-  if (!url) throw new Error('usage: bun src/crud-check.ts <postgres url>');
-  await crudCheck(url);
+  if (!url) throw new Error('usage: bun src/crud-check.ts <postgres url> | --openapi');
+  await openApiCheck();
+  if (url !== '--openapi') await crudCheck(url);
   console.log('crud-check: OK');
 }

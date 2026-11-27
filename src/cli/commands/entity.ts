@@ -17,11 +17,11 @@ import { loadEntityFromYaml, loadEntitiesFromYaml } from '../../utils/yaml-loade
 import { analyzeDomain } from '../../index.js';
 import { junctionsDirFor, relationshipsDirFor } from '../../config/junctions-dir.js';
 import { preflightEntityTargets, renderEntityTargets } from '../shared/entity-render.js';
-import { emitComposition, type CompositionFile } from '../../emitters/composition/emit-composition.js';
+import { emitComposition, wiringFilesBehind, type CompositionFile } from '../../emitters/composition/emit-composition.js';
 import { removeOtherWiringFiles } from '../../emitters/composition/stale-files.js';
 import { loadProjectApiContext } from '../../derived/api/project.js';
-import { isPatternStackWiring } from '../../targets/apps.js';
-import { runtimeImport } from '../shared/runtime-import.js';
+import { isPlainWiring } from '../../targets/apps.js';
+import { openApiImport, runtimeImport } from '../shared/runtime-import.js';
 import type { RelationsConfigInput } from '../../emitters/relations/load-context.js';
 import { listEntityYamls } from '../../utils/find-yaml-files.js';
 import { invalidDefinitionError } from '../../utils/definition-invariant.js';
@@ -106,6 +106,7 @@ function planPatternStackComposition(
 		modulesDir: projectLayout(ctx.cwd, ctx.config).modules,
 		generatedDir,
 		drizzleTypeImport: runtimeImport(resolveRuntimeMode(ctx.config), 'types/drizzle'),
+		openApiImport: openApiImport(resolveRuntimeMode(ctx.config)),
 		banner: CODEGEN_BANNER,
 		dryRun,
 	});
@@ -446,8 +447,8 @@ export class EntityNewCommand extends Command {
 			];
 			if (pending.length > 0) {
 				printError(
-					`entity new: target.wiring is pattern-stack, and these junction / relationship definitions have no pattern-stack pipeline yet ` +
-						`(junctions: PW-3b; relationships: #679): ${pending.join(', ')}`,
+					`entity new: target.wiring is plain, and these junction / relationship definitions have no plain pipeline yet ` +
+						`(junctions: PW-3c; relationships: #679): ${pending.join(', ')}`,
 				);
 				return 1;
 			}
@@ -773,6 +774,20 @@ export class EntityNewCommand extends Command {
 				console.log('');
 				for (const f of composition) printInfo(`composition: ${path.relative(ctx.cwd, f.path)}`);
 				for (const f of removed) printInfo(`removed (wiring: nest output, or a context no longer composed): ${path.relative(ctx.cwd, f)}`);
+				const behind = wiringFilesBehind({
+					relations: loadProjectApiContext(ctx.cwd, ctx.config as RelationsConfigInput | null | undefined, {
+						entitiesDir,
+						junctionsDir: junctionsDirFor(ctx.cwd),
+						relationshipsDir,
+					}).relations,
+					modulesDir: projectLayout(ctx.cwd, ctx.config).modules,
+				});
+				if (behind.length > 0) {
+					printWarning(
+						`the composition imports from every entity's .wiring.ts, and these are missing or were written by an ` +
+							`older codegen: ${behind.join(', ')}. Run \`entity new --all\`.`,
+					);
+				}
 				printInfo(
 					'wiring: pattern-stack — skipped the post-steps that write Nest code or need a Nest app: subsystems, the ' +
 						'ScopeEntityType union, events, bridge, jobs, orchestration, the semantic model, frontend, integrations ' +

@@ -13,7 +13,8 @@
  *    a root entity) through `entity new --all`.
  * 5. Gates:
  *    - no file in the project imports `@nestjs/*` or `reflect-metadata`, and `node_modules` has neither;
- *    - the composition files exist (one `module.ts` per context, `<generated>/wiring.ts`, `<generated>/composition.ts`);
+ *    - the composition files exist (one `module.ts` per context, `<generated>/wiring.ts`, `<generated>/composition.ts`,
+ *      `<generated>/openapi.ts`);
  *    - `tsc` over the project, scoped by location only (`_consumer-errors.ts`), like every smoke.
  *
  * Booting the composition and running CRUD through the use cases on Postgres is the integration job's
@@ -111,6 +112,7 @@ async function main(): Promise<number> {
 		run(`${CLI} entity new --all --force`, tmpDir);
 		// The consumer's usage, compiled with the project: every key it reads is the composition's real API.
 		fs.copyFileSync(USAGE_FILE, path.join(tmpDir, 'src', 'crud-check.ts'));
+		fs.copyFileSync(path.join(import.meta.dirname, '_openapi-refs.ts'), path.join(tmpDir, 'src', 'openapi-refs.ts'));
 
 		// 5a. Nest-free: no import of it anywhere, and none installed.
 		const leaks = sourceFiles(tmpDir).filter((f) => NEST_IMPORT.test(fs.readFileSync(f, 'utf8')));
@@ -125,7 +127,7 @@ async function main(): Promise<number> {
 		const expectOne = (suffix: string) => {
 			if (!generated.some((f) => f.endsWith(suffix))) fail(`expected a generated file ending ${suffix}`);
 		};
-		for (const s of ['/crm/module.ts', '/billing/module.ts', 'modules/module.ts', '/wiring.ts', '/composition.ts']) expectOne(s);
+		for (const s of ['/crm/module.ts', '/billing/module.ts', 'modules/module.ts', '/wiring.ts', '/composition.ts', 'generated/openapi.ts']) expectOne(s);
 		for (const s of ['/account.wiring.ts', '/contact.wiring.ts', '/invoice.wiring.ts', '/note.wiring.ts', '/person.wiring.ts']) expectOne(s);
 		const billing = fs.readFileSync(path.join(tmpDir, generated.find((f) => f.endsWith('/billing/module.ts'))!), 'utf8');
 		if (!/dependsOn: \['crm'\]/.test(billing)) fail("billing's module should dependsOn ['crm'] (invoice belongs_to account)");
@@ -144,6 +146,10 @@ async function main(): Promise<number> {
 			fail(`${errors.length} typecheck errors in the pattern-stack project`);
 		}
 		log('tsc OK: the pattern-stack project compiles with no @nestjs and decorators off');
+
+		// 5d. The OpenAPI document needs no database: every schema registers, every $ref resolves, every prefill parses.
+		run('bun src/crud-check.ts --openapi', tmpDir);
+		log('openapi.ts: every entity\'s schemas register; no dangling $ref; request prefills parse');
 
 		// 6. Boot and CRUD on Postgres (integration job only).
 		if (POSTGRES_URL) {

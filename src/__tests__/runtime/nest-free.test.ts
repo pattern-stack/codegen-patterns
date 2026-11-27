@@ -13,9 +13,13 @@ import ts from 'typescript';
 
 import {
   NEST_FREE_SUBSYSTEMS,
+  openApiImport,
   subsystemCoreImport,
 } from '../../cli/shared/runtime-import';
-import { subsystemCoreImport as subsystemCoreImportMjs } from '../../config/runtime-mode.mjs';
+import {
+  runtimeImportLocals,
+  subsystemCoreImport as subsystemCoreImportMjs,
+} from '../../config/runtime-mode.mjs';
 
 const RUNTIME = path.resolve(import.meta.dir, '../../../runtime');
 
@@ -106,5 +110,11 @@ describe('subsystemCoreImport', () => {
       '@pattern-stack/codegen/runtime/subsystems/events/core',
     );
     expect(subsystemCoreImport('vendored', 'auth')).toBe('@shared/subsystems/auth/core');
+  });
+
+  it('openApiImport agrees with the templates\' openApiImport in both modes (PW-3b)', () => {
+    for (const mode of ['package', 'vendored'] as const) {
+      expect(openApiImport(mode)).toBe(runtimeImportLocals(mode).openApiImport);
+    }
   });
 });

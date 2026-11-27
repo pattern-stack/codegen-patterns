@@ -8,8 +8,8 @@
  * - Going **pattern-stack**: the Nest-only files — `*.controller.ts` and `*.module.ts` under `modules_dir` (not a context's
  *   `module.ts`) and `<generated>/modules.ts` — plus any context `module.ts` the current composition no longer writes
  *   (a context renamed or emptied).
- * - Going **nest**: the pattern-stack files — every context `module.ts`, every `*.wiring.ts`, `<generated>/wiring.ts` and
- *   `<generated>/composition.ts`.
+ * - Going **nest**: the plain files — every context `module.ts`, every `*.wiring.ts`, `<generated>/wiring.ts`,
+ *   `<generated>/composition.ts` and `<generated>/openapi.ts`.
  */
 
 import fs from 'node:fs';
@@ -55,6 +55,7 @@ export function removeOtherWiringFiles(input: {
 					...underModules.filter((f) => path.basename(f) === 'module.ts' || f.endsWith('.wiring.ts')),
 					path.join(generatedDir, 'wiring.ts'),
 					path.join(generatedDir, 'composition.ts'),
+					path.join(generatedDir, 'openapi.ts'),
 				];
 	const stale = candidates.filter((f) => fs.existsSync(f) && isGenerated(f));
 	if (!input.dryRun) for (const f of stale) fs.rmSync(f);

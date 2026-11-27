@@ -11,7 +11,11 @@
  *   whose repositories it takes;
  * - `<generated>/wiring.ts`: the registry (`ModuleApis`, `SystemApis`) and `createWiring`'s `defineModule`,
  *   `defineSystem` and `compose`, typed against it;
- * - `<generated>/composition.ts`: `MODULES`, every module's manifest, for the app's `compose.ts` (PW-4).
+ * - `<generated>/composition.ts`: `MODULES`, every module's manifest, for the app's `compose.ts` (PW-4);
+ * - `<generated>/openapi.ts`: `registerOpenApiSchemas(openApi)`, every entity's DTO schemas (PW-3b).
+ *
+ * Each module also exports its `<Context>Repositories` bundle (PW-3b, d27): one `<Entity>RepositoryPort` per entity,
+ * the type a hand-written context service takes. The composed repositories are checked against it (`satisfies`).
  *
  * The only system pattern-stack wiring needs here is `database` (`{ db }`). Modules depend on each other one way: a cycle
  * between modules (the root module's included) is refused, naming it.
@@ -26,11 +30,15 @@ import { deriveProjectClassGraph } from '../../derived/wiring/project.js';
 import type { ProjectApiContext } from '../../derived/api/project.js';
 import {
 	pascalCase,
+	registerSchemasName,
+	repositoriesBundleName,
+	repositoryClassName,
 	repositoryFactoryName,
+	repositoryPortName,
 	repositoryPropertyName,
 	servicesFactoryName,
 } from '../../derived/api/names.js';
-import { camelCase, emittedDir } from '../../config/file-naming.js';
+import { camelCase, emittedDir, emittedStem } from '../../config/file-naming.js';
 import { entityModuleNaming } from '../../config/module-tree.js';
 import { generating } from '../../utils/generated-file.js';
 import { relativeImport } from '../../utils/import-path.js';
@@ -49,6 +57,8 @@ export interface CompositionInput {
 	generatedDir: string;
 	/** The import specifier of `DrizzleClient` (`runtimeImport(mode, 'types/drizzle')`). */
 	drizzleTypeImport: string;
+	/** The import specifier of `OpenApiRegistry` (`openApiImport(mode)`). */
+	openApiImport: string;
 	/** The banner every emitted file starts with (`CODEGEN_BANNER`). */
 	banner: string;
 	dryRun?: boolean;
@@ -97,6 +107,13 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 		const file = context
 			? path.join(modulesDir, emittedDir(context), 'module.ts')
 			: path.join(modulesDir, 'module.ts');
+		// The module's API keys each entity by its camelCase name beside `repositories`, the bundle (PW-3b).
+		if (camelCase(d.entity.name) === 'repositories') {
+			throw new Error(
+				`[codegen] wiring: plain: entity '${d.entity.name}' would be the key 'repositories' in module '${name}', ` +
+					`which holds the module's repository bundle; rename the entity`,
+			);
+		}
 		const plan = plans.get(name) ?? { name, file, entities: [] };
 		plan.entities.push(d.entity.name);
 		plans.set(name, plan);
@@ -153,6 +170,7 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 
 		const otherModules = [...dependsOn].sort();
 		const moduleType = `${pascalCase(plan.name)}Module`;
+		const bundleType = repositoriesBundleName(plan.name);
 		const imports = [
 			`import type { DrizzleClient } from '${input.drizzleTypeImport}';`,
 			`import type { Relations } from '${relativeImport(plan.file, relationsFile)}';`,
@@ -162,7 +180,7 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 			),
 			...plan.entities.map(
 				(e) =>
-					`import { ${repositoryFactoryName(e)}, ${servicesFactoryName(e)} } from '${relativeImport(plan.file, wiringFile(e))}';`,
+					`import { ${repositoryFactoryName(e)}, ${servicesFactoryName(e)}, type ${repositoryPortName(e)} } from '${relativeImport(plan.file, wiringFile(e))}';`,
 			),
 		];
 		const depsType = [
@@ -176,12 +194,17 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
  */
 ${imports.join('\n')}
 
+/** The ${plan.name} module's repositories, one port per entity: what a hand-written context service takes (d27). */
+export interface ${bundleType} {
+${plan.entities.map((e) => `  ${camelCase(e)}: ${repositoryPortName(e)};`).join('\n')}
+}
+
 export function compose${pascalCase(plan.name)}(deps: { ${depsType} }) {
   const { db } = deps.database;
 ${repositoryLines.join('\n')}
 ${serviceLines.join('\n')}
   return {
-    repositories: { ${plan.entities.map((e) => `${camelCase(e)}: ${repoVar(e)}`).join(', ')} },
+    repositories: { ${plan.entities.map((e) => `${camelCase(e)}: ${repoVar(e)}`).join(', ')} } satisfies ${bundleType},
 ${plan.entities.map((e) => `    ${camelCase(e)},`).join('\n')}
   };
 }
@@ -233,7 +256,41 @@ ${names.map((n) => `import { ${n}Module } from '${relativeImport(compositionFile
 export const MODULES = [${names.map((n) => `${n}Module`).join(', ')}] as const;
 `,
 	});
+	const openApiFile = path.join(generatedDir, 'openapi.ts');
+	const entities = definitions.map((d) => d.entity.name);
+	files.push({
+		path: openApiFile,
+		content: `${input.banner}
+/**
+ * Every entity's DTO schemas (PW-3b), registered as the Nest modules' constructors register them. An HTTP layer, or a
+ * script that writes the OpenAPI document, calls this once before \`openApi.build()\`.
+ */
+import type { OpenApiRegistry } from '${input.openApiImport}';
+${entities.map((e) => `import { ${registerSchemasName(e)} } from '${relativeImport(openApiFile, wiringFile(e))}';`).join('\n')}
+
+export function registerOpenApiSchemas(openApi: OpenApiRegistry): void {
+${entities.map((e) => `  ${registerSchemasName(e)}(openApi);`).join('\n')}
+}
+`,
+	});
 	return files;
+}
+
+/**
+ * The entities whose `<entity>.wiring.ts` is missing, or doesn't export what the composition imports from it (a file an
+ * older codegen wrote). `entity new <one>` re-renders only that entity's, so the composition would not compile; the CLI
+ * names them and says to run `entity new --all`.
+ */
+export function wiringFilesBehind(input: Pick<CompositionInput, 'relations' | 'modulesDir'>): string[] {
+	const behind: string[] = [];
+	for (const d of input.relations.definitions.values()) {
+		const e = d.entity.name;
+		const file = `${entityModuleNaming(d.entity, input.modulesDir).moduleDir}/${emittedStem(e)}.wiring.ts`;
+		const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+		const exports = [`create${repositoryClassName(e)}`, `create${pascalCase(e)}Services`, repositoryPortName(e), registerSchemasName(e)];
+		if (!exports.every((name) => new RegExp(`export (function|type) ${name}\\b`).test(text))) behind.push(e);
+	}
+	return behind.sort();
 }
 
 /** Plan and write the composition. Returns the files written (or that would be, on a dry run). */
