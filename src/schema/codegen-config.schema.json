@@ -30,6 +30,22 @@
               "type": "string",
               "const": "drizzle",
               "description": "Drizzle ORM: tables, columns and repositories written against drizzle-orm"
+            },
+            "wiring": {
+              "description": "How the generated classes are composed (PW-3); default nest. Supported: { wiring: nest, http: nest }, { wiring: plain, http: none }.",
+              "type": "string",
+              "enum": [
+                "nest",
+                "plain"
+              ]
+            },
+            "http": {
+              "description": "The HTTP layer (PW-3); default follows wiring. Supported: { wiring: nest, http: nest }, { wiring: plain, http: none }.",
+              "type": "string",
+              "enum": [
+                "nest",
+                "none"
+              ]
             }
           },
           "required": [
@@ -50,6 +66,22 @@
               "type": "string",
               "const": "drizzle",
               "description": "Drizzle ORM: sqlite-core tables, plus SQLite DDL (.sql) from the same facts"
+            },
+            "wiring": {
+              "description": "How the generated classes are composed (PW-3); default nest. Supported: { wiring: nest, http: nest }, { wiring: plain, http: none }.",
+              "type": "string",
+              "enum": [
+                "nest",
+                "plain"
+              ]
+            },
+            "http": {
+              "description": "The HTTP layer (PW-3); default follows wiring. Supported: { wiring: nest, http: nest }, { wiring: plain, http: none }.",
+              "type": "string",
+              "enum": [
+                "nest",
+                "none"
+              ]
             }
           },
           "required": [

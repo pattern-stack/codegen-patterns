@@ -49,16 +49,16 @@ describe('target: over a two-row table (the union path)', () => {
 	it('an unknown key beside a supported pair is Zod\'s unrecognized_keys, and the loader finds the keys to list', () => {
 		// The matching row's strict object reports it (a non-fatal issue wins over the union's), so the loader's
 		// `unknown key (expected one of: …)` formatting applies — given it can see through the union for the keys.
-		const r = schema.safeParse({ database: 'postgres', orm: 'drizzle', http: 'hono' });
+		const r = schema.safeParse({ database: 'postgres', orm: 'drizzle', runtime: 'bun' });
 		expect(r.success).toBe(false);
 		expect(r.error!.issues.map((i) => [i.code, i.path, 'keys' in i ? i.keys : []])).toEqual([
-			['unrecognized_keys', [], ['http']],
+			['unrecognized_keys', [], ['runtime']],
 		]);
-		expect(objectSchemaKeys(schema)).toEqual(['database', 'orm']);
+		expect(objectSchemaKeys(schema)).toEqual(['database', 'orm', 'wiring', 'http']);
 	});
 
 	it('an unknown key with no pair is named by the union message', () => {
-		expect(issuesOf({ data: 'drizzle-pg' })).toEqual(['(target): unknown key data (expected one of: database, orm)']);
+		expect(issuesOf({ data: 'drizzle-pg' })).toEqual(['(target): unknown key data (expected one of: database, orm, wiring, http)']);
 	});
 
 	it('a bare string says what to write', () => {

@@ -1,5 +1,6 @@
 import { z } from "./zod.js";
-import { DEFAULT_TARGET_PAIR, supportedTargetPairs, TARGET_PAIRS } from '../targets/pairs.js';
+import { DEFAULT_TARGET_PAIR, supportedTargetPairs, TARGET_PAIRS, targetPairRow } from '../targets/pairs.js';
+import { supportedTargetApps, TARGET_APPS, TARGET_HTTPS, TARGET_WIRINGS, targetAppRow, type TargetHttp, type TargetWiring } from '../targets/apps.js';
 import { DEFAULT_TENANT_COLUMN, TENANT_COLUMN_PATTERN } from "./tenancy.js";
 import { TABLE_PREFIX_PATTERN } from "../config/table-naming.js";
 
@@ -226,12 +227,20 @@ export interface TargetPairRow {
   readonly ormDescription: string;
 }
 
-/** `target:` as written: one member per row of `TARGET_PAIRS`, never the cross product of its databases and orms. */
-export type TargetConfig = (typeof TARGET_PAIRS)[number] extends infer R
+/**
+ * `target:` as written: one member per row of `TARGET_PAIRS`, never the cross product of its databases and orms, plus
+ * the app's two optional keys (`TARGET_APPS`, PW-3), absent meaning the first app row.
+ */
+export type TargetConfig = ((typeof TARGET_PAIRS)[number] extends infer R
   ? R extends { database: infer D; orm: infer O }
     ? { database: D; orm: O }
     : never
-  : never;
+  : never) & { wiring?: TargetWiring; http?: TargetHttp };
+
+const appsLine = () => `Supported: ${supportedTargetApps().join(', ')}.`;
+
+/** The keys `target:` takes. */
+const TARGET_KEYS = ['database', 'orm', 'wiring', 'http'] as const;
 
 /**
  * Why a `target:` value is refused, for a table with more than one row (Zod 3 reports a failed union as one
@@ -244,10 +253,20 @@ function targetUnionMessage(data: unknown, pairs: readonly TargetPairRow[]): str
   if (typeof data !== 'object' || data === null || Array.isArray(data)) {
     return `write { database, orm }; ${supported}`;
   }
-  const unknown = Object.keys(data).filter((k) => k !== 'database' && k !== 'orm');
-  if (unknown.length > 0) return `unknown key ${unknown.join(', ')} (expected one of: database, orm)`;
-  const { database, orm } = data as { database?: unknown; orm?: unknown };
+  const unknown = Object.keys(data).filter((k) => !(TARGET_KEYS as readonly string[]).includes(k));
+  if (unknown.length > 0) return `unknown key ${unknown.join(', ')} (expected one of: ${TARGET_KEYS.join(', ')})`;
+  const { database, orm, wiring, http } = data as { database?: unknown; orm?: unknown; wiring?: unknown; http?: unknown };
   if (database === undefined || orm === undefined) return `required: write both database and orm; ${supported}`;
+  const pairKnown = pairs.some((p) => p.database === database && p.orm === orm);
+  if (pairKnown) {
+    // The pair is fine, so the app key is what failed (PW-3).
+    if (wiring !== undefined && !(TARGET_WIRINGS as readonly unknown[]).includes(wiring)) {
+      return `wiring: ${String(wiring)} is not one of ${TARGET_WIRINGS.join(', ')}; ${appsLine()}`;
+    }
+    if (http !== undefined && !(TARGET_HTTPS as readonly unknown[]).includes(http)) {
+      return `http: ${String(http)} is not one of ${TARGET_HTTPS.join(', ')}; ${appsLine()}`;
+    }
+  }
   return `{ database: ${String(database)}, orm: ${String(orm)} } is not a supported (database, orm) pair; ${supported}`;
 }
 
@@ -265,6 +284,14 @@ function targetPairSchema(pair: TargetPairRow, pairs: readonly TargetPairRow[]) 
     .object({
       database: z.literal(pair.database, { error }).describe(pair.databaseDescription),
       orm: z.literal(pair.orm, { error }).describe(pair.ormDescription),
+      wiring: z
+        .enum(TARGET_WIRINGS)
+        .optional()
+        .describe(`How the generated classes are composed (PW-3); default ${TARGET_APPS[0].wiring}. ${appsLine()}`),
+      http: z
+        .enum(TARGET_HTTPS)
+        .optional()
+        .describe(`The HTTP layer (PW-3); default follows wiring. ${appsLine()}`),
     })
     .strict();
 }
@@ -277,7 +304,9 @@ function targetPairSchema(pair: TargetPairRow, pairs: readonly TargetPairRow[]) 
  * - More rows: `z.union`, whose one `invalid_union` issue (at `target`) gets {@link targetUnionMessage}, which says
  *   the same things.
  */
-export function targetConfigSchemaFor(pairs: readonly TargetPairRow[]): z.ZodType<{ database: string; orm: string }> {
+export function targetConfigSchemaFor(
+  pairs: readonly TargetPairRow[],
+): z.ZodType<{ database: string; orm: string; wiring?: TargetWiring; http?: TargetHttp }> {
   const [first, ...rest] = pairs.map((pair) => targetPairSchema(pair, pairs));
   if (first === undefined) throw new Error('targetConfigSchemaFor: the pair table is empty');
   if (rest.length === 0) return first;
@@ -297,7 +326,25 @@ export function targetConfigSchemaFor(pairs: readonly TargetPairRow[]): z.ZodTyp
  * Typed as {@link TargetConfig}: each row's literals are what the runtime schema accepts, which a schema built over
  * a table can't say in its own type.
  */
-export const TargetConfigSchema = targetConfigSchemaFor(TARGET_PAIRS) as z.ZodType<TargetConfig>;
+export const TargetConfigSchema = targetConfigSchemaFor(TARGET_PAIRS).superRefine((target, ctx) => {
+  // PW-3: the (wiring, http) combination is one of `TARGET_APPS`' rows, and plain wiring needs a pair whose row emits
+  // the app layers (Postgres today; SQLite plain is G7).
+  if (!targetAppRow(target)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['http'],
+      message: `{ wiring: ${target.wiring ?? TARGET_APPS[0].wiring}, http: ${target.http} } is not a supported app; supported: ${supportedTargetApps().join(', ')}`,
+    });
+    return;
+  }
+  if (target.wiring === 'plain' && targetPairRow(target).layers !== 'nest') {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['wiring'],
+      message: `wiring: plain needs a pair that emits the app layers; { database: ${target.database}, orm: ${target.orm} } emits the storage layer only until G7`,
+    });
+  }
+}) as unknown as z.ZodType<TargetConfig>;
 
 /** `target:` when the file has none: the first row of `TARGET_PAIRS`. */
 export const DEFAULT_TARGET: TargetConfig = {
