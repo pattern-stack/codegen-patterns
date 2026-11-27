@@ -27,6 +27,7 @@ import path from 'node:path';
 import { composedRepositoryOwners } from '../../derived/wiring/classes.js';
 import { contextCycles } from '../../derived/wiring/order.js';
 import { deriveProjectClassGraph } from '../../derived/wiring/project.js';
+import { EAV_FIELD_VALUE_ENTITY } from '../../derived/wiring/classes.js';
 import type { ProjectApiContext } from '../../derived/api/project.js';
 import {
 	pascalCase,
@@ -233,28 +234,44 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 			dependsOn.add(other);
 			return `deps.${other}.repositories.${camelCase(entity)}`;
 		};
+		// EAV: a class that takes another entity's service (FieldValueService), built before it.
+		const serviceRef = (entity: string): string => {
+			if (own.has(entity)) return `${camelCase(entity)}.service`;
+			const other = moduleOf.get(entity);
+			if (!other) throw new Error(`[codegen] wiring: '${entity}' is composed but has no entity YAML in the set`);
+			dependsOn.add(other);
+			return `deps.${other}.${camelCase(entity)}.service`;
+		};
+		const takesFieldValues = (from: string) =>
+			graph.edges.some((e) => e.from === from && e.reason === 'eav_field_values' && e.toOwner === EAV_FIELD_VALUE_ENTITY);
 
-		// Phase 1: repositories, in the class graph's order (a base before its child).
-		const repositoryLines: string[] = [];
+		// Phase 1: repositories, in the class graph's order (a base before its child). An EAV entity's repository takes
+		// FieldValueService, so it waits for it (the build order below).
+		const repositoryLines: { node: string; line: string }[] = [];
 		for (const node of order) {
 			if (node.role !== 'repository' || node.ownerKind !== 'entity' || !own.has(node.owner)) continue;
 			const base = graph.edges.find((e) => e.from === node.id && e.reason === 'inherits');
-			const args = ['db', ...(base ? [repoRef(base.toOwner)] : [])];
-			repositoryLines.push(`  const ${repoVar(node.owner)} = ${repositoryFactoryName(node.owner)}(${args.join(', ')});`);
+			const args = [
+				'db',
+				...(base ? [repoRef(base.toOwner)] : []),
+				...(takesFieldValues(node.id) ? [serviceRef(EAV_FIELD_VALUE_ENTITY)] : []),
+			];
+			repositoryLines.push({ node: node.id, line: `  const ${repoVar(node.owner)} = ${repositoryFactoryName(node.owner)}(${args.join(', ')});` });
 		}
 		// PW-3c: each junction's repository, then its service over both ends' repositories (the ends' services take it).
 		for (const j of plan.junctions) {
-			repositoryLines.push(`  const ${repoVar(j.name)} = ${repositoryFactoryName(j.name)}(db);`);
+			repositoryLines.push({ node: repositoryClassName(j.name), line: `  const ${repoVar(j.name)} = ${repositoryFactoryName(j.name)}(db);` });
 		}
-		const junctionLines = plan.junctions.map(
-			(j) =>
+		const junctionLines = plan.junctions.map((j) => ({
+			node: serviceClassName(j.name),
+			line:
 				`  const ${junctionServicePropertyName(j.name)} = ${junctionServiceFactoryName(j.name)}({ repository: ${repoVar(j.name)}, ` +
 				`left: ${repoRef(j.left)}, right: ${repoRef(j.right)} });`,
-		);
+		}));
 		const ownJunctions = new Set(plan.junctions.map((j) => j.name));
 
 		// Phase 2: each entity's service and use cases, taking its repository and the composed ones (#632).
-		const serviceLines: string[] = [];
+		const serviceLines: { node: string; line: string }[] = [];
 		for (const entity of plan.entities) {
 			const service = graph.nodes.find((n) => n.owner === entity && n.role === 'service');
 			if (!service) throw new Error(`[codegen] wiring: '${entity}' has no service in the class graph`);
@@ -265,13 +282,20 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 					throw new Error(`[codegen] wiring: '${entity}' fans out to junction '${e.toOwner}', which module '${plan.name}' does not compose`);
 				}
 			}
+			// EAV: the service takes FieldValueService, and its create / update use cases `db` (one transaction).
+			const eav = takesFieldValues(service.id);
 			const fields = [
 				`repository: ${repoVar(entity)}`,
+				...(eav ? [`fieldValues: ${serviceRef(EAV_FIELD_VALUE_ENTITY)}`, 'db'] : []),
 				...composedRepositoryOwners(graph, entity).map((owner) => `${repositoryPropertyName(owner)}: ${repoRef(owner)}`),
 				...fannedOut.map((e) => `${junctionServicePropertyName(e.toOwner)}: ${junctionServicePropertyName(e.toOwner)}`),
 			];
-			serviceLines.push(`  const ${camelCase(entity)} = ${servicesFactoryName(entity)}({ ${fields.join(', ')} });`);
+			serviceLines.push({
+				node: service.id,
+				line: `  const ${camelCase(entity)} = ${servicesFactoryName(entity)}({ ${fields.join(', ')} });`,
+			});
 		}
+		const buildLines = buildOrder([...repositoryLines, ...junctionLines, ...serviceLines], graph);
 
 		const otherModules = [...dependsOn].sort();
 		const moduleType = `${pascalCase(plan.name)}Module`;
@@ -300,7 +324,8 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 /**
  * The ${plan.name} module (PW-3): ${plan.entities.join(', ')}, composed with no DI container.
  * Every repository first, then each junction's service, then every service and its use cases (entities compose each
- * other's repositories, and fan out to the junctions between them).
+ * other's repositories, and fan out to the junctions between them). An EAV entity's repository comes after the
+ * FieldValueService it takes.
  */
 ${imports.join('\n')}
 
@@ -311,7 +336,7 @@ ${plan.entities.map((e) => `  ${camelCase(e)}: ${repositoryPortName(e)};`).join(
 
 export function compose${pascalCase(plan.name)}(deps: { ${depsType} }) {
   const { db } = deps.${DATABASE_SYSTEM};
-${[...repositoryLines, ...junctionLines, ...serviceLines].join('\n')}
+${buildLines.join('\n')}
   return {
     repositories: { ${plan.entities.map((e) => `${camelCase(e)}: ${repoVar(e)}`).join(', ')} } satisfies ${bundleType},
 ${plan.junctions.length > 0 ? `    junctions: { ${plan.junctions.map((j) => `${camelCase(j.name)}: ${junctionServicePropertyName(j.name)}`).join(', ')} },\n` : ''}${plan.entities.map((e) => `    ${camelCase(e)},`).join('\n')}
@@ -383,6 +408,36 @@ ${entities.map((e) => `  ${registerSchemasName(e)}(openApi);`).join('\n')}
 `,
 	});
 	return files;
+}
+
+/**
+ * A module's construction lines in build order: each after the module's own classes it takes. The order they come in
+ * (every repository, then the junction services, then the entity services) is kept wherever nothing forces
+ * otherwise, so only an EAV entity's repository, which takes FieldValueService, moves (after that service).
+ * A use case's needs count as its service's: `create<Entity>Services` builds both.
+ */
+function buildOrder(lines: { node: string; line: string }[], graph: ReturnType<typeof deriveProjectClassGraph>['graph']): string[] {
+	const nodeOf = new Map(graph.nodes.map((n) => [n.id, n]));
+	const serviceOfOwner = new Map(graph.nodes.filter((n) => n.role === 'service').map((n) => [n.owner, n.id]));
+	const builder = (id: string): string => {
+		const n = nodeOf.get(id);
+		return n?.role === 'use_case' ? (serviceOfOwner.get(n.owner) ?? id) : id;
+	};
+	const inModule = new Set(lines.map((l) => l.node));
+	const needs = new Map(lines.map((l) => [l.node, new Set<string>()]));
+	for (const e of graph.edges) {
+		const from = builder(e.from);
+		if (inModule.has(from) && inModule.has(e.to) && from !== e.to) needs.get(from)!.add(e.to);
+	}
+	const out: string[] = [];
+	const done = new Set<string>();
+	while (out.length < lines.length) {
+		const next = lines.find((l) => !done.has(l.node) && [...needs.get(l.node)!].every((n) => done.has(n)));
+		if (!next) throw new Error(`[codegen] wiring: a cycle among ${lines.filter((l) => !done.has(l.node)).map((l) => l.node).join(', ')}`);
+		done.add(next.node);
+		out.push(next.line);
+	}
+	return out;
 }
 
 /**

@@ -1,0 +1,34 @@
+# Pattern-stack wiring smoke: the EAV value table (`eav_value_table: true`), in its own context. Its service takes
+# FieldDefinitionRepository, to resolve a definition's id from its key.
+entity:
+  name: field_value
+  plural: field_values
+  context: custom_fields
+  pattern: Metadata
+
+eav_value_table: true
+eav_definition_table: field_definition
+
+fields:
+  entity_type:
+    type: string
+    required: true
+  entity_id:
+    type: uuid
+    required: true
+  field_definition_id:
+    type: uuid
+    required: true
+  user_id:
+    type: uuid
+    required: true
+  value:
+    type: json
+    required: true
+
+behaviors:
+  - timestamps
+
+# One current value per (owner, field): what `upsertCurrentValues` conflicts on.
+unique_indexes:
+  - fields: [entity_type, entity_id, field_definition_id]

@@ -57,9 +57,11 @@ import {
   fkFinderName,
   moduleClassName,
   registerSchemasName,
+  repositoryClassName,
   repositoryFactoryName,
   repositoryPortName,
   repositoryPropertyName,
+  serviceClassName,
   servicesFactoryName,
   pascalCase,
   relationMethodName,
@@ -2564,8 +2566,10 @@ export function buildBackendLocals(definition, baseLocals) {
       throw new Error(`[codegen] '${entityName}': ${what} is not supported under target.wiring: pattern-stack yet — it comes with ${step}.`);
     };
     if (Array.isArray(definition.emits) && definition.emits.length > 0) refuse('`emits:` (the typed event bus)', 'S-1 (events on pattern-stack wiring)');
-    if (definition.eav === true || definition.eav_value_table === true) refuse('EAV (`eav:` / `eav_value_table:`)', 'a later pattern-stack wiring step');
     if (definition.entity?.surface || definition.surface) refuse('an integration `surface:`', 'S-3 (integrations on pattern-stack wiring)');
+    // EAV on a family child: the EAV repository constructor drops the base's repository, and the with-fields reads
+    // type the child row, not its flat shape — broken under Nest too, so not ported.
+    if (definition.eav === true && definition.inherits) refuse('EAV (`eav: true`) on an entity that `inherits:`', 'a fix to the EAV child templates (Nest has the same gap)');
     const nestOnly = ['controller', 'searchController', 'module', 'integrationSourceModule'];
     // `integrationSourceModule` always has a path; its template writes only for a `detection:` entity, so it is named
     // only then.
@@ -2592,6 +2596,8 @@ export function buildBackendLocals(definition, baseLocals) {
     delete: outputPaths.deleteUseCase,
     search: outputPaths.searchUseCase,
     query: outputPaths.declarativeQueries,
+    find_by_id_with_fields: outputPaths.findByIdWithFieldsUseCase,
+    list_with_fields: outputPaths.listWithFieldsUseCase,
   };
   const fromModuleDir = (file) => `./${file.slice(moduleDir.length + 1).replace(/\.ts$/, '')}`;
   // The composition (`emitComposition`) passes the service its composed repositories from the class graph's service
@@ -2599,7 +2605,8 @@ export function buildBackendLocals(definition, baseLocals) {
   // held here, naming both, under pattern-stack (where the composition reads them).
   if (patternStackWiring) {
     const graphRepos = composedRepositoryOwners(classGraph, entityName).sort();
-    const localRepos = repositoryDeps.map((d) => d.entity).sort();
+    // The EAV value table's service also takes its definition entity's repository (when no relationship already does).
+    const localRepos = [...new Set([...repositoryDeps.map((d) => d.entity), ...(eavDefinitionEntity ? [eavDefinitionEntity] : [])])].sort();
     if (graphRepos.join(',') !== localRepos.join(',')) {
       throw new Error(
         `[codegen] '${entityName}': the class graph composes [${graphRepos.join(', ')}] but the service takes ` +
@@ -2640,6 +2647,23 @@ export function buildBackendLocals(definition, baseLocals) {
           serviceClass: f.junction.serviceClass,
           importPath: f.junctionServiceImport,
         })),
+        // EAV: the repository, the service and the create / update use cases take FieldValueService (and those use
+        // cases `db`, for their one transaction); the value table's service takes its definition entity's repository,
+        // after FieldValueService, unless a relationship already composes it (then it is one of `repositoryDeps`).
+        eav: eavEnabled
+          ? {
+              serviceClass: serviceClassName(EAV_FIELD_VALUE_ENTITY),
+              importPath: `${eavFieldValueImportDir}/${eavFieldValueStem}.service`,
+            }
+          : null,
+        eavDefinition:
+          eavDefinitionEntity && !eavDefinitionDep
+            ? {
+                property: repositoryPropertyName(eavDefinitionEntity),
+                repositoryClass: repositoryClassName(eavDefinitionEntity),
+                importPath: `${eavDefinitionImportDir}/${eavDefinitionEntityStem}.repository`,
+              }
+            : null,
         repositoryPort: repositoryPortName(entityName),
         registerSchemas: registerSchemasName(entityName),
       }

@@ -27,6 +27,13 @@ import type { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.fi
 <%_ patternStackWiringParts.junctionServices.forEach((j) => { _%>
 import type { <%= j.serviceClass %> } from '<%= j.importPath %>';
 <%_ }) _%>
+<%_ const _eav = patternStackWiringParts.eav; const _eavDef = patternStackWiringParts.eavDefinition; _%>
+<%_ if (_eav) { _%>
+import type { <%= _eav.serviceClass %> } from '<%= _eav.importPath %>';
+<%_ } _%>
+<%_ if (_eavDef) { _%>
+import type { <%= _eavDef.repositoryClass %> } from '<%= _eavDef.importPath %>';
+<%_ } _%>
 <%_ openApiSchemas.forEach((s) => { _%>
 import { <%= s.schemaName %> } from '<%= s.importFile %>';
 <%_ }) _%>
@@ -45,14 +52,17 @@ import { <%= _queries.map((u) => u.className).join(', ') %> } from '<%= _queries
  */
 export type <%= patternStackWiringParts.repositoryPort %> = { [K in keyof <%= classNames.repository %>]: <%= classNames.repository %>[K] };
 
-/** Builds <%= classNames.entity %>'s repository<% if (familyChild) { %>; a <%= entityName %> is a kind of <%= familyChild.baseName %>, so it takes the base's<% } %>. */
+/** Builds <%= classNames.entity %>'s repository<% if (familyChild) { %>; a <%= entityName %> is a kind of <%= familyChild.baseName %>, so it takes the base's<% } %><% if (_eav) { %>; its custom fields are written through <%= _eav.serviceClass %> (EAV)<% } %>. */
 export function <%= patternStackWiringParts.repositoryFactory %>(
   db: DrizzleClient<Relations>,
 <%_ if (familyChild) { _%>
   baseRepository: <%= familyChild.baseRepositoryClass %>,
 <%_ } _%>
+<%_ if (_eav) { _%>
+  fieldValues: <%= _eav.serviceClass %>,
+<%_ } _%>
 ): <%= classNames.repository %> {
-  return new <%= classNames.repository %>(db<% if (familyChild) { %>, baseRepository<% } %>);
+  return new <%= classNames.repository %>(db<% if (familyChild) { %>, baseRepository<% } %><% if (_eav) { %>, fieldValues<% } %>);
 }
 
 /**
@@ -61,6 +71,15 @@ export function <%= patternStackWiringParts.repositoryFactory %>(
  */
 export interface <%= classNames.entity %>ServiceDeps {
   repository: <%= classNames.repository %>;
+<%_ if (_eav) { _%>
+  /** EAV: the custom-field values; the create / update use cases write them in one transaction on `db`. */
+  fieldValues: <%= _eav.serviceClass %>;
+  db: DrizzleClient<Relations>;
+<%_ } _%>
+<%_ if (_eavDef) { _%>
+  /** EAV value table: resolves a definition's id from its key. */
+  <%= _eavDef.property %>: <%= _eavDef.repositoryClass %>;
+<%_ } _%>
 <%_ repositoryDeps.forEach((dep) => { _%>
   <%= dep.property %>: <%= dep.repositoryClass %>;
 <%_ }) _%>
@@ -71,7 +90,7 @@ export interface <%= classNames.entity %>ServiceDeps {
 
 /** Builds <%= classNames.entity %>'s service and its use cases. */
 export function <%= patternStackWiringParts.servicesFactory %>(deps: <%= classNames.entity %>ServiceDeps) {
-  const service = new <%= classNames.service %>(deps.repository<% repositoryDeps.forEach((dep) => { %>, deps.<%= dep.property %><% }) %><% patternStackWiringParts.junctionServices.forEach((j) => { %>, deps.<%= j.property %><% }) %>);
+  const service = new <%= classNames.service %>(deps.repository<% if (_eav) { %>, deps.fieldValues<% } %><% if (_eavDef) { %>, deps.<%= _eavDef.property %><% } %><% repositoryDeps.forEach((dep) => { %>, deps.<%= dep.property %><% }) %><% patternStackWiringParts.junctionServices.forEach((j) => { %>, deps.<%= j.property %><% }) %>);
 <%_ const _list = patternStackWiringParts.useCases.find((u) => u.kind === 'list'); _%>
   const <%= _list.key %> = new <%= _list.className %>(service);
   return {
@@ -82,6 +101,8 @@ export function <%= patternStackWiringParts.servicesFactory %>(deps: <%= classNa
       <%= u.key %>,
 <%_ } else if (u.kind === 'search') { _%>
       <%= u.key %>: new <%= u.className %>(<%= _list.key %>),
+<%_ } else if (_eav && (u.kind === 'create' || u.kind === 'update')) { _%>
+      <%= u.key %>: new <%= u.className %>(service, deps.fieldValues, deps.db),
 <%_ } else { _%>
       <%= u.key %>: new <%= u.className %>(service),
 <%_ } _%>

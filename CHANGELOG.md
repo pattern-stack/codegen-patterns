@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added: EAV under `wiring: pattern-stack`
+
+- `eav: true` and `eav_value_table: true` are no longer refused under pattern-stack wiring.
+- An EAV entity's repository, service and create / update use cases take `FieldValueService`, built by its own
+  module or another one, which the entity's module then depends on. Create and update write the row and its custom
+  fields in one transaction.
+- The composition builds a module's classes in dependency order, keeping every other line where it was.
+- docs/specs/PW-EAV.md.
+
 ### Added: `project init --wiring pattern-stack`
 
 - `codegen project init --wiring pattern-stack` starts a project with no NestJS. It writes
