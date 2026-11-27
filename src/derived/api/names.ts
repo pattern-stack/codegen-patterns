@@ -120,6 +120,14 @@ export function registerSchemasName(entityName: string): string {
 	return `register${pascalCase(entityName)}Schemas`;
 }
 
+/**
+ * The property a parent service holds a fanned-out junction's service by (JUNC-0), and under plain wiring its key in
+ * `<Entity>ServiceDeps` (PW-3c). One rule for the junction prompts and the composition emitter.
+ */
+export function junctionServicePropertyName(junctionName: string): string {
+	return `${camelCase(junctionName)}Service`;
+}
+
 export function serviceClassName(entityName: string): string {
 	return `${pascalCase(entityName)}Service`;
 }

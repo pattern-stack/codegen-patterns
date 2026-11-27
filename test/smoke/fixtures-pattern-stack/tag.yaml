@@ -1,0 +1,10 @@
+# Plain-wiring smoke (PW-3c): one end of the account_tag junction, in crm with account, so the junction is crm's.
+entity:
+  name: tag
+  plural: tags
+  context: crm
+
+fields:
+  label:
+    type: string
+    required: true

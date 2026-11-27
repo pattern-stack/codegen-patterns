@@ -17,8 +17,11 @@
  * shipped modules.
  */
 
+import path from 'node:path';
 import pluralize from 'pluralize';
 import { sqlTableName } from './table-naming.js';
+import { entityModuleNaming } from './module-tree.js';
+import { emittedStem } from './file-naming.js';
 
 export function junctionName(between: readonly [string, string]): string {
 	return `${between[0]}_${between[1]}`;
@@ -26,6 +29,15 @@ export function junctionName(between: readonly [string, string]): string {
 
 export function junctionPlural(name: string): string {
 	return pluralize(name);
+}
+
+/**
+ * A junction's `.wiring.ts` under plain wiring (PW-3c): `<modules_dir>/<plural>/<name>.wiring.ts`. The junction prompt
+ * writes it and the composition imports it, both from here.
+ */
+export function junctionWiringFile(name: string, modulesDir: string): string {
+	const moduleDir = path.posix.normalize(entityModuleNaming({ name, plural: junctionPlural(name) }, modulesDir).moduleDir);
+	return `${moduleDir}/${emittedStem(name)}.wiring.ts`;
 }
 
 /** The junction-YAML keys the SQL table name reads. */

@@ -5,7 +5,6 @@
  * helper so behavior matches the legacy src/cli.ts.
  */
 
-import { CODEGEN_BANNER } from '../../utils/generated-file.js';
 import { configOrDefaults } from '../../config/project-config.js';
 import { targetPairRow } from '../../targets/pairs.js';
 import fs from 'node:fs';
@@ -15,19 +14,10 @@ import type { CommandClass } from 'clipanion';
 
 import { loadEntityFromYaml, loadEntitiesFromYaml } from '../../utils/yaml-loader.js';
 import { analyzeDomain } from '../../index.js';
-import { junctionsDirFor, relationshipsDirFor } from '../../config/junctions-dir.js';
+import { relationshipsDirFor } from '../../config/junctions-dir.js';
 import { preflightEntityTargets, renderEntityTargets } from '../shared/entity-render.js';
-import {
-	emitComposition,
-	wiringFilesBehind,
-	type CompositionFile,
-	type CompositionInput,
-} from '../../emitters/composition/emit-composition.js';
 import { removeOtherWiringFiles } from '../../emitters/composition/stale-files.js';
-import { loadProjectApiContext } from '../../derived/api/project.js';
-import { isPatternStackWiring } from '../../targets/apps.js';
-import { openApiImport, runtimeImport } from '../shared/runtime-import.js';
-import type { RelationsConfigInput } from '../../emitters/relations/load-context.js';
+import { isPlainWiring } from '../../targets/apps.js';
 import { listEntityYamls } from '../../utils/find-yaml-files.js';
 import { invalidDefinitionError } from '../../utils/definition-invariant.js';
 import {
@@ -91,32 +81,8 @@ import { generating } from '../../utils/generated-file.js';
 import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
-import { listJunctionYamls } from '../shared/barrel-generator.js';
-import { findYamlFiles } from '../../utils/find-yaml-files.js';
-
-/**
- * PW-3a: the pattern-stack composition's input for this project. The one place that builds it: the composition and the
- * staleness check (`wiringFilesBehind`) read the same relations and modules folder.
- */
-function patternStackCompositionInput(
-	ctx: Context,
-	entitiesDir: string,
-	relationshipsDir: string,
-	generatedDir: string,
-): CompositionInput {
-	return {
-		relations: loadProjectApiContext(ctx.cwd, ctx.config as RelationsConfigInput | null | undefined, {
-			entitiesDir,
-			junctionsDir: junctionsDirFor(ctx.cwd),
-			relationshipsDir,
-		}).relations,
-		modulesDir: projectLayout(ctx.cwd, ctx.config).modules,
-		generatedDir,
-		drizzleTypeImport: runtimeImport(resolveRuntimeMode(ctx.config), 'types/drizzle'),
-		openApiImport: openApiImport(resolveRuntimeMode(ctx.config)),
-		banner: CODEGEN_BANNER,
-	};
-}
+import { planPlainComposition, printPlainComposition, writePlainComposition } from '../shared/plain-composition.js';
+import { plainRelationshipYamlsRefusal } from '../shared/storage-only.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -444,34 +410,24 @@ export class EntityNewCommand extends Command {
 			'manifest, subsystem barrels, event / bridge / jobs codegen, orchestration, frontend and integrations ' +
 			'(they come with wiring: pattern-stack, G7).';
 
-		// PW-3a: pattern-stack wiring has no junction or relationship pipeline yet; a project that has their YAMLs is refused by
-		// name rather than generated with those tables silently missing from the schema barrel.
-		if (patternStackWiring) {
-			const pending = [
-				...listJunctionYamls(junctionsDirFor(ctx.cwd)).map((f) => path.relative(ctx.cwd, f)),
-				...(fs.existsSync(relationshipsDir) ? findYamlFiles(relationshipsDir) : []).map((f) => path.relative(ctx.cwd, f)),
-			];
-			if (pending.length > 0) {
-				printError(
-					`entity new: target.wiring is pattern-stack, and these junction / relationship definitions have no pattern-stack pipeline yet ` +
-						`(junctions: PW-3c; relationships: #679): ${pending.join(', ')}`,
-				);
-				return 1;
-			}
+		// PW-3a: plain wiring has no relationship pipeline yet (junctions came with PW-3c); a project that has
+		// relationship YAMLs is refused by name rather than generated with those tables silently missing from the schema
+		// barrel.
+		const relationshipRefusal = plainRelationshipYamlsRefusal(ctx, 'entity new');
+		if (relationshipRefusal) {
+			printError(relationshipRefusal);
+			return 1;
 		}
 
 		// PW-3a: the dry run predicts a pattern-stack run too — the schema barrel without the Nest modules barrel, and the
 		// composition's files (or its refusal, e.g. a cycle between contexts).
 		if (this.dryRun && patternStackWiring) {
 			const barrelPlan = await regenerateBarrels({
-				ctx, entitiesDir, nonEntityDirs, relationshipsDir, generatedDir, dryRun: true, modulesBarrel: false,
+				ctx, entitiesDir, nonEntityDirs, relationshipsDir, generatedDir, dryRun: true, modulesBarrel: false, junctions: true,
 			});
 			let compositionFiles: string[];
 			try {
-				compositionFiles = emitComposition({
-					...patternStackCompositionInput(ctx, entitiesDir, relationshipsDir, generatedDir),
-					dryRun: true,
-				}).map((f) => f.path);
+				compositionFiles = planPlainComposition(ctx, { entitiesDir, relationshipsDir, generatedDir }).map((f) => f.path);
 			} catch (err: unknown) {
 				printError(err instanceof Error ? err.message : String(err));
 				return 1;
@@ -708,7 +664,8 @@ export class EntityNewCommand extends Command {
 				nonEntityDirs,
 				relationshipsDir,
 				generatedDir,
-				modulesBarrel: !storageOnly && !patternStackWiring,
+				modulesBarrel: !storageOnly && !plainWiring,
+				junctions: !storageOnly,
 			});
 		} catch (err: unknown) {
 			return reportRegenerationFailure('entity new', err);
@@ -765,33 +722,17 @@ export class EntityNewCommand extends Command {
 		// frontend, integrations) come with S-1..S-3 and H-1; they are skipped by name, never silently.
 		if (patternStackWiring) {
 			if (relationsFailed) return 1;
-			let composition: CompositionFile[];
-			let compositionInput: CompositionInput;
+			let plainResult: ReturnType<typeof writePlainComposition>;
 			try {
-				compositionInput = patternStackCompositionInput(ctx, entitiesDir, relationshipsDir, generatedDir);
-				composition = emitComposition(compositionInput);
+				plainResult = writePlainComposition(ctx, { entitiesDir, relationshipsDir, generatedDir });
 			} catch (err: unknown) {
 				return reportRegenerationFailure('entity new', err);
 			}
-			// The Nest files an earlier `wiring: nest` run left behind, and any context module no longer composed.
-			const removed = removeOtherWiringFiles({
-				wiring: 'pattern-stack',
-				modulesDir: compositionInput.modulesDir,
-				generatedDir,
-				keep: new Set(composition.map((f) => f.path)),
-			});
+			const composition = plainResult.files;
 			const total = validated.length + invalid.length;
 			if (!isJsonMode()) {
 				console.log('');
-				for (const f of composition) printInfo(`composition: ${path.relative(ctx.cwd, f.path)}`);
-				for (const f of removed) printInfo(`removed (wiring: nest output, or a context no longer composed): ${path.relative(ctx.cwd, f)}`);
-				const behind = wiringFilesBehind(compositionInput);
-				if (behind.length > 0) {
-					printWarning(
-						`the composition imports from every entity's .wiring.ts, and these are missing or were written by an ` +
-							`older codegen: ${behind.join(', ')}. Run \`entity new --all\`.`,
-					);
-				}
+				printPlainComposition(ctx, plainResult);
 				printInfo(
 					'wiring: pattern-stack — skipped the post-steps that write Nest code or need a Nest app: subsystems, the ' +
 						'ScopeEntityType union, events, bridge, jobs, orchestration, the semantic model, frontend, integrations ' +
@@ -807,7 +748,8 @@ export class EntityNewCommand extends Command {
 					succeeded,
 					failed,
 					composition: composition.map((f) => f.path),
-					removed,
+					removed: plainResult.removed,
+					behind: plainResult.behind,
 				});
 			}
 			return failed.length === 0 ? 0 : 1;

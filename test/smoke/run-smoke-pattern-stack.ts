@@ -29,8 +29,10 @@ import { tscGateErrors } from './_consumer-errors';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI = `bun ${path.join(REPO_ROOT, 'src', 'cli', 'index.ts')}`;
-const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures-pattern-stack');
-const USAGE_FILE = path.join(import.meta.dirname, 'fixtures-pattern-stack-usage', 'crud-check.ts');
+const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures-plain');
+/** PW-3c: the junctions, a sibling folder so the entity loaders never read them as entities. */
+const JUNCTIONS_DIR = path.join(import.meta.dirname, 'fixtures-plain-junctions');
+const USAGE_FILE = path.join(import.meta.dirname, 'fixtures-plain-usage', 'crud-check.ts');
 // `--postgres <url>` (the integration job): after the compile gate, push the schema into a fresh database on that
 // server and run CRUD through the composed use cases (`fixtures-pattern-stack-usage/crud-check.ts`).
 const POSTGRES_URL = (() => {
@@ -109,7 +111,14 @@ async function main(): Promise<number> {
 		for (const f of fs.readdirSync(FIXTURES_DIR).filter((n) => n.endsWith('.yaml'))) {
 			fs.copyFileSync(path.join(FIXTURES_DIR, f), path.join(entitiesDir, f));
 		}
+		// PW-3c: a junction inside crm (account ↔ tag).
+		const junctionsDir = path.join(tmpDir, 'junctions');
+		fs.mkdirSync(junctionsDir, { recursive: true });
+		for (const f of fs.readdirSync(JUNCTIONS_DIR).filter((n) => n.endsWith('.yaml'))) {
+			fs.copyFileSync(path.join(JUNCTIONS_DIR, f), path.join(junctionsDir, f));
+		}
 		run(`${CLI} entity new --all --force`, tmpDir);
+		run(`${CLI} junction new --all --force`, tmpDir);
 		// The consumer's usage, compiled with the project: every key it reads is the composition's real API.
 		fs.copyFileSync(USAGE_FILE, path.join(tmpDir, 'src', 'crud-check.ts'));
 		fs.copyFileSync(path.join(import.meta.dirname, '_openapi-refs.ts'), path.join(tmpDir, 'src', 'openapi-refs.ts'));

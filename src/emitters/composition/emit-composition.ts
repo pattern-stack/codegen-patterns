@@ -35,8 +35,12 @@ import {
 	repositoryFactoryName,
 	repositoryPortName,
 	repositoryPropertyName,
+	junctionServicePropertyName,
+	serviceClassName,
 	servicesFactoryName,
 } from '../../derived/api/names.js';
+import { junctionIdentity } from '../../emitters/relations/build-graph.js';
+import { junctionWiringFile } from '../../config/junction-naming.js';
 import { camelCase, emittedDir } from '../../config/file-naming.js';
 import { entityModuleNaming } from '../../config/module-tree.js';
 import { generating } from '../../utils/generated-file.js';
@@ -65,6 +69,9 @@ function wiringImports(entity: string): { module: string[]; openApi: string[] } 
 	};
 }
 
+/** The keys a module's API holds beside its entities: the repository bundle (PW-3b) and the junction services (PW-3c). */
+const RESERVED_MODULE_KEYS = new Set(['repositories', 'junctions']);
+
 export interface CompositionInput {
 	relations: ProjectApiContext['relations'];
 	/** Absolute `paths.modules_dir`. */
@@ -90,11 +97,46 @@ interface ModulePlan {
 	name: string;
 	file: string;
 	entities: string[];
+	/** The junctions whose ends are this module's entities (PW-3c). */
+	junctions: JunctionPlan[];
+}
+
+interface JunctionPlan {
+	name: string;
+	plural: string;
+	left: string;
+	right: string;
+}
+
+/** The first cycle in a dependency map (`a → b → a`), or null. */
+function firstCycle(deps: Map<string, Set<string>>): string[] | null {
+	const state = new Map<string, 'open' | 'done'>();
+	const stack: string[] = [];
+	const visit = (n: string): string[] | null => {
+		if (state.get(n) === 'done') return null;
+		if (state.get(n) === 'open') return [...stack.slice(stack.indexOf(n)), n];
+		state.set(n, 'open');
+		stack.push(n);
+		for (const m of [...(deps.get(n) ?? [])].sort()) {
+			const cycle = visit(m);
+			if (cycle) return cycle;
+		}
+		stack.pop();
+		state.set(n, 'done');
+		return null;
+	};
+	for (const n of [...deps.keys()].sort()) {
+		const cycle = visit(n);
+		if (cycle) return cycle;
+	}
+	return null;
 }
 
 
 export function planComposition(input: CompositionInput): CompositionFile[] {
 	const { relations, modulesDir, generatedDir } = input;
+	// A cycle between modules is refused below, over the modules themselves (PW-3c): that covers the root module and
+	// the junctions, which `contextCycles` passes through.
 	const { graph, order } = deriveProjectClassGraph(relations);
 
 	const definitions = [...relations.definitions.values()].sort((a, b) => a.entity.name.localeCompare(b.entity.name));
@@ -123,11 +165,12 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 		const file = context
 			? path.join(modulesDir, emittedDir(context), 'module.ts')
 			: path.join(modulesDir, 'module.ts');
-		// The module's API keys each entity by its camelCase name beside `repositories`, the bundle (PW-3b).
-		if (camelCase(d.entity.name) === 'repositories') {
+		// The module's API keys each entity by its camelCase name beside `repositories` (the bundle, PW-3b) and
+		// `junctions` (PW-3c).
+		if (RESERVED_MODULE_KEYS.has(camelCase(d.entity.name))) {
 			throw new Error(
-				`[codegen] wiring: pattern-stack: entity '${d.entity.name}' would be the key 'repositories' in module '${name}', ` +
-					`which holds the module's repository bundle; rename the entity`,
+				`[codegen] wiring: plain: entity '${d.entity.name}' would be the key '${camelCase(d.entity.name)}' in module ` +
+					`'${name}', which the module's API reserves (${[...RESERVED_MODULE_KEYS].join(', ')}); rename the entity`,
 			);
 		}
 		// openapi.ts imports each entity's register function beside its own `registerOpenApiSchemas`.
@@ -137,23 +180,66 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 					`function <generated>/openapi.ts declares; rename the entity`,
 			);
 		}
-		const plan = plans.get(name) ?? { name, file, entities: [] };
+		const plan = plans.get(name) ?? { name, file, entities: [], junctions: [] };
 		plan.entities.push(d.entity.name);
 		plans.set(name, plan);
 		moduleOf.set(d.entity.name, name);
 	}
-	// Modules depend on each other one way (wiring orders them, and each module's type names the others'). The check
-	// runs over the modules this composition builds, the root module included: an entity with no `context:` is in
-	// `entities`, not a pass-through.
-	const moduleCycles = contextCycles(graph, (owner) => moduleOf.get(owner));
-	if (moduleCycles.length > 0) {
+	// PW-3c: a junction is composed in the module of the parents that fan out to it (`expose_on_parent`), its left
+	// end's when both or neither do. Its service takes both ends' repositories, so a junction both parents use across
+	// two modules makes them depend on each other: refused below, as a module cycle.
+	const ownerModule = new Map(moduleOf);
+	const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+	const usersOf = (junction: string): string[] => [
+		...new Set(
+			graph.edges
+				.filter((e) => e.reason === 'junction_fan_out' && e.toOwner === junction)
+				.map((e) => moduleOf.get(nodeById.get(e.from)?.owner ?? ''))
+				.filter((m): m is string => m !== undefined),
+		),
+	];
+	const junctionPlans = relations.junctions
+		.filter((j) => j.between.length === 2)
+		.map((j) => ({ ...junctionIdentity(j), left: j.between[0]!, right: j.between[1]! }))
+		.sort((a, b) => a.name.localeCompare(b.name));
+	for (const j of junctionPlans) {
+		if (!moduleOf.has(j.left)) throw new Error(`[codegen] wiring: junction '${j.name}' names '${j.left}', which has no entity YAML in the set`);
+		const users = usersOf(j.name);
+		const module = users.length === 1 ? users[0]! : moduleOf.get(j.left)!;
+		plans.get(module)!.junctions.push({ name: j.name, plural: j.plural, left: j.left, right: j.right });
+		ownerModule.set(j.name, module);
+	}
+	// Modules depend on each other one way (wiring orders them, and each module's type names the others').
+	const nodeOwner = new Map(graph.nodes.map((n) => [n.id, n.owner]));
+	const moduleDeps = new Map<string, Set<string>>([...plans.keys()].map((m) => [m, new Set<string>()]));
+	for (const e of graph.edges) {
+		const from = ownerModule.get(nodeOwner.get(e.from) ?? '');
+		const to = ownerModule.get(e.toOwner);
+		if (from && to && from !== to) moduleDeps.get(from)!.add(to);
+	}
+	const cycle = firstCycle(moduleDeps);
+	if (cycle) {
+		// The junctions on the cycle: their ends' modules are both in it, and they span two modules.
+		const inCycle = new Set(cycle);
+		const crossing = junctionPlans
+			.filter((j) => {
+				const ends = [moduleOf.get(j.left), moduleOf.get(j.right)];
+				return ends[0] !== ends[1] && ends.every((m) => m !== undefined && inCycle.has(m));
+			})
+			.map((j) => j.name);
 		throw new Error(
-			`[codegen] wiring: pattern-stack composes one module per context, and modules must depend on each other one way; ` +
-				`these depend on each other in a cycle: ${moduleCycles.map((c) => c.join(' → ')).join('; ')}`,
+			`[codegen] wiring: plain composes one module per context, and modules must depend on each other one way; ` +
+				`these depend on each other in a cycle: ` +
+				`${cycle.join(' → ')}` +
+				(crossing.length > 0
+					? ` (a junction across two modules makes them depend on each other: ${crossing.join(', ')})`
+					: ''),
 		);
 	}
+
 	const blockOf = new Map(definitions.map((d) => [d.entity.name, d.entity]));
 	const wiringFile = (entity: string) => entityModuleNaming(blockOf.get(entity)!, modulesDir).wiringFile;
+	const junctionWiringFileOf = (j: JunctionPlan) => junctionWiringFile(j.name, modulesDir);
 
 	const registryFile = path.join(generatedDir, COMPOSITION_GENERATED_FILES.registry);
 	const relationsFile = path.join(generatedDir, 'relations.ts');
@@ -180,13 +266,34 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 			const args = ['db', ...(base ? [repoRef(base.toOwner)] : [])];
 			repositoryLines.push(`  const ${repoVar(node.owner)} = ${repositoryFactoryName(node.owner)}(${args.join(', ')});`);
 		}
+		// PW-3c: each junction's repository, then its service over both ends' repositories (the ends' services take it).
+		const junctionServiceVar = (name: string) => junctionServicePropertyName(name);
+		for (const j of plan.junctions) {
+			repositoryLines.push(`  const ${repoVar(j.name)} = create${repositoryClassName(j.name)}(db);`);
+		}
+		const junctionLines = plan.junctions.map(
+			(j) =>
+				`  const ${junctionServiceVar(j.name)} = create${serviceClassName(j.name)}({ repository: ${repoVar(j.name)}, ` +
+				`left: ${repoRef(j.left)}, right: ${repoRef(j.right)} });`,
+		);
+		const ownJunctions = new Set(plan.junctions.map((j) => j.name));
 
 		// Phase 2: each entity's service and use cases, taking its repository and the composed ones (#632).
 		const serviceLines: string[] = [];
 		for (const entity of plan.entities) {
+			const service = graph.nodes.find((n) => n.owner === entity && n.role === 'service');
+			if (!service) throw new Error(`[codegen] wiring: '${entity}' has no service in the class graph`);
+			const fannedOut = graph.edges.filter((e) => e.from === service.id && e.reason === 'junction_fan_out');
+			for (const e of fannedOut) {
+				// Every junction an entity fans out to is its own module's (a cross-module one is refused above as a cycle).
+				if (!ownJunctions.has(e.toOwner)) {
+					throw new Error(`[codegen] wiring: '${entity}' fans out to junction '${e.toOwner}', which module '${plan.name}' does not compose`);
+				}
+			}
 			const fields = [
 				`repository: ${repoVar(entity)}`,
 				...composedRepositoryOwners(graph, entity).map((owner) => `${repositoryPropertyName(owner)}: ${repoRef(owner)}`),
+				...fannedOut.map((e) => `${junctionServicePropertyName(e.toOwner)}: ${junctionServiceVar(e.toOwner)}`),
 			];
 			serviceLines.push(`  const ${camelCase(entity)} = ${servicesFactoryName(entity)}({ ${fields.join(', ')} });`);
 		}
@@ -205,6 +312,10 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 				(e) =>
 					`import { ${wiringImports(e).module.join(', ')} } from '${relativeImport(plan.file, wiringFile(e))}';`,
 			),
+			...plan.junctions.map(
+				(j) =>
+					`import { create${repositoryClassName(j.name)}, create${serviceClassName(j.name)} } from '${relativeImport(plan.file, junctionWiringFileOf(j))}';`,
+			),
 		];
 		const depsType = [
 			'database: { db: DrizzleClient<Relations> }',
@@ -213,7 +324,8 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 		const content = `${input.banner}
 /**
  * The ${plan.name} module (PW-3): ${plan.entities.join(', ')}, composed with no DI container.
- * Every repository first, then every service and its use cases (entities compose each other's repositories).
+ * Every repository first, then each junction's service, then every service and its use cases (entities compose each
+ * other's repositories, and fan out to the junctions between them).
  */
 ${imports.join('\n')}
 
@@ -224,11 +336,10 @@ ${plan.entities.map((e) => `  ${camelCase(e)}: ${repositoryPortName(e)};`).join(
 
 export function compose${pascalCase(plan.name)}(deps: { ${depsType} }) {
   const { db } = deps.database;
-${repositoryLines.join('\n')}
-${serviceLines.join('\n')}
+${[...repositoryLines, ...junctionLines, ...serviceLines].join('\n')}
   return {
     repositories: { ${plan.entities.map((e) => `${camelCase(e)}: ${repoVar(e)}`).join(', ')} } satisfies ${bundleType},
-${plan.entities.map((e) => `    ${camelCase(e)},`).join('\n')}
+${plan.junctions.length > 0 ? `    junctions: { ${plan.junctions.map((j) => `${camelCase(j.name)}: ${junctionServiceVar(j.name)}`).join(', ')} },\n` : ''}${plan.entities.map((e) => `    ${camelCase(e)},`).join('\n')}
   };
 }
 
@@ -300,8 +411,8 @@ ${entities.map((e) => `  ${registerSchemasName(e)}(openApi);`).join('\n')}
 }
 
 /**
- * The entities whose `<entity>.wiring.ts` is missing, or doesn't export what the composition imports from it (a file an
- * older codegen wrote). `entity new <one>` re-renders only that entity's, so the composition would not compile; the CLI
+ * The entities and junctions whose `.wiring.ts` is missing, or doesn't export what the composition imports from it (a
+ * file an older codegen wrote, or a junction `junction new` hasn't generated yet). `entity new <one>` re-renders only that entity's, so the composition would not compile; the CLI
  * names them and says to run `entity new --all`.
  */
 export function wiringFilesBehind(input: Pick<CompositionInput, 'relations' | 'modulesDir'>): string[] {
@@ -313,6 +424,14 @@ export function wiringFilesBehind(input: Pick<CompositionInput, 'relations' | 'm
 		const { module, openApi } = wiringImports(e);
 		const exports = [...module, ...openApi].map((name) => name.replace(/^type /, ''));
 		if (!exports.every((name) => new RegExp(`export (function|type) ${name}\\b`).test(text))) behind.push(e);
+	}
+	// PW-3c: each junction's, which `junction new` writes.
+	for (const j of input.relations.junctions.filter((x) => x.between.length === 2)) {
+		const { name } = junctionIdentity(j);
+		const file = junctionWiringFile(name, input.modulesDir);
+		const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+		const exports = [`create${repositoryClassName(name)}`, `create${serviceClassName(name)}`];
+		if (!exports.every((n) => new RegExp(`export function ${n}\\b`).test(text))) behind.push(name);
 	}
 	return behind.sort();
 }

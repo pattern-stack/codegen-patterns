@@ -78,6 +78,11 @@ export interface BarrelGeneratorOptions {
 	dryRun?: boolean;
 	/** Write `modules.ts` (the Nest modules barrel). False for a storage-only target (TGT-2b). Default true. */
 	modulesBarrel?: boolean;
+	/**
+	 * Put the junctions' tables in the schema barrel. Defaults to `modulesBarrel`; plain wiring (PW-3c) writes no
+	 * modules barrel but has junctions.
+	 */
+	junctions?: boolean;
 }
 
 export interface BarrelResult {
@@ -308,6 +313,7 @@ export async function regenerateBarrels(
 		generatedDir,
 		dryRun = false,
 		modulesBarrel = true,
+		junctions = modulesBarrel,
 	} = opts;
 	const cwd = ctx.cwd;
 	// The resolved `paths` block (PATH-0): `modules_dir` places the modules.
@@ -338,12 +344,12 @@ export async function regenerateBarrels(
 	// All three feed through entityFilePaths() so the import-depth fix from
 	// commit 01bb917 covers junctions automatically.
 	// A storage-only target (TGT-2b) has entity tables only: `junction new` / `relationship new` refuse it, so their
-	// modules are not in its barrel.
+	// modules are not in its barrel. Plain wiring (PW-3c) has junction tables but no relationship pipeline yet.
 	const entities = generating(modulesAbs, () =>
 		[
 			...collectEntities(entitiesDir, nonEntityDirs),
 			...(modulesBarrel ? collectRelationships(relationshipsDir) : []),
-			...(modulesBarrel ? collectJunctions(junctionsDir) : []),
+			...(junctions ? collectJunctions(junctionsDir) : []),
 		].sort((a, b) => a.name.localeCompare(b.name)),
 	);
 	const modulesContent = generating(modulesAbs, () =>

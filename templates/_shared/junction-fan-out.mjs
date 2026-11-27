@@ -25,7 +25,7 @@ import { junctionName, junctionPlural } from '../../src/config/junction-naming.j
 import { junctionsDirFor } from '../../src/config/junctions-dir.js';
 import { findYamlFiles } from '../../src/utils/find-yaml-files.js';
 import { camelCase, emittedStem } from '../../src/config/file-naming.js';
-import { pascalCase } from '../../src/derived/api/names.js';
+import { junctionServicePropertyName, pascalCase } from '../../src/derived/api/names.js';
 import { hasIdentityRole } from '../../src/schema/junction-definition.schema.js';
 import { entityModuleNaming, relativeModuleDir } from './entity-naming.mjs';
 
@@ -56,7 +56,7 @@ export function junctionNaming(name, modulesDir) {
     serviceClass: `${pascal}Service`,
     moduleClass: `${pascalCase(plural)}Module`,
     linkInputType: `${pascal}LinkInput`,
-    serviceProperty: `${camelCase(name)}Service`,
+    serviceProperty: junctionServicePropertyName(name),
   };
 }
 

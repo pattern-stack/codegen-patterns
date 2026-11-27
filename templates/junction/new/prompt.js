@@ -34,6 +34,8 @@ import {
 import { loadRuntimeMode, runtimeImport } from "../../../src/config/runtime-mode.mjs";
 import { processFieldFeatures, processFields } from "../../entity/new/backend/entity-locals.js";
 import { renderersFor } from "../../../src/targets/renderers.js";
+import { isPlainWiring } from "../../../src/targets/apps.js";
+import { junctionWiringFile } from "../../../src/config/junction-naming.js";
 import { sqlTableName } from "../../../src/config/table-naming.js";
 import { onDeleteAction } from "../../../src/derived/constraints/on-delete.js";
 import { loadOwnedTableNames } from "../../entity/new/prompt.js";
@@ -104,12 +106,14 @@ function processPayloadFields(fields, junctionName, naming, ownedTables, { colum
 // Output Path Resolution
 // ============================================================================
 
-function resolveOutputPaths(junction) {
+function resolveOutputPaths(junction, plainWiring, modulesDir) {
   return {
     entity:     `${junction.entityFile}.ts`,
     repository: junction.repositoryFile,
     service:    junction.serviceFile,
-    module:     junction.moduleFile,
+    // PW-3c: plain wiring has no Nest module; the junction's `.wiring.ts` builds its classes instead.
+    module:     plainWiring ? null : junction.moduleFile,
+    wiring:     plainWiring ? junctionWiringFile(junction.name, modulesDir) : null,
     index:      `${junction.moduleDir}/index.ts`,
   };
 }
@@ -275,7 +279,9 @@ export default {
     // Output paths
     // ======================================================================
 
-    const outputPaths = resolveOutputPaths(junction);
+    // PW-3c: `target.wiring: plain` — no decorators, no Nest module; a `.wiring.ts` instead.
+    const plainWiring = isPlainWiring(config_.target);
+    const outputPaths = resolveOutputPaths(junction, plainWiring, modulesDir);
 
     // The service's `LinkInput` — the link-side columns a caller supplies on
     // attach: the base columns this junction emits, the identity role and the
@@ -528,6 +534,7 @@ export default {
 
       // Output paths
       outputPaths,
+      plainWiring,
 
       // Class names
       classNames,

@@ -1,0 +1,9 @@
+# Plain-wiring smoke (PW-3c): a junction inside one module. Its service takes account's and tag's repositories, and
+# both parents' services take it (the fan-out), so crm builds every repository, then this service, then the parents'.
+# The junction service's `detach` deletes by an `id` junction tables don't have (`table has no column 'id'`), under
+# Nest too: reported separately, so the usage check removes its link row with Drizzle instead.
+pattern: Junction
+between: [account, tag]
+fields:
+  note:
+    type: string
