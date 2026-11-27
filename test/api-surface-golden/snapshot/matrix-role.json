@@ -861,7 +861,8 @@
 					}
 				],
 				"includeRoutes": [],
-				"includesConst": "CALLS_API_INCLUDES"
+				"includesConst": "CALLS_API_INCLUDES",
+				"routesFunction": "callRoutes"
 			}
 		}
 	}

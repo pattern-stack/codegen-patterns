@@ -415,6 +415,7 @@
 				"routes": [],
 				"includeRoutes": [],
 				"includesConst": "AUDIT_ENTRIES_API_INCLUDES",
+				"routesFunction": "auditEntryRoutes",
 				"disabledBy": {
 					"doc": {
 						"kind": "entity",
@@ -898,6 +899,7 @@
 				"routes": [],
 				"includeRoutes": [],
 				"includesConst": "SYNC_CURSORS_API_INCLUDES",
+				"routesFunction": "syncCursorRoutes",
 				"disabledBy": {
 					"doc": {
 						"kind": "entity",

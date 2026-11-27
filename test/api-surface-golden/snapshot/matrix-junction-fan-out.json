@@ -659,7 +659,8 @@
 					}
 				],
 				"includeRoutes": [],
-				"includesConst": "MEMBERS_API_INCLUDES"
+				"includesConst": "MEMBERS_API_INCLUDES",
+				"routesFunction": "memberRoutes"
 			}
 		},
 		"skill": {
@@ -1319,7 +1320,8 @@
 					}
 				],
 				"includeRoutes": [],
-				"includesConst": "SKILLS_API_INCLUDES"
+				"includesConst": "SKILLS_API_INCLUDES",
+				"routesFunction": "skillRoutes"
 			}
 		},
 		"workspace": {
@@ -1947,7 +1949,8 @@
 					}
 				],
 				"includeRoutes": [],
-				"includesConst": "WORKSPACES_API_INCLUDES"
+				"includesConst": "WORKSPACES_API_INCLUDES",
+				"routesFunction": "workspaceRoutes"
 			}
 		}
 	}

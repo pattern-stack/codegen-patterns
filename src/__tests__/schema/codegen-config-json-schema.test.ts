@@ -57,7 +57,7 @@ describe('target: in the JSON Schema is TARGET_PAIRS', () => {
 		['TGT-0 key, { data: drizzle-pg }', { data: 'drizzle-pg' }],
 		['one key, { database: postgres }', { database: 'postgres' }],
 		['an empty object (written, both keys are required)', {}],
-		['an axis with one value, http', { database: TARGET_PAIRS[0].database, orm: TARGET_PAIRS[0].orm, http: 'hono' }],
+		['an http value no app has', { database: TARGET_PAIRS[0].database, orm: TARGET_PAIRS[0].orm, http: 'express' }],
 		['a bare string', 'drizzle-postgres'],
 	];
 

@@ -58,7 +58,7 @@ import {
 	writePlan,
 	type InitPlan,
 } from '../shared/init-scaffold.js';
-import { TARGET_WIRINGS, type TargetWiring } from '../../targets/apps.js';
+import { supportedTargetApps, TARGET_WIRINGS, targetAppRow, type TargetHttp, type TargetWiring } from '../../targets/apps.js';
 import { SUBSYSTEMS } from '../shared/subsystem-detect.js';
 import { ProjectUpgradeOpenapiCommand } from './project-upgrade-openapi.js';
 import { ProjectUpgradeAuthCommand } from './project-upgrade-auth.js';
@@ -157,6 +157,7 @@ export class ProjectInitCommand extends Command {
 			['Initialize with defaults (package runtime)', 'codegen project init --yes'],
 			['Vendored runtime (legacy @shared/** model)', 'codegen project init --yes --runtime vendored'],
 			['No NestJS: modules composed with @pattern-stack/wiring', 'codegen project init --yes --wiring pattern-stack'],
+			['No NestJS, with Hono routes over the commands', 'codegen project init --yes --wiring pattern-stack --http hono'],
 			['Preview without writing', 'codegen project init --dry-run'],
 			['Create tsconfig if missing', 'codegen project init --yes --with-tsconfig'],
 			['Overwrite existing shims', 'codegen project init --force'],
@@ -172,6 +173,7 @@ export class ProjectInitCommand extends Command {
 	runtime = Option.String('--runtime', 'package');
 	// `target.wiring` (PW-4): `nest` or `pattern-stack`. Absent ⇒ the existing config's, else `nest`.
 	wiring = Option.String('--wiring', { required: false });
+	http = Option.String('--http', { required: false });
 	// Vendor consumer skills into .claude/skills by default; opt out with --no-skills.
 	skills = Option.Boolean('--skills', true);
 	json = Option.Boolean('--json', false);
@@ -196,6 +198,11 @@ export class ProjectInitCommand extends Command {
 			printError(`--wiring '${this.wiring}' is not recognized (expected ${TARGET_WIRINGS.map((w) => `'${w}'`).join(' or ')}).`);
 			return 1;
 		}
+		// H-1b: `--http` picks the HTTP layer; the pair must be one of TARGET_APPS' rows.
+		if (this.http !== undefined && !targetAppRow({ wiring: this.wiring ?? 'pattern-stack', http: this.http })) {
+			printError(`--wiring ${this.wiring ?? 'pattern-stack'} --http ${this.http} is not a supported app; supported: ${supportedTargetApps().join(', ')}`);
+			return 1;
+		}
 
 		let plan: InitPlan;
 		try {
@@ -206,6 +213,7 @@ export class ProjectInitCommand extends Command {
 				skipScan: false,
 				runtimeMode,
 				wiring: this.wiring as TargetWiring | undefined,
+				http: this.http as TargetHttp | undefined,
 			});
 		} catch (err) {
 			if (!(err instanceof InitRefusal)) throw err;
@@ -308,7 +316,9 @@ export class ProjectInitCommand extends Command {
 		console.log('');
 		printInfo('Next steps:');
 		console.log('  1. Install the peer and dev dependencies (npm / pnpm: same packages):');
-		for (const line of INSTALL_LINES[plan.summary.wiring]) {
+		// H-1b: the HTTP layer's packages, from its row (none for `http: none`).
+		const httpLine = plan.summary.httpPackages.length > 0 ? [`bun add ${plan.summary.httpPackages.join(' ')}`] : [];
+		for (const line of [...INSTALL_LINES[plan.summary.wiring], ...httpLine]) {
 			console.log(`       ${theme.system(line)}`);
 		}
 		console.log(

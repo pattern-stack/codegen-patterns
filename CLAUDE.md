@@ -463,6 +463,10 @@ once (`apiSurface.commands`), printed by `commands.ejs.t` into `<entity>.command
 throws for a caller's mistake becomes a refusal by one table, `runtime/commands.ts` (`refusalOf`), whose `data` is the
 body the Nest target sends for it, from that error's own owner (`errorBody`, `constraintViolationBody`,
 `validationErrorBody`). Every way in (HTTP, MCP, a CLI) calls `invokeCommand`; never re-translate errors in a view.
+Under `http: hono` (H-1b) each entity's `<entity>.routes.ts` is a view of its commands: bind, `invokeCommand`,
+`answer` (`runtime/http/hono.ts`: `REFUSAL_STATUS` is the one reason → status table); `<generated>/http.ts`'s
+`createApp(app)` mounts them. What an HTTP layer emits is its row in `HTTP_LAYERS` (`src/targets/http.ts`) and
+`HTTP_RENDERERS` (`src/emitters/http/`); the port is the layer's setting. `just test-smoke-hono` holds it.
 
 ### Entity Families
 
@@ -565,7 +569,7 @@ late), and the smoke gate fails on a dangling `$ref` or a prefill its own DTO re
 - **Tarball smoke**: `just test-post-publish` — pack all publishable packages, install into a fresh tmp project via npm, verify the consumer contract (files manifest, exports, bins, peer ranges), then re-run the smoke harness with the CLI/templates/runtime coming from the installed tarball (`SMOKE_TARBALL` mode). Gates every CI publish via `just publish-ci`. Catches the works-from-checkout-broken-from-tarball class (#190)
 - **Baseline tests**: `just test-baseline` — generate the closed entity set in `test/fixtures/entities/` (config `test/fixtures/codegen.config.yaml`) into repo-root `packages/api/src/` — the clean-lite-ps module tree plus the two cross-entity post-steps the CLI runs (the ADR-017 `modules.ts` / `schema.ts` barrels and REL-1's `relations.ts` manifest) — typecheck it against the in-repo runtime (`test/tsconfig.baseline.json`, which maps `@shared/*` onto `runtime/` and `@gen/*` onto the generated backend root so the scaffold's `database.module.ts` resolves its manifest import), and compare to `test/baseline/` snapshots. One pass, as `entity new --all` runs it: every hygen call gets the whole fixture set as `--renderSet` (`entityNewArgs`, #815), so a `has_many` onto an entity later in the run is wired without a seeding pass. Start from pristine state — the runner wipes the generated directories on each run.
 - **CI** (`.github/workflows/ci.yml`), on every PR to `main` and every push to `main`:
-  - job `test-all` → `just test-all` = `typecheck` + `test-unit` + `test-baseline` + `test-smoke` + `test-smoke-subsystems` + `test-smoke-relationship` + `test-smoke-junction` + `test-smoke-junction-cross-domain` + `test-smoke-capability` + `test-smoke-frontend` + `test-junction` + `test-sqlite` + `test-integration-emit` + `test-smoke-integration` + `test-studio` + `test-wiring` + `test-smoke-pattern-stack`
+  - job `test-all` → `just test-all` = `typecheck` + `test-unit` + `test-baseline` + `test-smoke` + `test-smoke-subsystems` + `test-smoke-relationship` + `test-smoke-junction` + `test-smoke-junction-cross-domain` + `test-smoke-capability` + `test-smoke-frontend` + `test-junction` + `test-sqlite` + `test-integration-emit` + `test-smoke-integration` + `test-studio` + `test-wiring` + `test-smoke-pattern-stack` + `test-smoke-hono`
   - job `test-integration` → `just test-integration` (needs Docker, hence its own job)
   - `publish` requires both.
 - **Adding a gate:** put it in `just test-all`, or give it a CI job. A gate that runs nowhere in CI rots — all three gates in #599 were red on `main` for exactly that reason.

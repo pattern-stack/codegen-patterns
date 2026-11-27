@@ -246,6 +246,11 @@ typecheck: build-jobs build-wiring
 test-smoke-pattern-stack:
     bun test/smoke/run-smoke-pattern-stack.ts
 
+# Hono smoke (H-1b): a `target: { wiring: pattern-stack, http: hono }` project compiles with no @nestjs package, serves
+# its routes and stops on SIGTERM. Its Postgres leg (the request script) runs in the integration job.
+test-smoke-hono:
+    bun test/smoke/run-smoke-hono.ts
+
 # @pattern-stack/wiring (PW-2): its tests (crew's, ported, plus start / stop), then `tsc` over the package,
 # tests included, so the type assertions (expect-error directives) are checked too.
 test-wiring:
@@ -285,7 +290,7 @@ test-studio:
 # Run all tests. Docker-free by design — `just test-integration` needs Docker
 # and runs as its own CI job (see .github/workflows/ci.yml) so a Docker flake
 # cannot mask this suite.
-test-all: typecheck test-unit test-jobs test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-capability test-junction test-sqlite test-integration-emit test-smoke-integration test-smoke-frontend test-studio test-wiring test-smoke-pattern-stack
+test-all: typecheck test-unit test-jobs test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-capability test-junction test-sqlite test-integration-emit test-smoke-integration test-smoke-frontend test-studio test-wiring test-smoke-pattern-stack test-smoke-hono
 
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 

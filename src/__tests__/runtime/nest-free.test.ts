@@ -41,6 +41,8 @@ const ENTRIES = [
   'validation-error.ts',
   // ID-1: the requester port H-2's middleware calls.
   'requester.ts',
+  // H-1b: the Hono view of the commands.
+  'http/hono.ts',
   ...NEST_FREE_SUBSYSTEMS.map((name) => `subsystems/${name}/core.ts`),
   // S-1: the event bus backends the pattern-stack `events` system constructs (imported by path, the selected one only).
   'subsystems/events/event-bus.drizzle-backend.ts',

@@ -615,6 +615,7 @@
 			}
 		],
 		"includeRoutes": [],
-		"includesConst": "USERS_API_INCLUDES"
+		"includesConst": "USERS_API_INCLUDES",
+		"routesFunction": "userRoutes"
 	}
 }

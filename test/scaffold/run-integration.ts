@@ -157,6 +157,14 @@ async function run() {
     );
     if (patternStackResult.exitCode !== 0) exitCode = patternStackResult.exitCode ?? 1;
 
+    // H-1b: a pattern-stack + Hono project's request script on this Postgres: each status and body as Nest sends it.
+    console.log('==> Hono: routes over the commands on Postgres...');
+    const honoResult = Bun.spawnSync(
+      ['bun', 'test/smoke/run-smoke-hono.ts', '--postgres', ENV.SCAFFOLD_DATABASE_URL],
+      { cwd: REPO_ROOT, stdio: ['inherit', 'inherit', 'inherit'], env: { ...process.env, ...ENV } },
+    );
+    if (honoResult.exitCode !== 0) exitCode = honoResult.exitCode ?? 1;
+
     if (exitCode === 0) {
       console.log('\n==> All integration tests passed');
     } else {

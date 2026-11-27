@@ -16,6 +16,8 @@ import path from 'node:path';
 import { camelCase } from '../../config/file-naming.js';
 import type { LoadedProvider } from '../../parser/validate-providers.js';
 import { isActiveProvider } from '../../schema/provider-definition.schema.js';
+import { HTTP_LAYERS } from '../../targets/http.js';
+import type { TargetHttp } from '../../targets/apps.js';
 import { TOKEN_ENCRYPTION_KEY_ENV } from '../../../runtime/subsystems/auth/backends/encryption-key/env.js';
 import type { SettingFormat } from '../../../runtime/settings.js';
 
@@ -185,6 +187,8 @@ export interface DeriveProjectSettingsInput {
 	cwd?: string;
 	/** The project's `target.wiring`: a subsystem setting read under one wiring only is listed under that one. */
 	wiring?: TargetWiring;
+	/** The pattern-stack target's `http` (H-1b): its layer's settings (`HTTP_LAYERS`, the port) are included. */
+	http?: TargetHttp;
 }
 
 /**
@@ -193,6 +197,9 @@ export interface DeriveProjectSettingsInput {
  */
 export function deriveProjectSettings(input: DeriveProjectSettingsInput): ProjectSetting[] {
 	const out: ProjectSetting[] = PROJECT_SETTINGS.map((s) => ({ ...s, owner: { kind: 'project', name: 'project' }, source: TABLE }));
+	for (const s of (input.http ? rowFor('target.http', HTTP_LAYERS, input.http)?.settings : undefined) ?? []) {
+		out.push({ ...s, secret: false, owner: { kind: 'project', name: 'project' }, source: `src/targets/http (codegen): ${input.http}` });
+	}
 	const byWiring = rowFor('target.wiring', SUBSYSTEM_SETTINGS_BY_WIRING, input.wiring ?? 'nest');
 	for (const name of [...new Set([...Object.keys(SUBSYSTEM_SETTINGS), ...Object.keys(byWiring)])].sort()) {
 		if (!input.installedSubsystems.includes(name)) continue;

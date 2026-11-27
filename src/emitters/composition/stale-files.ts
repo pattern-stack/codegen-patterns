@@ -9,7 +9,8 @@
  *   `module.ts`) and `<generated>/modules.ts` — plus any context `module.ts` the current composition no longer writes
  *   (a context renamed or emptied).
  * - Going **nest**: the pattern-stack files — every context `module.ts`, every `*.wiring.ts` and `*.commands.ts` (H-1),
- *   `<generated>/wiring.ts`, `<generated>/commands.ts`, `<generated>/composition.ts` and `<generated>/openapi.ts`.
+ *   `<generated>/wiring.ts`, `<generated>/commands.ts`, `<generated>/composition.ts` and `<generated>/openapi.ts`, and an
+ *   HTTP layer's (`*.routes.ts`, `<generated>/http.ts`, H-1b). Going pattern-stack with no HTTP layer removes those too.
  * - Under `<backend_src>/integrations` (S-3): going pattern-stack, the Nest integration files (`*.module.ts`,
  *   `*.tokens.ts`, the adapters barrels); going nest, the pattern-stack ones (`*.system.ts`, `<slug>.provider.ts`, the
  *   `integrations` module). The author-owned scaffolds of the other wiring stay: `otherWiringScaffolds` names them.
@@ -17,6 +18,13 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { HTTP_LAYERS, type PatternStackHttpLayer } from '../../targets/http.js';
+
+/** The routes-file suffixes of every HTTP layer but `current` (H-1b). */
+function otherRoutesSuffixes(current: PatternStackHttpLayer | null): string[] {
+	const all = Object.values(HTTP_LAYERS).flatMap((l: PatternStackHttpLayer | null) => (l ? [l.routesFileSuffix] : []));
+	return all.filter((s) => s !== current?.routesFileSuffix);
+}
 
 import type { TargetWiring } from '../../targets/apps.js';
 import { isCodegenBanner, SCAFFOLD_SENTINEL } from '../../utils/generated-file.js';
@@ -66,6 +74,8 @@ export function removeOtherWiringFiles(input: {
 	keep?: ReadonlySet<string>;
 	/** `<backend_src>/integrations` (S-3). */
 	integrationsDir?: string;
+	/** Pattern-stack only: the target's HTTP layer (H-1b); every other layer's routes files are removed. */
+	httpLayer?: PatternStackHttpLayer | null;
 	dryRun?: boolean;
 }): string[] {
 	const { wiring, modulesDir, generatedDir } = input;
@@ -85,11 +95,16 @@ export function removeOtherWiringFiles(input: {
 					path.join(generatedDir, 'modules.ts'),
 					// The generated systems (settings, events, integration, auth, connections), once their subsystem is no longer installed.
 					...GENERATED_SYSTEM_FILES.map((f) => path.join(generatedDir, f)).filter((f) => !keep.has(f)),
+					// H-1b: an HTTP layer's files, once the target has none (or another).
+					...underModules.filter((f) => otherRoutesSuffixes(input.httpLayer ?? null).some((s) => f.endsWith(s))),
+					...[path.join(generatedDir, 'http.ts')].filter((f) => !keep.has(f)),
 				]
 			: [
 					...underModules.filter((f) => path.basename(f) === 'module.ts' || f.endsWith('.wiring.ts') || f.endsWith('.commands.ts')),
 					...Object.values(COMPOSITION_GENERATED_FILES).map((f) => path.join(generatedDir, f)),
 					...GENERATED_SYSTEM_FILES.map((f) => path.join(generatedDir, f)),
+					path.join(generatedDir, 'http.ts'),
+					...underModules.filter((f) => otherRoutesSuffixes(null).some((s) => f.endsWith(s))),
 				];
 	const stale = [...candidates, ...integrationCandidates].filter((f) => !keep.has(f) && fs.existsSync(f) && isGenerated(f));
 	if (!input.dryRun) for (const f of stale) fs.rmSync(f);

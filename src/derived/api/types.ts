@@ -272,6 +272,8 @@ export interface EntityApiSurface {
 		includes?: { route: string; maxDepth: number; paths: { path: string; depth: number }[] }[];
 		/** The generated allowlist constant's name. */
 		includesConst: string;
+		/** Under `http: hono`, the function in `<entity>.routes.ts` that builds its routes (H-1b). */
+		routesFunction: string;
 	};
 }
 

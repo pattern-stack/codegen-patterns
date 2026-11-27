@@ -50,6 +50,7 @@ import {
   moduleImports,
 } from '../../../../src/derived/wiring/classes.js';
 import { isPatternStackWiring } from '../../../../src/targets/apps.js';
+import { patternStackHttpLayer } from '../../../../src/targets/http.js';
 import { arrayElementType, deriveFieldFacts, isArrayType } from '../../../../src/derived/columns/fields.js';
 import { columnRendererFor } from '../../../../src/targets/columns.js';
 import { constraintRendererFor } from '../../../../src/targets/constraints.js';
@@ -97,7 +98,7 @@ import { behaviorWithTimezone } from '../../../../src/schema/field-timestamp.js'
 import { resolveTenancy } from '../../../../src/schema/tenancy.js';
 import { matchPairsOf } from '../../../../src/schema/inheritance.js';
 import { sqlTableName } from '../../../../src/config/table-naming.js';
-import { rewriteSharedImport, subsystemsImport } from '../../../../src/config/runtime-mode.mjs';
+import { rewriteSharedImport, runtimeImport, subsystemsImport } from '../../../../src/config/runtime-mode.mjs';
 import { DEFAULT_CODEGEN_CONFIG } from '../../../../src/config/project-config.js';
 import {
   ACTOR_CAPABILITY,
@@ -2525,6 +2526,9 @@ export function buildBackendLocals(definition, baseLocals) {
     });
   };
 
+  // H-1b: the pattern-stack target's HTTP layer (`HTTP_LAYERS`, src/targets/http.ts), or null for none.
+  const httpLayer = patternStackWiring ? patternStackHttpLayer(baseLocals.target) : null;
+  const httpRuntimeImport = httpLayer ? runtimeImport(runtimeMode, httpLayer.runtimeModule) : null;
   const outputPaths = {
     entity: `${ownNaming.entityFile}.ts`,
     repository: ownNaming.repositoryFile,
@@ -2595,6 +2599,9 @@ export function buildBackendLocals(definition, baseLocals) {
     ...rowFor('target.wiring', WIRING_ENTITY_FILES, baseLocals.target?.wiring ?? 'nest')(ownNaming),
     // ID-1: no commands file when the derivation says its commands are off (`generate.commands: false`).
     ...(apiSurface.commandsDisabledBy ? { commands: null } : {}),
+    // H-1b: its HTTP routes, when the pattern-stack target has an HTTP layer (`HTTP_LAYERS`, src/targets/http.ts) and
+    // the entity has commands to view (`generate.commands: false` ⇒ none).
+    routes: httpLayer && !apiSurface.commandsDisabledBy ? `${moduleDir}/${emittedStem(entityName)}${httpLayer.routesFileSuffix}` : null,
   };
 
   // PW-3: pattern-stack wiring (`target: { wiring: pattern-stack, http: none }`) emits the same table, DTOs, repository, service and use
@@ -3297,6 +3304,7 @@ export function buildBackendLocals(definition, baseLocals) {
     wiring,
     patternStackWiring,
     patternStackWiringParts,
+    httpRuntimeImport,
     // JUNC-0 (#678): the junction fan-out this entity's service + module carry
     junctionFanOut: junctionFanOut,
     // The EAV definition repository is imported + injected by its own block

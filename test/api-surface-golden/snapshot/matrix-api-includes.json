@@ -626,7 +626,8 @@
 					"list",
 					"find_by_id"
 				],
-				"includesConst": "PROJECTS_API_INCLUDES"
+				"includesConst": "PROJECTS_API_INCLUDES",
+				"routesFunction": "projectRoutes"
 			}
 		}
 	}

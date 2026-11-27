@@ -364,10 +364,16 @@ describe('target: — the (database, orm) pair, derived from TARGET_PAIRS (TGT-0
 		);
 		expect(err.issues.join('\n')).toContain('{ wiring: pattern-stack, http: nest } is not a supported app');
 		expect(err.issues.join('\n')).toContain('{ wiring: pattern-stack, http: none }');
+		// H-1b: Hono comes with pattern-stack wiring only; under Nest wiring it is refused, naming the rows.
 		const hono = errorOf(() =>
 			parseCodegenConfig({ target: { database: 'postgres', orm: 'drizzle', http: 'hono' } }, 'x.yaml'),
 		);
-		expect(hono.issues[0]).toContain('http: hono is not one of nest, none');
+		expect(hono.issues[0]).toContain('{ wiring: nest, http: hono } is not a supported app');
+		expect(hono.issues[0]).toContain('{ wiring: pattern-stack, http: hono }');
+		const unknown = errorOf(() =>
+			parseCodegenConfig({ target: { database: 'postgres', orm: 'drizzle', wiring: 'pattern-stack', http: 'express' } }, 'x.yaml'),
+		);
+		expect(unknown.issues[0]).toContain('http: express is not one of nest, none, hono');
 	});
 
 	it('pattern-stack wiring on a storage-only pair is refused until G7', () => {

@@ -861,6 +861,7 @@
             "find_by_id"
           ],
           "includesConst": "ACCOUNTS_API_INCLUDES",
+          "routesFunction": "accountRoutes",
           "includes": [
             {
               "route": "find_by_id",
@@ -1706,7 +1707,8 @@
             }
           ],
           "includeRoutes": [],
-          "includesConst": "CONTACTS_API_INCLUDES"
+          "includesConst": "CONTACTS_API_INCLUDES",
+          "routesFunction": "contactRoutes"
         }
       },
       "opportunity": {
@@ -2426,6 +2428,7 @@
           "routes": [],
           "includeRoutes": [],
           "includesConst": "OPPORTUNITIES_API_INCLUDES",
+          "routesFunction": "opportunityRoutes",
           "disabledBy": {
             "doc": {
               "kind": "entity",

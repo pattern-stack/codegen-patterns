@@ -3,6 +3,7 @@
  * and the NounModule summary/hints behavior.
  */
 
+import { HTTP_LAYERS } from '../../targets/http';
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -663,6 +664,44 @@ describe('writePlan', () => {
 
 const NEST_IMPORT = /from\s+['"](@nestjs\/[^'"]+|reflect-metadata)['"]|import\s+['"](@nestjs\/[^'"]+|reflect-metadata)['"]/;
 
+describe('project init, wiring: pattern-stack, http: hono (H-1b)', () => {
+	test('plans a served main.ts, http.ts and the Hono runtime; the port is a setting', async () => {
+		const cwd = mkTempDir('plan-hono');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true, runtimeMode: 'vendored', wiring: 'pattern-stack', http: 'hono' });
+		const paths = plan.entries.map((e) => e.relPath);
+		for (const p of ['src/generated/http.ts', 'src/generated/commands.ts', 'src/shared/http/hono.ts', 'src/shared/commands.ts']) {
+			expect(paths).toContain(p);
+		}
+		const content = (rel: string) => plan.entries.find((e) => e.relPath === rel)!.content!;
+		const config = (await import('yaml')).parse(content('codegen.config.yaml'));
+		expect(config.target).toEqual({ database: 'postgres', orm: 'drizzle', wiring: 'pattern-stack', http: 'hono' });
+		expect(content('src/main.ts')).toContain("import { serve } from '@hono/node-server';");
+		expect(content('src/main.ts')).toContain("app.system('settings').http.port");
+		expect(content('src/generated/settings.ts')).toContain("env: 'PORT'");
+		expect(content('.env.example')).toContain('# PORT=3000');
+		expect(plan.summary.httpPackages).toEqual(['hono@4', '@hono/node-server@1']);
+	});
+
+	test('refuses an --http the existing config does not say, naming --http', async () => {
+		const cwd = mkTempDir('plan-http-mismatch');
+		fs.writeFileSync(path.join(cwd, 'codegen.config.yaml'), 'target:\n  database: postgres\n  orm: drizzle\n  wiring: pattern-stack\n  http: none\n');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		await expect(buildInitPlan(ctx, { cwd, skipScan: true, http: 'hono' })).rejects.toThrow(/--http hono, but codegen.config.yaml says target.http none/);
+	});
+
+	test('without --http, pattern-stack has no HTTP layer: no http.ts, no Hono runtime, no port', async () => {
+		const cwd = mkTempDir('plan-no-http');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true, runtimeMode: 'vendored', wiring: 'pattern-stack' });
+		const paths = plan.entries.map((e) => e.relPath);
+		expect(paths).not.toContain('src/generated/http.ts');
+		expect(paths).not.toContain('src/shared/http/hono.ts');
+		expect(plan.entries.find((e) => e.relPath === '.env.example')!.content).not.toContain('PORT');
+		expect(plan.summary.httpPackages).toEqual([]);
+	});
+});
+
 describe('project init, wiring: pattern-stack (PW-4)', () => {
 	test('plans the database system, compose.ts, main.ts and an empty composition; no Nest scaffold', async () => {
 		const cwd = mkTempDir('plan-pattern-stack');
@@ -837,6 +876,11 @@ describe('vendoredRuntimeFiles', () => {
 		const plain = vendoredRuntimeFiles('pattern-stack').map((v) => v.runtime);
 		expect(plain).not.toContain('nest-logger.ts');
 		expect(plain).toContain('logger.ts');
-		expect(plain.length).toBe(VENDORED_RUNTIME_FILES.length - 3);
+		// H-1b: and the Hono runtime, which comes only with its layer.
+		expect(plain).not.toContain('http/hono.ts');
+		expect(plain.length).toBe(VENDORED_RUNTIME_FILES.length - 4);
+		const hono = vendoredRuntimeFiles('pattern-stack', HTTP_LAYERS.hono).map((v) => v.runtime);
+		expect(hono).toContain('http/hono.ts');
+		expect(hono.length).toBe(plain.length + 1);
 	});
 });

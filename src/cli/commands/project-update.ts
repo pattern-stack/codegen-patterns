@@ -28,6 +28,7 @@
  * --force-config` for that subsystem.
  */
 
+import { HTTP_LAYERS, patternStackHttpLayer, type PatternStackHttpLayer } from '../../targets/http.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Command, Option } from 'clipanion';
@@ -82,7 +83,9 @@ export function syncVendoredRuntime(ctx: Context, write: boolean): FileChange[] 
 	const { shared } = projectLayout(ctx.cwd, ctx.config);
 	// Under `wiring: pattern-stack`, the closure without the files that import `@nestjs/*` (PW-4).
 	const wiring = targetWiring(configOrDefaults(ctx.config).target);
-	for (const v of vendoredRuntimeFiles(wiring)) {
+	// H-1b: and the target's HTTP layer's runtime files (its `HTTP_LAYERS` row).
+	const httpLayer = patternStackHttpLayer(configOrDefaults(ctx.config).target);
+	for (const v of vendoredRuntimeFiles(wiring, httpLayer)) {
 		const dest = path.join(shared, v.target);
 		const content = loadRuntimeFile(v.runtime);
 		const existing = fs.existsSync(dest) ? fs.readFileSync(dest, 'utf-8') : null;
@@ -99,8 +102,9 @@ export function syncVendoredRuntime(ctx: Context, write: boolean): FileChange[] 
 		changes.push({ path: rel(ctx.cwd, dest), action });
 	}
 	// A file only another wiring vendors (a Nest file left from an earlier init imports `@nestjs/*`, which a
-	// pattern-stack project no longer has) is removed (PW-4).
-	for (const v of otherWiringVendoredFiles(wiring)) {
+	// pattern-stack project no longer has) is removed (PW-4), and so is another HTTP layer's runtime (H-1b: an
+	// `http: hono` project switched to `none` may no longer have the package it imports).
+	for (const v of otherWiringVendoredFiles(wiring, httpLayer)) {
 		const dest = path.join(shared, v.target);
 		if (!fs.existsSync(dest)) continue;
 		if (write) fs.rmSync(dest);

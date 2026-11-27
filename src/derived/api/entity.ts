@@ -42,6 +42,7 @@ import {
 	commandName,
 	commandsConstName,
 	notFoundMessage,
+	routesFunctionName,
 	type JunctionSide,
 	publishedWriteEvent,
 } from './names.js';
@@ -1042,7 +1043,13 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 	const commandsOff = commandsDisabledBy({ generate: definition.generate });
 	const commands = commandsOff ? [] : deriveCommands(entityName, plural, useCases, routes, includeRoute);
 
-	const http: EntityApiSurface['http'] = { enabled, routes, includeRoutes, includesConst: includesConstName(plural) };
+	const http: EntityApiSurface['http'] = {
+		enabled,
+		routes,
+		includeRoutes,
+		includesConst: includesConstName(plural),
+		routesFunction: routesFunctionName(entityName),
+	};
 	if (disabledBy) http.disabledBy = disabledBy;
 
 	return {
