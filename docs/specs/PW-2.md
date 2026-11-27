@@ -31,10 +31,12 @@ after everything is built and stopping in reverse.
     `starting <kind> <name>: …`, with any stop failures appended. The app can then start again.
   - `wired.stop()` stops every part that started, in reverse, including one with a `stop` but no `start`. Every
     `stop` runs even if another throws; the failures are thrown together, each named. Stopping twice, or stopping
-    something never started, does nothing. Starting twice throws.
+    something never started, does nothing. A `stop()` made while another is running returns that one's promise, so
+    overlapping stops (a signal that arrives twice) never stop parts out of order and none resolves early.
+    Starting twice throws.
   - A `stop()` during a `start()` (a SIGTERM at boot) waits for the part starting now, starts nothing more, and
     stops everything that started.
-  - Each failure keeps the original error as its `cause`.
+  - Each failure keeps the original error as its `cause`, a settings checker's included.
   - `compose` refuses a module and a system that share a name, because the settings map is keyed by name.
   - `compose` stays synchronous, and nothing listens for a signal: the app entry owns SIGTERM (plan §5).
 - **Crew is untouched.** It switches its import in a crew PR once the package is published (GAP step 7). Its code

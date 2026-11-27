@@ -55,7 +55,8 @@ process.on('SIGTERM', () => {
   the parts already started are stopped in reverse, and the error names the part that failed. `stop()` runs the
   `stop` of every part that started, in reverse. Every stop runs even when one throws, and the failures are
   reported together, with each original error as the `cause`. A `stop()` that arrives during `start()` waits for
-  the part starting now, starts nothing more, and then stops everything that started. The app entry owns signals:
+  the part starting now, starts nothing more, and then stops everything that started. A second `stop()` while one
+  is running (a signal that arrives twice) returns the same promise. The app entry owns signals:
   nothing here calls `process.on`.
 - **One namespace.** A module and a system can't share a name, because settings are keyed by name.
 - **Settings without a checker.** A system with no checker gets its raw block. A module with no checker gets

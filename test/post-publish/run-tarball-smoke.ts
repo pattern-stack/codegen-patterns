@@ -51,8 +51,11 @@ interface Pkg {
   dir: string;
   name: string;
   version: string;
-  /** The import specifiers of every `exports` key (surface packages only). */
-  exportSpecs?: string[];
+}
+
+/** A surface package: also the import specifiers of every `exports` key. */
+interface SurfacePkg extends Pkg {
+  exportSpecs: string[];
 }
 
 function run(cmd: string, cwd: string): void {
@@ -83,7 +86,7 @@ function check(label: string, ok: boolean, detail?: string): void {
 const rootManifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8'));
 const rootPkg: Pkg = { dir: ROOT, name: rootManifest.name, version: rootManifest.version };
 
-const surfacePkgs: Pkg[] = readdirSync(join(ROOT, 'packages'))
+const surfacePkgs: SurfacePkg[] = readdirSync(join(ROOT, 'packages'))
   .map((entry) => join(ROOT, 'packages', entry))
   .filter((dir) => existsSync(join(dir, 'package.json')))
   .map((dir) => ({ dir, manifest: JSON.parse(readFileSync(join(dir, 'package.json'), 'utf-8')) }))
@@ -235,7 +238,7 @@ for (const bin of ['codegen', 'cdp']) {
 
 for (const pkg of surfacePkgs) {
   console.log(`\n${pkg.name}@${pkg.version} — exports resolve under node:`);
-  for (const spec of pkg.exportSpecs ?? [pkg.name]) {
+  for (const spec of pkg.exportSpecs) {
     const res = tryRun(['node', '--input-type=module', '-e', `await import('${spec}')`], projectDir);
     check(`import('${spec}')`, res.ok, res.ok ? undefined : res.output);
   }

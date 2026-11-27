@@ -131,6 +131,49 @@ describe("start and stop", () => {
     await wired.stop();
   });
 
+  test("two overlapping stops stop each part once, in reverse, and neither resolves before the last hook", async () => {
+    const log: string[] = [];
+    const slow = (name: string) => async () => {
+      log.push(`stop ${name} begins`);
+      await new Promise((r) => setTimeout(r, 5));
+      log.push(`stop ${name} ends`);
+    };
+    const db = defineSystem({ name: "db", uses: [], create: () => ({ open: () => true }), stop: slow("db") });
+    const events = defineSystem({ name: "events", uses: ["db"], create: () => ({ hooks: [] }), stop: slow("events") });
+    const wired = compose({ systems: [db, events], modules: [] });
+    await wired.start();
+    const resolved: string[] = [];
+    const first = wired.stop().then(() => resolved.push(`first after ${log.length} lines`));
+    const second = wired.stop().then(() => resolved.push(`second after ${log.length} lines`));
+    await Promise.all([first, second]);
+    expect(log).toEqual(["stop events begins", "stop events ends", "stop db begins", "stop db ends"]);
+    expect(resolved).toEqual(["first after 4 lines", "second after 4 lines"]);
+  });
+
+  test("a settings checker's failure keeps its cause and its message", () => {
+    const issue = new Error("port: expected a number");
+    const bad = defineSystem({
+      name: "db",
+      uses: [],
+      settings: {
+        parse: () => {
+          throw issue;
+        },
+      },
+      create: () => ({ open: () => true }),
+    });
+    const err = (() => {
+      try {
+        compose({ systems: [bad], modules: [] });
+      } catch (e) {
+        return e as WiringError;
+      }
+    })();
+    expect(err).toBeInstanceOf(WiringError);
+    expect(err?.message).toBe("settings for db: port: expected a number");
+    expect(err?.cause).toBe(issue);
+  });
+
   test("a part with no hooks composes, starts and stops as before", async () => {
     const plain = defineSystem({ name: "db", uses: [], create: () => ({ open: () => true }) });
     const wired = compose({ systems: [plain], modules: [] });

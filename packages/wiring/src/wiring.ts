@@ -79,7 +79,9 @@ export interface Wired<M, S> {
   /**
    * Runs the `stop` of every part that started, in reverse `order`. Every one runs even if another fails; the failures
    * are thrown together after, naming each part (each original error is the `cause`). Stopping what isn't started (or
-   * twice) does nothing. A stop during a start waits for the part starting now, starts no more, then stops them all.
+   * twice, one after the other) does nothing. A stop made while another is running returns that one's promise, so
+   * overlapping stops never stop parts out of order and none resolves before the shutdown is done. A stop during a
+   * start waits for the part starting now, starts no more, then stops them all.
    */
   stop(): Promise<void>;
 }
@@ -126,7 +128,7 @@ function resolve(m: { name: string; settings?: SettingsChecker }, block: unknown
   try {
     return m.settings?.parse(block);
   } catch (e) {
-    throw new WiringError(`settings for ${m.name}: ${(e as Error).message}`);
+    throw new WiringError(`settings for ${m.name}: ${messageOf(e)}`, { cause: e });
   }
 }
 
@@ -175,7 +177,6 @@ export function createWiring<M extends object, S extends object>() {
   }): Wired<M, S> {
     const systems = new Map<string, unknown>();
     const modules = new Map<string, unknown>();
-    const order: string[] = [];
     const built: { kind: "system" | "module"; name: string; manifest: SystemManifest | ModuleManifest; api: unknown }[] =
       [];
     for (const s of orderByNeeds("system", parts.systems, (s) => s.uses)) {
@@ -183,7 +184,6 @@ export function createWiring<M extends object, S extends object>() {
       const api = s.create(pick(systems, s.uses), s.settings ? resolve(s, block) : block);
       systems.set(s.name, api);
       built.push({ kind: "system", name: s.name, manifest: s, api });
-      order.push(s.name);
     }
     for (const m of parts.modules)
       if (systems.has(m.name)) throw new WiringError(`a module and a system are both named ${m.name}`);
@@ -198,12 +198,14 @@ export function createWiring<M extends object, S extends object>() {
       );
       modules.set(m.name, api);
       built.push({ kind: "module", name: m.name, manifest: m, api });
-      order.push(m.name);
     }
     const started: typeof built = [];
     // A start in flight, so a stop that arrives during it (a SIGTERM at boot) can wait for it and stop what it
     // started, instead of leaving it starting loops after stop resolved.
     let starting: Promise<void> | undefined;
+    // A stop in flight, so a second stop (a signal that arrives twice) waits for the same shutdown instead of
+    // popping parts beside it, out of order, and resolving before the last stop hook finishes.
+    let stopping: Promise<void> | undefined;
     let running = false;
     let cancelled = false;
     const stopStarted = async (): Promise<WiringError[]> => {
@@ -235,8 +237,17 @@ export function createWiring<M extends object, S extends object>() {
         started.push(part);
       }
     };
+    const stopAll = async (): Promise<void> => {
+      if (starting) {
+        cancelled = true;
+        await starting.catch(() => undefined);
+      }
+      const failures = await stopStarted();
+      running = false;
+      if (failures.length > 0) throw together(failures);
+    };
     return {
-      order,
+      order: built.map((p) => p.name),
       async start() {
         if (running) throw new WiringError("already started");
         running = true;
@@ -248,14 +259,11 @@ export function createWiring<M extends object, S extends object>() {
           starting = undefined;
         }
       },
-      async stop() {
-        if (starting) {
-          cancelled = true;
-          await starting.catch(() => undefined);
-        }
-        const failures = await stopStarted();
-        running = false;
-        if (failures.length > 0) throw together(failures);
+      stop() {
+        stopping ??= stopAll().finally(() => {
+          stopping = undefined;
+        });
+        return stopping;
       },
       module(name) {
         if (!modules.has(name)) throw new WiringError(`module ${name} wasn't composed`);
