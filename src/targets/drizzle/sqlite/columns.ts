@@ -9,7 +9,8 @@
  * - `json` and arrays → TEXT (`mode: 'json'`); SQLite has no array type.
  * - `enum` → TEXT typed by its choices (`{ enum: [...] }`); the database CHECK is the constraint renderer's.
  * - A `max_length` is a length hint here; SQLite ignores it, so the constraint renderer adds a CHECK.
- * - The `id` is TEXT, made by the application (`crypto.randomUUID()`): SQLite has no uuid function.
+ * - The `id` is TEXT NOT NULL (SQLite lets a non-INTEGER primary key be NULL), made by the application
+ *   (`globalThis.crypto.randomUUID()`): SQLite has no uuid function.
  *
  * Not yet registered: `TARGET_PAIRS` gains `{ database: sqlite, orm: drizzle }` in TGT-2b, with the templates that
  * print this text. Hygen-safe: imports only shipped modules.
@@ -80,7 +81,8 @@ function defaultOf(c: ColumnFact): string {
 	}
 	const v = c.default.value;
 	if (c.kind === 'json' || c.isArray) return `.default(${JSON.stringify(v)})`;
-	if (typeof v === 'boolean' || typeof v === 'number') return `.default(${v})`;
+	// A decimal is TEXT, so its default is a string even when the YAML wrote a number (as Postgres numeric quotes it).
+	if (c.kind !== 'decimal' && (typeof v === 'boolean' || typeof v === 'number')) return `.default(${v})`;
 	return `.default(${quote(String(v))})`;
 }
 
@@ -89,8 +91,9 @@ export function renderSqliteColumn(c: ColumnFact): RenderedColumn {
 	const { drizzleType, chain } = builder(c);
 	let out = chain;
 	if (c.origin === 'id') {
-		out += '.primaryKey()';
-		if (c.generatedId) out += '.$defaultFn(() => crypto.randomUUID())';
+		// NOT NULL too: a non-INTEGER primary key in a (non-STRICT) SQLite table otherwise accepts NULL, more than once.
+		out += '.primaryKey().notNull()';
+		if (c.generatedId) out += '.$defaultFn(() => globalThis.crypto.randomUUID())';
 	} else if (!c.nullable) {
 		out += '.notNull()';
 	}

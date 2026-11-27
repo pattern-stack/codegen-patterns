@@ -44,7 +44,7 @@ YAML ──► deriveTableColumns            src/derived/tables/       ColumnFac
   | instant | `text('x')` | `TEXT`, ISO 8601: UTC with `Z`, or wall-clock without an offset when `timezone: false` |
   | json, arrays | `text('x', { mode: 'json' })` (`.$type<…[]>()` for an array) | `TEXT` |
   | enum | `text('x', { enum: [...] })` + CHECK | `TEXT` + `CHECK (x IN (…))` |
-  | id | `text('id').primaryKey().$defaultFn(() => crypto.randomUUID())` | `TEXT PRIMARY KEY` |
+  | id | `text('id').primaryKey().notNull().$defaultFn(() => globalThis.crypto.randomUUID())` | `TEXT PRIMARY KEY NOT NULL`, because SQLite lets a non-INTEGER primary key hold NULL, repeatedly |
 
   The `now` default is `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`, or `date('now')` for a date, in both renderings.
   Missing-vs-null (G3's record half) comes with the Zod 4 emit.
@@ -57,7 +57,12 @@ YAML ──► deriveTableColumns            src/derived/tables/       ColumnFac
   - Composite FKs, a referenced UNIQUE and every CHECK are table constraints; other uniques and indexes are
     `CREATE INDEX`.
   - A reference's export resolves to its SQL table within the set being rendered.
-  - Tables are written in reference order, and a cycle or a target outside the set is an error naming it.
+  - Tables are written in reference order where one exists. Two tables that reference each other (#631) are written
+    in declaration order, since SQLite checks foreign keys on write. A target outside the set is an error naming it.
+  - Columns in an expression are quoted, so `order` and `group` parse. An author's `where:` is copied as written, so
+    on SQLite it must be SQLite SQL: no `::text`, no `ILIKE`.
+  - The two renderings make the same unique decision, and both refuse the shapes they can't build: NULLS NOT DISTINCT
+    that is also partial or referenced, and a referenced unique that is partial.
 - **`ColumnRenderer` / `ConstraintRenderer` are generic over the pair key.** That lets `drizzle/sqlite` exist before
   its `TARGET_PAIRS` row, which **TGT-2b** adds together with the templates that print this text and the per-entity
   `.sql` emission. Until then nothing generates a SQLite app, and the renderers and the DDL are exercised by tests.
@@ -90,6 +95,25 @@ YAML ──► deriveTableColumns            src/derived/tables/       ColumnFac
 5. **Postgres unchanged:** the golden directories don't change, and unit, baseline and junction tests pass at every
    commit.
 
+## Review (2026-11-26)
+
+`/code-review` found 5 important issues and 5 nits. All were fixed here except the upsert target, which is TGT-2b's.
+- **A reference cycle** was an error; it now renders and applies.
+- **The id** gained NOT NULL in both renderings.
+- **A numeric default on a `decimal`** was printed bare onto a TEXT column; it is now quoted, as Postgres does.
+- **Expression columns** are quoted.
+- **The unique decision order** is now one order with the same refusals in both renderings.
+- **`deriveTableColumns` order:** `belongs_to` now comes before `match:`-derived columns, which is the template's real
+  order; the old `entityTableColumns` had them the other way round.
+- **`globalThis.crypto`.**
+- **The parity gate** now compares CHECK bodies and index SQL, not just counts. Dropping the `ifnull` wrap from the
+  DDL alone fails it.
+  - Its stricter comparison found **drizzle-kit dropping NOT NULL from a SQLite primary key**, even with `.notNull()`.
+  - The DDL (what a consumer applies) keeps it, and the gate normalises exactly that, by name.
+- **The upsert target:** an `upsertByNaturalKey` over a NULLS NOT DISTINCT unique must name the index's expressions,
+  `ON CONFLICT (ifnull("c", X'00'), …)`. A test shows that works on rows. Emitting it is TGT-2b's, as is a
+  `timestampColumn` whose default isn't Postgres's `.defaultNow()`.
+
 ## Differs from the plan
 
 - **`decimal` is TEXT, not NUMERIC** (the spike's finding). The trade-off is that ordering by a decimal column is
@@ -107,4 +131,7 @@ YAML ──► deriveTableColumns            src/derived/tables/       ColumnFac
 - Per-pair entity and repository templates: `sqliteTable`, behaviour columns through the renderers, the
   `AnySQLiteColumn` import, and the `sql` import when a default uses it.
 - Base classes typed on the pair, and per-entity `.sql` emission from `tableFacts`.
-- An `upsertByNaturalKey` on SQLite must target the `ifnull(…)` expression index (`ON CONFLICT (ifnull(c, X'00'), …)`).
+- An `upsertByNaturalKey` on SQLite must target the `ifnull(…)` expression index (`ON CONFLICT (ifnull(c, X'00'), …)`;
+  `sqlite-ddl.test.ts` shows it works).
+- The behaviour time columns: Postgres's template chains `.defaultNow()` onto `timestampColumn`, which sqlite-core's
+  `text` doesn't have. The pair's renderer has to own the whole behaviour column there, including its default.

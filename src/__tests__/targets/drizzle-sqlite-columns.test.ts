@@ -30,6 +30,7 @@ describe('drizzle/sqlite columns', () => {
 		[{ type: 'enum', choices: ['a', "o'k"], default: 'a' }, "text('x', { enum: ['a', 'o\\'k'] }).default('a')", "'a' | 'o\\'k'"],
 		[{ type: 'string', default: 'hi' }, "text('x').default('hi')", 'string'],
 		[{ type: 'integer', default: 0 }, "integer('x').default(0)", 'number'],
+		[{ type: 'decimal', default: 1.5 }, "text('x').default('1.5')", 'string'],
 	])('%o → %s', (field, chain, tsType) => {
 		const r = render(field);
 		expect(r.drizzleChain).toBe(chain);
@@ -49,8 +50,8 @@ describe('drizzle/sqlite columns', () => {
 			timestamps: null,
 			softDelete: null,
 		})[0]!;
-		expect(renderSqliteColumn(plain).drizzleChain).toBe("text('id').primaryKey().$defaultFn(() => crypto.randomUUID())");
-		expect(renderSqliteColumn({ ...plain, generatedId: false }).drizzleChain).toBe("text('id').primaryKey()");
+		expect(renderSqliteColumn(plain).drizzleChain).toBe("text('id').primaryKey().notNull().$defaultFn(() => globalThis.crypto.randomUUID())");
+		expect(renderSqliteColumn({ ...plain, generatedId: false }).drizzleChain).toBe("text('id').primaryKey().notNull()");
 	});
 
 	it('timestampColumn is ISO TEXT and still refuses a missing zone (#845)', () => {

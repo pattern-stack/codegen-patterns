@@ -3,8 +3,8 @@
  * (TGT-2a). The ONE owner of "which columns does this table have": the Postgres template prints its own text per group
  * and reads this list for every column lookup (`entity-locals.js`'s `tableColumns`); the SQLite DDL renders it whole.
  *
- * Order (the Postgres template's): `id`; a child's inherited kind / tenant copies; `match:`-derived columns;
- * `belongs_to` foreign keys; declared fields; `external_id_tracking`'s three; an emitted tenant column; `timestamps`;
+ * Order (the Postgres template's, `entity.ejs.t`): `id`; a child's inherited kind / tenant copies; `belongs_to` foreign
+ * keys; `match:`-derived columns; declared fields; `external_id_tracking`'s three; an emitted tenant column; `timestamps`;
  * `soft_delete`.
  *
  * Pure, and hygen-safe (reached from `entity-locals.js`): it imports only shipped `src/` modules.
@@ -115,6 +115,9 @@ export function deriveTableColumns(input: TableColumnsInput): ColumnFact[] {
 			cols.push({ ...plain, name: tenant.column, prop: tenant.prop, path: [tenant.column], origin: 'inherited', kind: 'uuid', nullable: false });
 		}
 	}
+	for (const rel of input.belongsTo) {
+		cols.push({ ...plain, name: rel.field, prop: rel.camelField, path: [rel.field], origin: 'belongs_to', kind: 'uuid', nullable: rel.nullable });
+	}
 	for (const m of input.matched) {
 		if (m.kind === 'fk') {
 			cols.push({ ...plain, name: m.column, prop: m.prop, path: [m.column], origin: 'match', kind: 'uuid', nullable: m.nullable });
@@ -130,9 +133,6 @@ export function deriveTableColumns(input: TableColumnsInput): ColumnFact[] {
 		);
 		const col = fieldColumn(facts!, 'match');
 		cols.push(m.enumRef ? { ...col, kind: 'enum', choices: m.enumRef.choices } : col);
-	}
-	for (const rel of input.belongsTo) {
-		cols.push({ ...plain, name: rel.field, prop: rel.camelField, path: [rel.field], origin: 'belongs_to', kind: 'uuid', nullable: rel.nullable });
 	}
 	for (const f of input.fields) cols.push(fieldColumn(f));
 	if (input.externalIdTracking) {

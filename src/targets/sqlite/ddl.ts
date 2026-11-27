@@ -11,7 +11,8 @@
  *   table constraints; a unique or plain index is a `CREATE INDEX`.
  * - A reference names its target by the Drizzle export; the SQL table is resolved from the set being rendered, so a
  *   target outside the set is an error naming it.
- * - Tables are written in reference order (a cycle is an error naming it); a self-reference is not a dependency.
+ * - Tables are written in reference order where there is one. Two tables that reference each other (#631's case) are
+ *   written in declaration order: SQLite checks a foreign key when a row is written, not when a table is created.
  * - SQLite has no NULLS NOT DISTINCT: such a unique (a tenant-scoped entity's default) is a unique index over
  *   `ifnull(<col>, X'00')` per column, as the drizzle/sqlite renderer writes it (its header says why that is exact).
  *
@@ -37,9 +38,13 @@ export interface SqliteTableFacts {
 
 const quoteSql = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
-/** A predicate / CHECK expression with columns written bare: the text is SQL already (TGT-1). */
+/**
+ * A predicate / CHECK expression: the text is SQL already (TGT-1), and a column is quoted, as drizzle-kit quotes it,
+ * so a column named by a keyword (`order`, `group`) parses. An author's `where:` is copied as written, so on SQLite it
+ * must be SQLite SQL (no `::text`, no `ILIKE`).
+ */
 function sqlExpression(segments: readonly PredicateSegment[]): string {
-	return segments.map((s) => ('text' in s ? s.text : s.column)).join('');
+	return segments.map((s) => ('text' in s ? s.text : `"${s.column}"`)).join('');
 }
 
 /** The declared type. A `max_length` string says its length (`TEXT(n)`, as Drizzle declares it); SQLite does not enforce
@@ -54,8 +59,8 @@ function defaultSql(c: ColumnFact): string {
 	if ('now' in c.default) return ` DEFAULT ${sqliteNow(c.kind === 'date' ? 'date' : 'instant', c.withTimezone)}`;
 	const v = c.default.value;
 	if (c.kind === 'json' || c.isArray) return ` DEFAULT ${quoteSql(JSON.stringify(v))}`;
-	if (typeof v === 'boolean') return ` DEFAULT ${v ? 1 : 0}`;
-	if (typeof v === 'number') return ` DEFAULT ${v}`;
+	if (c.kind !== 'decimal' && typeof v === 'boolean') return ` DEFAULT ${v ? 1 : 0}`;
+	if (c.kind !== 'decimal' && typeof v === 'number') return ` DEFAULT ${v}`;
 	return ` DEFAULT ${quoteSql(String(v))}`;
 }
 
@@ -69,7 +74,7 @@ function columnOf(table: SqliteTableFacts, prop: string): string {
 	return col.name;
 }
 
-/** Tables in reference order; a cycle is an error naming its tables. */
+/** Tables in reference order; within a cycle, in declaration order (SQLite resolves FKs at write time). */
 function ordered(tables: readonly SqliteTableFacts[], tableOf: (exp: string, from: string) => SqliteTableFacts) {
 	const deps = new Map<SqliteTableFacts, Set<SqliteTableFacts>>();
 	for (const t of tables) {
@@ -87,9 +92,7 @@ function ordered(tables: readonly SqliteTableFacts[], tableOf: (exp: string, fro
 	const state = new Map<SqliteTableFacts, 'visiting' | 'done'>();
 	const visit = (t: SqliteTableFacts, path: string[]) => {
 		if (state.get(t) === 'done') return;
-		if (state.get(t) === 'visiting') {
-			throw new Error(`sqlite ddl: a reference cycle: ${[...path, t.name].join(' → ')}.`);
-		}
+		if (state.get(t) === 'visiting') return;
 		state.set(t, 'visiting');
 		for (const d of deps.get(t)!) visit(d, [...path, t.name]);
 		state.set(t, 'done');
@@ -134,6 +137,15 @@ export function renderSqliteDdl(tables: readonly SqliteTableFacts[]): string {
 					break;
 				case 'unique': {
 					const u = c.fact;
+					// The drizzle/sqlite renderer's decision order, and its refusals.
+					if (u.nullsNotDistinct && (u.where !== null || u.referenced)) {
+						throw new Error(
+							`sqlite ddl: '${table.name}' unique '${u.name}': NULLS NOT DISTINCT is an expression index, so it cannot also be ${u.where !== null ? 'partial' : 'referenced by a foreign key'}.`,
+						);
+					}
+					if (u.referenced && u.where !== null) {
+						throw new Error(`sqlite ddl: '${table.name}' unique '${u.name}': a foreign key's target cannot be partial.`);
+					}
 					const cols = u.props
 						.map((p) => (u.nullsNotDistinct ? `ifnull("${columnOf(table, p)}", ${NULL_SENTINEL})` : `"${columnOf(table, p)}"`))
 						.join(', ');
@@ -155,8 +167,9 @@ export function renderSqliteDdl(tables: readonly SqliteTableFacts[]): string {
 			tableConstraints.push(`CONSTRAINT "${check.name}" CHECK (${sqlExpression(check.expression)})`);
 		}
 		const lines = table.columns.map((c) => {
+			// The id is NOT NULL too: SQLite lets a non-INTEGER primary key hold NULL, more than once.
 			const pk = c.origin === 'id' ? ' PRIMARY KEY' : '';
-			const notNull = c.origin !== 'id' && !c.nullable ? ' NOT NULL' : '';
+			const notNull = c.origin === 'id' || !c.nullable ? ' NOT NULL' : '';
 			return `  "${c.name}" ${columnType(c)}${pk}${notNull}${defaultSql(c)}${refs.get(c.name) ?? ''}`;
 		});
 		statements.push(

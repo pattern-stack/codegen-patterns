@@ -28,6 +28,9 @@ function unique(fact: UniqueFact, tableParam: string): RenderedConstraint {
 	const comment = fact.tenantScoped ? 'tenant_scoped — unique per tenant' : null;
 	if (fact.nullsNotDistinct) {
 		if (fact.where !== null) throw new Error(`unique '${fact.name}': a partial unique is never NULLS NOT DISTINCT.`);
+		if (fact.referenced) {
+			throw new Error(`unique '${fact.name}': NULLS NOT DISTINCT is an expression index, which a foreign key cannot target.`);
+		}
 		const cols = fact.props.map((p) => `sql\`ifnull(\${${tableParam}.${p}}, ${NULL_SENTINEL})\``).join(', ');
 		return {
 			builder: 'uniqueIndex',
@@ -39,6 +42,7 @@ function unique(fact: UniqueFact, tableParam: string): RenderedConstraint {
 	}
 	const cols = on(fact.props, tableParam);
 	if (fact.where !== null) {
+		if (fact.referenced) throw new Error(`unique '${fact.name}': a foreign key's target cannot be partial.`);
 		return {
 			builder: 'uniqueIndex',
 			expr: `uniqueIndex('${fact.name}').on(${cols}).where(sql\`${predicate(fact.where, tableParam)}\`)`,

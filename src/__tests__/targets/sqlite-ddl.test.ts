@@ -81,6 +81,22 @@ describe('SQLite-only rules, on rows', () => {
 		expect(() => insert(db, 'e', 't1', 'x')).toThrow(/UNIQUE constraint failed/);
 	});
 
+	it('an upsert targets the NULLS NOT DISTINCT index by its expressions (TGT-2b’s ON CONFLICT)', () => {
+		const db = open();
+		const upsert = db.query(
+			`INSERT INTO items (id, tenant_id, code, state) VALUES (?, ?, ?, ?)
+			 ON CONFLICT (ifnull("tenant_id", X'00'), ifnull("code", X'00')) DO UPDATE SET state = excluded.state`,
+		);
+		upsert.run('a', null, 'x', 'open');
+		upsert.run('b', null, 'x', 'shut');
+		expect(db.query('SELECT id, state FROM items').values()).toEqual([['a', 'shut']]);
+	});
+
+	it('the id is NOT NULL (SQLite lets a TEXT primary key be NULL otherwise)', () => {
+		const db = open();
+		expect(() => db.query("INSERT INTO items (code) VALUES ('x')").run()).toThrow(/NOT NULL/);
+	});
+
 	it('the enum CHECK, the length CHECK and the enum default', () => {
 		const db = open();
 		insert(db, 'a', null, 'ok');
@@ -89,14 +105,16 @@ describe('SQLite-only rules, on rows', () => {
 		expect(() => insert(db, 'c', null, 'toolong')).toThrow(/CHECK constraint failed/);
 	});
 
-	it('a reference outside the set, and a reference cycle, are errors naming them', () => {
+	it('a reference outside the set is an error naming it; a cycle (#631) renders, and applies', () => {
 		const ref = (from: string, to: string) => ({ kind: 'reference' as const, fact: { column: 'id', targetExport: to, targetProp: 'id' } });
 		expect(() => renderSqliteDdl([fact({ constraints: [ref('items', 'ghosts')] })])).toThrow(/'items' references 'ghosts'/);
-		expect(() =>
-			renderSqliteDdl([
-				fact({ name: 'a', export: 'a', constraints: [ref('a', 'b')] }),
-				fact({ name: 'b', export: 'b', constraints: [ref('b', 'a')] }),
-			]),
-		).toThrow(/reference cycle/);
+		const cyclic = renderSqliteDdl([
+			fact({ name: 'a', export: 'a', constraints: [ref('a', 'b')] }),
+			fact({ name: 'b', export: 'b', constraints: [ref('b', 'a')] }),
+		]);
+		const db = new Database(':memory:');
+		db.exec('PRAGMA foreign_keys = ON');
+		db.exec(cyclic);
+		expect(db.query("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").values().flat()).toEqual(['a', 'b']);
 	});
 });

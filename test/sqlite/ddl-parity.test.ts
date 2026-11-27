@@ -7,11 +7,14 @@
  *
  * Both are applied to fresh `bun:sqlite` databases and compared through SQLite's own catalogue, per table: columns
  * (`table_info`: type, NOT NULL, default, primary key), foreign keys (`foreign_key_list`), indexes (`index_list` +
- * `index_xinfo`: unique, partial, key columns or expressions) and the CHECK count. A fact one renderer writes and the
- * other doesn't fails here, naming the table.
+ * `index_xinfo`: unique, partial, key columns or expressions), every index's SQL (so an expression or a `WHERE`
+ * differs visibly) and every CHECK's body. A fact one renderer writes and the other doesn't fails here, naming the
+ * table.
  *
- * Normalised on purpose, and only this: type and default spelling (`text` / `TEXT`, `false` / `0`), and SQLite's
- * auto-index names (a UNIQUE constraint's index is named by its position).
+ * Normalised on purpose, and only this: a primary key's NOT NULL (drizzle-kit omits it; see `catalogue`), type and
+ * default spelling (`text` / `TEXT`, `false` / `0`), SQLite's
+ * auto-index names (a UNIQUE constraint's index is named by its position), and in SQL text: identifier quotes,
+ * whitespace, case and `IF NOT EXISTS`.
  */
 
 import { Database } from 'bun:sqlite';
@@ -79,13 +82,38 @@ function drizzleKitSql(): string {
 
 type Catalogue = Record<string, unknown>;
 
+/** Every `CHECK (…)` body in a CREATE TABLE statement, by balanced parentheses (quoted text skipped). */
+function checkBodies(sql: string): string[] {
+	const out: string[] = [];
+	const re = /\bCHECK\s*\(/gi;
+	for (let m = re.exec(sql); m; m = re.exec(sql)) {
+		let depth = 1;
+		let i = m.index + m[0].length;
+		const start = i;
+		let quote: string | null = null;
+		for (; i < sql.length && depth > 0; i++) {
+			const ch = sql[i]!;
+			if (quote) {
+				if (ch === quote) quote = null;
+			} else if (ch === "'" || ch === '"' || ch === '`') quote = ch;
+			else if (ch === '(') depth++;
+			else if (ch === ')') depth--;
+		}
+		out.push(sql.slice(start, i - 1));
+	}
+	return out;
+}
+
 /** A table as SQLite's catalogue describes it, normalised (see the header). */
 function catalogue(db: Database, table: string): Catalogue {
 	const norm = (v: unknown) => (v === 'false' ? '0' : v === 'true' ? '1' : v);
 	const columns = db
 		.query(`PRAGMA table_info("${table}")`)
 		.all()
-		.map((c: any) => ({ name: c.name, type: String(c.type).toUpperCase(), notnull: c.notnull, dflt: norm(c.dflt_value), pk: c.pk }));
+				// drizzle-kit drops NOT NULL from a SQLite primary key even when the column says `.notNull()` (found here); the DDL,
+		// which is what a consumer applies, keeps it (SQLite lets a TEXT primary key hold NULL otherwise). The one
+		// normalisation of a real difference, named: a primary-key column's notnull is not compared.
+		.map((c: any) => ({ name: c.name, type: String(c.type).toUpperCase(), notnull: c.pk ? 'pk' : c.notnull, dflt: norm(c.dflt_value), pk: c.pk }));
 	const foreignKeys = db
 		.query(`PRAGMA foreign_key_list("${table}")`)
 		.all()
@@ -104,9 +132,15 @@ function catalogue(db: Database, table: string): Catalogue {
 			return `${name} unique=${i.unique} partial=${i.partial} origin=${i.origin} [${keys.join(', ')}]`;
 		})
 		.sort();
+	const sqlText = (s: string) => s.replace(/["`]/g, '').replace(/if not exists/gi, '').replace(/\s+/g, '').toLowerCase();
 	const sql = String((db.query(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table) as any).sql);
-	const checks = (sql.match(/\bCHECK\s*\(/gi) ?? []).length;
-	return { columns, foreignKeys, indexes, checks };
+	const checks = checkBodies(sql).map(sqlText).sort();
+	const indexSql = db
+		.query(`SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL`)
+		.values(table)
+		.map(([s]) => sqlText(String(s)))
+		.sort();
+	return { columns, foreignKeys, indexes, indexSql, checks };
 }
 
 describe('SQLite DDL ↔ drizzle/sqlite parity, over the baseline set', () => {
