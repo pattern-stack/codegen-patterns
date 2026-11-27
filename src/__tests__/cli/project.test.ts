@@ -15,7 +15,12 @@ import {
 	writePlan,
 	mergeTsconfig,
 	mergeFrontendDeps,
+	loadRuntimeFile,
+	VENDORED_RUNTIME_FILES,
+	vendoredRuntimeFiles,
+	InitRefusal,
 } from '../../cli/shared/init-scaffold.js';
+import { syncVendoredRuntime } from '../../cli/commands/project-update.js';
 import { loadContext } from '../../cli/shared/context.js';
 import { projectLayout } from '../../cli/shared/project-layout.js';
 import {
@@ -648,5 +653,172 @@ describe('writePlan', () => {
 		// Second invocation should skip every file.
 		expect(result2.created.length).toBe(0);
 		expect(result2.skipped.length).toBeGreaterThan(10);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// wiring: pattern-stack (PW-4)
+// ---------------------------------------------------------------------------
+
+const NEST_IMPORT = /from\s+['"](@nestjs\/[^'"]+|reflect-metadata)['"]|import\s+['"](@nestjs\/[^'"]+|reflect-metadata)['"]/;
+
+describe('project init, wiring: pattern-stack (PW-4)', () => {
+	test('plans the database system, compose.ts, main.ts and an empty composition; no Nest scaffold', async () => {
+		const cwd = mkTempDir('plan-pattern-stack');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true, runtimeMode: 'vendored', wiring: 'pattern-stack' });
+		const paths = plan.entries.map((e) => e.relPath);
+
+		for (const p of [
+			'src/database.ts',
+			'src/compose.ts',
+			'src/main.ts',
+			'src/generated/wiring.ts',
+			'src/generated/composition.ts',
+			'src/generated/openapi.ts',
+			'src/generated/schema.ts',
+			'src/generated/relations.ts',
+			'src/shared/logger.ts',
+			'src/shared/errors.ts',
+		]) {
+			expect(paths).toContain(p);
+		}
+		for (const p of [
+			'src/app.module.ts',
+			'src/shared/database/database.module.ts',
+			'src/generated/modules.ts',
+			'src/shared/nest-logger.ts',
+			'src/shared/nest-db-constraint-filter.ts',
+			'src/shared/pipes/zod-validation.pipe.ts',
+		]) {
+			expect(paths).not.toContain(p);
+		}
+		const nest = plan.entries.filter((e) => e.content !== undefined && NEST_IMPORT.test(e.content)).map((e) => e.relPath);
+		expect(nest).toEqual([]);
+		expect(plan.summary.wiring).toBe('pattern-stack');
+
+		const config = (await import('yaml')).parse(plan.entries.find((e) => e.relPath === 'codegen.config.yaml')!.content!);
+		expect(config.target).toEqual({ database: 'postgres', orm: 'drizzle', wiring: 'pattern-stack', http: 'none' });
+
+		// main.ts starts and stops the app compose.ts builds from the database system and the generated MODULES.
+		const content = (rel: string) => plan.entries.find((e) => e.relPath === rel)!.content!;
+		expect(content('src/main.ts')).toContain("from './compose'");
+		expect(content('src/main.ts')).toMatch(/await app\.start\(\)[\s\S]*await app\.stop\(\)/);
+		expect(content('src/main.ts')).toMatch(/process\.once\('SIGTERM'/);
+		expect(content('src/compose.ts')).toContain("import { MODULES } from './generated/composition'");
+		expect(content('src/database.ts')).toContain("name: 'database'");
+		expect(content('src/generated/composition.ts')).toContain('export const MODULES = [] as const;');
+	});
+
+	test('the wiring comes from the existing config when no flag names it', async () => {
+		const cwd = mkTempDir('plan-pattern-stack-config');
+		fs.writeFileSync(
+			path.join(cwd, 'codegen.config.yaml'),
+			'target:\n  database: postgres\n  orm: drizzle\n  wiring: pattern-stack\n  http: none\n',
+		);
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true });
+		expect(plan.summary.wiring).toBe('pattern-stack');
+		expect(plan.entries.map((e) => e.relPath)).toContain('src/compose.ts');
+		expect(plan.entries.map((e) => e.relPath)).not.toContain('src/app.module.ts');
+	});
+
+	test('tsconfig: a new one and a merged one get no decorator flags', async () => {
+		const cwd = mkTempDir('plan-pattern-stack-tsconfig');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true, withTsconfig: true, wiring: 'pattern-stack' });
+		const tsconfig = plan.entries.find((e) => e.relPath === 'tsconfig.json')!.content!;
+		expect(tsconfig).not.toContain('Decorator');
+		expect(JSON.parse(tsconfig).compilerOptions.paths['@shared/*']).toBeDefined();
+
+		const merged = mergeTsconfig('{ "compilerOptions": {} }', projectLayout(cwd, null), false);
+		expect(merged.added).not.toContain('experimentalDecorators');
+		expect(merged.content).not.toContain('Decorator');
+	});
+
+	test('a second run writes nothing new, and keeps compose.ts and main.ts as the project left them', async () => {
+		const cwd = mkTempDir('write-pattern-stack');
+		const opts = { cwd, skipScan: true, withTsconfig: true, runtimeMode: 'vendored', wiring: 'pattern-stack' } as const;
+		writePlan(await buildInitPlan(await loadContext({ cwd, skipDetection: true }), opts));
+		fs.writeFileSync(path.join(cwd, 'src/main.ts'), '// mine\n');
+		const second = writePlan(await buildInitPlan(await loadContext({ cwd, skipDetection: true }), { ...opts, force: true }));
+		expect(second.created).toEqual([]);
+		expect(fs.readFileSync(path.join(cwd, 'src/main.ts'), 'utf8')).toBe('// mine\n');
+		expect(second.skipped.map((e) => e.relPath)).toEqual(expect.arrayContaining(['src/main.ts', 'src/compose.ts']));
+	});
+});
+
+describe('project init, wiring: pattern-stack — refusals and what it never overwrites (PW-4)', () => {
+	const PS_CONFIG = 'target:\n  database: postgres\n  orm: drizzle\n  wiring: pattern-stack\n  http: none\n';
+
+	test('--wiring other than the existing config says is refused without --force', async () => {
+		const cwd = mkTempDir('refuse-wiring');
+		fs.writeFileSync(path.join(cwd, 'codegen.config.yaml'), 'runtime: package\n');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		await expect(buildInitPlan(ctx, { cwd, skipScan: true, wiring: 'pattern-stack' })).rejects.toThrow(
+			/codegen.config.yaml says target.wiring nest/,
+		);
+		await expect(buildInitPlan(ctx, { cwd, skipScan: true, wiring: 'pattern-stack' })).rejects.toBeInstanceOf(InitRefusal);
+		// --force rewrites the config, so the two agree.
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true, wiring: 'pattern-stack', force: true });
+		expect(plan.entries.find((e) => e.relPath === 'codegen.config.yaml')!.content).toContain('wiring: pattern-stack');
+	});
+
+	test('pattern-stack over a SQLite target never reaches init: the config schema refuses it', async () => {
+		const cwd = mkTempDir('refuse-sqlite');
+		fs.writeFileSync(path.join(cwd, 'codegen.config.yaml'), PS_CONFIG.replace('postgres', 'sqlite'));
+		await expect(loadContext({ cwd, skipDetection: true })).rejects.toThrow(/wiring: pattern-stack needs a pair/);
+	});
+
+	test('a created file carries no skip reason', async () => {
+		const cwd = mkTempDir('reason');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true, wiring: 'pattern-stack' });
+		const compose = plan.entries.find((e) => e.relPath === 'src/compose.ts')!;
+		expect(compose).toMatchObject({ action: 'create', reason: undefined });
+	});
+
+	test('--force never empties a composition that is already there', async () => {
+		const cwd = mkTempDir('force-composition');
+		fs.writeFileSync(path.join(cwd, 'codegen.config.yaml'), PS_CONFIG);
+		fs.mkdirSync(path.join(cwd, 'src/generated'), { recursive: true });
+		fs.writeFileSync(path.join(cwd, 'src/generated/composition.ts'), 'export const MODULES = [crmModule] as const;\n');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true, force: true });
+		expect(plan.entries.find((e) => e.relPath === 'src/generated/composition.ts')!.action).toBe('skip');
+	});
+
+	test('project update removes vendored Nest files under pattern-stack, and keeps them under nest', async () => {
+		const cwd = mkTempDir('update-nest-files');
+		const nestFile = path.join(cwd, 'src/shared/nest-logger.ts');
+		fs.mkdirSync(path.dirname(nestFile), { recursive: true });
+		fs.writeFileSync(nestFile, "import { Logger } from '@nestjs/common';\n");
+
+		fs.writeFileSync(path.join(cwd, 'codegen.config.yaml'), 'runtime: vendored\n');
+		const nest = syncVendoredRuntime(await loadContext({ cwd, skipDetection: true }), false);
+		expect(nest.find((c) => c.path === 'src/shared/nest-logger.ts')?.action).toBe('updated');
+
+		fs.writeFileSync(path.join(cwd, 'codegen.config.yaml'), `runtime: vendored\n${PS_CONFIG}`);
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		expect(syncVendoredRuntime(ctx, false).find((c) => c.path === 'src/shared/nest-logger.ts')?.action).toBe('removed');
+		expect(fs.existsSync(nestFile)).toBe(true);
+		syncVendoredRuntime(ctx, true);
+		expect(fs.existsSync(nestFile)).toBe(false);
+	});
+});
+
+describe('vendoredRuntimeFiles', () => {
+	test('a file is flagged `nest` exactly when it imports @nestjs or reflect-metadata', () => {
+		for (const v of VENDORED_RUNTIME_FILES) {
+			expect({ file: v.runtime, nest: NEST_IMPORT.test(loadRuntimeFile(v.runtime)) }).toEqual({ file: v.runtime, nest: v.nest === true });
+		}
+	});
+
+	test('pattern-stack drops the Nest files; nest keeps the whole closure', () => {
+		expect(vendoredRuntimeFiles('nest')).toEqual(VENDORED_RUNTIME_FILES);
+		const plain = vendoredRuntimeFiles('pattern-stack').map((v) => v.runtime);
+		expect(plain).not.toContain('nest-logger.ts');
+		expect(plain).toContain('logger.ts');
+		expect(plain.length).toBe(VENDORED_RUNTIME_FILES.length - 3);
 	});
 });

@@ -5,17 +5,18 @@
  *
  * 1. A fresh tmp project: `bun init`, then the runtime deps WITHOUT Nest, and `@pattern-stack/wiring` from this
  *    checkout's `packages/wiring` (PW-2).
- * 2. `codegen project init --runtime vendored`, then the target set to pattern-stack. `project init` for pattern-stack is PW-4; until
- *    it lands, init still writes the Nest scaffold, so this harness deletes every scaffolded file that imports
- *    `@nestjs` BEFORE generating, naming each. Nothing `entity new` writes is exempt.
- * 3. `tsconfig.json`: `experimentalDecorators` and `emitDecoratorMetadata` off.
+ * 2. `codegen project init --runtime vendored --wiring pattern-stack` (PW-4): the config's target, a `database`
+ *    system, `compose.ts`, `main.ts` and an empty composition, and no Nest scaffold. The project compiles here, before
+ *    any entity.
+ * 3. `tsconfig.json`: init turned on neither `experimentalDecorators` nor `emitDecoratorMetadata`.
  * 4. The fixtures in `test/smoke/fixtures-pattern-stack/` (two contexts, a cross-context `belongs_to`, a mutual composition,
  *    a root entity) through `entity new --all`.
  * 5. Gates:
  *    - no file in the project imports `@nestjs/*` or `reflect-metadata`, and `node_modules` has neither;
  *    - the composition files exist (one `module.ts` per context, `<generated>/wiring.ts`, `<generated>/composition.ts`,
  *      `<generated>/openapi.ts`);
- *    - `tsc` over the project, scoped by location only (`_consumer-errors.ts`), like every smoke.
+ *    - `tsc` over the project, scoped by location only (`_consumer-errors.ts`), like every smoke;
+ *    - `bun src/main.ts` composes, starts and stops the app (the pool connects on first use, so no database).
  *
  * Booting the composition and running CRUD through the use cases on Postgres is the integration job's
  * (`test/scaffold/`, Docker), not this Docker-free gate.
@@ -84,26 +85,33 @@ async function main(): Promise<number> {
 		run(`bun add ${RUNTIME_DEPS.join(' ')}`, tmpDir);
 		run(`bun add -D ${DEV_DEPS.join(' ')}`, tmpDir);
 
-		// 2. Init, then pattern-stack; the Nest scaffold out (PW-4 makes init write none).
-		run(`${CLI} project init --yes --with-tsconfig --runtime vendored`, tmpDir);
-		const configPath = path.join(tmpDir, 'codegen.config.yaml');
-		const config = fs.readFileSync(configPath, 'utf8');
-		const targetLine = /^target:.*\n(?:[ \t]+.*\n)*/m;
-		const plainTarget = 'target:\n  database: postgres\n  orm: drizzle\n  wiring: pattern-stack\n  http: none\n';
-		fs.writeFileSync(configPath, targetLine.test(config) ? config.replace(targetLine, plainTarget) : `${config.trimEnd()}\n\n${plainTarget}`);
-		log('set target: { wiring: pattern-stack, http: none }');
-		const nestScaffold = sourceFiles(tmpDir).filter((f) => NEST_IMPORT.test(fs.readFileSync(f, 'utf8')));
-		for (const f of nestScaffold) {
-			fs.rmSync(f);
-			log(`removed Nest scaffold (PW-4 stops writing it): ${path.relative(tmpDir, f)}`);
+		// 2. Init for pattern-stack wiring (PW-4): nothing to delete, nothing to rewrite.
+		run(`${CLI} project init --yes --with-tsconfig --runtime vendored --wiring pattern-stack`, tmpDir);
+		const config = fs.readFileSync(path.join(tmpDir, 'codegen.config.yaml'), 'utf8');
+		if (!/^target:\n(?:[ \t]+.*\n)*?[ \t]+wiring: pattern-stack\n/m.test(config)) fail(`init should write target.wiring: pattern-stack:\n${config}`);
+		const initLeaks = sourceFiles(tmpDir).filter((f) => NEST_IMPORT.test(fs.readFileSync(f, 'utf8')));
+		if (initLeaks.length > 0) fail(`init wrote files that import @nestjs:\n  ${initLeaks.map((f) => path.relative(tmpDir, f)).join('\n  ')}`);
+		for (const f of ['src/database.ts', 'src/compose.ts', 'src/main.ts', 'src/generated/wiring.ts', 'src/generated/composition.ts']) {
+			if (!fs.existsSync(path.join(tmpDir, f))) fail(`init should write ${f}`);
 		}
+		for (const f of ['src/app.module.ts', 'src/shared/database/database.module.ts', 'src/generated/modules.ts', 'src/shared/nest-logger.ts']) {
+			if (fs.existsSync(path.join(tmpDir, f))) fail(`init should not write ${f} under pattern-stack wiring`);
+		}
+		log('init: target.wiring pattern-stack; database.ts, compose.ts, main.ts, the empty composition; no Nest scaffold');
 
-		// 3. Decorators off.
-		const tsconfigPath = path.join(tmpDir, 'tsconfig.json');
-		const tsconfig = JSON.parse(fs.readFileSync(tsconfigPath, 'utf8'));
-		tsconfig.compilerOptions = { ...tsconfig.compilerOptions, experimentalDecorators: false, emitDecoratorMetadata: false };
-		fs.writeFileSync(tsconfigPath, `${JSON.stringify(tsconfig, null, 2)}\n`);
-		log('tsconfig: experimentalDecorators and emitDecoratorMetadata off');
+		// 3. Decorators: init turned neither on.
+		const tsconfig = JSON.parse(fs.readFileSync(path.join(tmpDir, 'tsconfig.json'), 'utf8'));
+		for (const opt of ['experimentalDecorators', 'emitDecoratorMetadata']) {
+			if (tsconfig.compilerOptions?.[opt] === true) fail(`init turned on ${opt} under pattern-stack wiring`);
+		}
+		// The project compiles before any entity: main.ts and compose.ts over the empty composition.
+		const tscEmpty = spawnSync('bunx', ['tsc', '--noEmit', '--skipLibCheck'], { cwd: tmpDir, encoding: 'utf8' });
+		const emptyErrors = tscGateErrors({ code: tscEmpty.status, output: (tscEmpty.stdout ?? '') + (tscEmpty.stderr ?? '') }, tmpDir);
+		if (emptyErrors.length > 0) {
+			for (const line of emptyErrors) console.error(line);
+			fail(`${emptyErrors.length} typecheck errors in the freshly initialized project`);
+		}
+		log('tsconfig: no decorators; the fresh project compiles before any entity');
 
 		// 4. Fixtures, then generate.
 		const entitiesDir = path.join(tmpDir, 'entities');
@@ -155,6 +163,12 @@ async function main(): Promise<number> {
 			fail(`${errors.length} typecheck errors in the pattern-stack project`);
 		}
 		log('tsc OK: the pattern-stack project compiles with no @nestjs and decorators off');
+
+		// 5c'. main.ts composes, starts, runs and stops (no database needed: the pool connects on first use).
+		const main = spawnSync('bun', ['src/main.ts'], { cwd: tmpDir, encoding: 'utf8' });
+		if (main.status !== 0) fail(`bun src/main.ts exited ${main.status}:\n${main.stdout}${main.stderr}`);
+		if (!/composed: database, .*crm.*billing/.test(main.stdout)) fail(`main.ts should print the composed order: ${main.stdout}`);
+		log(`main.ts: ${main.stdout.trim()}`);
 
 		// 5d. The OpenAPI document needs no database: every schema registers, every $ref resolves, every prefill parses.
 		run('bun src/crud-check.ts --openapi', tmpDir);

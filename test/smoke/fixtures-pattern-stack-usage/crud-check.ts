@@ -1,15 +1,11 @@
 /**
- * Pattern-stack wiring usage (PW-3a), as a consumer writes it: a `database` system, the generated modules composed with
- * `@pattern-stack/wiring`, then CRUD through the use cases. Copied into the smoke project's `src/`: the compile
+ * Pattern-stack wiring usage (PW-3a), as a consumer writes it: the app `project init` wrote (`compose.ts`, its
+ * `database` system, PW-4), then CRUD through the use cases. Copied into the smoke project's `src/`: the compile
  * half type-checks it (every key it reads is the composition's real API); `--postgres <url>` runs it.
  */
 import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/node-postgres';
-import { Pool } from 'pg';
-import { relations } from './generated/relations';
 import { accountTags } from './modules/account-tags/account-tag.entity';
-import { compose, defineSystem } from './generated/wiring';
-import { MODULES } from './generated/composition';
+import { composeApp } from './compose';
 import { registerOpenApiSchemas } from './generated/openapi';
 import { NotFoundError } from './shared/errors';
 import { OpenApiRegistry } from './shared/openapi';
@@ -48,17 +44,10 @@ export async function openApiCheck(): Promise<void> {
 }
 
 export async function crudCheck(url: string): Promise<void> {
-  const pool = new Pool({ connectionString: url });
-  const db = drizzle({ client: pool, relations });
-  const database = defineSystem({
-    name: 'database',
-    uses: [],
-    create: () => ({ db }),
-    stop: () => pool.end(),
-  });
-  const app = compose({ systems: [database], modules: [...MODULES] });
+  const app = composeApp({ databaseUrl: url });
   assert(app.order.indexOf('crm') < app.order.indexOf('billing'), `billing is composed after crm: ${app.order.join(', ')}`);
   await app.start();
+  const { db } = app.system('database');
   try {
     const crm = app.module('crm');
     const billing = app.module('billing');

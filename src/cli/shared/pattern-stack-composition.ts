@@ -18,7 +18,7 @@ import {
 	type CompositionInput,
 } from '../../emitters/composition/emit-composition.js';
 import { removeOtherWiringFiles } from '../../emitters/composition/stale-files.js';
-import { openApiImport, resolveRuntimeMode, runtimeImport } from './runtime-import.js';
+import { openApiImport, resolveRuntimeMode, runtimeImport, type RuntimeMode } from './runtime-import.js';
 import { printInfo, printWarning } from '../ui/output.js';
 
 /**
@@ -45,6 +45,25 @@ function compositionInput(ctx: Context): CompositionInput {
 /** The pattern-stack composition for this project, planned (a dry run). Throws its refusals (a cycle, a name). */
 export function planPatternStackComposition(ctx: Context): CompositionFile[] {
 	return emitComposition({ ...compositionInput(ctx), dryRun: true });
+}
+
+/**
+ * The composition of a project with no entity yet (PW-4): `project init` writes it, so the app's `compose.ts` and
+ * `main.ts` compile before the first `entity new`, which rewrites it. The same emitter, over an empty set.
+ */
+export function emptyPatternStackComposition(
+	dirs: { modulesDir: string; generatedDir: string },
+	mode: RuntimeMode,
+): CompositionFile[] {
+	return emitComposition({
+		relations: { entities: [], definitions: new Map(), junctions: [], tenancyColumn: 'tenant_id' },
+		modulesDir: dirs.modulesDir,
+		generatedDir: dirs.generatedDir,
+		drizzleTypeImport: runtimeImport(mode, 'types/drizzle'),
+		openApiImport: openApiImport(mode),
+		banner: COMPOSITION_BANNER,
+		dryRun: true,
+	});
 }
 
 export interface PatternStackCompositionResult {

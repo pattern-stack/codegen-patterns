@@ -59,6 +59,10 @@ export interface ProjectLayout {
 	appModule: string;
 	/** `<backend_src>/main.ts`. */
 	mainTs: string;
+	/** `<backend_src>/database.ts` — the `database` system, under `wiring: pattern-stack` (PW-4). */
+	databaseSystem: string;
+	/** `<backend_src>/compose.ts` — the app's systems and the generated modules, composed (PW-4). */
+	composeTs: string;
 	/** `<backend_src>/worker.ts` — the standalone jobs worker (#513). */
 	workerTs: string;
 	/** `<backend_src>/schema.ts` — the Drizzle schema root. */
@@ -104,6 +108,8 @@ export function projectLayout(
 		databaseModule: path.join(shared, 'database', 'database.module.ts'),
 		appModule: path.join(backendSrc, 'app.module.ts'),
 		mainTs: path.join(backendSrc, 'main.ts'),
+		databaseSystem: path.join(backendSrc, 'database.ts'),
+		composeTs: path.join(backendSrc, 'compose.ts'),
 		workerTs: path.join(backendSrc, 'worker.ts'),
 		rootSchema: path.join(backendSrc, 'schema.ts'),
 		jobHandlers: path.join(backendSrc, 'jobs'),

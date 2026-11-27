@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added: `project init --wiring pattern-stack`
+
+- `codegen project init --wiring pattern-stack` starts a project with no NestJS. It writes
+  `target: { wiring: pattern-stack, http: none }` and the app's own files:
+  - `src/database.ts`: the `database` system;
+  - `src/compose.ts`: `composeApp()`, its systems plus the generated `MODULES`;
+  - `src/main.ts`: start, run, stop, with SIGINT / SIGTERM stopping the app first;
+  - an empty composition, so the project compiles before the first entity.
+- It writes no Nest scaffold, vendors no file that imports `@nestjs/*`, and leaves the decorator flags out of
+  `tsconfig.json`.
+- With no `--wiring`, init follows the existing config's `target.wiring`, so re-running it on such a project writes
+  no Nest files.
+- `codegen update` re-syncs the same Nest-free closure under that wiring.
+- docs/CONSUMER-SETUP.md › A project without NestJS.
+
 ### Breaking: jobs run on `@pattern-stack/jobs` (JOBS-3)
 
 ADR-022's jobs subsystem is deleted. Generated apps run jobs on `@pattern-stack/jobs`, a new workspace package
