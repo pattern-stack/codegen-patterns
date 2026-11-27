@@ -725,7 +725,7 @@ export function processFieldFeatures(renderedFields, fields, naming, ownedTables
           }
         }
         // Every FK callback is annotated (#631): see `hasFk`. The suffix is the target's text (TGT-1).
-        pf.drizzleChain += constraints.columnReference({ targetExport: relatedExport, targetProp: fkColumn });
+        pf.drizzleChain += constraints.columnReference({ column: pf.name, targetExport: relatedExport, targetProp: fkColumn });
         hasFieldFk = true;
       }
       // else: host-owned target — plain column, no FK, no import. `index: true`
@@ -746,6 +746,26 @@ export function processFieldFeatures(renderedFields, fields, naming, ownedTables
   }
 
   return { fkImports, indexExpressions, hasFieldFk };
+}
+
+/**
+ * A constraint renderer that also records each fact it renders, tagged by kind (TGT-2a): the table's constraint facts
+ * are then by construction exactly the constraints it renders. `predicate` is a helper of `unique` / `check`, not a
+ * constraint, so it is passed through unrecorded.
+ */
+function recordingConstraints(renderer, recorded) {
+  const record = (kind, render) => (fact, ...rest) => {
+    recorded.push({ kind, fact });
+    return render(fact, ...rest);
+  };
+  return {
+    ...renderer,
+    columnReference: record('reference', renderer.columnReference),
+    index: record('index', renderer.index),
+    unique: record('unique', renderer.unique),
+    foreignKey: record('foreignKey', renderer.foreignKey),
+    check: record('check', renderer.check),
+  };
 }
 
 /**
@@ -1358,8 +1378,14 @@ export function buildBackendLocals(definition, baseLocals) {
   // (`src/targets/columns.ts`). Required: prompt.js reads `target` from the
   // parsed config, whose schema owns the default (ADR-047).
   const columns = columnRendererFor(baseLocals.target, `buildBackendLocals(${entity.name})`);
-  // TGT-1: and its constraints (`src/targets/constraints.ts`).
-  const constraints = constraintRendererFor(baseLocals.target, `buildBackendLocals(${entity.name})`);
+  // TGT-1: and its constraints (`src/targets/constraints.ts`). TGT-2a: every constraint this table renders is also
+  // recorded as a fact (`recordedConstraints`), so the table's constraint facts are exactly what it renders — the
+  // SQLite DDL reads them (`tableFacts`).
+  const recordedConstraints = [];
+  const constraints = recordingConstraints(
+    constraintRendererFor(baseLocals.target, `buildBackendLocals(${entity.name})`),
+    recordedConstraints,
+  );
   // ADR-043 §6 `api: false` and REL-2 §2.5's typed include are decided once, in
   // the derivation (`apiEnabled` / `hasTypedInclude`, `src/derived/api/
   // entity.ts`); the templates read its answers as `apiSurface.http.enabled` /
@@ -1692,7 +1718,7 @@ export function buildBackendLocals(definition, baseLocals) {
       .filter((rel) => !rel.match)
       .map((rel) => [
         rel.field,
-        constraints.columnReference({ targetExport: rel.relatedTable, targetProp: 'id', onDelete: rel.onDelete }),
+        constraints.columnReference({ column: rel.field, targetExport: rel.relatedTable, targetProp: 'id', onDelete: rel.onDelete }),
       ]),
   );
 
@@ -2098,6 +2124,28 @@ export function buildBackendLocals(definition, baseLocals) {
             source: 'external_id_tracking',
           },
     );
+    // Its text stays inline until TGT-1b (#917 rewrites this block); its fact is recorded here so the table's facts
+    // stay complete.
+    recordedConstraints.push({
+      kind: 'unique',
+      fact: tenantScoped
+        ? {
+            name: `uq_${entityTableName}_tenant_provider_external_id`,
+            props: [tenancy.prop, 'provider', 'externalId'],
+            where: null,
+            nullsNotDistinct: true,
+            referenced: false,
+            tenantScoped: true,
+          }
+        : {
+            name: `uq_${entityTableName}_provider_external_id`,
+            props: ['provider', 'externalId'],
+            where: null,
+            nullsNotDistinct: false,
+            referenced: false,
+            tenantScoped: false,
+          },
+    });
   }
 
   // RFC-0006 constraints (§2.1, §2.2, §2.4), appended after every other entry. Facts here; text from the target's
@@ -2778,6 +2826,9 @@ export function buildBackendLocals(definition, baseLocals) {
     // drizzle-orm (not pg-core) value imports: `sql` when a partial unique renders a predicate (#784).
     drizzleOrmImports,
     tableColumns,
+    // TGT-2a: the table as facts — its columns and every constraint it renders. No template reads it; the SQLite DDL
+    // renders it (TGT-2b writes the file), and the DDL golden pins it.
+    tableFacts: { name: entityTableName, export: entityNamePlural, columns: tableColumnFacts, constraints: recordedConstraints },
     // Every FK `references()` callback carries a `: AnyPgColumn` return-type
     // annotation (#631). An unannotated callback whose target table is on an
     // FK cycle with this one — a self-FK, or A → B → A across files — makes

@@ -3,10 +3,11 @@
  *
  * Shared with Postgres (`../shared.ts`): the `sql` predicate, `index`, `foreignKey`, `check`. Its own:
  * - a column reference's callback is annotated `AnySQLiteColumn` (the `#631` reason, in sqlite-core's type);
- * - uniques: SQLite has no NULLS NOT DISTINCT, so such a unique is refused by name (the composer states it only for a
- *   tenant-scoped entity, and an alternative — an expression index over `coalesce` — waits for someone who needs it);
- *   a referenced unique is the `unique()` table constraint, a partial one `uniqueIndex(…).where(sql…)`, the rest
- *   `uniqueIndex(…)`.
+ * - uniques: a referenced unique is the `unique()` table constraint, a partial one `uniqueIndex(…).where(sql…)`, the
+ *   rest `uniqueIndex(…)`. SQLite has no NULLS NOT DISTINCT, so that rule (a tenant-scoped entity's default) is an
+ *   expression index over `ifnull(<col>, X'00')` for every column: a BLOB never equals a TEXT or INTEGER, so NULLs
+ *   compare equal to each other and to nothing else — exactly NULLS NOT DISTINCT. A NOT NULL column is unchanged by
+ *   the wrap.
  *
  * Not yet registered: the pair's row comes in TGT-2b. Hygen-safe: imports only shipped modules.
  */
@@ -20,14 +21,23 @@ function columnReference(reference: ColumnReferenceFact): string {
 	return `.references((): AnySQLiteColumn => ${reference.targetExport}.${reference.targetProp}${action})`;
 }
 
+/** NULLS NOT DISTINCT on SQLite: each column as `ifnull(<col>, X'00')` (see the header). */
+export const NULL_SENTINEL = "X'00'";
+
 function unique(fact: UniqueFact, tableParam: string): RenderedConstraint {
+	const comment = fact.tenantScoped ? 'tenant_scoped — unique per tenant' : null;
 	if (fact.nullsNotDistinct) {
-		throw new Error(
-			`unique '${fact.name}': SQLite has no NULLS NOT DISTINCT (a tenant-scoped unique states it); drizzle/sqlite cannot write it.`,
-		);
+		if (fact.where !== null) throw new Error(`unique '${fact.name}': a partial unique is never NULLS NOT DISTINCT.`);
+		const cols = fact.props.map((p) => `sql\`ifnull(\${${tableParam}.${p}}, ${NULL_SENTINEL})\``).join(', ');
+		return {
+			builder: 'uniqueIndex',
+			expr: `uniqueIndex('${fact.name}').on(${cols})`,
+			comment: fact.tenantScoped
+				? "tenant_scoped — unique per tenant; NULLS NOT DISTINCT as ifnull(…, X'00'), so the NULL tenant is one partition"
+				: "NULLS NOT DISTINCT as ifnull(…, X'00')",
+		};
 	}
 	const cols = on(fact.props, tableParam);
-	const comment = fact.tenantScoped ? 'tenant_scoped — unique per tenant' : null;
 	if (fact.where !== null) {
 		return {
 			builder: 'uniqueIndex',

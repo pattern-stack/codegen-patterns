@@ -13,21 +13,24 @@ const base = { name: 'n', props: ['a', 'b'], where: null, nullsNotDistinct: fals
 
 describe('drizzle/sqlite constraints', () => {
 	it('a column reference is annotated AnySQLiteColumn, with the referential action', () => {
-		expect(sqlite.columnReference({ targetExport: 'accounts', targetProp: 'id', onDelete: 'cascade' })).toBe(
+		expect(sqlite.columnReference({ column: 'account_id', targetExport: 'accounts', targetProp: 'id', onDelete: 'cascade' })).toBe(
 			".references((): AnySQLiteColumn => accounts.id, { onDelete: 'cascade' })",
 		);
-		expect(sqlite.columnReference({ targetExport: 'accounts', targetProp: 'id' })).toBe(
+		expect(sqlite.columnReference({ column: 'account_id', targetExport: 'accounts', targetProp: 'id' })).toBe(
 			'.references((): AnySQLiteColumn => accounts.id)',
 		);
 	});
 
-	it('uniques: plain, partial, referenced; NULLS NOT DISTINCT is refused', () => {
+	it('uniques: plain, partial, referenced; NULLS NOT DISTINCT as an ifnull(…, X\'00\') expression index', () => {
 		expect(sqlite.unique(base, 'tCols')).toEqual({ builder: 'uniqueIndex', expr: "uniqueIndex('n').on(tCols.a, tCols.b)", comment: null });
 		expect(sqlite.unique({ ...base, where: [{ column: 'deleted_at', prop: 'deletedAt' }, { text: ' IS NULL' }] }, 'tCols').expr).toBe(
 			"uniqueIndex('n').on(tCols.a, tCols.b).where(sql`${tCols.deletedAt} IS NULL`)",
 		);
 		expect(sqlite.unique({ ...base, referenced: true }, 'tCols')).toEqual({ builder: 'unique', expr: "unique('n').on(tCols.a, tCols.b)", comment: null });
-		expect(() => sqlite.unique({ ...base, nullsNotDistinct: true }, 'tCols')).toThrow(/SQLite has no NULLS NOT DISTINCT/);
+		expect(sqlite.unique({ ...base, nullsNotDistinct: true, tenantScoped: true }, 'tCols').expr).toBe(
+			"uniqueIndex('n').on(sql`ifnull(${tCols.a}, X'00')`, sql`ifnull(${tCols.b}, X'00')`)",
+		);
+		expect(() => sqlite.unique({ ...base, nullsNotDistinct: true, where: [{ text: 'true' }] }, 'tCols')).toThrow(/partial/);
 	});
 
 	it('index, foreign key and check share Drizzle’s spelling with Postgres', () => {

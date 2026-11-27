@@ -80,6 +80,7 @@
     "src/targets/drizzle/sqlite/constraints.ts",
     "src/targets/drizzle/shared.ts",
     "src/targets/sqlite/checks.ts",
+    "src/targets/sqlite/ddl.ts",
     "src/config/entities-dir.ts",
     "src/config/junctions-dir.ts",
     "src/config/junction-naming.ts",
