@@ -31,6 +31,7 @@ import {
 import { runAdvanceJob } from './run-advance-job.ts';
 import { runChunkJob } from './run-chunk-job.ts';
 import type { JobEngineRuntime } from './runtime.ts';
+import { type DrainWindow, drainWindow } from '../engine/drain-window.ts';
 
 export interface BullmqExecutorOptions {
   /** The host's run scope: every advance and chunk runs inside it, as the in-process executor's do (`RunScope`). */
@@ -59,9 +60,9 @@ export interface BullmqExecutorOptions {
   /** Pending chunks one advance reads and enqueues, due first; past the workers' concurrency. Default `DISPATCH_WINDOW`. */
   dispatchWindow?: number;
   /**
-   * The drain window a version bump gives open runs of the old version: until this process has been up this long, it
-   * leaves them to processes still on that version; after, an advance fails them (`JobVersionGoneError`). Default
-   * `VERSION_GRACE_MS`, past a rolling deploy.
+   * The drain window a version bump gives open runs of another version: until this process and the run have both
+   * been around this long (`drainWindow`), it leaves them to processes on that version; after, an advance fails them
+   * (`JobVersionGoneError`). Default `VERSION_GRACE_MS`, past a rolling deploy.
    */
   versionGraceMs?: number;
   /**
@@ -120,9 +121,8 @@ export class BullmqExecutor implements Executor {
   private readonly sweepCursors: SweepCursors;
   private readonly sweepRuns: number;
   private readonly dispatchWindow: number;
-  private readonly versionGraceMs: number;
-  /** When this process's executor was made: the drain window runs from here. */
-  private readonly bootAt: number;
+  /** The drain window a version bump gives (`drainWindow`). */
+  private readonly drain: DrainWindow;
   /**
    * Per run, by chunk, the job (id and `runAt`) this process last enqueued and when: enqueued once, not once per
    * advance. Forgotten when this process handles the chunk's job, and stale after `claimTtlMs`, so a job consumed
@@ -159,8 +159,7 @@ export class BullmqExecutor implements Executor {
     this.sweepCursors = options.sweepCursors ?? memorySweepCursors();
     this.sweepRuns = options.sweepRuns ?? SWEEP_RUNS;
     this.dispatchWindow = options.dispatchWindow ?? DISPATCH_WINDOW;
-    this.versionGraceMs = options.versionGraceMs ?? VERSION_GRACE_MS;
-    this.bootAt = this.clock.now().getTime();
+    this.drain = drainWindow(this.clock, options.versionGraceMs ?? VERSION_GRACE_MS);
   }
 
   /** Makes a run's work eligible: queues its next advance. Refuses a job its store cannot run. */
@@ -221,11 +220,6 @@ export class BullmqExecutor implements Executor {
     }
   };
 
-  /** Whether this process has been up past the drain window a version bump gives. */
-  private versionGone(): boolean {
-    return this.clock.now().getTime() - this.bootAt >= this.versionGraceMs;
-  }
-
   /** The chunk jobs this process enqueued for a run, the oldest runs dropped first past `DISPATCHED_RUNS`. */
   private sentFor(runId: string): Map<string, SentChunk> {
     let sent = this.dispatched.get(runId);
@@ -254,7 +248,7 @@ export class BullmqExecutor implements Executor {
       limiters: this.limiters,
       stops: this.stops,
       around: this.around,
-      versionGone: () => this.versionGone(),
+      versionGone: (run) => this.drain.gone(run),
       enqueueAdvance: this.enqueueAdvance,
       dispatch: this.dispatch,
       track: (controller) => {
@@ -319,12 +313,10 @@ export class BullmqExecutor implements Executor {
       return 'skipped';
     }
     const definition = this.registry.get(run.jobKey);
-    // Within the drain window a run of another version is left for a process still on it; past it, its advance fails
-    // the run (`JobVersionGoneError`).
-    if (
-      definition.version !== run.jobVersion &&
-      !(job.name === JOB_ENGINE_JOBS.advance && this.versionGone())
-    ) {
+    // Within the drain window a run of another version is left for a process on it; past it, its advance fails the
+    // run (`JobVersionGoneError`). Its chunks are never worked under another version.
+    const standing = this.drain.standing(definition, run);
+    if (standing === 'leave' || (standing === 'gone' && job.name !== JOB_ENGINE_JOBS.advance)) {
       this.warn(
         `@pattern-stack/jobs bullmq: run ${run.id} of ${run.jobKey} was made by version ${run.jobVersion}; this process has ${definition.version}, so it is left for a process that has it`,
       );

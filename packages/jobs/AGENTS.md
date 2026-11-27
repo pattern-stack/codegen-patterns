@@ -90,7 +90,7 @@ deprecation:
 - Events come from `JOB_EVENT_TYPES` and carry ids and counts, never content; an error appears only by its type. Guard: `src/__tests__/engine.test.ts`.
 - Scope results, the cache and dedupe by tenant; never widen either across tenants. Guard: `src/__tests__/adapters.test.ts`.
 - Refuse an open run made by another `definitionVersion` (`RunVersionConflictError`), never resuming it under new code. Guard: `src/__tests__/engine.test.ts`.
-- A bump drains, then fails the old version's open runs (`JobVersionGoneError` after `versionGraceMs`), never leaving them open. Guard: `src/__tests__/engine.test.ts`.
+- A bump drains, then fails the old version's open runs (`JobVersionGoneError` once the process and the run are both older than `versionGraceMs`, `drainWindow`), never leaving them open; an old worker leaves a newer version's fresh run. Guard: `src/__tests__/engine.test.ts`.
 - Keep a job's facts (`audience`, `authority`, `limits`, `admit`, `subject`, `cacheFor`) out of its `definitionVersion`. Guard: `src/__tests__/define.test.ts`.
 - A public job declares `limits`, and a job with a `side-effect` step needs `start: 'admin'`; `defineJob` refuses either missing. Guard: `src/__tests__/define.test.ts`.
 - `admit` runs inside `startRun` for every caller, after the input parses and before the run exists; a refusal creates nothing and holds no dedupe key. Guard: `src/__tests__/engine.test.ts`.

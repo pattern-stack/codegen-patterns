@@ -36,6 +36,7 @@ import {
 } from '../ports/run-scope.ts';
 import { localLimiters } from './local-limiter.ts';
 import { systemClock } from './system-clock.ts';
+import { type DrainWindow, drainWindow } from '../engine/drain-window.ts';
 
 export interface InProcessOptions {
   store: JobStore;
@@ -54,8 +55,9 @@ export interface InProcessOptions {
   pollMs?: number;
   /**
    * The drain window a version bump gives open runs of another version before an advance fails them
-   * (`JobVersionGoneError`). Default 0: one process has no other to leave them to. With replicas, set it longer
-   * than a deploy takes, so a new replica's sweep leaves the old version's runs to the old replicas meanwhile.
+   * (`JobVersionGoneError`): until this process and the run are both older than it (`drainWindow`). Default 0: one
+   * process has no other to leave them to. With replicas, set it longer than a deploy takes, so each side leaves the
+   * other's runs meanwhile.
    */
   versionGraceMs?: number;
   /**
@@ -131,8 +133,7 @@ export class InProcessExecutor implements Executor {
   private readonly submitted = new Set<string>();
   private readonly killer = new AbortController();
   private failure: unknown = null;
-  private readonly versionGraceMs: number;
-  private readonly bootAt: number;
+  private readonly drain: DrainWindow;
   /** The last run the previous wake read woke, when its page was full. */
   private dueAfter: string | undefined;
   /** The last run the previous open sweep read, when its page was full. */
@@ -161,11 +162,10 @@ export class InProcessExecutor implements Executor {
     this.claimTtlMs = options.claimTtlMs ?? 60_000;
     this.pageSize = options.pageSize ?? 1_000;
     this.pollMs = options.pollMs ?? 250;
-    this.versionGraceMs = options.versionGraceMs ?? 0;
     this.openSweepEvery = Math.max(1, options.openSweepEvery ?? 20);
     this.leaseTtlMs = options.leaseTtlMs ?? this.claimTtlMs;
     this.around = options.around;
-    this.bootAt = this.clock.now().getTime();
+    this.drain = drainWindow(this.clock, options.versionGraceMs ?? 0);
     this.fixedConcurrency = options.chunkConcurrency;
     if (this.fixedConcurrency !== undefined)
       this.concurrency = this.fixedConcurrency;
@@ -232,8 +232,7 @@ export class InProcessExecutor implements Executor {
       pageSize: this.pageSize,
       onChange: () => this.notify(),
       submit: (id) => this.submit(id),
-      versionGone: () =>
-        this.clock.now().getTime() - this.bootAt >= this.versionGraceMs,
+      versionGone: (run) => this.drain.gone(run),
     };
     entry.done = (async () => {
       // Across processes, one advancer per run: another executor holding the run's lease advances it now, and this
@@ -306,11 +305,7 @@ export class InProcessExecutor implements Executor {
       if (this.advancing.has(runId)) continue;
       const run = await this.store.getRun(runId).catch(() => null);
       if (!run || !this.registry.has(run.jobKey)) continue;
-      if (
-        this.registry.get(run.jobKey).version !== run.jobVersion &&
-        this.clock.now().getTime() - this.bootAt < this.versionGraceMs
-      )
-        continue;
+      if (this.drain.standing(this.registry.get(run.jobKey), run) === 'leave') continue;
       this.remember(run);
       this.submitted.add(runId);
       this.kick(runId);

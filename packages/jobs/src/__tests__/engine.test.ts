@@ -35,7 +35,8 @@ import {
   RunPlanningError,
   RunVersionConflictError,
 } from '../model/errors.ts';
-import type { RunRequest } from '../model/run.ts';
+import type { Run, RunRequest } from '../model/run.ts';
+import { drainWindow } from '../engine/drain-window.ts';
 import { withSpend } from '../model/spent.ts';
 import type { Limiters } from '../ports/limiter.ts';
 import { fakeClock } from '../testing/fake-clock.ts';
@@ -1105,6 +1106,50 @@ describe('a version no longer deployed', () => {
     const failed = await store.getRun(run.id);
     expect(failed.status).toBe('failed');
     expect(failed.error?.type).toBe('JobVersionGoneError');
+  });
+});
+
+describe('a rolling deploy (review #969)', () => {
+  test('a long-up executor leaves a run a newer version just started, and fails it only once it is older than the window', async () => {
+    const clock = fakeClock();
+    const store = new MemoryJobStore({ now: clock.now });
+    const toy = toyScoring();
+    const registry = createRegistry([toy.job]);
+    const executor = new InProcessExecutor({ store, registry, clock, pollMs: 1, versionGraceMs: 1_000 });
+    await executor.start();
+    clock.advance(60 * 60_000); // this old worker has been up for an hour
+    const { run } = await store.createRun({
+      jobKey: toy.job.key,
+      jobVersion: 'a-newer-version',
+      input: { n: 2 },
+      tenantId: 'tenant-version',
+      trigger: 'eval',
+      requestedBy: null,
+      budget: { maxItems: 2 },
+      chunkSize: 2,
+    });
+    await executor.submit(run.id).catch(() => {});
+    await new Promise((r) => setTimeout(r, 30));
+    expect((await store.getRun(run.id)).status).toBe('pending');
+    clock.advance(1_000);
+    await executor.submit(run.id);
+    for (let i = 0; i < 200 && (await store.getRun(run.id)).status !== 'failed'; i++)
+      await new Promise((r) => setTimeout(r, 2));
+    await executor.stop();
+    expect((await store.getRun(run.id)).error?.type).toBe('JobVersionGoneError');
+  });
+
+  test("drainWindow: its own version is worked; another is left until the process and the run both outlast the window", () => {
+    const clock = fakeClock();
+    const window = drainWindow(clock, 1_000);
+    const run = (createdAt: Date, jobVersion = 'other') => ({ createdAt, jobVersion }) as Run;
+    expect(window.standing({ version: 'v' }, run(clock.now(), 'v'))).toBe('ours');
+    const old = run(new Date(clock.now().getTime() - 5_000));
+    expect(window.standing({ version: 'v' }, old)).toBe('leave'); // this process just booted
+    clock.advance(1_000);
+    expect(window.standing({ version: 'v' }, old)).toBe('gone');
+    expect(window.standing({ version: 'v' }, run(clock.now()))).toBe('leave'); // a run just made by a newer replica
+    expect(drainWindow(clock, 0).gone(run(clock.now()))).toBe(true);
   });
 });
 

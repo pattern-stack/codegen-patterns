@@ -84,6 +84,7 @@ describe('layers', () => {
       'start-run',
       'context',
       'signals',
+      'drain-window',
     ]);
     const executorDirs = new Set(
       sourceFiles(SRC)
