@@ -314,8 +314,14 @@ function detectSubsystemStatesImpl(
 	if (!seen.has('auth-integrations')) {
 		const vendorRoot = projectLayout(ctx.cwd, ctx.config).modules;
 
+		// S-2: a pattern-stack project vendors no Nest module; the store it composes marks the starter (its row's entry).
 		const candidates = [
-			path.join(vendorRoot, 'connections', 'connections-auth.module.ts'),
+			path.join(
+				vendorRoot,
+				'connections',
+				rowFor('target.wiring', INSTALL_MARKER, targetWiring(configOrDefaults(ctx.config).target))('auth-integrations') ??
+					'connections-auth.module.ts',
+			),
 		];
 		for (const moduleFile of candidates) {
 			if (fs.existsSync(moduleFile)) {

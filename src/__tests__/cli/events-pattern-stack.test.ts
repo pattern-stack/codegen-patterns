@@ -70,8 +70,10 @@ describe('subsystem install under pattern-stack wiring', () => {
 		expect(patternStackSubsystemRefusal('events', 'drizzle')).toBeNull();
 		expect(patternStackSubsystemRefusal('events', 'memory')).toBeNull();
 		expect(patternStackSubsystemRefusal('events', 'redis')).toMatch(/redis backend/);
-		expect(patternStackSubsystemRefusal('jobs', 'drizzle')).toMatch(/comes with J-1\. Supported: events, openapi-config, integration\./);
-		expect(patternStackSubsystemRefusal('auth', 'drizzle')).toMatch(/comes with S-2/);
+		expect(patternStackSubsystemRefusal('jobs', 'drizzle')).toMatch(/comes with J-1\. Supported: events, openapi-config, auth, auth-integrations, integration\./);
+		expect(patternStackSubsystemRefusal('bridge', 'drizzle')).toMatch(/comes with J-1/);
+		// S-2: auth on drizzle (its memory backend is refused in auth-pattern-stack.test.ts).
+		expect(patternStackSubsystemRefusal('auth', 'drizzle')).toBeNull();
 		// S-3: integration on either backend.
 		expect(patternStackSubsystemRefusal('integration', 'drizzle')).toBeNull();
 		expect(patternStackSubsystemRefusal('integration', 'memory')).toBeNull();

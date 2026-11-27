@@ -74,8 +74,29 @@ export const PATTERN_STACK_SUBSYSTEMS: Readonly<Record<SubsystemName, PatternSta
 	},
 	// Config-only: the `openapi:` block, which pattern-stack's `<generated>/openapi.ts` reads too.
 	'openapi-config': { backends: 'any', skipped: new Set(), entryFile: null, nextStep: null },
-	auth: { comesWith: 'S-2' },
-	'auth-integrations': { comesWith: 'S-2' },
+	// S-2: the module, the barrel and the HTTP half (the controller, the guard and `@Public`, the requester-context
+	// middleware, typed against `INestApplication`; H-2 is its Hono twin) are skipped: what is left is `core.ts`'s closure.
+	auth: {
+		backends: ['drizzle'],
+		why: 'the OAuth state must outlive the process that minted it',
+		skipped: new Set([
+			'auth.module.ts',
+			'index.ts',
+			'controllers/auth.controller.ts',
+			'guards/authenticated.guard.ts',
+			'guards/public.decorator.ts',
+			'middleware/requester-context.ts',
+		]),
+		entryFile: 'core.ts',
+		nextStep:
+			'Next: `codegen entity new --all` writes the `auth` system (`<generated>/auth-system.ts`: the encryption key, the ' +
+			'OAuth state store and `callbackUrl(provider)`, from the `auth` settings), listed in `SYSTEMS` ' +
+			"(`<generated>/composition.ts`). compose.ts must compose them, and drizzle.config.ts's `schema` must include " +
+			'`<generated>/subsystems-schema.ts` (the `auth_oauth_state` table). For the connection store: ' +
+			'`codegen subsystem install auth-integrations`.',
+	},
+	// S-2: the connections starter. It also needs auth installed, which the install checks itself (it needs the project).
+	'auth-integrations': { backends: 'any', skipped: new Set(), entryFile: 'connection-store.ts', nextStep: null },
 	// S-3: Nest's module, its barrel and `ExecuteIntegrationUseCase` are skipped (the system builds `IntegrationRunner`).
 	integration: {
 		backends: ['drizzle', 'memory'],
@@ -124,8 +145,18 @@ export function patternStackSubsystemRefusal(name: SubsystemName, backend: Subsy
 	return ctx && row.prerequisite ? row.prerequisite(ctx) : null;
 }
 
-/** The vendored copy's filter under pattern-stack: the backend's, minus the bundled `generated/` set and the row's skips. */
+/**
+ * The vendored copy's filter under pattern-stack: the backend's, minus the bundled `generated/` set and the row's
+ * skips. The skips hold paths relative to the subsystem. `copyRuntime` keeps a file when its filter passes the
+ * relative path OR its base name, so a bare name is refused too when it is the base name of a skipped nested path
+ * (`auth.controller.ts`). A nested file that only shares a root skip's name (`protocols/index.ts`) passes on its path.
+ */
 export function patternStackFileFilter(name: SubsystemName, base: (file: string) => boolean): (file: string) => boolean {
 	const skipped = patternStackSubsystem(name)?.skipped ?? new Set<string>();
-	return (file) => base(file) && !file.startsWith('generated/') && !skipped.has(file);
+	const nestedNames = new Set([...skipped].filter((s) => s.includes('/')).map((s) => path.posix.basename(s)));
+	return (file) => {
+		const rel = file.split(path.sep).join('/');
+		if (!base(file) || rel.startsWith('generated/') || skipped.has(rel)) return false;
+		return rel.includes('/') || !nestedNames.has(rel);
+	};
 }

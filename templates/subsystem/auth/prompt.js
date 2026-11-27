@@ -40,6 +40,8 @@ export default {
       schemaPath:
         requiredPathArg(args, "schemaPath", "subsystem auth"),
       appModulePath: requiredPathArg(args, "appModulePath", "subsystem auth"),
+      // S-2: a pattern-stack project has no app.module.ts, so the TODO isn't written there.
+      appModuleHook: args.appModuleHook !== "false",
       envConfigPath: args.envConfigPath ?? ".env.config",
       redirectUriBase: args.redirectUriBase ?? "http://localhost:3000",
       tokenEncryptionKey: args.tokenEncryptionKey ?? "",

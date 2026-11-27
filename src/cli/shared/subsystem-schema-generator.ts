@@ -97,6 +97,13 @@ export const SCHEMA_SYMBOLS: Partial<Record<SubsystemName, string[]>> = {
 /** Subsystems that contribute schema, in a deterministic emit order. */
 const SCHEMA_ORDER: SubsystemName[] = ['events', 'jobs', 'bridge', 'integration'];
 
+/**
+ * Under pattern-stack wiring auth's `auth_oauth_state` is listed too (S-2): the `auth` system's state store writes it,
+ * and nothing else tells drizzle-kit about it. Nest's barrel leaves it out, as before (#284).
+ */
+const AUTH_SCHEMA_SYMBOLS = ['authOAuthState'];
+const PATTERN_STACK_SCHEMA_ORDER: SubsystemName[] = [...SCHEMA_ORDER, 'auth'];
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -181,9 +188,9 @@ export function buildSubsystemSchemaBarrel(
 	const emitted: SubsystemName[] = [];
 	const lines: string[] = [];
 
-	for (const name of SCHEMA_ORDER) {
+	for (const name of wiring === 'pattern-stack' ? PATTERN_STACK_SCHEMA_ORDER : SCHEMA_ORDER) {
 		if (!installedNames.has(name)) continue;
-		const symbols = SCHEMA_SYMBOLS[name];
+		const symbols = name === 'auth' ? AUTH_SCHEMA_SYMBOLS : SCHEMA_SYMBOLS[name];
 		if (!symbols || symbols.length === 0) continue;
 		const importSpec = schemaImportFor(mode, name, subsystemsRel, wiring);
 		lines.push(`export { ${symbols.join(', ')} } from '${importSpec}';`);

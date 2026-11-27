@@ -1,5 +1,4 @@
-import { Injectable } from '@nestjs/common';
-import { ConnectionService } from '../../connection.service';
+import type { ConnectionRows } from '../../connection-rows';
 import type { Connection } from '../../connection.entity';
 
 /**
@@ -11,9 +10,8 @@ import type { Connection } from '../../connection.entity';
  * the consumer-facing facade behavior (which strips ciphertexts before
  * returning).
  */
-@Injectable()
 export class ListUserConnectionsUseCase {
-  constructor(private readonly connections: ConnectionService) {}
+  constructor(private readonly connections: ConnectionRows) {}
 
   async execute(userId: string): Promise<Connection[]> {
     return this.connections.findByUserId(userId);

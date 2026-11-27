@@ -259,6 +259,8 @@ export function generateProviderFactory(
 	settings: readonly ProjectSetting[],
 	factoryFile: string,
 	settingsFile: string,
+	/** S-2: the connection store's module (the vendored starter's `connection-store.ts`), when `connections` is composed. */
+	connectionStoreFile: string | null = null,
 ): string {
 	const n = providerSystemNames(def.slug);
 	const strategy = parseImportRef(def.auth.strategy);
@@ -268,8 +270,11 @@ export function generateProviderFactory(
 	const keys = settings.map((x) => x.key);
 	const authKeys = keys.filter((k) => k !== PROVIDER_BASE_URL_KEY);
 	const arg = (list: string[]) => `{ ${list.map((k) => `${k}: settings.${k}`).join(', ')} }`;
+	// S-2: a refresh strategy reads and persists the connection's tokens through the store.
+	const storeArgs = connectionStoreFile ? ['connectionReader: connections.reader', 'tokenWriter: connections.tokenWriter'] : [];
+	const strategyArgs = [...authKeys.map((k) => `${k}: settings.${k}`), ...storeArgs];
 	const examples = [
-		...(authKeys.length > 0 ? [`//   new ${strategy.exportName}(${arg(authKeys)})`] : []),
+		...(strategyArgs.length > 0 ? [`//   new ${strategy.exportName}({ ${strategyArgs.join(', ')} })`] : []),
 		...(client && keys.includes(PROVIDER_BASE_URL_KEY) ? [`//   new ${client.exportName}(${arg([PROVIDER_BASE_URL_KEY])})`] : []),
 	];
 	return `${SCAFFOLD_SENTINEL}
@@ -278,7 +283,7 @@ export function generateProviderFactory(
 // Source: definitions/providers/${def.slug}.yaml.
 import { ${strategy.exportName} } from '${strategy.path}';
 ${client ? `import { ${client.exportName} } from '${client.path}';\n` : ''}import type { Settings } from '${relativeImport(factoryFile, settingsFile)}';
-
+${connectionStoreFile ? `import type { ConnectionStore } from '${relativeImport(factoryFile, connectionStoreFile)}';\n` : ''}
 /**
  * What the \`${n.name}\` system holds: ${client ? "the provider's auth strategy and API client." : "the provider's auth strategy. A per-connection provider\n * (RFC-0003 R5) has no client: each adapter builds one per connection."}
  * The adapters type theirs from this, so whatever these classes are, the adapters take them as they are.
@@ -289,11 +294,11 @@ ${client ? `  client: ${client.exportName};\n` : ''}}
 
 /**
  * Build them here, from the provider's settings: ${keys.length > 0 ? keys.map((k) => `\`${k}\``).join(', ') : 'none'} (declared in its YAML;
- * \`codegen project settings\` lists them). Pass each constructor what it takes${examples.length > 0 ? ', e.g.' : '.'}
+ * \`codegen project settings\` lists them)${connectionStoreFile ? ', and the connection store (`connections`: the reader and token writer a\n * refresh strategy takes)' : ''}. Pass each constructor what it takes${examples.length > 0 ? ', e.g.' : '.'}
 ${examples.map((e) => ` * ${e.slice(3)}`).join('\n')}${examples.length > 0 ? '\n' : ''} */
-export function ${n.factory}(settings: Settings['${group}']): ${n.apiType} {
+export function ${n.factory}(settings: Settings['${group}']${connectionStoreFile ? ', connections: ConnectionStore' : ''}): ${n.apiType} {
   void settings;
-  return {
+${connectionStoreFile ? '  void connections;\n' : ''}  return {
     auth: new ${strategy.exportName}(),
 ${client ? `    client: new ${client.exportName}(),\n` : ''}  };
 }
@@ -301,13 +306,19 @@ ${client ? `    client: new ${client.exportName}(),\n` : ''}  };
 }
 
 /** `<slug>.provider.ts`: the provider as a system, built by the author's factory from its settings. */
-export function generateProviderSystem(def: ActiveProviderDefinition, file: string, wiringFile: string): string {
+export function generateProviderSystem(
+	def: ActiveProviderDefinition,
+	file: string,
+	wiringFile: string,
+	/** S-2: the `connections` system is composed, so the factory takes the store too. */
+	connections = false,
+): string {
 	const n = providerSystemNames(def.slug);
 	const group = providerSettingsGroup(def.slug);
 	return `${generatedBanner(`definitions/providers/${def.slug}.yaml`)}
 /**
  * The \`${def.slug}\` provider (surfaces: ${def.surfaces.join(', ')}) as a \`@pattern-stack/wiring\` system: its parts
- * come from \`${n.factory}\` (\`${def.slug}.provider.factory.ts\`, yours), given its settings (\`settings.${group}\`).
+ * come from \`${n.factory}\` (\`${def.slug}.provider.factory.ts\`, yours), given its settings (\`settings.${group}\`)${connections ? '\n * and the connection store (the `connections` system, S-2)' : ''}.
  */
 import { ${n.factory}, type ${n.apiType} } from '${relativeImport(providerSystemFile('/', def.slug), providerFactoryFile('/', def.slug))}';
 import { defineSystem } from '${relativeImport(file, wiringFile)}';
@@ -316,8 +327,8 @@ export type { ${n.apiType} };
 
 export const ${n.exportName} = defineSystem({
   name: '${n.name}',
-  uses: ['settings'],
-  create: ({ settings }): ${n.apiType} => ${n.factory}(settings.${group}),
+  uses: [${connections ? "'settings', 'connections'" : "'settings'"}],
+  create: (${connections ? '{ settings, connections }' : '{ settings }'}): ${n.apiType} => ${n.factory}(settings.${group}${connections ? ', connections' : ''}),
 });
 `;
 }
@@ -393,7 +404,53 @@ export interface EmitPatternStackIntegrationsOptions extends PatternStackIntegra
 	/** Absolute `<generated>/wiring.ts`, which every manifest imports `defineSystem` from. */
 	wiringFile: string;
 	tenancyColumn: string;
+	/**
+	 * S-2: the `connections` system is composed (the auth-integrations starter, under pattern-stack): absolute path of
+	 * the vendored `connection-store.ts`. Each provider's factory then takes the store as its second argument.
+	 */
+	connectionStoreFile?: string | null;
 	dryRun?: boolean;
+}
+
+/**
+ * A provider factory whose parameters don't match what its system passes, `(settings)` or, with `connections` composed,
+ * `(settings, connections)`: the parameters it lacks (SET-1's settings, S-2's store), or how many it has too many (the
+ * starter was removed after the factory took the store).
+ */
+export interface FactoryBehind {
+	file: string;
+	missing: Array<'settings' | 'connections'>;
+	extra: number;
+}
+
+/** The text between a factory's parentheses (balanced, so a typed parameter's own parentheses stay in), or null. */
+export function factoryParameters(source: string, factory: string): string | null {
+	const start = source.search(new RegExp(`export function ${factory}\\(`));
+	if (start === -1) return null;
+	let depth = 0;
+	for (let i = source.indexOf('(', start); i < source.length; i++) {
+		if (source[i] === '(') depth++;
+		else if (source[i] === ')' && --depth === 0) return source.slice(source.indexOf('(', start) + 1, i);
+	}
+	return null;
+}
+
+/** A parameter list's top-level parameters (a comma inside `<…>`, `(…)`, `{…}` or `[…]` doesn't split). */
+export function countParameters(params: string): number {
+	let depth = 0;
+	let count = 0;
+	let any = false;
+	for (const ch of params) {
+		if ('<({['.includes(ch)) depth++;
+		else if ('>)}]'.includes(ch)) depth--;
+		else if (ch === ',' && depth === 0) {
+			if (any) count++;
+			any = false;
+			continue;
+		}
+		if (!/\s/.test(ch)) any = true;
+	}
+	return count + (any ? 1 : 0);
 }
 
 export interface EmitPatternStackIntegrationsResult {
@@ -425,8 +482,9 @@ export function emitPatternStackIntegrations(opts: EmitPatternStackIntegrationsO
 
 	for (const p of plan.providers) {
 		const own = providerSettings({ definition: p.def, filePath: '' });
-		scaffold(p.factoryFile, () => generateProviderFactory(p.def, own, p.factoryFile, join(dirname(opts.wiringFile), SETTINGS_FILE)));
-		generated(p.systemFile, generateProviderSystem(p.def, p.systemFile, opts.wiringFile));
+		const store = opts.connectionStoreFile ?? null;
+		scaffold(p.factoryFile, () => generateProviderFactory(p.def, own, p.factoryFile, join(dirname(opts.wiringFile), SETTINGS_FILE), store));
+		generated(p.systemFile, generateProviderSystem(p.def, p.systemFile, opts.wiringFile, store !== null));
 	}
 
 	for (const s of plan.surfaces) {

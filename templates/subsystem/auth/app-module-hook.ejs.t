@@ -1,5 +1,5 @@
 ---
-to: "<%= appModulePath %>"
+to: "<%= appModuleHook ? appModulePath : null %>"
 inject: true
 append: true
 skip_if: "AuthModule"

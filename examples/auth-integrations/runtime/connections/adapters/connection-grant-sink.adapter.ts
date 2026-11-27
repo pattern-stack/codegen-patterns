@@ -1,4 +1,3 @@
-import { Injectable } from '@nestjs/common';
 import type {
   IConnectionGrantSink,
   ConnectionGrantInput,
@@ -19,7 +18,6 @@ import { CreateOrUpdateFromOAuthGrantUseCase } from '../oauth/use-cases/create-o
  * needed — encryption, upsert resolution, and status handling all live
  * inside the use case.
  */
-@Injectable()
 export class ConnectionGrantSinkAdapter implements IConnectionGrantSink {
   constructor(private readonly useCase: CreateOrUpdateFromOAuthGrantUseCase) {}
 

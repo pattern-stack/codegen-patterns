@@ -3,21 +3,27 @@ import {
   AUTH_CONNECTION_GRANT_SINK,
   AUTH_CONNECTION_READER,
   AUTH_CONNECTION_TOKEN_WRITER,
+  ENCRYPTION_KEY,
+  type IEncryptionKey,
 } from '@pattern-stack/codegen/runtime/subsystems/auth';
 import { ConnectionsModule } from './connections.module';
-import { ConnectionGrantSinkAdapter } from './adapters/connection-grant-sink.adapter';
-import { ConnectionReaderAdapter } from './adapters/connection-reader.adapter';
-import { ConnectionTokenWriterAdapter } from './adapters/connection-token-writer.adapter';
+import { ConnectionService } from './connection.service';
+import { createConnectionStore, type ConnectionStore } from './connection-store';
 import { ConnectionsService } from './facade/connections.service';
-import { CreateOrUpdateFromOAuthGrantUseCase } from './oauth/use-cases/create-or-update-from-oauth-grant.use-case';
-import { DisconnectConnectionUseCase } from './oauth/use-cases/disconnect-connection.use-case';
-import { ListUserConnectionsUseCase } from './oauth/use-cases/list-user-connections.use-case';
-import { MarkConnectionRequiresReauthUseCase } from './oauth/use-cases/mark-connection-requires-reauth.use-case';
+
+/** The one store this module builds; every binding below is a part of it. */
+const CONNECTION_STORE = Symbol.for('auth-integrations:connection-store');
 
 /**
  * `ConnectionsAuthModule` — wires the consumer-side adapters that
  * satisfy the auth subsystem's three connection-store ports plus the
  * `ConnectionsService` facade and its use cases.
+ *
+ * The classes are plain (S-2): `createConnectionStore` builds them all over
+ * the codegen-emitted `ConnectionService` and the `ENCRYPTION_KEY` — the same
+ * construction the pattern-stack `connections` system runs over the
+ * connection repository. This module provides that store once and binds its
+ * parts.
  *
  * Imports `ConnectionsModule` (the codegen-emitted entity module) to
  * pull in `ConnectionService` + its repository.
@@ -29,9 +35,10 @@ import { MarkConnectionRequiresReauthUseCase } from './oauth/use-cases/mark-conn
  * by convention).
  *
  * Token bindings (per #285 / #286):
- *   - AUTH_CONNECTION_READER       → ConnectionReaderAdapter
- *   - AUTH_CONNECTION_TOKEN_WRITER → ConnectionTokenWriterAdapter
- *   - AUTH_CONNECTION_GRANT_SINK   → ConnectionGrantSinkAdapter
+ *   - AUTH_CONNECTION_READER       → the store's `reader`
+ *   - AUTH_CONNECTION_TOKEN_WRITER → the store's `tokenWriter`
+ *   - AUTH_CONNECTION_GRANT_SINK   → the store's `grantSink`
+ *   - ConnectionsService           → the store's `connections` (the facade)
  *
  * `@Global()` is required: `AuthController` lives inside `AuthModule`'s
  * own injector and resolves the `AUTH_CONNECTION_*` providers exposed
@@ -43,32 +50,33 @@ import { MarkConnectionRequiresReauthUseCase } from './oauth/use-cases/mark-conn
 @Module({
   imports: [ConnectionsModule],
   providers: [
-    // Use cases (consumed by the facade)
-    CreateOrUpdateFromOAuthGrantUseCase,
-    MarkConnectionRequiresReauthUseCase,
-    DisconnectConnectionUseCase,
-    ListUserConnectionsUseCase,
-
-    // Facade (consumer-facing API; controllers/handlers inject this)
-    ConnectionsService,
-
-    // Subsystem port adapters (concrete classes — also exposed under
-    // their token aliases for `@Inject(...)` consumers in the auth
-    // subsystem).
-    ConnectionReaderAdapter,
-    ConnectionTokenWriterAdapter,
-    ConnectionGrantSinkAdapter,
+    {
+      provide: CONNECTION_STORE,
+      useFactory: (connections: ConnectionService, encryption: IEncryptionKey): ConnectionStore =>
+        createConnectionStore(connections, encryption),
+      inject: [ConnectionService, ENCRYPTION_KEY],
+    },
+    // Facade (consumer-facing API; controllers/handlers inject this class).
+    {
+      provide: ConnectionsService,
+      useFactory: (store: ConnectionStore) => store.connections,
+      inject: [CONNECTION_STORE],
+    },
+    // Subsystem port adapters, under the auth subsystem's tokens.
     {
       provide: AUTH_CONNECTION_READER,
-      useExisting: ConnectionReaderAdapter,
+      useFactory: (store: ConnectionStore) => store.reader,
+      inject: [CONNECTION_STORE],
     },
     {
       provide: AUTH_CONNECTION_TOKEN_WRITER,
-      useExisting: ConnectionTokenWriterAdapter,
+      useFactory: (store: ConnectionStore) => store.tokenWriter,
+      inject: [CONNECTION_STORE],
     },
     {
       provide: AUTH_CONNECTION_GRANT_SINK,
-      useExisting: ConnectionGrantSinkAdapter,
+      useFactory: (store: ConnectionStore) => store.grantSink,
+      inject: [CONNECTION_STORE],
     },
   ],
   exports: [

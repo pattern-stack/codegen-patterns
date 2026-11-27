@@ -1,5 +1,5 @@
 /**
- * Pattern-stack wiring usage (PW-3a), as a consumer writes it: the app `project init` wrote (`compose.ts`, its
+ * Pattern-stack wiring usage (PW-3a; auth S-2), as a consumer writes it: the app `project init` wrote (`compose.ts`, its
  * `database` system, PW-4), then CRUD through the use cases. Copied into the smoke project's `src/`: the compile
  * half type-checks it (every key it reads is the composition's real API); `--postgres <url>` runs it.
  */
@@ -13,6 +13,8 @@ import {
   type IChangeSource,
   type IIntegrationSink,
 } from './shared/subsystems/integration/core';
+import { OAuth2RefreshStrategy, OAuthStateError, type AuthCredentials, type ParsedRefreshResponse } from './shared/subsystems/auth/core';
+import { connections } from './modules/connections/connection.entity';
 import { composeApp } from './compose';
 import { registerOpenApiSchemas } from './generated/openapi';
 import { NotFoundError } from './shared/errors';
@@ -55,6 +57,10 @@ export async function openApiCheck(): Promise<void> {
 export async function crudCheck(url: string): Promise<void> {
   const app = composeApp({ databaseUrl: url });
   assert(app.order.includes('integration'), `the integration system is composed: ${app.order.join(', ')}`);
+  assert(
+    app.order.indexOf('auth') > app.order.indexOf('settings') && app.order.indexOf('connections') > app.order.indexOf('auth'),
+    `auth is composed after settings, and connections after auth: ${app.order.join(', ')}`,
+  );
   assert(app.order.indexOf('crm') < app.order.indexOf('billing'), `billing is composed after crm: ${app.order.join(', ')}`);
   await app.start();
   const { db } = app.system('database');
@@ -90,6 +96,7 @@ export async function crudCheck(url: string): Promise<void> {
     assert((await accountNames(crm.repositories)).includes('Acme'), 'a context service reads through the bundle');
 
     await integrationCheck(app.system('integration'), db);
+    await authCheck(app.system('auth'), app.system('connections'), db);
 
     // A junction inside crm (PW-3c): attached from one parent, listed from the other, read from `crm.junctions`.
     const tag = await crm.tag.useCases.create.execute({ label: 'priority' });
@@ -186,6 +193,74 @@ async function integrationCheck(
     JSON.stringify(await integration.cursors.get(subscription!.id)) === JSON.stringify({ at: 2 }),
     'the cursor store keeps the last cursor',
   );
+}
+
+/** A provider's refresh strategy, as an author writes one: the token endpoint is stubbed (`fetch`), the store is real. */
+class SmokeOAuthStrategy extends OAuth2RefreshStrategy {
+  protected readonly provider = 'smoke';
+  protected readonly defaultExpiresInSec = 3600;
+  protected tokenEndpoint(): string {
+    return 'https://smoke.invalid/token';
+  }
+  protected refreshBodyExtras(): Record<string, string> {
+    return { client_id: 'smoke' };
+  }
+  protected parseRefreshResponse(raw: unknown): ParsedRefreshResponse {
+    const r = raw as { access_token: string; refresh_token?: string; expires_in?: number };
+    return { accessToken: r.access_token, refreshToken: r.refresh_token, expiresInSec: r.expires_in };
+  }
+  protected buildCredentials(accessToken: string): AuthCredentials {
+    return { accessToken };
+  }
+}
+
+/**
+ * Auth (S-2) on the `auth` and `connections` systems: an OAuth state is single-use in Postgres; a grant is stored
+ * encrypted and read back decrypted; a refresh through a strategy built on the store's reader and writer persists the
+ * rotated tokens; the callback URL is the redirect base's.
+ */
+async function authCheck(
+  auth: SystemApis['auth'],
+  store: SystemApis['connections'],
+  db: SystemApis['database']['db'],
+): Promise<void> {
+  const userId = '00000000-0000-4000-8000-000000000002';
+  const state = await auth.oauthState.generate({ userId, redirect: '/settings' });
+  const consumed = await auth.oauthState.consume(state);
+  assert(consumed.userId === userId && consumed.redirect === '/settings', 'an OAuth state reads back once');
+  let replay: unknown;
+  try {
+    await auth.oauthState.consume(state);
+  } catch (err) {
+    replay = err;
+  }
+  assert(replay instanceof OAuthStateError && replay.reason === 'missing', 'a consumed OAuth state is refused');
+  assert(
+    auth.callbackUrl('smoke') === 'http://localhost:3000/auth/smoke/callback',
+    `the callback URL is the redirect base's: ${auth.callbackUrl('smoke')}`,
+  );
+
+  await store.grantSink.createOrUpdateFromOAuthGrant({ userId, provider: 'smoke', accessToken: 'a1', refreshToken: 'r1' });
+  const row = await store.connections.findByUserAndProvider(userId, 'smoke');
+  assert(row?.accessToken === 'a1' && row.refreshToken === 'r1', 'the grant reads back decrypted');
+  const [raw] = await db.select().from(connections).where(eq(connections.id, row!.id));
+  assert(raw?.accessTokenEncrypted && raw.accessTokenEncrypted !== 'a1', 'the stored token is ciphertext');
+
+  const calls: string[] = [];
+  const strategy = new SmokeOAuthStrategy({
+    connectionReader: store.reader,
+    tokenWriter: store.tokenWriter,
+    fetch: async (_url, init) => {
+      calls.push(String(init?.body));
+      return new Response(JSON.stringify({ access_token: 'a2', refresh_token: 'r2', expires_in: 60 }), { status: 200 });
+    },
+  });
+  const creds = await strategy.resolve(row!.id);
+  assert(creds.accessToken === 'a2' && calls.length === 1 && calls[0]!.includes('refresh_token=r1'), 'an expired grant refreshes');
+  const after = await store.reader.findByIdDecrypted(row!.id);
+  assert(after?.accessToken === 'a2' && after.refreshToken === 'r2', 'the refreshed and rotated tokens are persisted');
+  await store.connections.disconnect(row!.id);
+  await db.delete(connections).where(eq(connections.id, row!.id));
 }
 
 if (import.meta.main) {

@@ -43,6 +43,7 @@ import path from 'node:path';
 
 import type { CodegenConfig } from './context.js';
 import { projectLayout } from './project-layout.js';
+import { isPatternStackWiring } from '../../targets/apps.js';
 
 // The default `redirectUriBase` when the consumer hasn't overridden it in config, and the env var names, are the
 // settings derivation's (SET-1).
@@ -61,6 +62,11 @@ export interface AuthScaffoldLocals {
 	schemaPath: string;
 	/** Where `app-module-hook.ejs.t` appends the `AuthModule.forRoot` TODO. */
 	appModulePath: string;
+	/**
+	 * Whether the `AuthModule` TODO is appended to `appModulePath`: not under `target.wiring: pattern-stack` (S-2),
+	 * which has no app.module.ts (the `auth` system is composed instead).
+	 */
+	appModuleHook: boolean;
 	/** Where `env-config.ejs.t` appends `INTEGRATION_TOKEN_ENCRYPTION_KEY=...`. */
 	envConfigPath: string;
 	/**
@@ -130,6 +136,7 @@ export function resolveAuthScaffoldLocals(
 			'auth-oauth-state.schema.ts',
 		),
 		appModulePath: layout.appModule,
+		appModuleHook: !isPatternStackWiring(config?.target ?? {}),
 		envConfigPath: path.resolve(cwd, '.env.config'),
 		redirectUriBase,
 		tokenEncryptionKey,
@@ -153,5 +160,7 @@ export function localsToHygenArgs(locals: AuthScaffoldLocals): string[] {
 		// SET-1: the env var names the template writes, from the settings derivation.
 		'--tokenEncryptionKeyEnv', TOKEN_ENCRYPTION_KEY_ENV,
 		'--redirectUriBaseEnv', AUTH_REDIRECT_URI_BASE_ENV,
+		// S-2: no `AuthModule` TODO in a pattern-stack project (it has no app.module.ts).
+		'--appModuleHook', String(locals.appModuleHook),
 	];
 }
