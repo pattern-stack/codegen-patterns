@@ -47,7 +47,11 @@ CLI, hook and MCP apps.
   - `emits:` (the typed bus is decorated; S-1);
   - EAV;
   - an integration `surface:` (S-3);
-  - an entity a junction fans out to (PW-3b).
+  - an entity a junction fans out to (PW-3b);
+  - `junction new` and `relationship new` (`plainWiringRefusal`, `src/cli/shared/storage-only.ts`: junctions PW-3b,
+    relationships #679);
+  - `entity new` in a project that has junction or relationship YAMLs, rather than generating with their tables
+    silently missing from the schema barrel.
 
 ### The composition: one module per context (d27, d29)
 
@@ -64,6 +68,21 @@ after it are skipped by name.
   - Building in two phases is what makes mutual composition work: a `belongs_to` one way and a `has_many` back is
     an entity-level cycle but not a class-level one (PW-1).
 - **A cycle between contexts is refused**, naming it (`contextCycles`, PW-1). Modules depend on each other one way.
+- **Module names are a context's own.** A context whose camelCased name is `entities` (the root module) or
+  `database` (the system) is refused, and so are two contexts that camelCase to one name.
+- **One set of composed repositories.** The composition passes each service its repositories from the class
+  graph's service edges, and `<entity>.wiring.ts` declares them from `repositoryDeps`. Under plain,
+  `entity-locals.js` throws, naming both, if they ever differ.
+- **The dry run predicts a plain run:** the schema barrel without the modules barrel, and the composition's files
+  (or its refusal: a context cycle, a reserved name).
+- **Switching `target.wiring` removes the other wiring's generated files** (`stale-files.ts`). It removes only files
+  whose first line is codegen's banner, and names each one.
+  - Going plain removes the Nest controllers, `*.module.ts` and `<generated>/modules.ts`, plus any context
+    `module.ts` no longer composed.
+  - Going nest removes every context `module.ts`, every `*.wiring.ts`, `<generated>/wiring.ts` and
+    `<generated>/composition.ts`.
+- The skip line names every post-step plain doesn't run: subsystems, the ScopeEntityType union, events, bridge,
+  jobs, orchestration, the semantic model, frontend and integrations.
 - **`<generated>/wiring.ts`**: `ModuleApis` (each module's `ReturnType`), `SystemApis` (`database: { db }`), and
   `createWiring`'s `defineModule` / `defineSystem` / `compose` typed against them.
 - **`<generated>/composition.ts`**: `MODULES`, every manifest, for the app's `compose.ts` (PW-4).
@@ -75,9 +94,11 @@ module imports are unchanged (byte-identical).
 
 ## The gate: `test-smoke-plain` (in `test-all`)
 
-`test/smoke/run-smoke-plain.ts` with `test/smoke/fixtures-plain/`. The fixtures are crm (`account` with a has_many
-`contacts`, a query and a search; `contact` belongs_to `account`), billing (`invoice` belongs_to `account`) and a
-root `note`. The steps:
+`test/smoke/run-smoke-plain.ts` with `test/smoke/fixtures-plain/`. The fixtures are:
+- crm: `account` with a has_many `contacts`, a query and a search; `contact`, which belongs_to `account`; and a
+  joined-table family, `party` (base, discriminator `kind`) with its child `person`;
+- billing: `invoice`, which belongs_to `account`;
+- a root `note`. The steps:
 1. Install `drizzle-orm`, `pg`, `zod` and `@pattern-stack/wiring`, the last built from `packages/wiring`. Nothing
    from `@nestjs` and no `reflect-metadata`.
 2. Run `project init --runtime vendored`, set the target to plain, and delete every scaffolded file that imports
@@ -99,6 +120,7 @@ root `note`. The steps:
   then through the composed use cases:
   - create;
   - findById;
+  - a joined-table child created through its base and read back;
   - a cross-module create (billing's `invoice` with crm's account);
   - list;
   - the declarative query;
