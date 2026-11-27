@@ -34,6 +34,16 @@ export interface LimiterConfig {
 export const DEFAULT_LEASE_MS = 5 * 60_000;
 
 /**
+ * The policy every `Limiters` adapter shares, so `limiterContract` means the same for each: the defaults, the window
+ * a per-minute limit counts over, a 429's wait with no Retry-After, and the OK calls that win back one in-flight slot
+ * after a throttle.
+ */
+export const DEFAULT_LIMITER: LimiterConfig = { inFlight: 6 };
+export const LIMITER_WINDOW_MS = 60_000;
+export const DEFAULT_THROTTLE_MS = 1_000;
+export const RECOVER_EVERY = 20;
+
+/**
  * Every limiter of a process, found by name and bucket. `name` picks the config ('decisions'), `key` the bucket
  * ('decisions', or 'decisions:<tenantId>' for a limit per tenant). The same (name, key) is the same
  * bucket for every caller of one `Limiters`, and, for a shared adapter (`@pattern-stack/jobs/redis`), across processes.

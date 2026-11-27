@@ -1,19 +1,16 @@
 import {
   DEFAULT_LEASE_MS,
+  DEFAULT_LIMITER,
+  DEFAULT_THROTTLE_MS,
+  LIMITER_WINDOW_MS as MINUTE,
+  RECOVER_EVERY,
   type Limiter,
   type LimiterConfig,
   type Limiters,
   type Permit,
 } from '../ports/limiter.ts';
 
-/** The defaults: 6 in flight, per-minute limits unset until the quota is read. */
-export const DEFAULT_LIMITER: LimiterConfig = { inFlight: 6 };
 
-const MINUTE = 60_000;
-/** A 429 with no Retry-After still waits this long. */
-const DEFAULT_THROTTLE_MS = 1_000;
-/** OK calls it takes to win back one in-flight slot after a throttle. */
-const RECOVER_EVERY = 20;
 
 /** Rough token count for a request: characters ÷ 4. */
 export const estimateTokens = (chars: number): number => Math.ceil(chars / 4);

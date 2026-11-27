@@ -11,12 +11,8 @@ export {
   type RunToCompletionDeps,
   runToCompletion,
 } from './adapters/in-process-executor.ts';
-export {
-  DEFAULT_LIMITER,
-  estimateTokens,
-  localLimiter,
-  localLimiters,
-} from './adapters/local-limiter.ts';
+export { estimateTokens, localLimiter, localLimiters } from './adapters/local-limiter.ts';
+export { DEFAULT_LIMITER } from './ports/limiter.ts';
 export { logSink } from './adapters/log-sink.ts';
 export { memorySweepCursors } from './adapters/memory-sweep-cursors.ts';
 export { systemClock } from './adapters/system-clock.ts';

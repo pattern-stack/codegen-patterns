@@ -120,7 +120,7 @@ deprecation:
 - Retries have one owner, the engine: every BullMQ job is added with `attempts: 1` and no BullMQ backoff. Guard: `src/bullmq/__tests__/bullmq.test.ts`.
 - Every engine job is its own run's trace root: `submit` and `sweep()` enqueue with no context, and a handled job stamps what it enqueues with its own. Guard: `src/bullmq/__tests__/bullmq.test.ts`.
 - Successive sweeps rotate through every open run, past runs of another version left open. Guard: `src/bullmq/__tests__/bullmq.test.ts`.
-- `redisLimiters` passes `limiterContract` on Valkey, one quota across processes. Guard: `src/__tests__/` (the contract on the in-memory limiters); on Valkey, the host's integration suite.
+- `redisLimiters` passes `limiterContract` on Valkey, one quota across processes, two clients as two holders. Guard: `test/integration/jobs-redis-limiters.integration.test.ts` (codegen's `just test-jobs-integration`, a real Valkey); the in-memory limiters run the same contract in `src/__tests__/adapters.test.ts`.
 
 ## The Nest layer
 

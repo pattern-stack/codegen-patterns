@@ -222,7 +222,7 @@ test-jobs:
 # @pattern-stack/jobs on real Postgres (testcontainers, needs Docker): PostgresJobStore passes storeContract over
 # the package's own tables, and the executor's kill-and-restart and two-replica cases. In CI's test-integration job.
 test-jobs-integration:
-    bun test "{{justfile_directory()}}/test/integration/jobs-postgres-store.integration.test.ts"
+    bun test "{{justfile_directory()}}/test/integration/jobs-postgres-store.integration.test.ts" "{{justfile_directory()}}/test/integration/jobs-redis-limiters.integration.test.ts"
 
 # LISTEN-NOTIFY-2 (0.17.2) — `app.close()` leaves ZERO surviving LISTEN %wake%
 # backends. Boots a real Nest context with the events drainer's listen_notify ON

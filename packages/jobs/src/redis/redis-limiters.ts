@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { DEFAULT_LIMITER } from '../adapters/local-limiter.ts';
 import {
   DEFAULT_LEASE_MS,
+  DEFAULT_LIMITER,
+  DEFAULT_THROTTLE_MS,
+  LIMITER_WINDOW_MS as MINUTE,
+  RECOVER_EVERY,
   type Limiter,
   type LimiterConfig,
   type Limiters,
@@ -29,11 +32,6 @@ export interface RedisLimitersOptions {
   clock?: () => number;
 }
 
-const MINUTE = 60_000;
-/** A 429 with no Retry-After still waits this long. */
-const DEFAULT_THROTTLE_MS = 1_000;
-/** OK calls it takes to win back one in-flight slot after a throttle. */
-const RECOVER_EVERY = 20;
 
 /**
  * Takes a slot when one is free and the window has room: drops expired leases and window entries first. Returns 0 on
@@ -120,19 +118,7 @@ return 0
 /** 50–250 ms. */
 const jitter = () => 50 + Math.floor(Math.random() * 200);
 
-const sleep = (ms: number, signal?: AbortSignal) =>
-  new Promise<void>((resolve, reject) => {
-    if (signal?.aborted) return reject(signal.reason);
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(signal?.reason);
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 function redisLimiter(
   client: RedisScripting,
@@ -185,20 +171,33 @@ function redisLimiter(
     async acquire(cost, signal) {
       signal?.throwIfAborted();
       const id = randomUUID();
-      for (;;) {
-        const wait = Number(
-          await client.eval(ACQUIRE, keys, [
-            clock(),
-            leaseMs,
-            cap,
-            config.callsPerMinute ?? 0,
-            config.tokensPerMinute ?? 0,
-            Math.max(0, Math.ceil(cost.tokens)),
-            id,
-          ]),
-        );
-        if (wait === 0) return permit(id);
-        await sleep(jitter(), signal);
+      // One listener for the whole wait, never one per poll: a signal with no listener between polls (an
+      // `AbortSignal.timeout(…)` nothing else holds) can be collected under Bun and never fire, so the wait never ends.
+      let onAbort: (() => void) | undefined;
+      const aborted = new Promise<never>((_, reject) => {
+        onAbort = () => reject(signal?.reason);
+        signal?.addEventListener('abort', onAbort, { once: true });
+      });
+      aborted.catch(() => undefined);
+      try {
+        for (;;) {
+          const wait = Number(
+            await client.eval(ACQUIRE, keys, [
+              clock(),
+              leaseMs,
+              cap,
+              config.callsPerMinute ?? 0,
+              config.tokensPerMinute ?? 0,
+              Math.max(0, Math.ceil(cost.tokens)),
+              id,
+            ]),
+          );
+          if (wait === 0) return permit(id);
+          signal?.throwIfAborted();
+          await Promise.race([sleep(jitter()), aborted]);
+        }
+      } finally {
+        if (onAbort) signal?.removeEventListener('abort', onAbort);
       }
     },
   };
