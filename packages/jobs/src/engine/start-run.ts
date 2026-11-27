@@ -99,7 +99,7 @@ export async function startRun(
   }
   if (run.jobVersion !== job.version)
     throw new RunVersionConflictError(run.id, run.jobVersion, job.version);
-  if (created) await recordInput(job, run, parsed.data);
+  if (created) await recordInput(job, run.id, parsed.data);
   return { run, created };
 }
 

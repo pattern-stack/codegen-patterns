@@ -19,7 +19,7 @@ import { outputReader } from './context.ts';
 import type { AdvanceDeps } from './deps.ts';
 import { eventBase } from './emitter.ts';
 import { submitSoon } from './submit-soon.ts';
-import { assertStorable } from './values.ts';
+import { assertStorable, inputForStore, inputOf, recordInput } from './values.ts';
 
 /** A children step whose `onFailure: 'fail'` met a failed child: the step, and so the run, fails. */
 export class ChildrenFailedError extends NonRetryableError {
@@ -34,6 +34,13 @@ export type ChildrenOutcome =
   | { kind: 'failed'; error: unknown }
   | { kind: 'rests'; status: Run['status'] };
 
+/** What a step does once every child has ended and one failed, by its `onFailure`. */
+const ON_FAILED = {
+  hold: 'wait',
+  continue: 'complete',
+  fail: 'fail',
+} as const satisfies Record<ErasedChildrenStep['onFailure'], 'wait' | 'complete' | 'fail'>;
+
 /** What the slots call for: wait, complete, or fail. */
 function decide(
   slots: readonly Slot[],
@@ -43,8 +50,7 @@ function decide(
   const failed = slots.some((s) => s.status === 'failed');
   if (pending) return 'wait';
   if (!failed) return 'complete';
-  if (onFailure === 'hold') return 'wait';
-  return onFailure === 'fail' ? 'fail' : 'complete';
+  return ON_FAILED[onFailure];
 }
 
 /**
@@ -78,13 +84,17 @@ async function budgetsOf(
   });
 }
 
-/** The children a step declares, checked: keys, count, and each input parsed and admitted by the child job. */
+/**
+ * The children a step declares, checked: keys, count, and each input parsed and admitted by the child job. A child
+ * job with an input recorder keeps its input there, not in the store: `inputs` holds each parsed input by key, for
+ * `recordChildInput` once the child run exists.
+ */
 async function newChildrenOf(
   deps: AdvanceDeps,
   run: Run,
   entry: StepEntry & { erased: ErasedChildrenStep },
   ctx: ErasedContext,
-): Promise<NewChild[]> {
+): Promise<{ children: NewChild[]; inputs: Map<string, unknown> }> {
   const { job } = entry.erased;
   const where = `${run.jobKey}/${entry.name}`;
   if (!deps.registry.has(job.key))
@@ -94,6 +104,7 @@ async function newChildrenOf(
   assertChildKeys(where, specs);
   const budgets = await budgetsOf(deps.store, run, specs);
   const out: NewChild[] = [];
+  const inputs = new Map<string, unknown>();
   for (const [i, spec] of specs.entries()) {
     const parsed = registered.input.safeParse(spec.input);
     if (!parsed.success)
@@ -107,16 +118,18 @@ async function newChildrenOf(
       dryRun: run.dryRun,
       outputOf: outputReader(deps.store, run.tenantId),
     });
-    assertStorable(parsed.data, `${where}: child ${spec.key}'s input`);
+    if (registered.inputRecorder === undefined)
+      assertStorable(parsed.data, `${where}: child ${spec.key}'s input`);
+    inputs.set(spec.key, parsed.data);
     out.push({
       key: spec.key,
       jobKey: registered.key,
       jobVersion: registered.version,
-      input: parsed.data,
+      input: inputForStore(registered, parsed.data),
       budget: budgets[i] as Budget,
     });
   }
-  return out;
+  return { children: out, inputs };
 }
 
 /**
@@ -138,7 +151,7 @@ export async function advanceChildrenStep(
   const attempt = state?.attempts ?? 1;
   const base = () => ({ ...eventBase(run, clock), step, attempt });
   if (state?.status !== 'waiting') {
-    let wanted: NewChild[];
+    let wanted: Awaited<ReturnType<typeof newChildrenOf>>;
     try {
       wanted = await newChildrenOf(deps, run, entry, ctx);
     } catch (error) {
@@ -154,9 +167,12 @@ export async function advanceChildrenStep(
       });
     const { started } = await store.startChildren(
       { runId: run.id, step, index: entry.index },
-      wanted,
+      wanted.children,
     );
+    const childJob = deps.registry.get(entry.erased.job.key);
     for (const slot of started) {
+      // Recorded before its first advance is submitted; a crash between the two fails the child as unrecorded.
+      await recordInput(childJob, slot.childRunId, wanted.inputs.get(slot.key));
       await events.emit({
         ...base(),
         type: 'child.started',
@@ -265,14 +281,17 @@ export async function retryChild(
   if (slot?.status !== 'failed') return null;
   const failed = await store.getRun(slot.ref);
   const job = registry.get(entry.erased.job.key);
+  // From where the failed attempt's input lives: its recorder, when the child job has one.
+  const input = await inputOf(store, job, failed);
   const retried = await store.retryChild(run.id, request.step, request.key, {
     key: request.key,
     jobKey: job.key,
     jobVersion: job.version,
-    input: await store.runInput(failed.id),
+    input: inputForStore(job, input),
     budget: request.budget ?? failed.budget,
   });
   if (retried) {
+    await recordInput(job, retried.childRunId, input);
     await deps.events.emit({
       ...eventBase(run, deps.clock),
       step: request.step,

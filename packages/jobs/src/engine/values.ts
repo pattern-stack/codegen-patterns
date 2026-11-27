@@ -148,12 +148,12 @@ export function inputForStore(job: AnyJob, input: unknown): unknown {
  */
 export async function recordInput(
   job: AnyJob,
-  run: Run,
+  runId: string,
   input: unknown,
 ): Promise<void> {
   const recorder = job.inputRecorder;
   if (recorder === undefined || recorder === 'none') return;
-  await recorder.save(run.id, input);
+  await recorder.save(runId, input);
 }
 
 /** A run's input, from where it lives. A recorded input that is missing fails the run; no step runs without it. */

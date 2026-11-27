@@ -14,6 +14,7 @@ import { readRunOutput } from '../engine/context.ts';
 import { cancelRun, startRun } from '../engine/start-run.ts';
 import { JobDefinitionError } from '../model/errors.ts';
 import { fakeClock } from '../testing/fake-clock.ts';
+import { memoryRecorder } from '../adapters/memory-recorder.ts';
 import { recordingSink } from '../testing/recording-sink.ts';
 import { replayContract } from '../testing/replay.ts';
 
@@ -114,6 +115,73 @@ describe('children', () => {
     const types = sink.events.map((e) => e.type);
     expect(types.filter((t) => t === 'child.started')).toHaveLength(3);
     expect(types.filter((t) => t === 'child.ended')).toHaveLength(3);
+  });
+
+  test('a child job with an input recorder gets its input there, first time and on a retry (review #969)', async () => {
+    let failsLeft = 1;
+    const inputs = memoryRecorder<{ n: number }>();
+    const recordedSquare = defineJob({
+      key: 'toy.recorded-square',
+      input: z.object({ n: z.number() }),
+      output: z.object({ squared: z.number() }),
+      inputRecorder: inputs,
+      steps: (s) =>
+        s.add(
+          'square',
+          step({
+            retry: { initialIntervalMs: 1, backoffCoefficient: 1, maximumAttempts: 1 },
+            run: ({ input }) => {
+              if (input.n === 2 && failsLeft-- > 0) throw new Error('toy failure');
+              return { squared: input.n * input.n };
+            },
+          }),
+        ),
+    });
+    const parent = defineJob({
+      key: 'toy.recorded-parent',
+      input: z.object({ ns: z.array(z.number()) }),
+      output: z.object({ total: z.number() }),
+      steps: (s) =>
+        s
+          .add(
+            'squares',
+            children({
+              job: recordedSquare,
+              each: ({ input }) => input.ns.map((n) => ({ key: String(n), input: { n } })),
+              onFailure: 'hold',
+            }),
+          )
+          .add(
+            'sum',
+            step({ run: ({ squares }) => ({ total: squares.results.reduce((a, r) => a + r.output.squared, 0) }) }),
+          ),
+    });
+    const store = new MemoryJobStore();
+    const clock = fakeClock();
+    const registry = createRegistry([parent, recordedSquare]);
+    const executor = new InProcessExecutor({ store, registry, clock, pollMs: 1 });
+    const ops = { store, registry, clock, events: recordingSink(), executor };
+    await executor.start();
+    const { run } = await startRun({ registry, store }, { ...request([1, 2]), jobKey: parent.key });
+    await executor.submit(run.id);
+    const until = async (done: () => Promise<boolean>) => {
+      for (let i = 0; i < 1000; i++) {
+        if (await done()) return;
+        await new Promise((r) => setTimeout(r, 2));
+      }
+      throw new Error('timed out');
+    };
+    const squares = async () => (await store.stepStates(run.id)).find((s) => s.name === 'squares');
+    await until(async () => (await squares())?.counts.failed === 1);
+    const kids = await store.listRuns({ tenantId: TENANT, jobKey: recordedSquare.key, limit: 10 });
+    // The input lives in the recorder, not the store; the failed child failed in its step, not as unrecorded.
+    for (const kid of kids) expect(await store.runInput(kid.id)).toBeUndefined();
+    expect(kids.map((k) => k.error?.message ?? null).sort()).toEqual([null, 'toy failure']);
+    const retried = await retryChild(ops, { runId: run.id, step: 'squares', key: '2' });
+    expect(await inputs.load(retried?.childRunId as string)).toEqual({ n: 2 });
+    await until(async () => (await store.getRun(run.id)).status === 'completed');
+    await executor.stop();
+    expect(await readRunOutput({ store, registry }, await store.getRun(run.id))).toEqual({ total: 5 });
   });
 
   test('hold: a failed child holds the step until a retry or a skip', async () => {
