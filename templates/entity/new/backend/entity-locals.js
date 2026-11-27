@@ -34,7 +34,11 @@ import '../../../../src/patterns/library/index.js';
 import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
 import {
   composedRepositoryOwners,
+  constructorParts,
   EAV_FIELD_VALUE_ENTITY,
+  FIELD_VALUES_DEPS_FIELD,
+  SYSTEM_DEPS_FIELD,
+  useCaseSystems,
   entityClassGraph,
   moduleImports,
 } from '../../../../src/derived/wiring/classes.js';
@@ -2627,6 +2631,25 @@ export function buildBackendLocals(definition, baseLocals) {
       );
     }
   }
+  // PW-EAV: what each use case's constructor takes, as `<entity>.wiring.ts` passes it — read from the class graph
+  // (`constructorParts`: its edges, then its systems), each mapped to its argument here. The template prints the list.
+  const listUseCaseKey = camelCase('list');
+  const USE_CASE_ARG = {
+    own: () => 'service',
+    list_use_case: () => listUseCaseKey,
+    eav_field_values: () => `deps.${FIELD_VALUES_DEPS_FIELD}`,
+  };
+  const useCaseArgs = (className) =>
+    constructorParts(classGraph, className).map((p) => {
+      if (p.kind === 'system') return `deps.${SYSTEM_DEPS_FIELD[p.system]}`;
+      const arg = USE_CASE_ARG[p.reason];
+      if (!arg) {
+        throw new Error(`[codegen] '${entityName}': ${className} takes ${p.to} (${p.reason}), which <entity>.wiring.ts passes no argument for.`);
+      }
+      return arg();
+    });
+  // The TypeScript type of each system a use case takes, for the services deps.
+  const SYSTEM_DEPS_TYPE = { db: 'DrizzleClient<Relations>', typed_event_bus: 'TypedEventBus' };
   const patternStackWiringParts = patternStackWiring
     ? {
         repositoryFactory: repositoryFactoryName(entityName),
@@ -2639,6 +2662,7 @@ export function buildBackendLocals(definition, baseLocals) {
             kind: u.kind,
             key: u.kind === 'query' ? u.calls.method : camelCase(u.kind),
             importPath: fromModuleDir(file),
+            args: useCaseArgs(u.className),
           };
         }),
         // PW-3c: each fanned-out junction's service, a constructor argument after the composed repositories.
@@ -2666,6 +2690,9 @@ export function buildBackendLocals(definition, baseLocals) {
             : null,
         repositoryPort: repositoryPortName(entityName),
         registerSchemas: registerSchemasName(entityName),
+        // The services-deps fields: FieldValueService's (EAV), and each system a use case takes.
+        fieldValuesField: FIELD_VALUES_DEPS_FIELD,
+        systemDeps: useCaseSystems(classGraph, entityName).map((s) => ({ field: SYSTEM_DEPS_FIELD[s], type: SYSTEM_DEPS_TYPE[s] })),
       }
     : null;
 

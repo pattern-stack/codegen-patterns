@@ -165,6 +165,36 @@ export function composedRepositoryOwners(graph: ClassGraph, entity: string): str
 		.map((e) => e.toOwner);
 }
 
+/**
+ * The `<entity>.wiring.ts` services-deps field each system comes through (PW-3), and the one FieldValueService
+ * comes through (EAV). One table: the template declares and passes these fields, the composition fills them.
+ */
+export const SYSTEM_DEPS_FIELD: Record<SystemDependency, string> = { db: 'db', typed_event_bus: 'typedEvents' };
+export const FIELD_VALUES_DEPS_FIELD = 'fieldValues';
+
+/** One thing a class's constructor takes, in constructor order: another class (an edge) or a system. */
+export type ConstructorPart =
+	| { kind: 'class'; reason: ClassEdgeReason; to: string; toOwner: string }
+	| { kind: 'system'; system: SystemDependency };
+
+/** What `classId`'s constructor takes, in order: the classes its edges name (graph order), then its systems. */
+export function constructorParts(graph: ClassGraph, classId: string): ConstructorPart[] {
+	const node = graph.nodes.find((n) => n.id === classId);
+	if (!node) throw new Error(`[codegen] wiring: '${classId}' is not in the class graph`);
+	return [
+		...graph.edges
+			.filter((e) => e.from === classId)
+			.map((e) => ({ kind: 'class' as const, reason: e.reason, to: e.to, toOwner: e.toOwner })),
+		...node.systems.map((system) => ({ kind: 'system' as const, system })),
+	];
+}
+
+/** The systems any of `entity`'s use cases take, in `SYSTEM_DEPS_FIELD` order: the fields its services deps carry. */
+export function useCaseSystems(graph: ClassGraph, entity: string): SystemDependency[] {
+	const used = new Set(graph.nodes.filter((n) => n.owner === entity && n.role === 'use_case').flatMap((n) => n.systems));
+	return (Object.keys(SYSTEM_DEPS_FIELD) as SystemDependency[]).filter((s) => used.has(s));
+}
+
 /** The order a module files its imports in: the base it is a kind of first, the EAV blocks last. */
 const MODULE_IMPORT_ORDER: readonly ModuleImportReason[] = [
 	'inherits',

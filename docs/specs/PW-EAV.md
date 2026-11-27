@@ -29,6 +29,12 @@ already had the EAV edges, but nothing used them:
   - the service takes `fieldValues` after its repository, as the Nest constructor does;
   - the `create` and `update` use cases take `(service, fieldValues, db)`. Their one transaction writes both the row
     and the values.
+- **What a use case's constructor takes is the class graph's.** Each `patternStackWiringParts.useCases` row carries
+  `args`, built from `constructorParts(graph, useCase)` (its edges in order, then its systems), each mapped to the
+  argument `<entity>.wiring.ts` passes; the template prints `new <UseCase>(<args>)` with no kind or EAV branch. The
+  services-deps fields come from the same place: `fieldValues` (`FIELD_VALUES_DEPS_FIELD`) and one field per system
+  any use case takes (`useCaseSystems`, named by `SYSTEM_DEPS_FIELD`), which the template declares and the
+  composition fills, so `db` is passed because a use case takes it.
 - **`eavDefinition`** (an `eav_value_table: true` entity whose definition entity no relationship composes): the
   service deps gain `<definition>Repo: <Definition>Repository`, keyed by `repositoryPropertyName`, the composition's
   one rule.

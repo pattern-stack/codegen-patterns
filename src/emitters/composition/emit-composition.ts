@@ -27,17 +27,20 @@ import path from 'node:path';
 import { composedRepositoryOwners } from '../../derived/wiring/classes.js';
 import { contextCycles } from '../../derived/wiring/order.js';
 import { deriveProjectClassGraph } from '../../derived/wiring/project.js';
-import { EAV_FIELD_VALUE_ENTITY } from '../../derived/wiring/classes.js';
+import { EAV_FIELD_VALUE_ENTITY, FIELD_VALUES_DEPS_FIELD, SYSTEM_DEPS_FIELD, useCaseSystems } from '../../derived/wiring/classes.js';
+import type { SystemDependency } from '../../derived/wiring/types.js';
 import type { ProjectApiContext } from '../../derived/api/project.js';
 import {
 	pascalCase,
 	registerSchemasName,
 	repositoriesBundleName,
+	repositoryClassName,
 	repositoryFactoryName,
 	repositoryPortName,
 	repositoryPropertyName,
 	junctionServiceFactoryName,
 	junctionServicePropertyName,
+	serviceClassName,
 	servicesFactoryName,
 } from '../../derived/api/names.js';
 import { junctionIdentity } from '../../emitters/relations/build-graph.js';
@@ -80,6 +83,17 @@ const RESERVED_MODULE_KEYS = new Set(['repositories', 'junctions']);
 function junctionWiringImports(junction: string): string[] {
 	return [repositoryFactoryName(junction), junctionServiceFactoryName(junction)];
 }
+
+/** What a module passes for each system a use case takes, in the module's own scope. */
+const SYSTEM_DEPS_VALUE: Record<SystemDependency, () => string> = {
+	db: () => 'db',
+	typed_event_bus: () => {
+		throw new Error('[codegen] wiring: pattern-stack: a use case that publishes its event comes with S-1 (events)');
+	},
+};
+
+/** `key: value`, or the shorthand when they are the same name. */
+const property = (key: string, value: string): string => (key === value ? key : `${key}: ${value}`);
 
 export interface CompositionInput {
 	relations: ProjectApiContext['relations'];
@@ -282,11 +296,13 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 					throw new Error(`[codegen] wiring: '${entity}' fans out to junction '${e.toOwner}', which module '${plan.name}' does not compose`);
 				}
 			}
-			// EAV: the service takes FieldValueService, and its create / update use cases `db` (one transaction).
+			// EAV: the service takes FieldValueService; and each system a use case takes (`db`, for a write's one
+			// transaction) is a field, named by the same table the template declares them from.
 			const eav = takesFieldValues(service.id);
 			const fields = [
 				`repository: ${repoVar(entity)}`,
-				...(eav ? [`fieldValues: ${serviceRef(EAV_FIELD_VALUE_ENTITY)}`, 'db'] : []),
+				...(eav ? [`${FIELD_VALUES_DEPS_FIELD}: ${serviceRef(EAV_FIELD_VALUE_ENTITY)}`] : []),
+				...useCaseSystems(graph, entity).map((s) => property(SYSTEM_DEPS_FIELD[s], SYSTEM_DEPS_VALUE[s]())),
 				...composedRepositoryOwners(graph, entity).map((owner) => `${repositoryPropertyName(owner)}: ${repoRef(owner)}`),
 				...fannedOut.map((e) => `${junctionServicePropertyName(e.toOwner)}: ${junctionServicePropertyName(e.toOwner)}`),
 			];

@@ -72,10 +72,13 @@ export function <%= patternStackWiringParts.repositoryFactory %>(
 export interface <%= classNames.entity %>ServiceDeps {
   repository: <%= classNames.repository %>;
 <%_ if (_eav) { _%>
-  /** EAV: the custom-field values; the create / update use cases write them in one transaction on `db`. */
-  fieldValues: <%= _eav.serviceClass %>;
-  db: DrizzleClient<Relations>;
+  /** EAV: the custom-field values. */
+  <%= patternStackWiringParts.fieldValuesField %>: <%= _eav.serviceClass %>;
 <%_ } _%>
+<%_ patternStackWiringParts.systemDeps.forEach((s) => { _%>
+  /** A system the use cases take (`db`: a write's one transaction). */
+  <%= s.field %>: <%- s.type %>;
+<%_ }) _%>
 <%_ if (_eavDef) { _%>
   /** EAV value table: resolves a definition's id from its key. */
   <%= _eavDef.property %>: <%= _eavDef.repositoryClass %>;
@@ -90,21 +93,17 @@ export interface <%= classNames.entity %>ServiceDeps {
 
 /** Builds <%= classNames.entity %>'s service and its use cases. */
 export function <%= patternStackWiringParts.servicesFactory %>(deps: <%= classNames.entity %>ServiceDeps) {
-  const service = new <%= classNames.service %>(deps.repository<% if (_eav) { %>, deps.fieldValues<% } %><% if (_eavDef) { %>, deps.<%= _eavDef.property %><% } %><% repositoryDeps.forEach((dep) => { %>, deps.<%= dep.property %><% }) %><% patternStackWiringParts.junctionServices.forEach((j) => { %>, deps.<%= j.property %><% }) %>);
+  const service = new <%= classNames.service %>(deps.repository<% if (_eav) { %>, deps.<%= patternStackWiringParts.fieldValuesField %><% } %><% if (_eavDef) { %>, deps.<%= _eavDef.property %><% } %><% repositoryDeps.forEach((dep) => { %>, deps.<%= dep.property %><% }) %><% patternStackWiringParts.junctionServices.forEach((j) => { %>, deps.<%= j.property %><% }) %>);
 <%_ const _list = patternStackWiringParts.useCases.find((u) => u.kind === 'list'); _%>
-  const <%= _list.key %> = new <%= _list.className %>(service);
+  const <%= _list.key %> = new <%= _list.className %>(<%= _list.args.join(', ') %>);
   return {
     service,
     useCases: {
 <%_ patternStackWiringParts.useCases.forEach((u) => { _%>
 <%_ if (u.kind === 'list') { _%>
       <%= u.key %>,
-<%_ } else if (u.kind === 'search') { _%>
-      <%= u.key %>: new <%= u.className %>(<%= _list.key %>),
-<%_ } else if (_eav && (u.kind === 'create' || u.kind === 'update')) { _%>
-      <%= u.key %>: new <%= u.className %>(service, deps.fieldValues, deps.db),
 <%_ } else { _%>
-      <%= u.key %>: new <%= u.className %>(service),
+      <%= u.key %>: new <%= u.className %>(<%= u.args.join(', ') %>),
 <%_ } _%>
 <%_ }) _%>
     },
