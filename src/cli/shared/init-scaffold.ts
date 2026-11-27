@@ -236,7 +236,7 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	{ runtime: 'eav-helpers.ts', target: 'eav-helpers.ts' },
 	// OpenAPI registry (OPENAPI-1/2) — generated modules register Zod DTOs
 	// here at onModuleInit; OPENAPI-4 mounts Swagger UI off the same registry.
-	// `@anatine/zod-openapi` is an optional peer dep (lazy-imported on build).
+	// Components come from Zod 4's own `z.toJSONSchema`; no peer dependency (ZOD-1).
 	{ runtime: 'shared/openapi/registry.ts', target: 'openapi/registry.ts' },
 	{ runtime: 'shared/openapi/registry.tokens.ts', target: 'openapi/registry.tokens.ts' },
 	{ runtime: 'shared/openapi/errors.ts', target: 'openapi/errors.ts' },

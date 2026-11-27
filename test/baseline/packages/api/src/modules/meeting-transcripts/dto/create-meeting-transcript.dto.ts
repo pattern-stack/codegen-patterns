@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const CreateMeetingTranscriptSchema = z.object({
-  meetingId: z.string().uuid(),
+  meetingId: z.guid(),
   language: z.string().nullable().optional(),
 });
 

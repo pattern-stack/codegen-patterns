@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const EmailThreadOutputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   topic: z.string().nullable(),
 });
 

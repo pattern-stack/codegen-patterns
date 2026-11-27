@@ -6,11 +6,11 @@ force: true
 import { z } from 'zod';
 
 export const <%= classNames.outputSchema %> = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
 
   // FK endpoints
-  <%= fromColumnCamel %>: z.string().uuid(),
-  <%= toColumnCamel %>: z.string().uuid(),
+  <%= fromColumnCamel %>: z.guid(),
+  <%= toColumnCamel %>: z.guid(),
 <%_ if (hasTypes) { _%>
 
   // Type

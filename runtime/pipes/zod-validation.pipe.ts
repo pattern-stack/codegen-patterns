@@ -15,7 +15,9 @@
  *
  * On success: returns parsed, coerced data.
  * On failure: throws BadRequestException with a structured `issues` array
- * (path / code / message) — richer than `.flatten()` for API consumers.
+ * (path / code / message) — richer than `.flatten()` for API consumers. The
+ * codes and messages are Zod 4's (`invalid_value`, `invalid_format`, …;
+ * ZOD-1, docs/MIGRATION-zod4.md).
  *
  * One pipe instance per route (cheap — instantiated at module load). Keeps
  * validation explicit in the generated code; no metadata/reflection magic.
@@ -29,10 +31,10 @@ import {
   PipeTransform,
   type ArgumentMetadata,
 } from '@nestjs/common';
-import type { ZodIssue, ZodSchema } from 'zod';
+import type { z } from 'zod';
 
 @Injectable()
-export class ZodValidationPipe<TSchema extends ZodSchema = ZodSchema>
+export class ZodValidationPipe<TSchema extends z.ZodType = z.ZodType>
   implements PipeTransform
 {
   constructor(private readonly schema: TSchema) {}
@@ -51,7 +53,7 @@ export class ZodValidationPipe<TSchema extends ZodSchema = ZodSchema>
   }
 }
 
-function formatIssues(issues: readonly ZodIssue[]): Array<{
+function formatIssues(issues: readonly z.core.$ZodIssue[]): Array<{
   path: string;
   code: string;
   message: string;

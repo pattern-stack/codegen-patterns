@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const ToteOutputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   kind: z.enum(['bin', 'loose']),
   fragile: z.boolean().nullable(),
 });

@@ -4,8 +4,8 @@ import { CommunicationOutputSchema } from '../../communications/dto/communicatio
 
 // RFC-0006 §5: the columns THIS table owns, alone. `CommunicationOfKindSchema` nests it under the kind key.
 export const EmailOwnOutputSchema = z.object({
-  id: z.string().uuid(),
-  threadId: z.string().uuid().nullable(),
+  id: z.guid(),
+  threadId: z.guid().nullable(),
   subject: z.string(),
 });
 

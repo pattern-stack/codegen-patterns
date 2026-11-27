@@ -98,15 +98,14 @@ const RUNTIME_DEPS = [
 	// both use it implicitly.
 	'@nestjs/platform-express@10',
 	'@nestjs/swagger@7',
-	'@anatine/zod-openapi@2',
 	'drizzle-orm@1.0.0-rc.4',
 	// SEM-4: the emitted semantic model (relationship scenario) imports its
 	// types from the package — exact, like drizzle-orm, matching the repo's
 	// devDependency. Without it: TS2307 in src/generated/semantic/*.ts.
-	'@pattern-stack/query-surface@0.3.1',
+	'@pattern-stack/query-surface@0.4.0',
 	'reflect-metadata@0.2',
 	'pg@8',
-	'zod@3',
+	'zod@4',
 	// No `yaml`: the generated app never parses codegen.config.yaml — its boot
 	// values are emitted into <generated>/app-config.ts (CFG-1). Leaving the
 	// pin out proves it.

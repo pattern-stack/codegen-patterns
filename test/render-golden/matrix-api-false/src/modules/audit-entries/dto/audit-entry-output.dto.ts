@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const AuditEntryOutputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   message: z.string(),
 });
 

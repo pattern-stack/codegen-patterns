@@ -17,16 +17,17 @@ openapi-config` is config-only: it injects the `openapi:` block into
 
 ```bash
 codegen subsystem install openapi-config
-bun add @nestjs/swagger @anatine/zod-openapi
+bun add @nestjs/swagger
 ```
 
 `@nestjs/swagger` is **required even when `openapi.enabled: false`** —
 generated controllers import its decorator functions at the top of the
-file unconditionally (OPENAPI-3). `@anatine/zod-openapi` is the Zod →
-OpenAPI translator the registry lazy-imports on its first `build()` call.
-Both are listed as optional peer deps in `@pattern-stack/codegen` so
-projects that don't intend to expose Swagger don't fail their installs;
-once the controllers are emitted, the imports are eager.
+file unconditionally (OPENAPI-3). It is an optional peer dep of
+`@pattern-stack/codegen`, so projects that don't intend to expose Swagger
+don't fail their installs; once the controllers are emitted, the import is
+eager. The Zod → OpenAPI step needs nothing extra: the registry uses Zod 4's
+own `z.toJSONSchema` (ZOD-1; before 0.35.0 it lazy-imported
+`@anatine/zod-openapi`).
 
 ### Config knobs
 
@@ -140,16 +141,14 @@ Reference the registered name from a controller decorator:
 
 ### Gotchas
 
-- **Zod 3.0 vs 3.1 mapping limitations.** `@anatine/zod-openapi` targets
-  Zod 3.x; some constructs map imperfectly to OpenAPI 3.0.3:
-  - `z.discriminatedUnion(...)` emits an `oneOf` without a
-    `discriminator` block — Swagger UI still renders the variants.
-  - `.refine(...)` and `.transform(...)` predicates are erased — only the
-    pre-refine type appears in the schema. Express constraints with
-    `z.string().email()`, `z.number().int().min(...)`, etc. instead.
+- **What `z.toJSONSchema` can't say in OpenAPI 3.0.3.**
+  - `.refine(...)` predicates are erased, and a `.transform(...)` shows its
+    input side (what a client sends). Express constraints with
+    `z.email()`, `z.number().int().min(...)`, etc. instead.
+  - A date has no JSON form; the registry writes it as `type: string,
+    format: date-time`, the string a client sends.
   - `z.brand(...)` flattens to its base type. Brand identity is a
     compile-time concern; OpenAPI consumers see the underlying shape.
-  Revisit when the project moves to OpenAPI 3.1 / JSON Schema Draft 2020-12.
 
 - **`@nestjs/swagger` is required even with `enabled: false`.**
   Generated controllers static-import `@nestjs/swagger` decorator
@@ -165,9 +164,9 @@ Reference the registered name from a controller decorator:
   `onModuleInit`; a forked instance would produce a partial
   `/docs-json`.
 
-- **`registry.build()` is async.** The `@anatine/zod-openapi` peer
-  is lazy-imported on first call (see OPENAPI-1). `main.ts` awaits once at
-  bootstrap; nothing else should call `build()` in a hot path.
+- **`registry.build()` is async** (it was when it lazy-imported its old peer,
+  and stays so for callers). `main.ts` awaits once at bootstrap; nothing else
+  should call `build()` in a hot path.
 
 - **Programmatic smoke tests must call `app.init()`.** `NestFactory.
   create(AppModule)` resolves DI but does NOT fire lifecycle hooks —

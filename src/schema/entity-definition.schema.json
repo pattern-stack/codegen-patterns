@@ -743,24 +743,281 @@
         "type": "string"
       },
       "additionalProperties": {
-        "description": "Change detection for this provider: 'mode: poll' (with a 'poll:' cursor block) or 'mode: webhook', and 'mapping:' from provider fields onto the canonical record (ADR-033.1)",
-        "type": "object",
-        "properties": {
-          "mode": {
-            "enum": [
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "const": "poll"
+              },
+              "poll": {
+                "type": "object",
+                "properties": {
+                  "cursor": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "systemModstamp"
+                          },
+                          "field": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "field"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "replayId"
+                          },
+                          "field": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "field"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "timestamp"
+                          },
+                          "field": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "field"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "eventId"
+                          },
+                          "field": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "field"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "historyId"
+                          },
+                          "field": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "field"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "syncToken"
+                          },
+                          "field": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "field"
+                        ]
+                      }
+                    ]
+                  },
+                  "provenance": {
+                    "type": "string",
+                    "enum": [
+                      "poll",
+                      "cdc"
+                    ]
+                  }
+                },
+                "required": [
+                  "cursor"
+                ]
+              },
+              "mapping": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "target": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "transform": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "target"
+                  ]
+                }
+              },
+              "filters": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "op": {
+                      "type": "string",
+                      "enum": [
+                        "eq",
+                        "neq",
+                        "in",
+                        "nin",
+                        "gt",
+                        "gte",
+                        "lt",
+                        "lte"
+                      ]
+                    },
+                    "value": {}
+                  },
+                  "required": [
+                    "field",
+                    "op",
+                    "value"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "mode",
               "poll",
-              "webhook"
+              "mapping"
             ]
           },
-          "poll": {},
-          "mapping": {},
-          "filters": {},
-          "webhook": {}
-        },
-        "required": [
-          "mode",
-          "mapping"
-        ]
+          {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "const": "webhook"
+              },
+              "webhook": {
+                "type": "object",
+                "properties": {
+                  "eventIdField": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "mapping": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "target": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "transform": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "target"
+                  ]
+                }
+              },
+              "filters": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "op": {
+                      "type": "string",
+                      "enum": [
+                        "eq",
+                        "neq",
+                        "in",
+                        "nin",
+                        "gt",
+                        "gte",
+                        "lt",
+                        "lte"
+                      ]
+                    },
+                    "value": {}
+                  },
+                  "required": [
+                    "field",
+                    "op",
+                    "value"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "mode",
+              "webhook",
+              "mapping"
+            ]
+          }
+        ],
+        "description": "Change detection for this provider: 'mode: poll' (with a 'poll:' cursor block) or 'mode: webhook', and 'mapping:' from provider fields onto the canonical record (ADR-033.1)"
       }
     },
     "events": {

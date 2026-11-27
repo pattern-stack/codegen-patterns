@@ -1,11 +1,9 @@
 import { z } from "./zod";
-import { DetectionConfigSchema as DetectionConfigSchemaZod3 } from "../../runtime/subsystems/integration";
-import { fromZod3 } from "./zod3-schema";
+import { DetectionConfigSchema as RuntimeDetectionConfigSchema } from "../../runtime/subsystems/integration";
 import { ScheduleSchema } from "./event-definition.schema";
 
-/** The runtime's detection schema (Zod 3, one owner), hosted in this Zod 4 schema. */
-const DetectionConfigSchema = fromZod3(
-	DetectionConfigSchemaZod3,
+/** The runtime's detection schema (one owner), described for editors. */
+const DetectionConfigSchema = RuntimeDetectionConfigSchema.describe(
 	"The arm's read source, the same shape as an entity's 'detection:' entry: 'mode: poll' or 'mode: webhook', and 'mapping:'",
 );
 

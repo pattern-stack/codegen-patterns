@@ -2,8 +2,8 @@
 import { z } from 'zod';
 
 export const CreateUserSchema = z.object({
-  personId: z.string().uuid().nullable().optional(),
-  tenantId: z.string().uuid(),
+  personId: z.guid().nullable().optional(),
+  tenantId: z.guid(),
   email: z.string().max(255),
 });
 

@@ -4,7 +4,7 @@ import { ParcelOutputSchema } from '../../parcels/dto/parcel-output.dto';
 
 // RFC-0006 §5: the columns THIS table owns, alone. `ParcelOfKindSchema` nests it under the kind key.
 export const CrateOwnOutputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   label: z.string(),
 });
 

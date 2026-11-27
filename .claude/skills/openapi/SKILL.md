@@ -1,6 +1,6 @@
 ---
 name: openapi
-description: Load when working on OpenAPI/Swagger surfacing — anything under `runtime/shared/openapi/` (registry, tokens, error-response DTO), the `OPENAPI_REGISTRY` DI token, `@anatine/zod-openapi` peer-dep wiring, `@nestjs/swagger` decorator emission in controller templates, the `openapi:` block in `codegen.config.yaml`, the `/docs` + `/docs-json` routes, `SwaggerModule.setup()` in generated `main.ts`, the smoke test's programmatic `/docs-json` verification, or any reference to the OPENAPI-1..4 specs or issue #61.
+description: Load when working on OpenAPI/Swagger surfacing — anything under `runtime/shared/openapi/` (registry, tokens, error-response DTO), the `OPENAPI_REGISTRY` DI token, the Zod → OpenAPI conversion (`z.toJSONSchema`), `@nestjs/swagger` decorator emission in controller templates, the `openapi:` block in `codegen.config.yaml`, the `/docs` + `/docs-json` routes, `SwaggerModule.setup()` in generated `main.ts`, the smoke test's programmatic `/docs-json` verification, or any reference to the OPENAPI-1..4 specs or issue #61.
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 user-invocable: false
 ---
@@ -58,10 +58,10 @@ Controllers reference registered schemas by **string name** via
 
 ## Four locked decisions (epic-level)
 
-1. **Library: `@anatine/zod-openapi`** (de facto standard). Lazy-imported as an
-   optional peer (a lazy `import()` inside `build()`). Consumers that don't
-   install the peer still boot; `build()` throws `OpenApiPeerDepMissingError`
-   on first call.
+1. **Converter: Zod 4's own `z.toJSONSchema`** (`target: 'openapi-3.0'`, the
+   schema's input side; a date is written as `string`/`date-time`). No peer
+   dependency. Revised 2026-11-26 (ZOD-1): it was `@anatine/zod-openapi`, a
+   lazy-imported optional peer that reads only Zod 3.
 2. **Swagger UI default path: `/docs`** (configurable via `openapi.path`).
    JSON spec at `<path>-json` — wired automatically by `SwaggerModule.setup`.
 3. **Default security scheme: `BearerAuth`** (`type: http`, `scheme: bearer`,
@@ -97,13 +97,9 @@ Controllers reference registered schemas by **string name** via
   error ("only refers to a type"). Use `schema: { $ref: '#/components/schemas/<Name>' }`
   and register the Zod schema by string name (OPENAPI-2 + OPENAPI-3).
 
-- **Do not statically import `@anatine/zod-openapi`.** The peer is optional
-  (in `peerDependenciesMeta`). `registry.ts` uses the computed-specifier
-  dance (`const specifier: string = '@anatine/zod-openapi'; await
-  import(specifier);`) so tsc doesn't hoist the import into the consumer's
-  typecheck graph. New vendored files that reference the peer must follow
-  the same pattern — never a literal `import { generateSchema } from
-  '@anatine/zod-openapi'`.
+- **Do not add a Zod → OpenAPI dependency.** `registry.ts`'s `componentSchema`
+  is the one converter (`z.toJSONSchema`); a schema it renders poorly is fixed
+  there (as dates are), not with a second library.
 
 - **Do not register the same schema name twice.** `registerSchema` throws
   `DuplicateSchemaError`. If two entities need similar shapes (e.g.
@@ -144,7 +140,7 @@ runtime/shared/openapi/
   registry.tokens.ts       # OPENAPI_REGISTRY string constant
   error-response.dto.ts    # ERROR_RESPONSE_SCHEMA_NAME + errorResponseSchema
                            # auto-registered in constructor + reset()
-  errors.ts                # OpenApiPeerDepMissingError, DuplicateSchemaError
+  errors.ts                # DuplicateSchemaError
   index.ts                 # public barrel
 ```
 

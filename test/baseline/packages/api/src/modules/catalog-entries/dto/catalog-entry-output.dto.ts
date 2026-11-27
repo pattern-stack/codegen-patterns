@@ -2,9 +2,9 @@
 import { z } from 'zod';
 
 export const CatalogEntryOutputSchema = z.object({
-  id: z.string().uuid(),
-  tenantId: z.string().uuid(),
-  userId: z.string().uuid(),
+  id: z.guid(),
+  tenantId: z.guid(),
+  userId: z.guid(),
   sku: z.string(),
   title: z.string(),
   priceCents: z.number().int().nullable(),

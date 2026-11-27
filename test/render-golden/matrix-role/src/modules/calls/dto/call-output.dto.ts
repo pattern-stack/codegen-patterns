@@ -2,10 +2,10 @@
 import { z } from 'zod';
 
 export const CallOutputSchema = z.object({
-  id: z.string().uuid(),
-  accountId: z.string().uuid(),
-  callerId: z.string().uuid().nullable(),
-  regardingAccountId: z.string().uuid(),
+  id: z.guid(),
+  accountId: z.guid(),
+  callerId: z.guid().nullable(),
+  regardingAccountId: z.guid(),
   subject: z.string(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),

@@ -300,7 +300,7 @@ const ZOD_TYPE_MAP = {
   // via Number(value) or a BigNumber library.
   decimal: 'z.coerce.string()',
   boolean: 'z.boolean()',
-  uuid: 'z.string().uuid()',
+  uuid: 'z.guid()',
   date: 'z.coerce.date()',
   datetime: 'z.coerce.date()',
   // jsonb has no schema guarantees and routinely holds arrays, objects, or
@@ -2451,9 +2451,9 @@ export function buildBackendLocals(definition, baseLocals) {
   // FK fields from belongs_to for the entity's output DTO (every belongs_to)
   const belongsToFkFields = belongsTo.map((rel) => ({
     camelName: rel.camelField,
-    zodChainCreate: rel.nullable ? 'z.string().uuid().nullable().optional()' : 'z.string().uuid()',
-    zodChainUpdate: rel.nullable ? 'z.string().uuid().nullable().optional()' : 'z.string().uuid().optional()',
-    zodChainOutput: rel.nullable ? 'z.string().uuid().nullable()' : 'z.string().uuid()',
+    zodChainCreate: rel.nullable ? 'z.guid().nullable().optional()' : 'z.guid()',
+    zodChainUpdate: rel.nullable ? 'z.guid().nullable().optional()' : 'z.guid().optional()',
+    zodChainOutput: rel.nullable ? 'z.guid().nullable()' : 'z.guid()',
     nullable: rel.nullable,
   }));
 
@@ -2488,14 +2488,6 @@ export function buildBackendLocals(definition, baseLocals) {
     ...f,
     zodChainOutput: zodChainForOutput(f),
   }));
-  // Zod 3 infers an object key whose type admits `undefined` as OPTIONAL, and
-  // `z.unknown()` (a `json` column) admits it — so `z.infer` gives
-  // `data?: unknown` while the row is `data: unknown`. No Zod 3 schema of type
-  // `unknown` infers a required key, so the exported DTO type is `Required<…>`
-  // of the inference. Every output key is required by construction (no output
-  // chain is `.optional()`), so the wrap changes only those keys. Emitted only
-  // when such a key exists, so other DTOs are byte-identical (#851).
-  const outputDtoHasUnknownKey = outputDtoFields.some((f) => f.zodType === 'z.unknown()');
 
   // Integration write-surface derivation (#374) — null unless pattern: Integrated.
   // Pass sinkPolicy (#490) so the delete knob and exclude_fields knob are applied
@@ -2778,7 +2770,6 @@ export function buildBackendLocals(definition, baseLocals) {
     // ZOD-1a: the create fields whose chain applies a default; the update DTO restates them without it.
     updateDefaultOverrides: createDtoFieldsWithZod.filter((f) => f.createAppliesDefault),
     outputDtoFields: outputDtoFields,
-    outputDtoHasUnknownKey,
     belongsTo: belongsTo,
     belongsToReference: (field) => {
       const reference = belongsToReferenceByField[field];

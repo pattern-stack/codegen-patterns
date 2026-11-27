@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const FieldDefinitionOutputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   entityType: z.string(),
   key: z.string(),
   createdAt: z.coerce.date(),

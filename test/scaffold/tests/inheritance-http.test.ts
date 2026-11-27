@@ -361,7 +361,7 @@ d('the base`s create takes only base-only kinds (§4.1, §5)', () => {
       expect(res.status).toBe(400);
       expect(res.body.message).toBe('Validation failed');
       expect(res.body.code).toBeUndefined();
-      expect(res.body.issues).toEqual([expect.objectContaining({ path: 'kind', code: 'invalid_enum_value' })]);
+      expect(res.body.issues).toEqual([expect.objectContaining({ path: 'kind', code: 'invalid_value' })]);
     }
     expect(await rows(sql`SELECT id FROM communications`)).toEqual([]);
   });
@@ -401,7 +401,7 @@ d('a base-only kind over HTTP on a soft-delete family', () => {
     const res = await request.post('/documents').set('x-tenant-id', TENANT_A).send({ kind: 'report', title: 'q3' });
     expect(res.status).toBe(400);
     expect(res.body.message).toBe('Validation failed');
-    expect(res.body.issues).toEqual([expect.objectContaining({ path: 'kind', code: 'invalid_enum_value' })]);
+    expect(res.body.issues).toEqual([expect.objectContaining({ path: 'kind', code: 'invalid_value' })]);
     expect(await rows(sql`SELECT id FROM documents`)).toEqual([]);
   });
 });

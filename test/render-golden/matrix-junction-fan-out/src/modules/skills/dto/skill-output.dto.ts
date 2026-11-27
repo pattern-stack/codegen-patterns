@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const SkillOutputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   label: z.string(),
 });
 

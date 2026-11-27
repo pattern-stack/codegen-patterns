@@ -13,6 +13,8 @@ You are running `@pattern-stack/codegen` (installed as a sibling repo, workspace
 - **Bun** 1.0+ or **Node** 20+
 - **NestJS** 10+
 - **Drizzle ORM** on the 1.0 line — `drizzle-orm@^1.0.0-rc.4`, installed by you as a peer (see [Drizzle in a generated project](./consumer/drizzle.md))
+- **Zod 4** — `zod@^4.6.7`. The generated DTOs, the validation pipe and the OpenAPI registry are Zod 4 (ZOD-1;
+  upgrading an app generated before 0.35.0: [MIGRATION-zod4.md](./MIGRATION-zod4.md))
 - **TypeScript** 5+ with `"strict": true` and decorator metadata enabled
 - A running Postgres you can point at with a `DATABASE_URL`
 

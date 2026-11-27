@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const CreateCatalogEntrySchema = z.object({
-  userId: z.string().uuid(),
+  userId: z.guid(),
   sku: z.string().max(64),
   title: z.string(),
   priceCents: z.number().int().nullable().optional(),

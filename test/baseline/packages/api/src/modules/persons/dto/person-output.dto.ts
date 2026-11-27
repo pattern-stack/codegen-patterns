@@ -2,8 +2,8 @@
 import { z } from 'zod';
 
 export const PersonOutputSchema = z.object({
-  id: z.string().uuid(),
-  tenantId: z.string().uuid(),
+  id: z.guid(),
+  tenantId: z.guid(),
   email: z.string(),
   firstName: z.string(),
   lastName: z.string(),

@@ -5,76 +5,76 @@
 import { z } from 'zod';
 import type { EventTypeName } from './types';
 
-export const contactCreatedPayloadSchema = z.object({
-	accountId: z.string().uuid().nullable(),
-	contactId: z.string().uuid(),
-	createdBy: z.string().uuid(),
-}).strict();
+export const contactCreatedPayloadSchema = z.strictObject({
+	accountId: z.guid().nullable(),
+	contactId: z.guid(),
+	createdBy: z.guid(),
+});
 
-export const contactMarkedChampionPayloadSchema = z.object({
-	contactId: z.string().uuid(),
-	opportunityId: z.string().uuid(),
-}).strict();
+export const contactMarkedChampionPayloadSchema = z.strictObject({
+	contactId: z.guid(),
+	opportunityId: z.guid(),
+});
 
-export const contactMergedPayloadSchema = z.object({
-	mergedBy: z.string().uuid(),
-	sourceId: z.string().uuid(),
-	targetId: z.string().uuid(),
-}).strict();
+export const contactMergedPayloadSchema = z.strictObject({
+	mergedBy: z.guid(),
+	sourceId: z.guid(),
+	targetId: z.guid(),
+});
 
-export const crmSyncStartedPayloadSchema = z.object({
-	runId: z.string().uuid(),
+export const crmSyncStartedPayloadSchema = z.strictObject({
+	runId: z.guid(),
 	source: z.string(),
-}).strict();
+});
 
-export const dealCreatedPayloadSchema = z.object({
-	accountId: z.string().uuid(),
-	dealId: z.string().uuid(),
-	ownerId: z.string().uuid(),
-}).strict();
+export const dealCreatedPayloadSchema = z.strictObject({
+	accountId: z.guid(),
+	dealId: z.guid(),
+	ownerId: z.guid(),
+});
 
-export const dealStageChangedPayloadSchema = z.object({
-	dealId: z.string().uuid(),
+export const dealStageChangedPayloadSchema = z.strictObject({
+	dealId: z.guid(),
 	newStage: z.string(),
 	oldStage: z.string(),
-}).strict();
+});
 
-export const messageCreatedPayloadSchema = z.object({
-	changedFields: z.record(z.unknown()).nullable(),
-	entityId: z.string().uuid(),
+export const messageCreatedPayloadSchema = z.strictObject({
+	changedFields: z.record(z.string(), z.unknown()).nullable(),
+	entityId: z.guid(),
 	externalId: z.string(),
 	provider: z.string(),
 	source: z.string(),
-}).strict();
+});
 
-export const messageDeletedPayloadSchema = z.object({
-	entityId: z.string().uuid(),
+export const messageDeletedPayloadSchema = z.strictObject({
+	entityId: z.guid(),
 	externalId: z.string(),
 	provider: z.string(),
 	source: z.string(),
-}).strict();
+});
 
-export const messageEditedPayloadSchema = z.object({
-	changedFields: z.record(z.unknown()).nullable(),
-	entityId: z.string().uuid(),
+export const messageEditedPayloadSchema = z.strictObject({
+	changedFields: z.record(z.string(), z.unknown()).nullable(),
+	entityId: z.guid(),
 	externalId: z.string(),
 	provider: z.string(),
 	source: z.string(),
-}).strict();
+});
 
-export const stripePaymentReceivedPayloadSchema = z.object({
+export const stripePaymentReceivedPayloadSchema = z.strictObject({
 	amountCents: z.number(),
 	currency: z.string(),
 	customerId: z.string(),
 	eventId: z.string(),
 	receivedAt: z.coerce.date(),
-}).strict();
+});
 
-export const webhookOutboundContactSyncPayloadSchema = z.object({
-	contactId: z.string().uuid(),
+export const webhookOutboundContactSyncPayloadSchema = z.strictObject({
+	contactId: z.guid(),
 	occurredAt: z.coerce.date(),
 	operation: z.string(),
-}).strict();
+});
 
 export const eventPayloadSchemas = {
 	'contact_created': contactCreatedPayloadSchema,

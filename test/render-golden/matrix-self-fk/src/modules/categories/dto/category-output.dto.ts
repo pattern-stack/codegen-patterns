@@ -2,8 +2,8 @@
 import { z } from 'zod';
 
 export const CategoryOutputSchema = z.object({
-  id: z.string().uuid(),
-  parentCategoryId: z.string().uuid(),
+  id: z.guid(),
+  parentCategoryId: z.guid(),
   name: z.string(),
 });
 

@@ -17,8 +17,7 @@ import {
   timezoneOnNonDatetime,
 } from "./field-timestamp.js";
 import { getAllBehaviorNames, getBehavior, timestampBehaviorNames } from "../behaviors/index.js";
-import { DetectionConfigSchema as DetectionConfigSchemaZod3 } from "../../runtime/subsystems/integration";
-import { fromZod3 } from "./zod3-schema";
+import { DetectionConfigSchema } from "../../runtime/subsystems/integration";
 
 /** A snake_case name as written in YAML: an entity, a kind value, a field. */
 const SNAKE_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
@@ -1322,15 +1321,7 @@ export const EntityDefinitionSchema = z
     // Within-file cross-check (ADR-033.1 §6): every key here must also
     // appear in `integration.providers` — see the superRefine on
     // `EntityDefinitionSchema` below.
-    detection: z
-      .record(
-        z.string(),
-        fromZod3(
-          DetectionConfigSchemaZod3,
-          "Change detection for this provider: 'mode: poll' (with a 'poll:' cursor block) or 'mode: webhook', and 'mapping:' from provider fields onto the canonical record (ADR-033.1)",
-        ),
-      )
-      .optional(),
+    detection: z.record(z.string(), DetectionConfigSchema.describe("Change detection for this provider: 'mode: poll' (with a 'poll:' cursor block) or 'mode: webhook', and 'mapping:' from provider fields onto the canonical record (ADR-033.1)")).optional(),
 
     // NOTE: `surface:` and `context:` moved INTO EntityConfigSchema (the
     // `entity:` block) in 0.12.2 — consumers write them next to

@@ -7,8 +7,8 @@
  * - **Draft 07**: the draft YAML editors (yaml-language-server) and the tests' `ajv` read without extra setup.
  * - **Inline**: a schema used twice is written out twice rather than as a `$ref`, so each key carries its own
  *   description where the editor shows it. Recursive schemas still use `$ref` (they can't be inlined).
- * - **Editor hints** (`editorHints` in `./zod`) replace what Zod derives for a schema it can't express, such as a
- *   runtime Zod 3 schema hosted through `fromZod3`.
+ * - **Editor hints** (`editorHints` in `./zod`) replace what Zod derives where the editor should see more than the
+ *   parse enforces (the behavior names, from the behavior registry).
  *
  * Refinements that span keys (`superRefine`) have no JSON Schema form; the generator's own parse still runs them, so
  * the editor is a first check, not the gate.

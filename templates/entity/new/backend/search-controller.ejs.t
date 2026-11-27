@@ -36,7 +36,7 @@ import type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 const <%= searchQuery.filtersSchemaName %> = ListQuerySchema.extend({
 <% searchQuery.filters.forEach((f) => { -%>
 <% if (f.isUuid) { -%>
-  <%= f.camelName %>: z.string().uuid().optional(),
+  <%= f.camelName %>: z.guid().optional(),
 <% } else if (f.hasChoices) { -%>
   <%= f.camelName %>: z.enum([<%- f.choices.map((c) => `'${c}'`).join(', ') %>]).optional(),
 <% } else if (f.isBoolean) { -%>

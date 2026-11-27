@@ -2,9 +2,9 @@
 import { z } from 'zod';
 
 export const ContactOutputSchema = z.object({
-  id: z.string().uuid(),
-  accountId: z.string().uuid().nullable(),
-  userId: z.string().uuid(),
+  id: z.guid(),
+  accountId: z.guid().nullable(),
+  userId: z.guid(),
   firstName: z.string(),
   lastName: z.string(),
   email: z.string(),

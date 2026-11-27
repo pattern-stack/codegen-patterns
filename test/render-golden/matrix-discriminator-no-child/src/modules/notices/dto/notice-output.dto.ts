@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const NoticeOutputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   kind: z.enum(['info', 'alert']),
   body: z.string(),
 });

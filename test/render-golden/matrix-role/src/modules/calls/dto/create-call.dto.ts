@@ -2,9 +2,9 @@
 import { z } from 'zod';
 
 export const CreateCallSchema = z.object({
-  accountId: z.string().uuid(),
-  callerId: z.string().uuid().nullable().optional(),
-  regardingAccountId: z.string().uuid(),
+  accountId: z.guid(),
+  callerId: z.guid().nullable().optional(),
+  regardingAccountId: z.guid(),
   subject: z.string(),
 });
 

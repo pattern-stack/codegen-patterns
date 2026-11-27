@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const CreateTeamSchema = z.object({
-  leadContactId: z.string().uuid(),
+  leadContactId: z.guid(),
   name: z.string(),
 });
 

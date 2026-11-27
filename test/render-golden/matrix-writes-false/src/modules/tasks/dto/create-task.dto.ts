@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const CreateTaskSchema = z.object({
-  projectId: z.string().uuid(),
+  projectId: z.guid(),
   title: z.string(),
 });
 

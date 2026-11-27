@@ -2,8 +2,8 @@
 import { z } from 'zod';
 
 export const ProjectOutputSchema = z.object({
-  id: z.string().uuid(),
-  accountId: z.string().uuid(),
+  id: z.guid(),
+  accountId: z.guid(),
   name: z.string(),
 });
 

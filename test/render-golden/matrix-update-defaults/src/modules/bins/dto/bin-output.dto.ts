@@ -4,7 +4,7 @@ import { ToteOutputSchema } from '../../totes/dto/tote-output.dto';
 
 // RFC-0006 §5: the columns THIS table owns, alone. `ToteOfKindSchema` nests it under the kind key.
 export const BinOwnOutputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   label: z.string(),
   sealed: z.boolean().nullable(),
 });

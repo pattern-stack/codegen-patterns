@@ -442,18 +442,18 @@ Project config in `codegen.config.yaml`. Key sections: `runtime`, `target`, `pat
 
 Auto-detect: `just scan` generates a config from project conventions.
 
-### Two Zods (ZOD-0)
+### Zod (ZOD-0, ZOD-1)
 
-Everything that runs inside the generator (`src/**` and the generation-time JS under `templates/`: `prompt.js`,
-`entity-locals.js`, `_shared/*.mjs`) is **Zod 4**: import `z` from `src/schema/zod.ts`, the only importer of the
-`zod4` dependency (an npm alias of `zod@4`). What emitted apps import (`runtime/**`, the `.ejs.t` templates' text)
-stays on the `zod` dependency (Zod 3) until the generated code moves (ZOD-0 step 2, a major, which deletes the
-temporary `zod-boundary.test.ts` that holds this line). Pass `codegenMessages` (from `src/schema/zod.ts`) where you
-report issues to an author; never `z.config`, which Zod 4 shares across every copy in the process. A runtime Zod 3
-schema inside a codegen schema goes through `fromZod3`; a pattern's `configSchema` is structural
-(`PatternConfigSchema`), so consumers' Zod 3 patterns still validate. The editor schemas
-(`entity-definition.schema.json`, `codegen-config.schema.json`) are generated (`just gen-entity-schema`,
-`just gen-config-schema`) and tested for drift. See `docs/specs/ZOD-0.md`.
+Everything is Zod 4 (`zod ^4.6.7`): codegen's own schemas, the generated DTOs and the vendored runtime. Codegen's
+schemas import `z` from `src/schema/zod.ts`. Pass its `codegenMessages` where you report issues to an author (an
+enum refusal names the refused value); never `z.config`, which Zod 4 shares across every copy in the process, so it
+would reach a consumer's own schemas. Emitted ids are `z.guid()` (any 8-4-4-4-12 hex, as Postgres accepts), not
+Zod 4's strict `uuid()`. An update DTO never applies a default (`createChainAppliesDefault` / `zodChainForUpdate`,
+ZOD-1a). A pattern's `configSchema` is structural (`PatternConfigSchema`), so a consumer's pattern file works on
+either Zod. The editor schemas (`entity-definition.schema.json`, `codegen-config.schema.json`) are generated
+(`just gen-entity-schema`, `just gen-config-schema`) and tested for drift. OpenAPI components come from
+`z.toJSONSchema` in `runtime/shared/openapi/registry.ts`; there is no OpenAPI peer. Specs: `docs/specs/ZOD-0.md`,
+`docs/specs/ZOD-1.md`; app upgrade: `docs/MIGRATION-zod4.md`.
 
 ### Testing
 

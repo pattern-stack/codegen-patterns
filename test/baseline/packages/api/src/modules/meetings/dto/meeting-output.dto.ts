@@ -4,7 +4,7 @@ import { CommunicationOutputSchema } from '../../communications/dto/communicatio
 
 // RFC-0006 §5: the columns THIS table owns, alone. `CommunicationOfKindSchema` nests it under the kind key.
 export const MeetingOwnOutputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   title: z.string(),
   startsAt: z.coerce.date(),
   endsAt: z.coerce.date().nullable(),

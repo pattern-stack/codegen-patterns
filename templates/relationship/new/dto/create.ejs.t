@@ -10,8 +10,8 @@ import { <%= typeEnumName %> } from '../<%= entityFileStem %>.entity';
 
 export const <%= classNames.createSchema %> = z.object({
   // FK endpoints (required)
-  <%= fromColumnCamel %>: z.string().uuid(),
-  <%= toColumnCamel %>: z.string().uuid(),
+  <%= fromColumnCamel %>: z.guid(),
+  <%= toColumnCamel %>: z.guid(),
 <%_ if (hasTypes) { _%>
 
   // Relationship type (required)

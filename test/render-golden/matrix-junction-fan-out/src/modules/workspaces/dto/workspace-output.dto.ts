@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const WorkspaceOutputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   name: z.string(),
 });
 

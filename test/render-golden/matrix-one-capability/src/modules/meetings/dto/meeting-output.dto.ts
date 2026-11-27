@@ -2,8 +2,8 @@
 import { z } from 'zod';
 
 export const MeetingOutputSchema = z.object({
-  id: z.string().uuid(),
-  hostContactId: z.string().uuid(),
+  id: z.guid(),
+  hostContactId: z.guid(),
   title: z.string(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),

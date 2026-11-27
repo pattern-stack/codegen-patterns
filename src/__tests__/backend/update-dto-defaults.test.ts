@@ -1,34 +1,30 @@
 /**
- * ZOD-1a: a PATCH leaves an omitted field as it is, on Zod 3 and on Zod 4.
+ * ZOD-1a: a PATCH leaves an omitted field as it is.
  *
  * An update DTO built as `Create.partial()` carries the create schema's `.default()` along. Zod 3 ignores a default
  * under `.optional()`; Zod 4 applies it, so `Update.parse({})` would come back `{ active: true }` and a PATCH that
  * leaves `active` out would reset it. Every update DTO therefore restates its create schema's defaulted fields
  * without the default (`updateDefaultOverrides`), and a family child's update extends its base's update.
  *
- * The generated DTOs themselves are loaded and parsed here, once with `zod` (Zod 3, what emitted apps run today) and
- * once with Zod 4 (`zod4`), so the guarantee holds before and after the generated code moves (ZOD-1b).
+ * The generated DTOs themselves are loaded and parsed here, with the Zod the generated apps run (Zod 4 since ZOD-1b;
+ * ZOD-1a ran them under Zod 3 as well).
  */
 
 import { afterAll, describe, expect, it } from 'bun:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { z as z3 } from 'zod';
-import { z as z4 } from '../../schema/zod';
+import { z } from 'zod';
 import relationshipPrompt from '../../../templates/relationship/new/prompt.js';
 import { renderAllBackendFiles } from '../derived/_render';
 import { RENDER_MATRIX } from '../derived/_render-matrix';
 
 const REPO = path.resolve(import.meta.dir, '../../..');
-// Inside the repo's node_modules, so the generated files' bare `zod` / `zod4` imports resolve.
+// Inside the repo's node_modules, so the generated files' bare `zod` import resolves.
 const SCRATCH = fs.mkdtempSync(path.join(REPO, 'node_modules', '.cache-update-dto-'));
 afterAll(() => fs.rmSync(SCRATCH, { recursive: true, force: true }));
 
-const ZODS = [
-	{ name: 'Zod 3', specifier: 'zod' },
-	{ name: 'Zod 4', specifier: 'zod4' },
-] as const;
+const ZODS = [{ name: 'Zod 4', specifier: 'zod' }] as const;
 
 /** The case's DTO files, written once per Zod with `from 'zod'` pointed at it; returns the module root per Zod. */
 function writeDtos(): Record<string, string> {
@@ -120,15 +116,12 @@ describe('relationship update DTOs leave omitted fields alone', () => {
 		);
 	});
 
-	for (const [name, z] of [
-		['Zod 3', z3],
-		['Zod 4', z4],
-	] as const) {
-		it(`the update the template prints parses {} to {} (${name})`, async () => {
+	{
+		it('the update the template prints parses {} to {}', async () => {
 			const l = await locals();
 			// As update.ejs.t prints it: `Create.partial().extend({ <overrides> })`.
 			const chain = (src: string) => new Function('z', `return ${src};`)(z);
-			const create = (z as typeof z4).object(
+			const create = z.object(
 				Object.fromEntries(l.createDtoFields.map((f: any) => [f.camelName, chain(f.zodChainCreate)])),
 			);
 			const update = create

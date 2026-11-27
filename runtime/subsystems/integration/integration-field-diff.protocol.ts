@@ -23,9 +23,11 @@ import { z } from 'zod';
  * `deleted` items set `from: <value>, to: null`.
  * `noop` items carry `{}`.
  */
+// `.optional()`: a side may be absent, as it may be after a jsonb round trip (`JSON.stringify` drops an `undefined`).
+// Zod 3 read a `z.unknown()` key as optional; Zod 4 requires it unless it says `.optional()` (ZOD-1).
 export const FieldDiffValueSchema = z.object({
-  from: z.unknown(),
-  to: z.unknown(),
+  from: z.unknown().optional(),
+  to: z.unknown().optional(),
 });
 
 export const FieldDiffSchema = z.record(z.string(), FieldDiffValueSchema);

@@ -82,7 +82,6 @@
     "src/config/table-naming.ts",
     "src/config/project-config.ts",
     "src/schema/zod.ts",
-    "src/schema/zod3-schema.ts",
     "src/schema/codegen-config.schema.ts",
     "src/schema/codegen-config.schema.json",
     "src/schema/field-nullability.ts",
@@ -129,15 +128,14 @@
     "ts-morph": "^28.0.0",
     "typescript": "^6.0.2",
     "yaml": "^2.8.3",
-    "zod": "^3.22.4",
-    "zod4": "npm:zod@^4.6.7"
+    "zod": "^4.6.7"
   },
   "peerDependencies": {
     "@nestjs/common": "^10",
     "@nestjs/core": "^10",
     "@nestjs/schedule": "^4.0.0 || ^5.0.0",
     "@nestjs/swagger": "^7.0.0 || ^8.0.0",
-    "@pattern-stack/query-surface": "^0.3.1",
+    "@pattern-stack/query-surface": "^0.4.0",
     "bullmq": ">=5.0.0",
     "class-transformer": ">=0.5.0",
     "class-validator": ">=0.14.0",
@@ -148,9 +146,6 @@
     "rxjs": "^7.0.0"
   },
   "peerDependenciesMeta": {
-    "@anatine/zod-openapi": {
-      "optional": true
-    },
     "@nestjs/schedule": {
       "optional": true
     },
@@ -177,7 +172,6 @@
     "packages/*"
   ],
   "devDependencies": {
-    "@anatine/zod-openapi": "^2.2.8",
     "@nestjs/common": "10",
     "@nestjs/core": "10",
     "@nestjs/platform-express": "^10.0.0",
@@ -189,7 +183,7 @@
     "@pattern-stack/codegen-mail": "workspace:*",
     "@pattern-stack/codegen-messaging": "workspace:*",
     "@pattern-stack/codegen-transcript": "workspace:*",
-    "@pattern-stack/query-surface": "0.3.1",
+    "@pattern-stack/query-surface": "0.4.0",
     "@testcontainers/postgresql": "^12.0.0",
     "@types/bun": "latest",
     "@types/ejs": "^3.1.5",

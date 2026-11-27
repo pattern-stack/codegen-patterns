@@ -67,21 +67,19 @@ export function clampPage(page: number | undefined): number {
  * pagination works fully UNFILTERED (the default mode). `pageSize` is clamped
  * (default 50, max 200) and `sort_order` defaults to `desc`. Arbitrary where
  * filters are NOT modeled here (they're parsed/passed through at the controller
- * via `.passthrough()`); this schema owns ONLY the pagination + sort knobs so
+ * as extra keys, which `z.looseObject` keeps); this schema owns ONLY the pagination + sort knobs so
  * the defaults + clamp land in one place.
  *
  * `cursor` is accepted but v1 ignores it for fetching (offset engine) — the
  * keyset seek is the deferred seam. Passing a `nextCursor` back never errors.
  */
-export const ListQuerySchema = z
-  .object({
-    page: z.coerce.number().int().optional(),
-    cursor: z.string().optional(),
-    pageSize: z.coerce.number().int().optional(),
-    sort_by: z.string().optional(),
-    sort_order: z.enum(['asc', 'desc']).optional(),
-  })
-  .passthrough();
+export const ListQuerySchema = z.looseObject({
+  page: z.coerce.number().int().optional(),
+  cursor: z.string().optional(),
+  pageSize: z.coerce.number().int().optional(),
+  sort_by: z.string().optional(),
+  sort_order: z.enum(['asc', 'desc']).optional(),
+});
 
 /** Parsed list query (pre-clamp). Use {@link resolveListQuery} to normalize. */
 export type ListQuery = z.infer<typeof ListQuerySchema>;

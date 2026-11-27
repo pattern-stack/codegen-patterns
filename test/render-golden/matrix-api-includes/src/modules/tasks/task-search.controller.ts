@@ -12,7 +12,7 @@ import type { Task } from './task.entity';
  * and sorts exactly as `GET /tasks` does (#744).
  */
 const TaskFiltersSchema = ListQuerySchema.extend({
-  projectId: z.string().uuid().optional(),
+  projectId: z.guid().optional(),
   search: z.string().optional(),
 });
 

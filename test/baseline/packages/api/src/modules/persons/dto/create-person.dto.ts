@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const CreatePersonSchema = z.object({
-  tenantId: z.string().uuid(),
+  tenantId: z.guid(),
   email: z.string().max(255),
   firstName: z.string().max(100),
   lastName: z.string().max(100),

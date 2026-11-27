@@ -2,10 +2,10 @@
 import { z } from 'zod';
 
 export const CreateOpportunitySchema = z.object({
-  organizationId: z.string().uuid(),
-  ownerId: z.string().uuid(),
-  stateId: z.string().uuid(),
-  tenantId: z.string().uuid(),
+  organizationId: z.guid(),
+  ownerId: z.guid(),
+  stateId: z.guid(),
+  tenantId: z.guid(),
   name: z.string().max(255),
   amount: z.coerce.string().nullable().optional(),
   currency: z.string().max(3).nullable().optional(),

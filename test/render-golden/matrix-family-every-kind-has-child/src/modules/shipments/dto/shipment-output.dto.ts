@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const ShipmentOutputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   kind: z.enum(['air', 'sea']),
   weight: z.number().int(),
 });

@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 export const CreateDealStateSchema = z.object({
-  tenantId: z.string().uuid().nullable().optional(),
+  tenantId: z.guid().nullable().optional(),
   name: z.string().max(50),
   displayName: z.string().max(100),
   stateType: z.enum(['open', 'won', 'lost', 'stalled']),

@@ -2,8 +2,8 @@
 import { z } from 'zod';
 
 export const CreateTicketSchema = z.object({
-  accountId: z.string().uuid(),
-  assigneeId: z.string().uuid(),
+  accountId: z.guid(),
+  assigneeId: z.guid(),
   title: z.string(),
 });
 

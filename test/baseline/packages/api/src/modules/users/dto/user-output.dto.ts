@@ -2,9 +2,9 @@
 import { z } from 'zod';
 
 export const UserOutputSchema = z.object({
-  id: z.string().uuid(),
-  personId: z.string().uuid().nullable(),
-  tenantId: z.string().uuid(),
+  id: z.guid(),
+  personId: z.guid().nullable(),
+  tenantId: z.guid(),
   email: z.string(),
 });
 
