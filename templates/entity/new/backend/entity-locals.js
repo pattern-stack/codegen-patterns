@@ -2416,6 +2416,32 @@ export function buildBackendLocals(definition, baseLocals) {
   // Whether writes are emitted is the derivation's answer (ADR-046): `generate.writes: false`; a base with a child for every kind has no create (RFC-0006 §4.1, S5).
   const hasUseCase = (kind) => apiSurface.useCases.some((u) => u.kind === kind);
 
+  // EAV stamps every custom-field value with its owner, read from this entity's `user_id`. Where the generated code
+  // reads it, its type must hold a string, or the use case fails to compile far from the cause: refused here, by
+  // name, for exactly the code that is emitted.
+  //   - `eav: true` create passes the create DTO's `userId`: `user_id` must be required on create (NOT NULL, no default);
+  //   - `eav: true` update passes the row's `userId`: `user_id` must be NOT NULL;
+  //   - `eav_value_table: true` writes the column in its upsert: `user_id` must exist.
+  // (A family member can't be EAV: the schema refuses it, R9.)
+  const eavReadsUserId = eavValueTable || (eavEnabled && (hasUseCase('create') || hasUseCase('update')));
+  if (eavReadsUserId) {
+    const userId = tableColumnFacts.find((c) => c.name === 'user_id');
+    const flag = eavEnabled ? '`eav: true`' : '`eav_value_table: true`';
+    const why = !userId
+      ? 'it has none'
+      : eavEnabled && hasUseCase('create') && (userId.nullable || userId.default !== null)
+        ? `its create use case passes the create body's userId, and \`user_id\` is ${userId.nullable ? 'nullable' : 'optional on create (it has a default)'}`
+        : eavEnabled && hasUseCase('update') && userId.nullable
+          ? "its update use case passes the row's userId, and `user_id` is nullable"
+          : null;
+    if (why) {
+      throw new Error(
+        `[codegen] '${entityName}': ${flag} stamps each custom-field value with its owner's \`user_id\`, and ${why}. ` +
+          `Declare \`user_id: { type: uuid, required: true }\` under fields: (or a required belongs_to whose foreign key is user_id).`,
+      );
+    }
+  }
+
   // Output paths
   const tableFacts = { name: entityTableName, export: entityNamePlural, columns: tableColumnFacts, constraints: recordedConstraints };
   // The import of every other table a SQLite module references: a belongs_to / field FK target, or the joined-table
