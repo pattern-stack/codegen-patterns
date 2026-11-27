@@ -317,7 +317,7 @@ describe('jobs.backend: memory cannot run a standalone worker (JOBS-0, #656)', (
 });
 
 describe('target: — the (database, orm) pair, derived from TARGET_PAIRS (TGT-0, ADR-047)', () => {
-	const SUPPORTED = 'supported: { database: postgres, orm: drizzle }';
+	const SUPPORTED = 'supported: { database: postgres, orm: drizzle }, { database: sqlite, orm: drizzle }';
 
 	it('absent → { database: postgres, orm: drizzle }, the first row of the table', () => {
 		expect(parseCodegenConfig({}, 'x.yaml').target).toEqual({ database: 'postgres', orm: 'drizzle' });
@@ -331,15 +331,20 @@ describe('target: — the (database, orm) pair, derived from TARGET_PAIRS (TGT-0
 	});
 
 	it('a pair the table lacks is refused, naming the supported pairs', () => {
-		const err = errorOf(() => parseCodegenConfig({ target: { database: 'sqlite', orm: 'drizzle' } }, 'x.yaml'));
-		expect(err.issues).toEqual([`target.database: not a supported (database, orm) pair; ${SUPPORTED}`]);
-		const orm = errorOf(() => parseCodegenConfig({ target: { database: 'postgres', orm: 'kysely' } }, 'x.yaml'));
-		expect(orm.issues).toEqual([`target.orm: not a supported (database, orm) pair; ${SUPPORTED}`]);
+		// Two rows: the union's one issue names the pair and the supported ones (TGT-0b's two-row messages, now live).
+		const err = errorOf(() => parseCodegenConfig({ target: { database: 'mysql', orm: 'drizzle' } }, 'x.yaml'));
+		expect(err.issues).toEqual([`target: { database: mysql, orm: drizzle } is not a supported (database, orm) pair; ${SUPPORTED}`]);
+		const orm = errorOf(() => parseCodegenConfig({ target: { database: 'sqlite', orm: 'kysely' } }, 'x.yaml'));
+		expect(orm.issues).toEqual([`target: { database: sqlite, orm: kysely } is not a supported (database, orm) pair; ${SUPPORTED}`]);
+		expect(parseCodegenConfig({ target: { database: 'sqlite', orm: 'drizzle' } }, 'x.yaml').target).toEqual({
+			database: 'sqlite',
+			orm: 'drizzle',
+		});
 	});
 
 	it('written, both keys are required', () => {
 		const err = errorOf(() => parseCodegenConfig({ target: { database: 'postgres' } }, 'x.yaml'));
-		expect(err.issues).toEqual([`target.orm: required: write both database and orm; ${SUPPORTED}`]);
+		expect(err.issues).toEqual([`target: required: write both database and orm; ${SUPPORTED}`]);
 	});
 
 	it('a key with no second value yet (http, wiring, runtime) is an unknown key, not a silently ignored one', () => {

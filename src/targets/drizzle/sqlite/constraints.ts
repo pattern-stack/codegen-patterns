@@ -9,7 +9,7 @@
  *   compare equal to each other and to nothing else — exactly NULLS NOT DISTINCT. A NOT NULL column is unchanged by
  *   the wrap.
  *
- * Not yet registered: the pair's row comes in TGT-2b. Hygen-safe: imports only shipped modules.
+ * Registered in TGT-2b. Hygen-safe: imports only shipped modules.
  */
 
 import type { ColumnReferenceFact, UniqueFact } from '../../../derived/constraints/types.js';
@@ -53,7 +53,7 @@ function unique(fact: UniqueFact, tableParam: string): RenderedConstraint {
 	return { builder: 'uniqueIndex', expr: `uniqueIndex('${fact.name}').on(${cols})`, comment };
 }
 
-export const drizzleSqliteConstraints: ConstraintRenderer<'drizzle/sqlite'> = {
+export const drizzleSqliteConstraints: ConstraintRenderer = {
 	pair: 'drizzle/sqlite',
 	predicate,
 	columnReference,

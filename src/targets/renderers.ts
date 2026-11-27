@@ -14,6 +14,8 @@ import type { ColumnRenderer } from './columns.js';
 import type { ConstraintRenderer } from './constraints.js';
 import { drizzlePostgresColumns } from './drizzle/postgres/columns.js';
 import { drizzlePostgresConstraints } from './drizzle/postgres/constraints.js';
+import { drizzleSqliteColumns } from './drizzle/sqlite/columns.js';
+import { drizzleSqliteConstraints } from './drizzle/sqlite/constraints.js';
 import { supportedTargetPairs, type TargetPair } from './pairs.js';
 
 /** What one pair renders with. A renderer joins as its text moves behind the target (TGT-N). */
@@ -24,6 +26,7 @@ export interface PairRenderers {
 
 export const TARGET_RENDERERS: { readonly [P in TargetPair]: PairRenderers } = {
 	'drizzle/postgres': { columns: drizzlePostgresColumns, constraints: drizzlePostgresConstraints },
+	'drizzle/sqlite': { columns: drizzleSqliteColumns, constraints: drizzleSqliteConstraints },
 };
 
 /**

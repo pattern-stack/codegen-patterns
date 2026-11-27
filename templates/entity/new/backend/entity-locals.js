@@ -35,6 +35,7 @@ import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
 import { arrayElementType, deriveFieldFacts, isArrayType } from '../../../../src/derived/columns/fields.js';
 import { columnRendererFor } from '../../../../src/targets/columns.js';
 import { constraintRendererFor } from '../../../../src/targets/constraints.js';
+import { targetPairRow } from '../../../../src/targets/pairs.js';
 import { tokenizePredicate } from '../../../../src/derived/constraints/predicate.js';
 import { onDeleteAction } from '../../../../src/derived/constraints/on-delete.js';
 import { deriveTableColumns } from '../../../../src/derived/tables/columns.js';
@@ -858,7 +859,7 @@ export const PG_IDENTIFIER_MAX_BYTES = 63;
  * from C4 — two partial entries over the same columns with different
  * predicates are the documented use.
  */
-export function assertDistinctConstraints(tableConstraints, entityName) {
+export function assertDistinctConstraints(tableConstraints, entityName, identifierMaxBytes = PG_IDENTIFIER_MAX_BYTES) {
   const names = new Map();
   const colSets = new Map();
   for (const c of tableConstraints) {
@@ -866,10 +867,11 @@ export function assertDistinctConstraints(tableConstraints, entityName) {
     // constraint the author cannot find by the name they read). Only the names the entity table's extra-config
     // callback declares pass through here; a single-column `.references()` FK is named by Drizzle and a
     // junction / relationship table never calls this (a known gap, filed for a decision).
-    if (Buffer.byteLength(c.name) > PG_IDENTIFIER_MAX_BYTES) {
+    // The limit is the database's (TGT-2b: `identifierMaxBytes` on the pair's row; SQLite has none).
+    if (identifierMaxBytes !== null && Buffer.byteLength(c.name) > identifierMaxBytes) {
       throw new Error(
         `[codegen] '${entityName}': the name '${c.name}' (${c.source}) is ${Buffer.byteLength(c.name)} bytes; ` +
-          `Postgres keeps ${PG_IDENTIFIER_MAX_BYTES} and would truncate it. A name starts with the SQL table ` +
+          `Postgres keeps ${identifierMaxBytes} and would truncate it. A name starts with the SQL table ` +
           `name, so shorten that with \`entity.table:\` (TABLE-0), or rename the entity or relationship.`,
       );
     }
@@ -2279,7 +2281,7 @@ export function buildBackendLocals(definition, baseLocals) {
       );
     }
   }
-  assertDistinctConstraints(tableConstraints, entityName);
+  assertDistinctConstraints(tableConstraints, entityName, targetPairRow(baseLocals.target).identifierMaxBytes);
 
   // Enum field declarations — surface a separate collection so the entity
   // template can emit `export const xEnum = pgEnum('x', [...])` ahead of

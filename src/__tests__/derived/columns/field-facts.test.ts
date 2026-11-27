@@ -121,8 +121,8 @@ describe('the drizzle/postgres column renderer', () => {
 });
 
 describe('the target selects the renderer, and is required', () => {
-	it('drizzle/postgres is the one supported pair, and the default', () => {
-		expect(Object.keys(TARGET_RENDERERS)).toEqual(['drizzle/postgres']);
+	it('drizzle/postgres and drizzle/sqlite are the supported pairs; postgres is the default', () => {
+		expect(Object.keys(TARGET_RENDERERS)).toEqual(['drizzle/postgres', 'drizzle/sqlite']);
 		expect(DEFAULT_CODEGEN_CONFIG.target).toEqual({ database: 'postgres', orm: 'drizzle' });
 		expect(drizzlePostgres.pair).toBe('drizzle/postgres');
 	});
@@ -140,10 +140,10 @@ describe('the target selects the renderer, and is required', () => {
 	);
 
 	it('a pair not in the table is refused by the schema and by the renderer lookup', () => {
-		expect(TargetConfigSchema.safeParse({ database: 'sqlite', orm: 'drizzle' }).success).toBe(false);
+		expect(TargetConfigSchema.safeParse({ database: 'mysql', orm: 'drizzle' }).success).toBe(false);
 		expect(TargetConfigSchema.safeParse({ database: 'postgres', orm: 'kysely' }).success).toBe(false);
-		expect(() => columnRendererFor({ database: 'sqlite', orm: 'drizzle' } as never, 'caller')).toThrow(
-			'caller: target { database: sqlite, orm: drizzle } is not a supported pair (supported: { database: postgres, orm: drizzle }).',
+		expect(() => columnRendererFor({ database: 'mysql', orm: 'drizzle' } as never, 'caller')).toThrow(
+			'caller: target { database: mysql, orm: drizzle } is not a supported pair (supported: { database: postgres, orm: drizzle }, { database: sqlite, orm: drizzle }).',
 		);
 	});
 

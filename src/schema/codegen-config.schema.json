@@ -17,24 +17,48 @@
         "database": "postgres",
         "orm": "drizzle"
       },
-      "type": "object",
-      "properties": {
-        "database": {
-          "type": "string",
-          "const": "postgres",
-          "description": "PostgreSQL: pg-core column builders, node-postgres driver on Node"
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "database": {
+              "type": "string",
+              "const": "postgres",
+              "description": "PostgreSQL: pg-core column builders, node-postgres driver on Node"
+            },
+            "orm": {
+              "type": "string",
+              "const": "drizzle",
+              "description": "Drizzle ORM: tables, columns and repositories written against drizzle-orm"
+            }
+          },
+          "required": [
+            "database",
+            "orm"
+          ],
+          "additionalProperties": false
         },
-        "orm": {
-          "type": "string",
-          "const": "drizzle",
-          "description": "Drizzle ORM: tables, columns and repositories written against drizzle-orm"
+        {
+          "type": "object",
+          "properties": {
+            "database": {
+              "type": "string",
+              "const": "sqlite",
+              "description": "SQLite: sqlite-core column builders, ISO TEXT instants, TEXT + CHECK enums; storage layer only until wiring: plain"
+            },
+            "orm": {
+              "type": "string",
+              "const": "drizzle",
+              "description": "Drizzle ORM: sqlite-core tables, plus SQLite DDL (.sql) from the same facts"
+            }
+          },
+          "required": [
+            "database",
+            "orm"
+          ],
+          "additionalProperties": false
         }
-      },
-      "required": [
-        "database",
-        "orm"
-      ],
-      "additionalProperties": false
+      ]
     },
     "paths": {
       "default": {},

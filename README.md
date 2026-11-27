@@ -570,7 +570,7 @@ tables:
                                  # `table:` (verbatim) or `table_prefix:`. Only the SQL name changes —
                                  # the Drizzle export, db.query key and module folder stay on `plural`
 
-target:                          # the data layer, as a (database, orm) pair. Supported pairs: `{ database: postgres, orm: drizzle }`
+target:                          # the data layer, as a (database, orm) pair. Supported pairs: `{ database: postgres, orm: drizzle }`, `{ database: sqlite, orm: drizzle }` (storage layer only)
   database: postgres             # default
   orm: drizzle                   # default. An unsupported pair is an error naming the supported ones (ADR-047)
 
