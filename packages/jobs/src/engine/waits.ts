@@ -12,11 +12,14 @@ import { submitSoon } from './submit-soon.ts';
 
 type Deps = Pick<AdvanceDeps, 'store' | 'clock' | 'events'>;
 
-/** What a wake found: the step carries on, it waits again, or its gate timed out. */
+/**
+ * What a wake found: the step carries on, it waits again, or it fails: its gate or wait timed out, or a gate threw on
+ * this read (as a throw on the first read fails the run, so does one on a later poll).
+ */
 export type WakeOutcome =
   | { kind: 'woke' }
   | { kind: 'rests'; status: RunStatus }
-  | { kind: 'timedOut'; error: GateTimedOutError | WaitTimedOutError };
+  | { kind: 'fails'; error: unknown };
 
 const kindOf = (entry: StepEntry): StepState['kind'] => entry.erased.kind;
 
@@ -119,7 +122,7 @@ async function wakeSignal(
   const waited = now.getTime() - wait.since.getTime();
   if (fallback === 'fail')
     return {
-      kind: 'timedOut',
+      kind: 'fails',
       error: new WaitTimedOutError(wait.name, waited),
     };
   if (
@@ -169,7 +172,12 @@ export async function wakeStep(
       });
     return { kind: 'rests', status: (await store.getRun(run.id)).status };
   }
-  const closed = await firstClosed(entry.erased.gates, ctx);
+  let closed: Awaited<ReturnType<typeof firstClosed>>;
+  try {
+    closed = await firstClosed(entry.erased.gates, ctx);
+  } catch (error) {
+    return { kind: 'fails', error };
+  }
   if (!closed) {
     if (await store.unpark(run.id, entry.name))
       await events.emit({
@@ -186,7 +194,7 @@ export async function wakeStep(
   const waited = now.getTime() - since.getTime();
   if (closed.maxWaitMs !== undefined && waited >= closed.maxWaitMs)
     return {
-      kind: 'timedOut',
+      kind: 'fails',
       error: new GateTimedOutError(closed.name, waited),
     };
   if (closed.name !== wait.name)

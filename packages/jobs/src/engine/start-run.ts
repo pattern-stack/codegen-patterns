@@ -10,7 +10,8 @@ import {
 import {
   ACTIVE_RUN,
   type Budget,
-  type Collision,
+  COLLISIONS,
+  type StoreCollision,
   RUN_SUBJECT_ID_MAX,
   RUN_SUBJECT_KIND_MAX,
   type Run,
@@ -71,8 +72,8 @@ export async function startRun(
     );
   assertStoreHoldsValues(job, deps.store);
   assertStoreSafeFor(job, deps.store);
-  const collision = request.collision ?? job.collision;
-  const create = (as: Collision) =>
+  const mode = COLLISIONS[request.collision ?? job.collision];
+  const create = (as: StoreCollision, dedupeWindowMs = request.dedupeWindowMs ?? job.dedupeWindowMs) =>
     deps.store.createRun({
       ...request,
       input: inputForStore(job, parsed.data),
@@ -82,18 +83,19 @@ export async function startRun(
       // The job's, after the request's fields: a caller never names it.
       subject: subjectOf(job, parsed.data),
       collision: as,
-      dedupeWindowMs: request.dedupeWindowMs ?? job.dedupeWindowMs,
+      dedupeWindowMs,
     });
-  let { run, created } = await create(collision === 'queue' ? 'queue' : 'join');
-  // Replace: cancel the open run on the key (its children with it), then start afresh. A start racing this one may
-  // take the key first; then that run is the one replaced, a bounded number of times.
-  for (let tries = 0; collision === 'replace' && !created && ACTIVE_RUN.includes(run.status); tries++) {
+  let { run, created } = await create(mode.storeAs);
+  // Replace: cancel the open run on the key (its children with it), then start afresh, with no dedupe window (the run
+  // just canceled ended inside it). A start racing this one may take the key first; then that run is the one replaced,
+  // a bounded number of times.
+  for (let tries = 0; mode.replaces && !created && ACTIVE_RUN.includes(run.status); tries++) {
     if (tries === 3)
       throw new RunPlanningError(`${job.key}: could not replace the open run on dedupe key ${request.dedupeKey}`);
     const { changed, run: canceled } = await deps.store.transition(run.id, { to: 'canceled' });
     if (changed && deps.events && deps.clock)
       await deps.events.emit({ ...eventBase(canceled, deps.clock), type: 'run.canceled' });
-    ({ run, created } = await create('join'));
+    ({ run, created } = await create(mode.storeAs, 0));
   }
   if (run.jobVersion !== job.version)
     throw new RunVersionConflictError(run.id, run.jobVersion, job.version);

@@ -33,6 +33,7 @@ import {
   type Budget,
   budgetStop,
   canTransition,
+  checkNewRun,
   MAX_DEPTH,
   type NewRun,
   type Run,
@@ -408,11 +409,7 @@ export class MemoryJobStore implements JobStore {
         if (recent) return { run: structuredClone(recent), created: false };
       }
     }
-    const chunkSize = req.chunkSize ?? 1000;
-    if (!(Number.isInteger(chunkSize) && chunkSize >= 1))
-      throw new Error('chunkSize must be a positive integer');
-    if (!(Number.isInteger(req.budget.maxItems) && req.budget.maxItems >= 0))
-      throw new Error('budget.maxItems is required: a whole number');
+    const chunkSize = checkNewRun(req);
     this.refuseValue('a run input', req.input);
     const id = randomUUID();
     this.commit({

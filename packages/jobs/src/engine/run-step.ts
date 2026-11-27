@@ -2,6 +2,7 @@ import type { StepEntry } from '../define/define-job.ts';
 import type { ErasedContext, ErasedPlainStep } from '../define/step.ts';
 import {
   DEFAULT_THROTTLE_MS,
+  errorRecordOf,
   errorTypeOf,
   GateClosedError,
   JobDefinitionError,
@@ -198,10 +199,7 @@ async function afterFailure(
     }
     return 'retry';
   }
-  await store.failStep(run.id, entry.name, {
-    type: errorTypeOf(err),
-    message: err instanceof Error ? err.message : String(err),
-  });
+  await store.failStep(run.id, entry.name, errorRecordOf(err));
   await events.emit({
     ...base,
     type: 'step.failed',

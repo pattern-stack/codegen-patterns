@@ -12,13 +12,13 @@ import {
   ClaimLostError,
   JobDefinitionError,
   RunNotFoundError,
-  RunPlanningError,
 } from '../model/errors.ts';
 import type { JobEvent } from '../model/events.ts';
 import type { Done, Failed, Item, ItemRef, ItemResult } from '../model/item.ts';
 import {
   budgetStop,
   canTransition,
+  checkNewRun,
   MAX_DEPTH,
   type NewRun,
   type Run,
@@ -202,13 +202,7 @@ export class PostgresJobStore implements JobStore, JobOperatorReads {
   // ── runs ──────────────────────────────────────────────────────────────────
 
   async createRun(req: NewRun): Promise<{ run: Run; created: boolean }> {
-    const chunkSize = req.chunkSize ?? 1000;
-    if (!(Number.isInteger(chunkSize) && chunkSize >= 1))
-      throw new Error('chunkSize must be a positive integer');
-    if (!(Number.isInteger(req.budget.maxItems) && req.budget.maxItems >= 0))
-      throw new Error('budget.maxItems is required: a whole number');
-    if (req.requestedBy !== null && req.requestedBy.length === 0)
-      throw new RunPlanningError('requestedBy must be a user id or null');
+    const chunkSize = checkNewRun(req);
     const R = this.tables.runs;
     const now = tsOf(this.now());
     const dedupeKey = req.dedupeKey || null;

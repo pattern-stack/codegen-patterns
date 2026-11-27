@@ -299,6 +299,7 @@ describe('where values live', () => {
       input: undefined,
       jobKey: toy.job.key,
       jobVersion: toy.job.version,
+      collision: 'join',
     });
     const sink = recordingSink();
     const executor = new InProcessExecutor({
@@ -606,6 +607,7 @@ describe('where values live', () => {
       input: undefined,
       jobKey: toy.job.key,
       jobVersion: toy.job.version,
+      collision: 'join',
     });
     const { run: found } = await startRun(
       { registry, store },
@@ -1952,6 +1954,32 @@ describe('gates and waits (t41)', () => {
     });
     expect(run.status).toBe('failed');
     expect(run.error?.type).toBe('GateTimedOutError');
+  });
+
+  test('a gate that throws on a later poll fails the step and the run (review #969)', async () => {
+    let reads = 0;
+    const flaky = gate({
+      name: 'flaky',
+      isOpen: () => {
+        reads += 1;
+        if (reads > 1) throw new Error('service down');
+        return false;
+      },
+      poll: quickPoll,
+    });
+    const job = defineJob({
+      key: 'toy.gate-throws-later',
+      input: z.object({}),
+      output: z.void(),
+      steps: (s) => s.add('wait', waitFor({ gate: flaky })),
+    });
+    const clock = fakeClock();
+    const store = new MemoryJobStore({ now: clock.now });
+    const { run } = await runToCompletion(job, req(0), { store, clock, executor: fast });
+    expect(reads).toBe(2);
+    expect(run.status).toBe('failed');
+    expect(run.error?.message).toBe('service down');
+    expect((await store.stepStates(run.id)).find((s) => s.name === 'wait')?.status).toBe('failed');
   });
 
   test('openGate wakes a waiting run before its poll, and only its tenant', async () => {

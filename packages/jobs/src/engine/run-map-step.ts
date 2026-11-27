@@ -1,6 +1,6 @@
 import type { StepEntry } from '../define/define-job.ts';
 import type { ErasedContext, ErasedMapStep } from '../define/step.ts';
-import { errorTypeOf } from '../model/errors.ts';
+import { errorRecordOf, errorTypeOf } from '../model/errors.ts';
 import type { Run } from '../model/run.ts';
 import type { Counts, StepState } from '../model/step-state.ts';
 import { speculationOf } from '../policy/stop.ts';
@@ -171,10 +171,7 @@ async function planStep(
     return { kind: 'planned', state };
   } catch (err) {
     if (signal.aborted) return { kind: 'aborted' };
-    await store.failStep(run.id, name, {
-      type: errorTypeOf(err),
-      message: err instanceof Error ? err.message : String(err),
-    });
+    await store.failStep(run.id, name, errorRecordOf(err));
     await events.emit({
       ...eventBase(run, clock),
       step: name,

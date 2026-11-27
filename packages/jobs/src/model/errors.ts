@@ -179,3 +179,9 @@ export class SignalRefusedError extends NonRetryableError {
 /** An error's type for a record: its name, never its message's detail. */
 export const errorTypeOf = (err: unknown): string =>
   err instanceof Error ? err.name : typeof err;
+
+/** A thrown value as the store records it on a failed step or run: its type and its message. */
+export const errorRecordOf = (err: unknown): { type: string; message: string } => ({
+  type: errorTypeOf(err),
+  message: err instanceof Error ? err.message : String(err),
+});

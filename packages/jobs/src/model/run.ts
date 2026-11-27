@@ -1,4 +1,5 @@
 import type { ChunkStatus } from './chunk.ts';
+import { RunPlanningError } from './errors.ts';
 import type { StepState } from './step-state.ts';
 
 /** What started a run. 'event' is a start by the event bridge (codegen's ADR-023), from a domain event's trigger. */
@@ -10,7 +11,21 @@ export type RunTrigger = 'manual' | 'eval' | 'agent' | 'schedule' | 'event';
  */
 export type CacheMode = 'read-write' | 'refresh';
 /** What a start does when its dedupe key already has an open run (`RunRequest.collision`). */
-export type Collision = 'join' | 'queue' | 'replace';
+export const COLLISION_MODES = ['join', 'queue', 'replace'] as const;
+export type Collision = (typeof COLLISION_MODES)[number];
+
+/** What a store does with a start on a key with an open run: return it (`join`), or hold a new run behind it. */
+export type StoreCollision = 'join' | 'queue';
+
+/**
+ * Each collision mode, as the engine runs it: what the store is asked to do, and whether the engine cancels the open
+ * run first and asks again. A replace asks again with no dedupe window: the run it just canceled ended inside it.
+ */
+export const COLLISIONS = {
+  join: { storeAs: 'join', replaces: false },
+  queue: { storeAs: 'queue', replaces: false },
+  replace: { storeAs: 'join', replaces: true },
+} as const satisfies Record<Collision, { storeAs: StoreCollision; replaces: boolean }>;
 export type RunStatus =
   /**
    * Held behind the open run on its dedupe key (a start with `collision: 'queue'`): not open, so not in the
@@ -109,10 +124,29 @@ export interface RunSubject {
 export const RUN_SUBJECT_KIND_MAX = 64;
 export const RUN_SUBJECT_ID_MAX = 255;
 
-/** A request as the store creates it: the engine adds the definition's version and the run's subject. */
-export interface NewRun extends RunRequest<unknown> {
+/**
+ * A request as the store creates it: the engine adds the definition's version and the run's subject, and maps the
+ * collision mode to what the store does (`COLLISIONS`).
+ */
+export interface NewRun extends Omit<RunRequest<unknown>, 'collision'> {
   jobVersion: string;
   subject?: RunSubject | null;
+  collision?: StoreCollision;
+}
+
+/** Items per chunk when a request names none. */
+export const DEFAULT_CHUNK_SIZE = 1000;
+
+/** The rules every store holds a new run to, in one place: returns its chunk size. */
+export function checkNewRun(req: NewRun): number {
+  const chunkSize = req.chunkSize ?? DEFAULT_CHUNK_SIZE;
+  if (!(Number.isInteger(chunkSize) && chunkSize >= 1))
+    throw new RunPlanningError('chunkSize must be a positive integer');
+  if (!(Number.isInteger(req.budget.maxItems) && req.budget.maxItems >= 0))
+    throw new RunPlanningError('budget.maxItems is required: a whole number');
+  if (req.requestedBy !== null && req.requestedBy.length === 0)
+    throw new RunPlanningError('requestedBy must be a user id or null');
+  return chunkSize;
 }
 
 export interface Run {

@@ -75,6 +75,19 @@ describe("collision 'replace'", () => {
     expect((await store.getRun(a.run.id)).status).toBe('canceled');
   });
 
+  test('with a dedupe window, a replacing start still starts a new run, not the one it canceled (review #969)', async () => {
+    const store = new MemoryJobStore();
+    const first = await startRun({ registry, store }, request({ dedupeWindowMs: 5_000 }));
+    const second = await startRun(
+      { registry, store },
+      request({ collision: 'replace', dedupeWindowMs: 5_000 }),
+    );
+    expect(second.created).toBe(true);
+    expect(second.run.id).not.toBe(first.run.id);
+    expect(second.run.status).toBe('pending');
+    expect((await store.getRun(first.run.id)).status).toBe('canceled');
+  });
+
   test('a dedupe window is a whole number of milliseconds', () => {
     expect(() =>
       defineJob({

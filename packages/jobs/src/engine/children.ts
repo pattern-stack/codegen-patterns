@@ -4,6 +4,7 @@ import type { Registry } from '../define/registry.ts';
 import type { ErasedChildrenStep, ErasedContext } from '../define/step.ts';
 import type { NewChild, Slot } from '../model/children.ts';
 import {
+  errorRecordOf,
   JobDefinitionError,
   NonRetryableError,
   RunPlanningError,
@@ -141,7 +142,7 @@ export async function advanceChildrenStep(
     try {
       wanted = await newChildrenOf(deps, run, entry, ctx);
     } catch (error) {
-      if (state) await store.failStep(run.id, step, errorOf(error));
+      if (state) await store.failStep(run.id, step, errorRecordOf(error));
       return { kind: 'failed', error };
     }
     if (!state)
@@ -200,7 +201,7 @@ export async function advanceChildrenStep(
       const failed = slots.filter((s) => s.status === 'failed').length;
       const error = new ChildrenFailedError(step, failed);
       await store.unpark(run.id, step);
-      await store.failStep(run.id, step, errorOf(error));
+      await store.failStep(run.id, step, errorRecordOf(error));
       await events.emit({
         ...base(),
         type: 'step.failed',
@@ -227,11 +228,6 @@ export async function advanceChildrenStep(
   }
   return { kind: 'rests', status: (await store.getRun(run.id)).status };
 }
-
-const errorOf = (err: unknown) => ({
-  type: err instanceof Error ? err.name : typeof err,
-  message: err instanceof Error ? err.message : String(err),
-});
 
 interface OperatorDeps {
   store: JobStore;

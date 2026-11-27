@@ -7,6 +7,7 @@ import type {
   ErasedPlainStep,
 } from '../define/step.ts';
 import {
+  errorRecordOf,
   errorTypeOf,
   JobDefinitionError,
   JobVersionGoneError,
@@ -25,11 +26,6 @@ import { parkOnGate, parkOnSignal, wakeStep } from './waits.ts';
 
 /** Where a run stands after an advance: working its chunks, or a status it rests in (`waiting` among them). */
 export type AdvanceOutcome = 'chunks' | 'aborted' | RunStatus;
-
-const asError = (err: unknown) => ({
-  type: errorTypeOf(err),
-  message: err instanceof Error ? err.message : String(err),
-});
 
 /** What one step's turn decided: go on to the next step, or the outcome the advance returns. */
 type Turn = AdvanceOutcome | 'next';
@@ -199,18 +195,15 @@ async function resumeWait(
   if (waitCtx.kind === 'failed') return { kind: 'ends', turn: waitCtx.outcome };
   const woke = await wakeStep(deps, run, entry, state, waitCtx.ctx);
   if (woke.kind === 'rests') return { kind: 'ends', turn: woke.status };
-  if (woke.kind === 'timedOut') {
-    const errorType = errorTypeOf(woke.error);
-    await store.failStep(run.id, entry.name, {
-      type: errorType,
-      message: woke.error.message,
-    });
+  if (woke.kind === 'fails') {
+    const failure = errorRecordOf(woke.error);
+    await store.failStep(run.id, entry.name, failure);
     await events.emit({
       ...eventBase(run, clock),
       type: 'step.failed',
       step: entry.name,
       attempt: state.attempts,
-      errorType,
+      errorType: failure.type,
     });
     return { kind: 'ends', turn: await failRun(deps, run, woke.error) };
   }
@@ -383,7 +376,7 @@ async function failRun(
 ): Promise<AdvanceOutcome> {
   const { changed, run: failed } = await deps.store.transition(run.id, {
     to: 'failed',
-    error: asError(err),
+    error: errorRecordOf(err),
   });
   if (changed)
     await deps.events.emit({

@@ -8,6 +8,7 @@ import {
   ClaimLostError,
   JobDefinitionError,
   RunNotFoundError,
+  RunPlanningError,
 } from '../model/errors.ts';
 import type { NewRun, Run } from '../model/run.ts';
 import type { JobStore } from '../ports/job-store.ts';
@@ -251,6 +252,19 @@ export function storeContract(make: () => StoreHarness): ContractCase[] {
     assert.equal(back.jobVersion, 'v1');
     assert.equal(back.budget.deadline?.toISOString(), deadline.toISOString());
     assert.equal(back.status, 'pending');
+  });
+
+  it('a new run is refused alike by every store: an empty requestedBy, a bad chunk size or budget', async () => {
+    const h = make();
+    for (const over of [
+      { requestedBy: '' },
+      { chunkSize: 0 },
+      { budget: { maxItems: 1.5 } },
+    ] satisfies Partial<NewRun>[])
+      await assert.rejects(
+        () => h.store.createRun(newRun(h, over)),
+        (err) => err instanceof RunPlanningError,
+      );
   });
 
   it('a transition a run is not in a state to take is refused, and changes nothing', async () => {
