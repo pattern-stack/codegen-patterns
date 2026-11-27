@@ -134,6 +134,8 @@ export class ProjectController {
   @ApiBody({ schema: { $ref: '#/components/schemas/CreateProjectDto' } })
   @ApiResponse({ status: 201, schema: { $ref: '#/components/schemas/ProjectOutputDto' } })
   @ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+  @ApiResponse({ status: 409, description: 'A unique value is already taken (code unique_violation).', schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+  @ApiResponse({ status: 422, description: 'A foreign key names no existing row (code foreign_key_violation).', schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @Post()
   async create(
@@ -146,6 +148,8 @@ export class ProjectController {
   @ApiBody({ schema: { $ref: '#/components/schemas/UpdateProjectDto' } })
   @ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/ProjectOutputDto' } })
   @ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+  @ApiResponse({ status: 409, description: 'A unique value is already taken (code unique_violation).', schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+  @ApiResponse({ status: 422, description: 'A foreign key names no existing row (code foreign_key_violation).', schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid', example: '00000000-0000-4000-8000-000000000001', description: 'The project\'s id (from a create or GET /projects response). The example is a placeholder: replace it with a real id before sending.' })
@@ -163,6 +167,7 @@ export class ProjectController {
   @ApiResponse({ status: 204 })
   @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+  @ApiResponse({ status: 409, description: 'Another row still references this one (code still_referenced).', schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid', example: '00000000-0000-4000-8000-000000000001', description: 'The project\'s id (from a create or GET /projects response). The example is a placeholder: replace it with a real id before sending.' })
   @Delete(':id')
   async remove(

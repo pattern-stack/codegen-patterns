@@ -94,7 +94,7 @@ its type and name (`consumer-skills/entities/yaml-reference.md`). The examples a
 
 **Ids are placeholders.** No example can name a row that exists. A foreign key (`projectId`) and `:id` carry the
 placeholder guid and say so in their description: replace it with a real id (from a create or list response) before
-Execute, or the request is a 404 (`:id`) or a refused insert (a foreign key).
+Execute, or the request is a 404 (`:id`) or a 422 `foreign_key_violation` naming the field (a foreign key).
 
 The smoke gate (`test/smoke/verify-openapi.ts`) parses every body example through its own generated DTO and checks
 each `:id` example is a guid, so a prefill that would be a 400 fails CI.

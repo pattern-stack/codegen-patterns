@@ -1,6 +1,8 @@
 import { Global, Module } from '@nestjs/common';
 import { OPENAPI_REGISTRY, OpenApiRegistry } from '@shared/openapi';
+import { DbConstraintErrorsModule } from '@shared/nest-db-constraint-filter';
 import { AccountsModule } from '@gen/modules/accounts/accounts.module';
+import { AccountProfilesModule } from '@gen/modules/account-profiles/account-profiles.module';
 import { OpportunitiesModule } from '@gen/modules/opportunities/opportunities.module';
 import { DatabaseModule } from '../shared/database/database.module';
 import { ScaffoldContactsModule } from './contacts/scaffold-contacts.module';
@@ -60,10 +62,13 @@ class OpenApiModule {}
 
 @Module({
   imports: [
+    // What the generated modules barrel lists first: a foreign-key / unique violation is a 4xx, not a 500.
+    DbConstraintErrorsModule,
     DatabaseModule,
     OpenApiModule,
     ScaffoldContactsModule,
     AccountsModule,
+    AccountProfilesModule,
     OpportunitiesModule,
   ],
 })

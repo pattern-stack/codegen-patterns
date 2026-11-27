@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A write the database refuses on a constraint is a 4xx, not a 500.** A foreign key that names no row is **422**
+  `foreign_key_violation`, a taken unique value **409** `unique_violation`, and deleting a row another still
+  references (`on_delete: restrict`) **409** `still_referenced`. The body names the request's fields and the
+  constraint: `{ statusCode, error, code, fields, constraint, message }`, e.g. `fields: 'projectId'`,
+  `message: 'projectId 00000000-… does not name an existing projects row (constraint tasks_project_id_projects_id_fkey).'`.
+  One global filter owns it (`DbConstraintErrorsModule`, which the generated modules barrel now lists first, so
+  regenerating is enough); the classification is framework-free (`runtime/db-constraint-errors.ts`) for a non-Nest
+  HTTP layer. Swagger lists the 409 / 422 responses, and `ErrorResponseDto` describes `code`, `fields` and
+  `constraint`. A vendored project runs `codegen update` to get the two runtime files.
+
 ### Breaking: the generated code is Zod 4 (ZOD-1)
 
 The DTOs, `ListQuerySchema`, `ZodValidationPipe`, the OpenAPI registry, the event payload schemas and the

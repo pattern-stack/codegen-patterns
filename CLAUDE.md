@@ -359,6 +359,16 @@ Never add a colour literal to a component — it will be right in one theme only
 decorated NestJS runtime, so the program contains generator source and must
 check it the way `tsconfig.build.json` does.
 
+### Constraint violations are 4xx
+
+A write Postgres refuses on a constraint is the caller's mistake: 23503 on insert/update → **422**
+`foreign_key_violation`, 23503 on delete → **409** `still_referenced`, 23505 → **409** `unique_violation`, each body
+`{ statusCode, error, code, fields, constraint, message }` naming the request's properties. One owner per layer:
+`constraintViolationOf` / `constraintViolationBody` (`runtime/db-constraint-errors.ts`, framework-free, finds the
+driver error by shape in the `cause` chain) and, for Nest, the global `DbConstraintFilter` that
+`DbConstraintErrorsModule` registers (`runtime/nest-db-constraint-filter.ts`) — listed first in `GENERATED_MODULES` by
+the barrel generator, never wired per use case. `test/scaffold/tests/constraint-violations-http.test.ts` holds it.
+
 ### Infrastructure Subsystems (ADR-008)
 
 Five subsystems following Protocol → Backend → Factory pattern:
