@@ -44,6 +44,25 @@ describe('the baseline set as SQLite DDL', () => {
 	});
 });
 
+describe('the table facts agree with the YAML they came from (a check independent of both renderings)', () => {
+	const KIND: Record<string, string> = {
+		string: 'string', integer: 'integer', decimal: 'decimal', boolean: 'boolean', uuid: 'uuid',
+		date: 'date', datetime: 'instant', json: 'json', string_array: 'string',
+	};
+	const set = baselineSet();
+	it.each(set.entities.map((d) => [d.entity.name, d] as const))('%s', (name, d) => {
+		const facts = backendLocalsFor(set, name).tableFacts as SqliteTableFacts;
+		for (const [fieldName, raw] of Object.entries((d as { fields?: Record<string, any> }).fields ?? {})) {
+			const col = facts.columns.find((c) => c.name === fieldName && c.origin === 'field');
+			if (!col) continue; // a belongs_to FK field is the belongs_to column
+			const want = raw.choices || raw.choices_of ? 'enum' : (KIND[raw.type ?? 'string'] ?? 'string');
+			expect(`${fieldName}:${col.kind}`).toBe(`${fieldName}:${want}`);
+			expect(`${fieldName}:${col.isArray}`).toBe(`${fieldName}:${raw.type === 'string_array'}`);
+			if (raw.default !== undefined) expect(col.default).toEqual(raw.default === 'now' ? { now: true } : { value: raw.default });
+		}
+	});
+});
+
 describe('SQLite-only rules, on rows', () => {
 	const fact = (over: Partial<SqliteTableFacts> = {}): SqliteTableFacts => ({
 		name: 'items',

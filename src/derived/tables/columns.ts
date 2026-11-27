@@ -71,6 +71,11 @@ const plain = {
 
 /** One declared field's column. An unrecognised type stores text, as every target's renderer treats it. */
 export function fieldColumn(f: FieldFacts, origin: ColumnFact['origin'] = 'field'): ColumnFact {
+	// An incomplete record (e.g. a template's processed field, which leaves facts out) must not become a TEXT column
+	// with an `undefined` default by accident: refuse it (CLAUDE.md gate rule c).
+	if (typeof f.elementType !== 'string' || typeof f.isArray !== 'boolean' || (f.hasDefault && f.default === undefined)) {
+		throw new Error(`deriveTableColumns: '${f.name}' is not a complete FieldFacts (elementType / isArray / default).`);
+	}
 	const kind: ColumnKind = f.hasChoices ? 'enum' : (FIELD_KINDS[f.elementType] ?? 'string');
 	let def: ColumnDefault | null = null;
 	if (f.hasDefault) {

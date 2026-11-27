@@ -114,6 +114,20 @@ YAML ──► deriveTableColumns            src/derived/tables/       ColumnFac
   `ON CONFLICT (ifnull("c", X'00'), …)`. A test shows that works on rows. Emitting it is TGT-2b's, as is a
   `timestampColumn` whose default isn't Postgres's `.defaultNow()`.
 
+### Found after the review, on rebasing onto #953
+
+- **The table's field facts were incomplete.** `deriveTableColumns` was fed the template's processed field records,
+  which leave out `elementType`, `isArray` and `withTimezone`, and, before #953, `default` too.
+  - So the first golden typed integer columns as TEXT, lost arrays, and printed `DEFAULT 'undefined'`.
+  - Both renderings read the same facts, so the parity gate couldn't see it.
+- **Fixed in three ways:**
+  - buildBackendLocals hands `deriveTableColumns` the real `FieldFacts`;
+  - `fieldColumn` refuses an incomplete record (gate rule c);
+  - a new test checks every field column of the baseline facts against the field's own YAML (kind, array, default).
+    It is independent of both renderings, and the old input fails all 15 entities on it.
+- **A named gap:** an array of enum values (`string_array` + `choices`) gets no CHECK on SQLite. Postgres's `enum[]`
+  type enforces it; SQLite would need a `json_each` CHECK. It is left for whoever needs it.
+
 ## Differs from the plan
 
 - **`decimal` is TEXT, not NUMERIC** (the spike's finding). The trade-off is that ordering by a decimal column is

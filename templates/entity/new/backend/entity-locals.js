@@ -1602,12 +1602,12 @@ export function buildBackendLocals(definition, baseLocals) {
   // Process entity fields. Pass the entity name so enum fields namespace their
   // pg type + exported const by entity (prevents same-named enum collisions
   // across entities — TS2308 / duplicate CREATE TYPE).
-  const processedFields = processFields(fields, {
-    entityName,
-    enumResolver: (fieldName, field) =>
-      resolveEnumField({ lookup: entityLookup, modulesDir, fromNaming: ownNaming, entityName, fieldName, field }),
-    columns,
-  });
+  const fieldEnumResolver = (fieldName, field) =>
+    resolveEnumField({ lookup: entityLookup, modulesDir, fromNaming: ownNaming, entityName, fieldName, field });
+  const processedFields = processFields(fields, { entityName, enumResolver: fieldEnumResolver, columns });
+  // TGT-2a: the same fields as FACTS, for the table's column facts. A processed record is the template's shape and
+  // leaves facts out (`elementType`, `isArray`, `withTimezone`), so the table reads the derivation itself.
+  const fieldFactsByName = new Map(deriveFieldFacts(fields, entityName, fieldEnumResolver).map((f) => [f.name, f]));
 
   // Behavior flags (re-read from behaviors array for backend use).
   //
@@ -2019,7 +2019,7 @@ export function buildBackendLocals(definition, baseLocals) {
       enumRef: d.enumRef,
     })),
     belongsTo,
-    fields: nonFkFields,
+    fields: nonFkFields.map((f) => fieldFactsByName.get(f.name)),
     externalIdTracking: hasExternalIdTracking,
     tenant: tenancy && !tenancy.adopted ? { column: tenancy.column, prop: tenancy.prop } : null,
     timestamps: hasTimestamps ? { withTimezone: timestampsWithTimezone } : null,
