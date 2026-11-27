@@ -62,7 +62,6 @@ export {
   assertLimitersConfigured,
   limitersUnconfigured,
 } from './nest/limiters.ts';
-export { OPS_VOCABULARY_PARITY } from './nest/ops-view.ts';
 export {
   jobOpenApiSchemasOf,
   type PublicJob,

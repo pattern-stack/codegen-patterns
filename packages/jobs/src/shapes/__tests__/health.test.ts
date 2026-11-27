@@ -88,3 +88,11 @@ describe('jobHealthOf', () => {
     expect(jobHealthOf([run('pending', 1)]).successRate).toBeNull();
   });
 });
+
+describe('jobHealthOf — a queued run (review #969)', () => {
+  it('counts as open, never as canceled', () => {
+    const health = jobHealthOf([run('queued', 1), run('canceled', 2, 5)]);
+    expect(health.open).toBe(1);
+    expect(health.canceled).toBe(1);
+  });
+});

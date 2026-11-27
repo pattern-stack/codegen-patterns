@@ -1,54 +1,17 @@
 import type {
-  CACHE_MODES,
-  JOB_AUTHORITY_LEVELS,
-  LIMITER_SCOPES,
-  PAUSE_REASONS,
-  RUN_STATUSES,
-  RUN_TRIGGERS,
   RunSummaryValue,
   RunValue,
-  STEP_KINDS,
-  STEP_STATUSES,
 } from '../shapes/index.ts';
 import type {
   AnyJob,
-  CacheMode,
   Counts,
-  JobAuthorityLevel,
-  PauseReason,
   Run,
   RunError,
   RunProgress,
-  RunStatus,
-  RunTrigger,
-  StepLimiter,
   StepState,
-  StepStatus,
 } from '../index.ts';
 import { fingerprintOf } from './fingerprint.ts';
 import type { PublicJob } from './public-job-catalog.ts';
-
-/** Whether two types are the same, both ways. */
-export type Same<A, B> = [A] extends [B]
-  ? [B] extends [A]
-    ? true
-    : false
-  : false;
-
-/**
- * `@pattern-stack/jobs/shapes` restates the engine's lists (it can't import `@pattern-stack/jobs`); this holds each one equal to the
- * engine's at compile time.
- */
-export const WIRE_VOCABULARY_PARITY: [
-  Same<RunStatus, (typeof RUN_STATUSES)[number]>,
-  Same<PauseReason, (typeof PAUSE_REASONS)[number]>,
-  Same<RunTrigger, (typeof RUN_TRIGGERS)[number]>,
-  Same<StepStatus, (typeof STEP_STATUSES)[number]>,
-  Same<StepState['kind'], (typeof STEP_KINDS)[number]>,
-  Same<JobAuthorityLevel, (typeof JOB_AUTHORITY_LEVELS)[number]>,
-  Same<StepLimiter['per'], (typeof LIMITER_SCOPES)[number]>,
-  Same<CacheMode, (typeof CACHE_MODES)[number]>,
-] = [true, true, true, true, true, true, true, true];
 
 /** An error's type on the wire: a bounded identifier, else 'Error'. */
 const ERROR_TYPE = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;

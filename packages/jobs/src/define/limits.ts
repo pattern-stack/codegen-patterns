@@ -10,11 +10,15 @@ export type LimiterRef = string | { name: string; per: 'tenant' };
 /** One limiter or several: a call takes every one of them. */
 export type LimiterRefs = LimiterRef | readonly LimiterRef[];
 
+/** A limiter's bucket: one for every run, or one per tenant. */
+export const LIMITER_SCOPES = ['global', 'tenant'] as const;
+export type LimiterScope = (typeof LIMITER_SCOPES)[number];
+
 /** A limiter as the engine holds it: its name and its scope. */
 export interface StepLimiter {
   name: string;
   /** `global`: one bucket for every run; `tenant`: one per tenant. */
-  per: 'global' | 'tenant';
+  per: LimiterScope;
 }
 
 const isList = (r: LimiterRefs): r is readonly LimiterRef[] => Array.isArray(r);

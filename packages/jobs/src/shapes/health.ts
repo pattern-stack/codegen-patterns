@@ -16,7 +16,7 @@ export interface JobHealthRun {
 export interface JobHealthOf<R extends JobHealthRun> {
   /** The runs read: at most `JOB_HEALTH_WINDOW`. */
   window: number;
-  /** Pending, running, waiting or paused. */
+  /** Not ended: queued, pending, running, waiting or paused. */
   open: number;
   completed: number;
   failed: number;
@@ -31,12 +31,17 @@ export interface JobHealthOf<R extends JobHealthRun> {
   lastRun: R | null;
 }
 
-const OPEN: ReadonlySet<JobHealthRun['status']> = new Set([
-  'pending',
-  'running',
-  'waiting',
-  'paused',
-]);
+/** Where each status counts: a table, so a new status is a compile error here until it is placed. */
+const HEALTH_BUCKET = {
+  queued: 'open',
+  pending: 'open',
+  running: 'open',
+  waiting: 'open',
+  paused: 'open',
+  completed: 'completed',
+  failed: 'failed',
+  canceled: 'canceled',
+} as const satisfies Record<JobHealthRun['status'], 'open' | 'completed' | 'failed' | 'canceled'>;
 
 const newestFirst = (a: JobHealthRun, b: JobHealthRun) =>
   b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : -1);
@@ -50,22 +55,14 @@ export function jobHealthOf<R extends JobHealthRun>(
   runs: readonly R[],
 ): JobHealthOf<R> {
   const newest = [...runs].sort(newestFirst).slice(0, JOB_HEALTH_WINDOW);
-  let open = 0;
-  let completed = 0;
-  let failed = 0;
-  let canceled = 0;
+  const counts = { open: 0, completed: 0, failed: 0, canceled: 0 };
   const durations: number[] = [];
   for (const run of [...newest].reverse()) {
-    if (OPEN.has(run.status)) open += 1;
-    else if (run.status === 'completed') {
-      completed += 1;
-      if (run.startedAt && run.completedAt)
-        durations.push(
-          Math.max(0, run.completedAt.getTime() - run.startedAt.getTime()),
-        );
-    } else if (run.status === 'failed') failed += 1;
-    else canceled += 1;
+    counts[HEALTH_BUCKET[run.status]] += 1;
+    if (run.status === 'completed' && run.startedAt && run.completedAt)
+      durations.push(Math.max(0, run.completedAt.getTime() - run.startedAt.getTime()));
   }
+  const { open, completed, failed, canceled } = counts;
   return {
     window: newest.length,
     open,

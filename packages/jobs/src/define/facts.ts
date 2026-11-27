@@ -17,7 +17,8 @@ export const authorityAtLeast = (
   JOB_AUTHORITY_LEVELS.indexOf(held) >= JOB_AUTHORITY_LEVELS.indexOf(needed);
 
 /** `internal`: no caller-facing surface reaches it (the default). `public`: the API lists and starts it. */
-export type JobAudience = 'internal' | 'public';
+export const JOB_AUDIENCES = ['internal', 'public'] as const;
+export type JobAudience = (typeof JOB_AUDIENCES)[number];
 
 export interface JobAuthority {
   /** Read its runs. Default 'member'. */

@@ -6,6 +6,12 @@
 import { z } from 'zod';
 import { JOB_HEALTH_WINDOW } from './health.ts';
 import { JOB_REF_KIND_PATTERN, jobsOpsInputFormSchema } from './input-form.ts';
+import { JOB_AUDIENCES } from '../define/facts.ts';
+import { itemViewSchema, stepViewSchema } from '../define/item-view.ts';
+import { JOB_EVENT_TYPES } from '../model/events.ts';
+import { ITEM_STATUSES } from '../model/item.ts';
+import { RUN_SUBJECT_ID_MAX, RUN_SUBJECT_KIND_MAX } from '../model/run.ts';
+import { SIGNAL_REFUSALS } from '../model/errors.ts';
 import { itemCountsSchema, runSummaryFields, stepStateSchema } from './run.ts';
 import {
   CACHE_MODES,
@@ -22,39 +28,10 @@ const count = z.number().int().nonnegative();
 const datetime = z.iso.datetime();
 const cursor = z.string().min(1).max(512);
 
-/** Who may see a job: an internal one is reached only in-process and by this surface. */
-export const JOB_AUDIENCES = ['internal', 'public'] as const;
-
-/** An item's states (`@pattern-stack/jobs` `ItemStatus`). */
-export const ITEM_STATUSES = [
-  'pending',
-  'done',
-  'cached',
-  'failed',
-  'skipped',
-] as const;
-
-/** The fixed list of events a run emits (`@pattern-stack/jobs` `JOB_EVENT_TYPES`). */
-export const JOB_EVENT_TYPES = [
-  'run.started',
-  'run.paused',
-  'run.resumed',
-  'run.completed',
-  'run.failed',
-  'run.canceled',
-  'step.started',
-  'step.progress',
-  'step.completed',
-  'step.failed',
-  'step.skipped',
-  'step.retried',
-  'step.waiting',
-  'step.woke',
-  'step.signaled',
-  'child.started',
-  'child.ended',
-  'item.failed',
-] as const;
+/** Who may see a job, an item's states and the events a run emits: the engine's own lists. */
+export { JOB_AUDIENCES } from '../define/facts.ts';
+export { JOB_EVENT_TYPES } from '../model/events.ts';
+export { ITEM_STATUSES } from '../model/item.ts';
 
 export {
   JOB_HEALTH_WINDOW,
@@ -172,13 +149,10 @@ export const jobsOpsJobsSchema = z.object({ jobs: z.array(jobsOpsJobSchema) });
 
 // ----- runs -----
 
-/**
- * What a run is about, as its job named it from its input (`Run.subject` in `@pattern-stack/jobs`): a free-text kind and the
- * subject's id. The bounds restate the engine's `RUN_SUBJECT_KIND_MAX` / `RUN_SUBJECT_ID_MAX`.
- */
+/** What a run is about, as its job named it from its input (`Run.subject` in `@pattern-stack/jobs`). */
 export const jobsOpsRunSubjectSchema = z.object({
-  kind: z.string().min(1).max(64),
-  id: z.string().min(1).max(255),
+  kind: z.string().min(1).max(RUN_SUBJECT_KIND_MAX),
+  id: z.string().min(1).max(RUN_SUBJECT_ID_MAX),
 });
 
 /** A run as a list row: the record, with its tenant (the operator reads across tenants). */
@@ -269,33 +243,8 @@ export const jobsOpsRunItemsInputSchema = z.object({
   limit: pageLimit,
 });
 
-/**
- * How an item reads on the run page: what its step's `present` answers (`@pattern-stack/jobs`' `itemViewSchema`, restated here,
- * held equal at compile time by `@pattern-stack/jobs/nest`).
- */
-export const jobsOpsItemViewSchema = z.object({
-  label: z.string().min(1).max(200),
-  summary: z.string().max(500).optional(),
-  detail: z
-    .array(
-      z.object({
-        heading: z.string().max(200),
-        text: z.string().max(2000).optional(),
-        quote: z.string().max(4000).optional(),
-        refs: z
-          .object({
-            kind: z.string().min(1).max(64),
-            ids: z.array(z.string().min(1).max(255)).min(1).max(50),
-          })
-          .optional()
-          .describe(
-            "Domain records the section shows by id; their labels come in the read's `records`",
-          ),
-      }),
-    )
-    .max(100)
-    .optional(),
-});
+/** How an item reads on the run page: what its step's `present` answers (`@pattern-stack/jobs`' `itemViewSchema`). */
+export const jobsOpsItemViewSchema = itemViewSchema;
 
 /**
  * A domain record a view names (a section's `refs`), as the host looked it up when the page read the view: its label
@@ -355,11 +304,7 @@ export const jobsOpsStepOutputInputSchema = z.object({
  * How a plain step reads on the run page: what its `present` answers (`@pattern-stack/jobs`' `stepViewSchema`, restated here,
  * held equal at compile time by `@pattern-stack/jobs/nest`).
  */
-export const jobsOpsStepViewSchema = z.object({
-  label: z.string().min(1).max(200).optional(),
-  summary: z.string().min(1).max(300),
-  detail: jobsOpsItemViewSchema.shape.detail,
-});
+export const jobsOpsStepViewSchema = stepViewSchema;
 
 export const jobsOpsStepOutputSchema = z.object({
   view: jobsOpsStepViewSchema
@@ -488,10 +433,7 @@ export const jobsOpsSignalInputSchema = z.object({
 export const jobsOpsSignalSchema = z.object({ run: jobsOpsRunSummarySchema });
 
 /** Why a signal is refused, beside an `accept` refusal's own code. */
-export const JOB_SIGNAL_REFUSALS = [
-  'wait_not_open',
-  'signal_value_invalid',
-] as const;
+export const JOB_SIGNAL_REFUSALS = SIGNAL_REFUSALS;
 
 // ----- children -----
 

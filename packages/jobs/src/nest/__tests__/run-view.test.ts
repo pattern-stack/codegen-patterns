@@ -12,7 +12,6 @@ import {
   revisionOf,
   runSummaryOf,
   runViewOf,
-  WIRE_VOCABULARY_PARITY,
   wireErrorOf,
 } from '../run-view.ts';
 
@@ -219,9 +218,5 @@ describe('runViewOf', () => {
       createdAt: T.toISOString(),
       completedAt: null,
     });
-  });
-
-  it('holds the restated vocabulary equal to the engine (compile time)', () => {
-    expect(WIRE_VOCABULARY_PARITY.every(Boolean)).toBe(true);
   });
 });

@@ -1,47 +1,25 @@
 import type {
-  ITEM_STATUSES,
-  JOB_AUDIENCES,
-  JOB_EVENT_TYPES,
-  JOB_SIGNAL_REFUSALS,
   JobsOpsEvent,
   JobsOpsHealth,
-  JobsOpsItemView,
   JobsOpsJob,
   JobsOpsRunAction,
   JobsOpsRunSummary,
-  JobsOpsStepView,
 } from '../shapes/ops.ts';
 import { jobHealthOf } from '../shapes/ops.ts';
 import type {
   AnyJob,
-  ItemStatus,
-  ItemView,
-  JobAudience,
   JobDescription,
-  JobEventType,
   Registry,
   Run,
-  SignalRefusal,
-  StepView,
 } from '../index.ts';
 import type { JobRecentRun, StoredJobEvent } from '../postgres.ts';
 import { jobInputFormOf } from './job-input-form.ts';
-import { runSummaryOf, type Same } from './run-view.ts';
+import { runSummaryOf } from './run-view.ts';
 
 /**
  * The operator view's projections (`@pattern-stack/jobs/shapes` shapes): the run row, a job with its health, an event and
  * an action's answer.
  */
-
-/** `@pattern-stack/jobs/shapes` restates these engine lists (it can't import `@pattern-stack/jobs`): held equal at compile time. */
-export const OPS_VOCABULARY_PARITY: [
-  Same<ItemStatus, (typeof ITEM_STATUSES)[number]>,
-  Same<JobEventType, (typeof JOB_EVENT_TYPES)[number]>,
-  Same<JobAudience, (typeof JOB_AUDIENCES)[number]>,
-  Same<SignalRefusal, (typeof JOB_SIGNAL_REFUSALS)[number]>,
-  Same<ItemView, JobsOpsItemView>,
-  Same<StepView, JobsOpsStepView>,
-] = [true, true, true, true, true, true];
 
 const iso = (date: Date | null) => (date ? date.toISOString() : null);
 

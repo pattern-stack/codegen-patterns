@@ -165,6 +165,7 @@ export {
   type Budget,
   type CacheMode,
   type Collision,
+  COLLISION_MODES,
   MAX_DEPTH,
   type PauseReason,
   RUN_SUBJECT_ID_MAX,

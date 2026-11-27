@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import type { ItemRef, Keyed } from '../model/item.ts';
+import type { StepKind } from '../model/step-state.ts';
 import type { Spend } from '../model/run.ts';
 import type { RetryPolicy } from '../policy/retry.ts';
 import type { StopPredicate } from '../policy/stop.ts';
@@ -187,7 +188,7 @@ export type ErasedStep =
  * types; `erased` is what the engine runs.
  */
 export interface StepDef<C, Out> {
-  readonly kind: 'step' | 'map' | 'wait' | 'children';
+  readonly kind: StepKind;
   readonly erased: ErasedStep;
   readonly __types?: (ctx: C) => Out;
 }

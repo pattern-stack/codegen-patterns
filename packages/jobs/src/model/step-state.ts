@@ -1,18 +1,17 @@
 import type { ChunkStatus } from './chunk.ts';
 import type { RunError } from './run.ts';
 
-export type StepStatus =
-  | 'pending'
-  | 'running'
-  /** Parked on its wait (`StepState.wait`): nothing of it is in flight. */
-  | 'waiting'
-  | 'completed'
-  | 'failed'
-  | 'skipped';
+/** A step's statuses. `waiting`: parked on its wait (`StepState.wait`): nothing of it is in flight. */
+export const STEP_STATUSES = ['pending', 'running', 'waiting', 'completed', 'failed', 'skipped'] as const;
+export type StepStatus = (typeof STEP_STATUSES)[number];
 
 /** What a waiting step waits on. */
-export type WaitKind = 'children' | 'signal' | 'gate';
-export const WAIT_KINDS: readonly WaitKind[] = ['children', 'signal', 'gate'];
+export const WAIT_KINDS = ['children', 'signal', 'gate'] as const;
+export type WaitKind = (typeof WAIT_KINDS)[number];
+
+/** A plain step, a map step, a step that waits for a signal, or one that starts child runs and waits for them. */
+export const STEP_KINDS = ['step', 'map', 'wait', 'children'] as const;
+export type StepKind = (typeof STEP_KINDS)[number];
 
 /**
  * A step's wait, held on its row. `kind` and `name` stay after the wait settles (what it waited for); `wakeAt` is when
@@ -60,8 +59,7 @@ export interface StepState {
   runId: string;
   name: string;
   index: number;
-  /** A plain step, a map step, a step that waits for a signal, or one that starts child runs and waits for them. */
-  kind: 'step' | 'map' | 'wait' | 'children';
+  kind: StepKind;
   status: StepStatus;
   /** Starts so far (a plain step) or 1 once a map step started; a crash mid-step spends one too. */
   attempts: number;

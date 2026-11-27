@@ -3,13 +3,15 @@ import { RunPlanningError } from './errors.ts';
 import type { StepState } from './step-state.ts';
 
 /** What started a run. 'event' is a start by the event bridge (codegen's ADR-023), from a domain event's trigger. */
-export type RunTrigger = 'manual' | 'eval' | 'agent' | 'schedule' | 'event';
+export const RUN_TRIGGERS = ['manual', 'eval', 'agent', 'schedule', 'event'] as const;
+export type RunTrigger = (typeof RUN_TRIGGERS)[number];
 /**
  * How a run treats the result cache. `read-write` (the default) reuses a stored answer for a key and stores new ones,
  * the first write winning. `refresh` re-asks every item and overwrites the stored answer with its own while its claim
  * holds, so it reads back what it paid for; a late answer (a lost claim, an ended run) never overwrites.
  */
-export type CacheMode = 'read-write' | 'refresh';
+export const CACHE_MODES = ['read-write', 'refresh'] as const;
+export type CacheMode = (typeof CACHE_MODES)[number];
 /** What a start does when its dedupe key already has an open run (`RunRequest.collision`). */
 export const COLLISION_MODES = ['join', 'queue', 'replace'] as const;
 export type Collision = (typeof COLLISION_MODES)[number];
@@ -26,34 +28,30 @@ export const COLLISIONS = {
   queue: { storeAs: 'queue', replaces: false },
   replace: { storeAs: 'join', replaces: true },
 } as const satisfies Record<Collision, { storeAs: StoreCollision; replaces: boolean }>;
-export type RunStatus =
-  /**
-   * Held behind the open run on its dedupe key (a start with `collision: 'queue'`): not open, so not in the
-   * one-open-run index and never advanced; the store makes the oldest one `pending` when the run ahead of it ends.
-   */
-  | 'queued'
-  | 'pending'
-  | 'running'
-  /** Parked: nothing of it is in flight; its step waits on something outside the run: a gate, a signal or its child runs. */
-  | 'waiting'
-  | 'paused'
-  | 'completed'
-  | 'failed'
-  | 'canceled';
-/** `parent`: its parent run was paused, and the pause cascaded down to this child run. */
-export type PauseReason = 'budget' | 'deadline' | 'operator' | 'parent';
-
-export const ACTIVE_RUN: readonly RunStatus[] = [
+/**
+ * A run's statuses. `queued`: held behind the open run on its dedupe key (a start with `collision: 'queue'`): not
+ * open, so not in the one-open-run index and never advanced; the store makes the oldest one `pending` when the run
+ * ahead of it ends. `waiting`: parked: nothing of it is in flight; its step waits on something outside the run: a
+ * gate, a signal or its child runs.
+ */
+export const RUN_STATUSES = [
+  'queued',
   'pending',
   'running',
   'waiting',
   'paused',
-];
-export const TERMINAL_RUN: readonly RunStatus[] = [
   'completed',
   'failed',
   'canceled',
-];
+] as const;
+export type RunStatus = (typeof RUN_STATUSES)[number];
+/** `parent`: its parent run was paused, and the pause cascaded down to this child run. */
+export const PAUSE_REASONS = ['budget', 'deadline', 'operator', 'parent'] as const;
+export type PauseReason = (typeof PAUSE_REASONS)[number];
+
+/** The open statuses: at most one run per dedupe key is in one (the stores' one-open-run index). */
+export const ACTIVE_RUN: readonly RunStatus[] = ['pending', 'running', 'waiting', 'paused'];
+export const TERMINAL_RUN: readonly RunStatus[] = ['completed', 'failed', 'canceled'];
 
 export interface Budget {
   /** Required: the per-run cap on items each map step plans (Review Priority 14). */

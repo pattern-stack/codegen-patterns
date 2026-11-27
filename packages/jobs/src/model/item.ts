@@ -9,7 +9,8 @@ export interface Keyed<Item> {
 }
 
 /** skipped: past a map step's early stop, discarded from its result. */
-export type ItemStatus = 'pending' | 'done' | 'cached' | 'failed' | 'skipped';
+export const ITEM_STATUSES = ['pending', 'done', 'cached', 'failed', 'skipped'] as const;
+export type ItemStatus = (typeof ITEM_STATUSES)[number];
 
 /** One planned item of a map step, in the order its step planned it. */
 export interface Item {

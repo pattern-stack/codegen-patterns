@@ -81,7 +81,7 @@ export type ChildEvent =
 export type JobEvent = RunEvent | StepEvent | ItemEvent | ChildEvent;
 export type JobEventType = JobEvent['type'];
 
-export const JOB_EVENT_TYPES: readonly JobEventType[] = [
+export const JOB_EVENT_TYPES = [
   'run.started',
   'run.paused',
   'run.resumed',
@@ -100,4 +100,6 @@ export const JOB_EVENT_TYPES: readonly JobEventType[] = [
   'child.started',
   'child.ended',
   'item.failed',
-];
+] as const satisfies readonly JobEventType[];
+// Every event type is listed: a new one fails to compile here until it is.
+true satisfies [Exclude<JobEventType, (typeof JOB_EVENT_TYPES)[number]>] extends [never] ? true : never;

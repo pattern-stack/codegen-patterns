@@ -159,7 +159,8 @@ export class WaitTimedOutError extends NonRetryableError {
 }
 
 /** Why a signal was refused: the step isn't waiting for it (or another settled it first), or its value is invalid. */
-export type SignalRefusal = 'wait_not_open' | 'signal_value_invalid';
+export const SIGNAL_REFUSALS = ['wait_not_open', 'signal_value_invalid'] as const;
+export type SignalRefusal = (typeof SIGNAL_REFUSALS)[number];
 
 /**
  * A signal the engine refused. `issues` (for `signal_value_invalid`) carries each failing path and its zod code, never
