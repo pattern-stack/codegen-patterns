@@ -2559,7 +2559,9 @@ export function buildBackendLocals(definition, baseLocals) {
     if (definition.entity?.surface || definition.surface) refuse('an integration `surface:`', 'S-3 (integrations on plain wiring)');
     if (junctionFanOut.length > 0) refuse('a junction fan-out (a junction names this entity)', 'PW-3b');
     const nestOnly = ['controller', 'searchController', 'module', 'integrationSourceModule'];
-    const skipped = nestOnly.filter((k) => outputPaths[k] !== null && outputPaths[k] !== undefined);
+    const skipped = nestOnly.filter(
+      (k) => outputPaths[k] !== null && outputPaths[k] !== undefined && (k !== 'integrationSourceModule' || definition.detection),
+    );
     for (const k of nestOnly) outputPaths[k] = null;
     console.log(
       `[codegen] '${entityName}': wiring plain — skipped ${skipped.length} Nest-only files (${skipped.join(', ')}); ` +

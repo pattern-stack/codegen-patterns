@@ -1,0 +1,9 @@
+# Plain-wiring smoke (PW-3): no context — the root `entities` module.
+entity:
+  name: note
+  plural: notes
+
+fields:
+  body:
+    type: string
+    required: true

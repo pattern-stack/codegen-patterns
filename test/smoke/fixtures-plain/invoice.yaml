@@ -1,0 +1,21 @@
+# Plain-wiring smoke (PW-3): another context (billing) that composes crm's AccountRepository, so the billing module
+# dependsOn crm and takes its repository from crm's API.
+entity:
+  name: invoice
+  plural: invoices
+  context: billing
+
+fields:
+  amount_cents:
+    type: integer
+    required: true
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id
+
+behaviors:
+  - timestamps
+  - soft_delete
