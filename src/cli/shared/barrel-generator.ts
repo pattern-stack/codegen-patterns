@@ -79,6 +79,8 @@ export interface BarrelGeneratorOptions {
 
 export interface BarrelResult {
 	modulesBarrel: string;
+	/** False when the modules barrel was not written (a storage-only target, TGT-2b): `modulesBarrel` is then unused. */
+	modulesBarrelWritten: boolean;
 	schemaBarrel: string;
 	entityCount: number;
 	/** Planned file contents — always populated, useful for dry-run reports. */
@@ -333,11 +335,13 @@ export async function regenerateBarrels(
 	//
 	// All three feed through entityFilePaths() so the import-depth fix from
 	// commit 01bb917 covers junctions automatically.
+	// A storage-only target (TGT-2b) has entity tables only: `junction new` / `relationship new` refuse it, so their
+	// modules are not in its barrel.
 	const entities = generating(modulesAbs, () =>
 		[
 			...collectEntities(entitiesDir, nonEntityDirs),
-			...collectRelationships(relationshipsDir),
-			...collectJunctions(junctionsDir),
+			...(modulesBarrel ? collectRelationships(relationshipsDir) : []),
+			...(modulesBarrel ? collectJunctions(junctionsDir) : []),
 		].sort((a, b) => a.name.localeCompare(b.name)),
 	);
 	const modulesContent = generating(modulesAbs, () =>
@@ -349,7 +353,7 @@ export async function regenerateBarrels(
 
 	let written = false;
 	if (!dryRun) {
-		fs.mkdirSync(path.dirname(schemaAbs), { recursive: true });
+		generating(schemaAbs, () => fs.mkdirSync(path.dirname(schemaAbs), { recursive: true }));
 		// A storage-only target (TGT-2b) has no Nest modules to import, so no modules barrel.
 		if (modulesBarrel) generating(modulesAbs, () => fs.writeFileSync(modulesAbs, modulesContent));
 		generating(schemaAbs, () => fs.writeFileSync(schemaAbs, schemaContent));
@@ -358,6 +362,7 @@ export async function regenerateBarrels(
 
 	return {
 		modulesBarrel: modulesAbs,
+		modulesBarrelWritten: modulesBarrel && !dryRun,
 		schemaBarrel: schemaAbs,
 		entityCount: entities.length,
 		modulesContent,

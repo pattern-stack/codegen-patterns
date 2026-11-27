@@ -12,6 +12,7 @@
  *   4. Dir:    junctions/ (not relationships/)
  */
 
+import { storageOnlyRefusal } from '../shared/storage-only.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Command, Option } from 'clipanion';
@@ -171,6 +172,12 @@ export class JunctionNewCommand extends Command {
 			json: this.json,
 			skipDetection: true,
 		});
+
+		const refusal = storageOnlyRefusal(ctx, 'junction new');
+		if (refusal) {
+			printError(refusal);
+			return 1;
+		}
 
 		if (this.all && this.yaml) {
 			printError('Pass either a YAML path or --all, not both.');

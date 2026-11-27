@@ -49,6 +49,25 @@ describe('a SQLite project, generated', () => {
 		expect(gen.stdout).toContain('they come with wiring: plain (G7)');
 	});
 
+	it('the dry run predicts the same: the storage layer only, exit 0', () => {
+		const dry = spawnSync('bun', [join(REPO, 'src/cli/index.ts'), 'entity', 'new', '--all', '--dry-run', '--cwd', PROJECT], {
+			cwd: REPO,
+			encoding: 'utf-8',
+		});
+		expect(dry.status).toBe(0);
+		expect(dry.stdout).toContain('[dry run] target sqlite: storage layer only');
+	});
+
+	it.each(['junction', 'relationship'])('%s new refuses a storage-only target by name', (noun) => {
+		const r = spawnSync('bun', [join(REPO, 'src/cli/index.ts'), noun, 'new', '--all', '--cwd', PROJECT], {
+			cwd: REPO,
+			encoding: 'utf-8',
+		});
+		expect(r.status).toBe(1);
+		expect(`${r.stdout}${r.stderr}`).toContain(`${noun} new: target sqlite emits the storage layer only`);
+		expect(existsSync(join(PROJECT, 'src/generated/modules.ts'))).toBe(false);
+	});
+
 	it('writes the storage layer — a table module and a .sql per entity, the schema barrel — and no Nest layer', () => {
 		const modules = emitted.filter((f) => f.endsWith('.entity.ts'));
 		const sql = emitted.filter((f) => f.endsWith('.sql'));

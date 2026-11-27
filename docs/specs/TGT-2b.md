@@ -56,6 +56,26 @@ through `runtime/base-classes` and `DrizzleClient = NodePgDatabase`. The first S
   - the SQLite DDL, the sqlite table text and Postgres's constraint text are byte-equal from the copy;
   - no fact value is a function, a non-plain object or template text.
 
+## Review (2026-11-26)
+
+`/code-review` found 4 important issues and 6 nits. All are fixed except one important finding, which is checked and
+kept:
+- **`--dry-run` on a storage-only target** now predicts the real run: the schema barrel only, exit 0.
+- **The schema barrel** on a storage-only target lists entity tables only, with no junction or relationship modules.
+- **`junction new` / `relationship new`** refuse a storage-only target by name and exit 1, instead of writing
+  pg-core text silently (`src/cli/shared/storage-only.ts`). The smoke tests all three.
+- **JSON output** keeps the real run's shape (`totals`, `succeeded`, `failed[]`, `barrels`), with
+  `storageOnly: true`.
+- **Barrels:** `BarrelResult.modulesBarrelWritten`, and the directory creation names the file on failure.
+- **Smaller fixes:**
+  - the skip count no longer counts the entity file;
+  - the `.sql` banner is `renderGeneratedBanner({ comment: '--' })` (`generatedSqlBanner`), not a regex over the TS
+    banner;
+  - C5's limit is required, comes from the pair's row, and names the database.
+- **Kept:** the Postgres path resolves a `belongs_to` target's SQL table from its YAML (`sqlTableOf`), so a caller
+  without a full entity lookup now fails loudly instead of rendering. Every generator path passes a full lookup, and
+  the unit, baseline and junction suites pass. Gate rule c prefers the loud failure to a guessed table name.
+
 ## Differs from the plan
 
 - **The table template was not made pair-neutral.** Postgres's `entity.ejs.t` still writes its inline text (the

@@ -46,6 +46,7 @@ export function withEntities<T extends Record<string, unknown>>(
 	const runtimeMode = base.runtimeMode === 'package' ? 'package' : 'vendored';
 	return {
 		generatedBanner: '',
+		generatedSqlBanner: '',
 		runtimeMode,
 		...runtimeImportLocals(runtimeMode),
 		processedQueries: [],

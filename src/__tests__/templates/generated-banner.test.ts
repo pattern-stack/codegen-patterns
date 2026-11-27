@@ -111,7 +111,7 @@ describe('force templates carry the @generated banner', () => {
 	const BACKEND_BANNER_LINE = '<%- generatedBanner %>';
 	const isBackend = (rel: string) => rel.startsWith('entity/new/backend/');
 	// A SQL output (TGT-2b's `<entity>.sql`) carries the same banner with SQL's `--` leader.
-	const SQL_BANNER_LINE = "<%- generatedBanner.replace(/^\\/\\//, '--') %>";
+	const SQL_BANNER_LINE = '<%- generatedSqlBanner %>';
 	const bannerLine = (rel: string) =>
 		rel.endsWith('-sql.ejs.t') ? SQL_BANNER_LINE : isBackend(rel) ? BACKEND_BANNER_LINE : BANNER_LINE;
 
@@ -134,7 +134,11 @@ describe('force templates carry the @generated banner', () => {
 		// Render just the banner line in isolation (full bodies need richer
 		// locals). With the local supplied it produces the marker line.
 		const rendered = ejs
-			.render(bannerLine(rel), { generatedBanner: banner }, { rmWhitespace: false })
+			.render(
+				bannerLine(rel),
+				{ generatedBanner: banner, generatedSqlBanner: banner.replace(/^\/\//, '--') },
+				{ rmWhitespace: false },
+			)
 			.trim();
 		expect(rendered).toBe(rel.endsWith('-sql.ejs.t') ? banner.replace(/^\/\//, '--') : banner);
 		expect(rendered).toContain(GENERATED_BANNER_MARKER);

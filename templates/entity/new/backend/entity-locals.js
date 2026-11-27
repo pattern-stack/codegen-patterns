@@ -867,7 +867,10 @@ export const PG_IDENTIFIER_MAX_BYTES = 63;
  * from C4 — two partial entries over the same columns with different
  * predicates are the documented use.
  */
-export function assertDistinctConstraints(tableConstraints, entityName, identifierMaxBytes = PG_IDENTIFIER_MAX_BYTES) {
+export function assertDistinctConstraints(tableConstraints, entityName, { identifierMaxBytes, database }) {
+  if (identifierMaxBytes === undefined || !database) {
+    throw new Error(`assertDistinctConstraints(${entityName}): the pair's identifierMaxBytes and database are required (TGT-2b).`);
+  }
   const names = new Map();
   const colSets = new Map();
   for (const c of tableConstraints) {
@@ -879,7 +882,7 @@ export function assertDistinctConstraints(tableConstraints, entityName, identifi
     if (identifierMaxBytes !== null && Buffer.byteLength(c.name) > identifierMaxBytes) {
       throw new Error(
         `[codegen] '${entityName}': the name '${c.name}' (${c.source}) is ${Buffer.byteLength(c.name)} bytes; ` +
-          `Postgres keeps ${identifierMaxBytes} and would truncate it. A name starts with the SQL table ` +
+          `${database === 'postgres' ? 'Postgres' : database} keeps ${identifierMaxBytes} and would truncate it. A name starts with the SQL table ` +
           `name, so shorten that with \`entity.table:\` (TABLE-0), or rename the entity or relationship.`,
       );
     }
@@ -2313,7 +2316,7 @@ export function buildBackendLocals(definition, baseLocals) {
       );
     }
   }
-  assertDistinctConstraints(tableConstraints, entityName, targetPairRow(baseLocals.target).identifierMaxBytes);
+  assertDistinctConstraints(tableConstraints, entityName, targetPairRow(baseLocals.target));
 
   // Enum field declarations — surface a separate collection so the entity
   // template can emit `export const xEnum = pgEnum('x', [...])` ahead of
@@ -2491,8 +2494,8 @@ export function buildBackendLocals(definition, baseLocals) {
   // writes nothing else, and the skip is printed (never silent).
   const isSqlite = targetPairRow(baseLocals.target).layers === 'storage';
   if (isSqlite) {
-    const skipped = Object.keys(outputPaths).filter((k) => outputPaths[k] !== null);
-    for (const k of skipped) outputPaths[k] = null;
+    const skipped = Object.keys(outputPaths).filter((k) => k !== 'entity' && outputPaths[k] !== null);
+    for (const k of Object.keys(outputPaths)) outputPaths[k] = null;
     outputPaths.sqliteEntity = `${ownNaming.entityFile}.ts`;
     outputPaths.sqliteDdl = `${moduleDir}/${emittedStem(entityName)}.sql`;
     console.log(
