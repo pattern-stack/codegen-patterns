@@ -28,6 +28,7 @@ describe('entityModuleNaming (src/config/module-tree.ts)', () => {
 			enumsFile: `${MODULES_DIR}/accounts/account.enums`,
 			moduleFile: `${MODULES_DIR}/accounts/accounts.module.ts`,
 			repositoryFile: `${MODULES_DIR}/accounts/account.repository.ts`,
+			wiringFile: `${MODULES_DIR}/accounts/account.wiring.ts`,
 		});
 	});
 

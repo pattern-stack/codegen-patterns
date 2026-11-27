@@ -14,18 +14,26 @@
  * - `<generated>/composition.ts`: `MODULES`, every module's manifest, for the app's `compose.ts` (PW-4).
  *
  * The only system pattern-stack wiring needs here is `database` (`{ db }`). Modules depend on each other one way: a cycle
- * between contexts is refused, naming it.
+ * between modules (the root module's included) is refused, naming it.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { composedRepositoryOwners } from '../../derived/wiring/classes.js';
+import { contextCycles } from '../../derived/wiring/order.js';
 import { deriveProjectClassGraph } from '../../derived/wiring/project.js';
 import type { ProjectApiContext } from '../../derived/api/project.js';
-import { pascalCase, repositoryClassName, repositoryPropertyName } from '../../derived/api/names.js';
-import { camelCase, emittedDir, emittedStem } from '../../config/file-naming.js';
+import {
+	pascalCase,
+	repositoryFactoryName,
+	repositoryPropertyName,
+	servicesFactoryName,
+} from '../../derived/api/names.js';
+import { camelCase, emittedDir } from '../../config/file-naming.js';
 import { entityModuleNaming } from '../../config/module-tree.js';
 import { generating } from '../../utils/generated-file.js';
+import { relativeImport } from '../../utils/import-path.js';
 
 /** The module name of the entities that declare no `context:`. */
 export const ROOT_MODULE = 'entities';
@@ -41,7 +49,7 @@ export interface CompositionInput {
 	generatedDir: string;
 	/** The import specifier of `DrizzleClient` (`runtimeImport(mode, 'types/drizzle')`). */
 	drizzleTypeImport: string;
-	/** The `@generated` banner every emitted file starts with. */
+	/** The banner every emitted file starts with (`CODEGEN_BANNER`). */
 	banner: string;
 	dryRun?: boolean;
 }
@@ -58,21 +66,10 @@ interface ModulePlan {
 	entities: string[];
 }
 
-/** `./x/y` from `from`'s folder to `to`, without the `.ts` extension. */
-function importPath(fromFile: string, toFile: string): string {
-	const rel = path.relative(path.dirname(fromFile), toFile).replace(/\.ts$/, '');
-	return rel.startsWith('.') ? rel : `./${rel}`;
-}
 
 export function planComposition(input: CompositionInput): CompositionFile[] {
 	const { relations, modulesDir, generatedDir } = input;
-	const { graph, order, contextCycles } = deriveProjectClassGraph(relations);
-	if (contextCycles.length > 0) {
-		throw new Error(
-			`[codegen] wiring: pattern-stack composes one module per context, and contexts must depend on each other one way; ` +
-				`these depend on each other in a cycle: ${contextCycles.map((c) => c.join(' → ')).join('; ')}`,
-		);
-	}
+	const { graph, order } = deriveProjectClassGraph(relations);
 
 	const definitions = [...relations.definitions.values()].sort((a, b) => a.entity.name.localeCompare(b.entity.name));
 	const moduleOf = new Map<string, string>();
@@ -105,11 +102,18 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 		plans.set(name, plan);
 		moduleOf.set(d.entity.name, name);
 	}
+	// Modules depend on each other one way (wiring orders them, and each module's type names the others'). The check
+	// runs over the modules this composition builds, the root module included: an entity with no `context:` is in
+	// `entities`, not a pass-through.
+	const moduleCycles = contextCycles(graph, (owner) => moduleOf.get(owner));
+	if (moduleCycles.length > 0) {
+		throw new Error(
+			`[codegen] wiring: pattern-stack composes one module per context, and modules must depend on each other one way; ` +
+				`these depend on each other in a cycle: ${moduleCycles.map((c) => c.join(' → ')).join('; ')}`,
+		);
+	}
 	const blockOf = new Map(definitions.map((d) => [d.entity.name, d.entity]));
-	const wiringFile = (entity: string) => {
-		const naming = entityModuleNaming(blockOf.get(entity)!, modulesDir);
-		return `${naming.moduleDir}/${emittedStem(entity)}.wiring.ts`;
-	};
+	const wiringFile = (entity: string) => entityModuleNaming(blockOf.get(entity)!, modulesDir).wiringFile;
 
 	const registryFile = path.join(generatedDir, 'wiring.ts');
 	const relationsFile = path.join(generatedDir, 'relations.ts');
@@ -134,36 +138,31 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 			if (node.role !== 'repository' || node.ownerKind !== 'entity' || !own.has(node.owner)) continue;
 			const base = graph.edges.find((e) => e.from === node.id && e.reason === 'inherits');
 			const args = ['db', ...(base ? [repoRef(base.toOwner)] : [])];
-			repositoryLines.push(`  const ${repoVar(node.owner)} = create${node.id}(${args.join(', ')});`);
+			repositoryLines.push(`  const ${repoVar(node.owner)} = ${repositoryFactoryName(node.owner)}(${args.join(', ')});`);
 		}
 
 		// Phase 2: each entity's service and use cases, taking its repository and the composed ones (#632).
 		const serviceLines: string[] = [];
 		for (const entity of plan.entities) {
-			const service = graph.nodes.find((n) => n.owner === entity && n.role === 'service');
-			if (!service) throw new Error(`[codegen] wiring: '${entity}' has no service in the class graph`);
-			const composed = graph.edges.filter(
-				(e) => e.from === service.id && e.to !== repositoryClassName(entity) && e.to === repositoryClassName(e.toOwner),
-			);
 			const fields = [
 				`repository: ${repoVar(entity)}`,
-				...composed.map((e) => `${repositoryPropertyName(e.toOwner)}: ${repoRef(e.toOwner)}`),
+				...composedRepositoryOwners(graph, entity).map((owner) => `${repositoryPropertyName(owner)}: ${repoRef(owner)}`),
 			];
-			serviceLines.push(`  const ${camelCase(entity)} = create${pascalCase(entity)}Services({ ${fields.join(', ')} });`);
+			serviceLines.push(`  const ${camelCase(entity)} = ${servicesFactoryName(entity)}({ ${fields.join(', ')} });`);
 		}
 
 		const otherModules = [...dependsOn].sort();
 		const moduleType = `${pascalCase(plan.name)}Module`;
 		const imports = [
 			`import type { DrizzleClient } from '${input.drizzleTypeImport}';`,
-			`import type { Relations } from '${importPath(plan.file, relationsFile)}';`,
-			`import { defineModule } from '${importPath(plan.file, registryFile)}';`,
+			`import type { Relations } from '${relativeImport(plan.file, relationsFile)}';`,
+			`import { defineModule } from '${relativeImport(plan.file, registryFile)}';`,
 			...otherModules.map(
-				(m) => `import type { ${pascalCase(m)}Module } from '${importPath(plan.file, plans.get(m)!.file)}';`,
+				(m) => `import type { ${pascalCase(m)}Module } from '${relativeImport(plan.file, plans.get(m)!.file)}';`,
 			),
 			...plan.entities.map(
 				(e) =>
-					`import { create${repositoryClassName(e)}, create${pascalCase(e)}Services } from '${importPath(plan.file, wiringFile(e))}';`,
+					`import { ${repositoryFactoryName(e)}, ${servicesFactoryName(e)} } from '${relativeImport(plan.file, wiringFile(e))}';`,
 			),
 		];
 		const depsType = [
@@ -211,7 +210,7 @@ export const ${plan.name}Module = defineModule({
 import { createWiring } from '@pattern-stack/wiring';
 import type { DrizzleClient } from '${input.drizzleTypeImport}';
 import type { Relations } from './relations';
-${names.map((n) => `import type { ${pascalCase(n)}Module } from '${importPath(registryFile, plans.get(n)!.file)}';`).join('\n')}
+${names.map((n) => `import type { ${pascalCase(n)}Module } from '${relativeImport(registryFile, plans.get(n)!.file)}';`).join('\n')}
 
 export interface ModuleApis {
 ${names.map((n) => `  ${n}: ${pascalCase(n)}Module;`).join('\n')}
@@ -229,7 +228,7 @@ export const { defineModule, defineSystem, compose } = createWiring<ModuleApis, 
 		path: compositionFile,
 		content: `${input.banner}
 /** Every generated module's manifest (PW-3), for the app's \`compose.ts\`: \`compose({ systems, modules: MODULES })\`. */
-${names.map((n) => `import { ${n}Module } from '${importPath(compositionFile, plans.get(n)!.file)}';`).join('\n')}
+${names.map((n) => `import { ${n}Module } from '${relativeImport(compositionFile, plans.get(n)!.file)}';`).join('\n')}
 
 export const MODULES = [${names.map((n) => `${n}Module`).join(', ')}] as const;
 `,

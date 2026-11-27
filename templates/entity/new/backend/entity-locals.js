@@ -32,7 +32,12 @@ import { detectMethodCollisions } from '../../../../src/patterns/compose.js';
 import { resolvePatternComposition } from '../../../../src/patterns/resolve-composition.js';
 import '../../../../src/patterns/library/index.js';
 import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
-import { EAV_FIELD_VALUE_ENTITY, entityClassGraph, moduleImports } from '../../../../src/derived/wiring/classes.js';
+import {
+  composedRepositoryOwners,
+  EAV_FIELD_VALUE_ENTITY,
+  entityClassGraph,
+  moduleImports,
+} from '../../../../src/derived/wiring/classes.js';
 import { isPatternStackWiring } from '../../../../src/targets/apps.js';
 import { arrayElementType, deriveFieldFacts, isArrayType } from '../../../../src/derived/columns/fields.js';
 import { columnRendererFor } from '../../../../src/targets/columns.js';
@@ -51,7 +56,9 @@ import {
   finderName,
   fkFinderName,
   moduleClassName,
+  repositoryFactoryName,
   repositoryPropertyName,
+  servicesFactoryName,
   pascalCase,
   relationMethodName,
   routePath,
@@ -2543,7 +2550,7 @@ export function buildBackendLocals(definition, baseLocals) {
     sqliteEntity: null,
     sqliteDdl: null,
     // PW-3: the entity's pattern-stack wiring factories (`<entity>.wiring.ts`); null under wiring: nest.
-    wiring: patternStackWiring ? `${moduleDir}/${emittedStem(entityName)}.wiring.ts` : null,
+    wiring: patternStackWiring ? ownNaming.wiringFile : null,
   };
 
   // PW-3: pattern-stack wiring (`target: { wiring: pattern-stack, http: none }`) emits the same table, DTOs, repository, service and use
@@ -2590,11 +2597,7 @@ export function buildBackendLocals(definition, baseLocals) {
   // edges; `<entity>.wiring.ts` declares them from `repositoryDeps`. One set, or the generated code fails to compile:
   // held here, naming both, under pattern-stack (where the composition reads them).
   if (patternStackWiring) {
-    const serviceNode = classGraph.nodes.find((n) => n.role === 'service');
-    const graphRepos = classGraph.edges
-      .filter((e) => e.from === serviceNode?.id && e.toOwner !== entityName && e.to.endsWith('Repository'))
-      .map((e) => e.toOwner)
-      .sort();
+    const graphRepos = composedRepositoryOwners(classGraph, entityName).sort();
     const localRepos = repositoryDeps.map((d) => d.entity).sort();
     if (graphRepos.join(',') !== localRepos.join(',')) {
       throw new Error(
@@ -2605,6 +2608,8 @@ export function buildBackendLocals(definition, baseLocals) {
   }
   const patternStackWiringParts = patternStackWiring
     ? {
+        repositoryFactory: repositoryFactoryName(entityName),
+        servicesFactory: servicesFactoryName(entityName),
         useCases: apiSurface.useCases.map((u) => {
           const file = useCaseFiles[u.kind];
           if (!file) throw new Error(`[codegen] '${entityName}': no file for the ${u.kind} use case under wiring: pattern-stack.`);

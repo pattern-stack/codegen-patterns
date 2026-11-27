@@ -145,11 +145,24 @@ export function junctionClassGraph(junction: JunctionClassInput): ClassGraph {
 	const service = serviceClassName(junction.name);
 	const owner = { owner: junction.name, ownerKind: 'junction' as const };
 	g.nodes.push({ id: repository, ...owner, role: 'repository', systems: ['db'] });
-	g.nodes.push({ id: service, ...owner, role: 'service', systems: ['event_bus'] });
+	g.nodes.push({ id: service, ...owner, role: 'service', systems: [] });
 	g.add({ from: service, to: repository, toOwner: junction.name, toOwnerKind: 'junction', reason: 'own' });
 	g.add({ from: service, ...repositoryOf(junction.left), reason: 'junction_end' });
 	g.add({ from: service, ...repositoryOf(junction.right), reason: 'junction_end' });
 	return { nodes: g.nodes, edges: g.edges };
+}
+
+/**
+ * The other entities whose repositories `entity`'s service takes, in the order the graph adds them (constructor
+ * order): the composition passes them, and `<entity>.wiring.ts` declares them. One test for "a composed
+ * repository" for both: an edge from the service onto another owner's repository class.
+ */
+export function composedRepositoryOwners(graph: ClassGraph, entity: string): string[] {
+	const service = graph.nodes.find((n) => n.owner === entity && n.role === 'service');
+	if (!service) throw new Error(`[codegen] wiring: '${entity}' has no service in the class graph`);
+	return graph.edges
+		.filter((e) => e.from === service.id && e.toOwner !== entity && e.to === repositoryClassName(e.toOwner))
+		.map((e) => e.toOwner);
 }
 
 /** The order a module files its imports in: the base it is a kind of first, the EAV blocks last. */

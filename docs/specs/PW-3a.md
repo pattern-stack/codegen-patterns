@@ -39,7 +39,9 @@ CLI, hook and MCP apps.
   - `create<Entity>Services({ repository, <entity>Repo… })`, which returns `{ service, useCases: { findById, list,
     create, update, delete, <query method>…, search } }`. A search takes the list use case.
   - The service-deps keys are `repositoryPropertyName(entity)` (`src/derived/api/names.ts`), the one rule the
-    service's constructor parameters also use.
+    service's constructor parameters also use. The two factory names are `repositoryFactoryName` /
+    `servicesFactoryName` there too, which the template and the composition both print, and the file's path is
+    `entityModuleNaming(...).wiringFile`.
 - **Skipped by name** (printed: `wiring pattern-stack — skipped N Nest-only files (…)`): the controller, the search
   controller, the Nest module, the integration-source module, and the `<generated>/modules.ts` Nest barrel. The
   barrel exports the repository and service instead of the module and controller.
@@ -67,14 +69,19 @@ after it are skipped by name.
     repositories it takes. Another module's repository is read from `deps.<module>.repositories.<entity>`.
   - Building in two phases is what makes mutual composition work: a `belongs_to` one way and a `has_many` back is
     an entity-level cycle but not a class-level one (PW-1).
-- **A cycle between contexts is refused**, naming it (`contextCycles`, PW-1). Modules depend on each other one way.
+- **A cycle between modules is refused**, naming it (`contextCycles`, PW-1, over the modules the composition builds:
+  an entity with no `context:` is in the root module `entities`, not a pass-through). Modules depend on each other
+  one way: a context entity and a root entity that compose each other's repositories are a `crm → entities → crm`
+  refusal at generation, not a circular type at `tsc` or a cycle at `compose()`.
 - **Module names are a context's own.** A context whose camelCased name is `entities` (the root module) or
   `database` (the system) is refused, and so are two contexts that camelCase to one name.
 - **One set of composed repositories.** The composition passes each service its repositories from the class
-  graph's service edges, and `<entity>.wiring.ts` declares them from `repositoryDeps`. Under pattern-stack,
-  `entity-locals.js` throws, naming both, if they ever differ.
+  graph's service edges (`composedRepositoryOwners`, `src/derived/wiring/classes.ts`), and `<entity>.wiring.ts`
+  declares them from `repositoryDeps`, which the Nest service's constructor also reads. Under pattern-stack,
+  `entity-locals.js` throws, naming both, if they ever differ; both sides pick a composed repository with
+  `composedRepositoryOwners`' one test.
 - **The dry run predicts a pattern-stack run:** the schema barrel without the modules barrel, and the composition's files
-  (or its refusal: a context cycle, a reserved name).
+  (or its refusal: a module cycle, a reserved name).
 - **Switching `target.wiring` removes the other wiring's generated files** (`stale-files.ts`). It removes only files
   whose first line is codegen's banner, and names each one.
   - Going pattern-stack removes the Nest controllers, `*.module.ts` and `<generated>/modules.ts`, plus any context

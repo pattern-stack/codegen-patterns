@@ -32,7 +32,7 @@ import { <%= _queries.map((u) => u.className).join(', ') %> } from '<%= _queries
 <%_ } _%>
 
 /** Builds <%= classNames.entity %>'s repository<% if (familyChild) { %>; a <%= entityName %> is a kind of <%= familyChild.baseName %>, so it takes the base's<% } %>. */
-export function create<%= classNames.repository %>(
+export function <%= patternStackWiringParts.repositoryFactory %>(
   db: DrizzleClient<Relations>,
 <%_ if (familyChild) { _%>
   baseRepository: <%= familyChild.baseRepositoryClass %>,
@@ -50,7 +50,7 @@ export interface <%= classNames.entity %>ServiceDeps {
 }
 
 /** Builds <%= classNames.entity %>'s service and its use cases. */
-export function create<%= classNames.entity %>Services(deps: <%= classNames.entity %>ServiceDeps) {
+export function <%= patternStackWiringParts.servicesFactory %>(deps: <%= classNames.entity %>ServiceDeps) {
   const service = new <%= classNames.service %>(deps.repository<% repositoryDeps.forEach((dep) => { %>, deps.<%= dep.property %><% }) %>);
 <%_ const _list = patternStackWiringParts.useCases.find((u) => u.kind === 'list'); _%>
   const <%= _list.key %> = new <%= _list.className %>(service);
@@ -70,5 +70,5 @@ export function create<%= classNames.entity %>Services(deps: <%= classNames.enti
   };
 }
 
-export type <%= classNames.entity %>Services = ReturnType<typeof create<%= classNames.entity %>Services>;
+export type <%= classNames.entity %>Services = ReturnType<typeof <%= patternStackWiringParts.servicesFactory %>>;
 <%_ } _%>
