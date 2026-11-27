@@ -148,6 +148,15 @@ async function run() {
     );
     exitCode = testResult.exitCode;
 
+    // PW-3a: a plain-wiring project (no @nestjs) booted with @pattern-stack/wiring on this Postgres, CRUD through
+    // its composed use cases. It uses a database of its own on the same server, so the scaffold's tables are untouched.
+    console.log('==> Plain wiring: compose + CRUD on Postgres...');
+    const plainResult = Bun.spawnSync(
+      ['bun', 'test/smoke/run-smoke-plain.ts', '--postgres', ENV.SCAFFOLD_DATABASE_URL],
+      { cwd: REPO_ROOT, stdio: ['inherit', 'inherit', 'inherit'], env: { ...process.env, ...ENV } },
+    );
+    if (plainResult.exitCode !== 0) exitCode = plainResult.exitCode ?? 1;
+
     if (exitCode === 0) {
       console.log('\n==> All integration tests passed');
     } else {

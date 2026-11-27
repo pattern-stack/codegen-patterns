@@ -2,8 +2,8 @@
 to: "<%= outputPaths.wiring %>"
 force: true
 ---
-<%_ if (plainWiringParts) { _%>
 <%- generatedBanner %>
+<%_ if (plainWiringParts) { _%>
 /**
  * <%= classNames.entity %>'s plain wiring (PW-3): how its classes are constructed, with no DI container.
  *

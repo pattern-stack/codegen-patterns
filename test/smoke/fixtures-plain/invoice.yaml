@@ -18,4 +18,3 @@ relationships:
 
 behaviors:
   - timestamps
-  - soft_delete

@@ -29,6 +29,13 @@ import { tscGateErrors } from './_consumer-errors';
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI = `bun ${path.join(REPO_ROOT, 'src', 'cli', 'index.ts')}`;
 const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures-plain');
+const USAGE_FILE = path.join(import.meta.dirname, 'fixtures-plain-usage', 'crud-check.ts');
+// `--postgres <url>` (the integration job): after the compile gate, push the schema into a fresh database on that
+// server and run CRUD through the composed use cases (`fixtures-plain-usage/crud-check.ts`).
+const POSTGRES_URL = (() => {
+	const i = process.argv.indexOf('--postgres');
+	return i === -1 ? null : (process.argv[i + 1] ?? null);
+})();
 const KEEP = process.env.KEEP_SMOKE_DIR === '1';
 
 // No @nestjs/*, no reflect-metadata. drizzle-orm pinned exactly to the repo's own (one identity).
@@ -102,6 +109,8 @@ async function main(): Promise<number> {
 			fs.copyFileSync(path.join(FIXTURES_DIR, f), path.join(entitiesDir, f));
 		}
 		run(`${CLI} entity new --all --force`, tmpDir);
+		// The consumer's usage, compiled with the project: every key it reads is the composition's real API.
+		fs.copyFileSync(USAGE_FILE, path.join(tmpDir, 'src', 'crud-check.ts'));
 
 		// 5a. Nest-free: no import of it anywhere, and none installed.
 		const leaks = sourceFiles(tmpDir).filter((f) => NEST_IMPORT.test(fs.readFileSync(f, 'utf8')));
@@ -135,6 +144,23 @@ async function main(): Promise<number> {
 			fail(`${errors.length} typecheck errors in the plain project`);
 		}
 		log('tsc OK: the plain project compiles with no @nestjs and decorators off');
+
+		// 6. Boot and CRUD on Postgres (integration job only).
+		if (POSTGRES_URL) {
+			const dbName = `plain_smoke_${process.pid}`;
+			const admin = (sql: string) =>
+				run(`bun -e "const { Client } = require('pg'); const c = new Client({ connectionString: process.argv[1] }); await c.connect(); await c.query(process.argv[2]); await c.end();" '${POSTGRES_URL}' '${sql}'`, tmpDir);
+			admin(`CREATE DATABASE ${dbName}`);
+			const dbUrl = POSTGRES_URL.replace(/\/[^/?]*(\?|$)/, `/${dbName}$1`);
+			try {
+				execSync('bunx drizzle-kit push --force', { cwd: tmpDir, stdio: 'inherit', env: { ...process.env, DATABASE_URL: dbUrl } });
+				log('schema pushed');
+				run(`bun src/crud-check.ts '${dbUrl}'`, tmpDir);
+				log('CRUD through the composed use cases OK (create, findById, list, query, update, delete, NotFoundError)');
+			} finally {
+				admin(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
+			}
+		}
 		console.log('\nPASS — plain-wiring smoke');
 		return 0;
 	} catch (err) {
