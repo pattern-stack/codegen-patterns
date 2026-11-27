@@ -30,24 +30,19 @@ function fail(msg: string): never {
 
 async function main(): Promise<void> {
 	const [tmpDir, appModuleArg, ...flags] = process.argv.slice(2);
-	if (!tmpDir) fail('usage: verify-boot.ts <tmpDir> [<app.module.ts, project-relative>] [--expect-pools <json>] [--expect-listen-notify]');
+	if (!tmpDir) fail('usage: verify-boot.ts <tmpDir> [<app.module.ts, project-relative>] [--expect-pools <json>]');
 	// `<paths.backend_src>/app.module.ts` — `src/` unless the harness says (PATH-0).
 	const appModuleRel = appModuleArg ?? 'src/app.module.ts';
-	// CFG-1: `--expect-pools <json>` — `jobs.pools` overrides the config declared;
-	// after boot, the app's resolved `JOB_POOL_CONFIG` must carry each of them.
+	// CFG-1: `--expect-pools <json>` — `jobs.pools` the config declared; after
+	// boot, the app's `JOBS_LIMITER_CONFIG` must carry each as a limiter (JOBS-3).
 	const poolsFlag = flags.indexOf('--expect-pools');
 	const expectPools =
 		poolsFlag >= 0
 			? (JSON.parse(flags[poolsFlag + 1] ?? fail('--expect-pools needs a JSON value')) as Record<
 					string,
-					{ queue?: string; concurrency?: number }
+					{ concurrency: number }
 				>)
 			: null;
-
-	// GEN-0: `--expect-listen-notify` — `jobs.extensions.drizzle.listen_notify:
-	// true` was set after install; the regenerated `JobsDomainModule.forRoot`
-	// in `<generated>/subsystems.ts` must bind it.
-	const expectListenNotify = flags.includes('--expect-listen-notify');
 
 	// AppModule's path aliases (@shared/*, @modules/*, @generated/*) resolve
 	// relative to the tmp project's tsconfig — make it the cwd.
@@ -81,28 +76,18 @@ async function main(): Promise<void> {
 	await app.init();
 
 	if (expectPools) {
-		// The runtime's `JOB_POOL_CONFIG` token (`Symbol.for`, ADR-037) — the one
-		// map the worker and orchestrator read. It is fed ONLY by the generated
-		// `jobPools` (no boot-time YAML read), so a match proves generation → app.
-		const poolConfig = app.get(Symbol.for('@pattern-stack/codegen.jobs.pool-config'), {
+		// `@pattern-stack/jobs/nest`'s `JOBS_LIMITER_CONFIG` (a `Symbol.for`): the limiters the executor runs. It is
+		// fed ONLY by the generated `jobLimiters` (no boot-time YAML read), so a match proves generation → app.
+		const limiters = app.get(Symbol.for('@pattern-stack/jobs.JOBS_LIMITER_CONFIG'), {
 			strict: false,
-		}) as Map<string, { queue: string; concurrency: number }> | undefined;
-		if (!poolConfig) fail('JOB_POOL_CONFIG is not bound — the jobs subsystem did not boot');
+		}) as Record<string, { inFlight?: number }> | undefined;
+		if (!limiters) fail('JOBS_LIMITER_CONFIG is not bound — the jobs subsystem did not boot');
 		for (const [name, want] of Object.entries(expectPools)) {
-			const got = poolConfig.get(name);
-			if (!got) fail(`pool '${name}' missing from JOB_POOL_CONFIG: [${[...poolConfig.keys()].join(', ')}]`);
-			for (const key of ['queue', 'concurrency'] as const) {
-				if (want[key] !== undefined && got[key] !== want[key]) {
-					fail(`pool '${name}'.${key}: expected ${want[key]}, got ${got[key]}`);
-				}
-			}
+			const got = limiters[name];
+			if (!got) fail(`limiter '${name}' missing from JOBS_LIMITER_CONFIG: [${Object.keys(limiters).join(', ')}]`);
+			if (got.inFlight !== want.concurrency) fail(`limiter '${name}'.inFlight: expected ${want.concurrency}, got ${got.inFlight}`);
 		}
-		console.log(`[boot-verify] OK — JOB_POOL_CONFIG carries the configured pools (${Object.keys(expectPools).join(', ')})`);
-	}
-	if (expectListenNotify) {
-		const listenNotify = app.get(Symbol.for('@pattern-stack/codegen.jobs.listen-notify'), { strict: false });
-		if (listenNotify !== true) fail(`JOBS_LISTEN_NOTIFY: expected true, got ${JSON.stringify(listenNotify)}`);
-		console.log('[boot-verify] OK — JOBS_LISTEN_NOTIFY carries the regenerated jobs.extensions.drizzle');
+		console.log(`[boot-verify] OK — JOBS_LIMITER_CONFIG carries the configured pools (${Object.keys(expectPools).join(', ')})`);
 	}
 	await app.close();
 

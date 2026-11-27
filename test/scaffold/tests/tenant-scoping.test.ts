@@ -47,7 +47,6 @@ let tenantEntities: any;
 let tenantCrmEntities: any;
 let tenantMetadataEntities: any;
 let jobRuns: any;
-let jobs: any;
 let eq: any;
 let and: any;
 let isNull: any;
@@ -84,9 +83,7 @@ beforeAll(async () => {
   ({ tenantEntities, tenantCrmEntities, tenantMetadataEntities } = await import(
     '../schema'
   ));
-  ({ jobRuns, jobs } = await import(
-    '@shared/subsystems/jobs/job-orchestration.schema'
-  ));
+  ({ jobRuns } = await import('@pattern-stack/jobs/postgres'));
   ({ getTestDb, truncateAll, closeDb } = await import('./setup'));
   ({ eq, and, isNull } = await import('drizzle-orm'));
 
@@ -639,97 +636,67 @@ d('tenant + user + soft-delete in one statement', () => {
 });
 
 // ============================================================================
-// The job path — the worker enters the ALS from the run's own tenant (§6)
+// The job path — a run's steps enter the ALS from the run's own tenant (§6)
 // ============================================================================
 
 /**
- * The real `JobWorker`, the real claim query, a real `job_run` row, and a
- * handler that reads the tenant-scoped repository. This is the only place the
- * whole chain — persisted `tenant_id` → `withRequester` → `scopeAnd` → SQL —
+ * The real `@pattern-stack/jobs` executor, the real Postgres job store over the
+ * package's own tables, the generated apps' `tenantRunScope` (JOBS-3), and a
+ * step that reads the tenant-scoped repository. This is the only place the
+ * whole chain — persisted run tenant → `withRequester` → `scopeAnd` → SQL —
  * runs end to end.
  */
-d('a job handler reads within the run\'s tenant', () => {
+d('a job step reads within the run\'s tenant', () => {
   async function runJobFor(
     tenantId: string | null,
-  ): Promise<{ names: string[]; userScopedNames: string[]; ctx: any }> {
-    const { JobWorker } = await import('@shared/subsystems/jobs/job-worker');
-    const { JOB_HANDLER_REGISTRY, JobHandlerBase } = await import(
-      '@shared/subsystems/jobs/job-handler.base'
+  ): Promise<{ names: string[]; userScopedNames: string[]; ctx: any; status: string }> {
+    const { defineJob, step, runToCompletion, SYSTEM_TENANT } = await import('@pattern-stack/jobs');
+    const { PostgresJobStore, jobTables } = await import('@pattern-stack/jobs/postgres');
+    const { tenantRunScope } = await import('@gen/runtime/subsystems/jobs/tenant-run-scope');
+    const { tryGetRequester } = await import('@gen/runtime/base-classes/tenant-context');
+    const { z } = await import('zod');
+
+    const observed = { names: [] as string[], userScopedNames: [] as string[], ctx: undefined as any };
+    const probe = defineJob({
+      key: `tenant_probe_${++counter}`,
+      input: z.object({}),
+      output: z.object({ ok: z.boolean() }),
+      steps: (s: any) =>
+        s.add(
+          'read',
+          step({
+            run: async () => {
+              observed.ctx = tryGetRequester();
+              // The point of the whole feature: a repository read inside a step
+              // is scoped to the run's tenant, with no plumbing in the job.
+              observed.names = (await repo.list()).map((r: any) => r.name);
+              // Found #5 guard: the USER axis must NOT filter to the sentinel.
+              observed.userScopedNames = (await userRepo.list()).map((r: any) => r.name);
+              return { ok: true };
+            },
+          }),
+        ),
+    } as never);
+
+    const store = new PostgresJobStore(getTestDb() as never, jobTables);
+    const outcome = await runToCompletion(
+      probe as never,
+      {
+        input: {},
+        tenantId: tenantId ?? SYSTEM_TENANT,
+        trigger: 'agent',
+        requestedBy: null,
+        budget: { maxItems: 1 },
+      } as never,
+      { store, executor: { pollMs: 5, around: tenantRunScope } } as never,
     );
-    const { tryGetRequester } = await import(
-      '@gen/runtime/base-classes/tenant-context'
-    );
-
-    const observed: { names: string[]; userScopedNames: string[]; ctx: any } = {
-      names: [],
-      userScopedNames: [],
-      ctx: undefined,
-    };
-
-    const JOB_TYPE = `tenant_probe_${++counter}`;
-    class ProbeHandler extends JobHandlerBase<unknown, { ok: true }> {
-      async run(): Promise<{ ok: true }> {
-        observed.ctx = tryGetRequester();
-        // The point of the whole feature: a repository read inside a handler
-        // is scoped to the run's tenant, with no plumbing in the handler.
-        observed.names = (await repo.list()).map((r: any) => r.name);
-        // Found #5 guard: the USER axis must NOT filter to the sentinel.
-        observed.userScopedNames = (await userRepo.list()).map((r: any) => r.name);
-        return { ok: true };
-      }
-    }
-    JOB_HANDLER_REGISTRY.set(JOB_TYPE, {
-      handlerClass: ProbeHandler as never,
-      meta: { jobType: JOB_TYPE, pool: 'batch' } as never,
-    });
-
-    const db = getTestDb();
-    // `job_run.job_type` is a real FK to `job.type`, and `root_run_id` /
-    // `job_version` / `trigger_source` are NOT NULL with no default — the row
-    // is seeded exactly as the orchestrator would write it, so the claim query
-    // under test is the real one.
-    await db.insert(jobs).values({
-      type: JOB_TYPE,
-      version: 1,
-      pool: 'batch',
-      retryPolicy: { maxAttempts: 1, backoff: 'fixed', delayMs: 0 },
-    });
-    const runId = crypto.randomUUID();
-    await db.insert(jobRuns).values({
-      id: runId,
-      rootRunId: runId,
-      jobType: JOB_TYPE,
-      jobVersion: 1,
-      triggerSource: 'manual',
-      pool: 'batch',
-      status: 'pending',
-      input: {},
-      tenantId,
-      runAt: new Date(),
-    });
-
-    const worker = new JobWorker(
-      db as any,
-      {} as never,
-      {} as never,
-      {} as never,
-      { pool: 'batch', concurrency: 1 },
-      { get: () => new ProbeHandler() } as never,
-    );
-    await worker.pollAndProcess();
-    await (worker as any).drainInFlight?.();
-    // `pollAndProcess` fires the run without awaiting it; settle the microtask
-    // queue plus the handler's awaits before reading what it observed.
-    for (let i = 0; i < 50 && observed.ctx === undefined; i++) {
-      await new Promise((r) => setTimeout(r, 20));
-    }
-    JOB_HANDLER_REGISTRY.delete(JOB_TYPE);
-    return observed;
+    return { ...observed, status: (outcome as any).run.status };
   }
 
   test('a tenant A run sees only tenant A\'s rows', async () => {
     await seed();
     const observed = await runJobFor(TENANT_A);
+    expect(observed.status).toBe('completed');
     expect(observed.ctx?.tenantId).toBe(TENANT_A);
     expect(observed.names).toEqual(['a-row']);
   });
@@ -740,7 +707,7 @@ d('a job handler reads within the run\'s tenant', () => {
     expect(observed.names).toEqual(['b-row']);
   });
 
-  test('a null-tenant run sees only the null partition', async () => {
+  test('a SYSTEM_TENANT run sees only the null partition', async () => {
     await seed();
     const observed = await runJobFor(null);
     expect(observed.ctx?.tenantId).toBeNull();
@@ -748,7 +715,7 @@ d('a job handler reads within the run\'s tenant', () => {
   });
 
   test('a userTracking repo inside a job still returns rows (Found #5)', async () => {
-    // The worker enters with `scope: 'superuser'`. Without it, every
+    // The run scope enters with `scope: 'superuser'`. Without it, every
     // userTracking read inside every job would filter `user_id = '__system__'`
     // and silently return nothing.
     await asTenantUser(TENANT_A, USER_A, () =>
@@ -763,10 +730,9 @@ d('a job handler reads within the run\'s tenant', () => {
   test('the run row itself is untouched by the scope (it is not an entity)', async () => {
     await seed();
     await runJobFor(TENANT_A);
-    const db = getTestDb();
-    const runs = await db.select().from(jobRuns);
+    const runs = await getTestDb().select().from(jobRuns);
     expect(runs).toHaveLength(1);
     expect(runs[0].status).toBe('completed');
-    expect(and && isNull).toBeDefined();
+    expect(runs[0].tenantId).toBe(TENANT_A);
   });
 });

@@ -62,19 +62,21 @@ function writeEventsRegistry(
   return generatedDir;
 }
 
-const HANDLER_TEMPLATE = (jobType: string, body: string) => `
-import { JobHandler } from '../jobs/job-handler.base';
+/**
+ * A job file the way JOBS-3 writes one: the `defineJob` export and, beside it, `jobTriggers('<key>', [...])`. `body` is
+ * the old fixture body (`triggers: [ ... ],`); its array becomes `jobTriggers`' second argument, and a body with no
+ * `triggers:` gets no `jobTriggers` call.
+ */
+const HANDLER_TEMPLATE = (jobKey: string, body: string) => {
+  const camel = jobKey.replace(/_(\w)/g, (_, c: string) => c.toUpperCase());
+  const list = /triggers:\s*(\[[\s\S]*\])\s*,?\s*$/.exec(body)?.[1];
+  return `
+import { defineJob } from '@pattern-stack/jobs';
+import { jobTriggers } from '../bridge/bridge.protocol';
 
-@JobHandler<{}>('${jobType}', {
-${body}
-})
-export class ${jobType
-  .split('_')
-  .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-  .join('')}Handler {
-  async run() { /* stub */ }
-}
-`;
+export const ${camel} = defineJob({ key: '${jobKey}', version: 1, steps: [] });
+${list ? `export const ${camel}Triggers = jobTriggers('${jobKey}', ${list});\n` : ''}`;
+};
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
@@ -92,6 +94,16 @@ describe('findHandlerFiles', () => {
     writeHandler(dir, 'sub/b.ts', 'export const b = 1;');
     const found = findHandlerFiles(dir).map((f) => path.relative(dir, f));
     expect(found.sort()).toEqual(['a.ts', 'sub/b.ts']);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('skips test files: *.test.ts, *.spec.ts and __tests__/ (their fixtures are not the app\'s jobs)', () => {
+    const dir = makeTmpDir('walk-tests');
+    writeHandler(dir, 'a.job.ts', '');
+    writeHandler(dir, 'a.job.test.ts', '');
+    writeHandler(dir, 'a.job.spec.ts', '');
+    writeHandler(dir, '__tests__/b.ts', '');
+    expect(findHandlerFiles(dir).map((f) => path.relative(dir, f))).toEqual(['a.job.ts']);
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
@@ -127,7 +139,7 @@ describe('extractTriggersFromSourceFile', () => {
     const t = extractTriggersFromSourceFile(sf, '/tmp/test.ts');
     expect(t).toHaveLength(1);
     expect(t[0]).toMatchObject({
-      jobType: 'send_welcome_email',
+      jobKey: 'send_welcome_email',
       triggerId: 'send_welcome_email#0',
       event: 'contact_created',
       sourceFile: '/tmp/test.ts',
@@ -135,6 +147,17 @@ describe('extractTriggersFromSourceFile', () => {
     expect(t[0]!.mapSource).toContain('contactId');
     expect(t[0]!.whenSource).toBeUndefined();
     expect(t[0]!.sourceLine).toBeGreaterThan(0);
+  });
+
+  it('extracts a dedupeKey arrow and the registry emits it', () => {
+    const sf = parse(
+      HANDLER_TEMPLATE('sync_job', `
+  triggers: [{ event: 'a_event', map: (e) => ({}), dedupeKey: (e) => \`sync:\${e.aggregateId}\` }],
+`),
+    );
+    const [t] = extractTriggersFromSourceFile(sf, '/tmp/test.ts');
+    expect(t!.dedupeKeySource).toBe('(e) => `sync:${e.aggregateId}`');
+    expect(buildBridgeRegistryContent([t!])).toContain('dedupeKey: (e) => `sync:${e.aggregateId}`,');
   });
 
   it('extracts multiple triggers with stable triggerId indices', () => {
@@ -157,7 +180,7 @@ describe('extractTriggersFromSourceFile', () => {
     expect(t[1]!.whenSource).toContain('true');
   });
 
-  it('ignores classes with no @JobHandler decorator', () => {
+  it('ignores files with no jobTriggers call', () => {
     const sf = parse(`
       export class NotAHandler {
         async run() {}
@@ -166,12 +189,8 @@ describe('extractTriggersFromSourceFile', () => {
     expect(extractTriggersFromSourceFile(sf, '/tmp/test.ts')).toEqual([]);
   });
 
-  it('ignores @JobHandler with no triggers field', () => {
-    const sf = parse(`
-      import { JobHandler } from '../jobs/job-handler.base';
-      @JobHandler<{}>('plain_job', { pool: 'internal' })
-      export class PlainHandler { async run() {} }
-    `);
+  it('ignores a job with no jobTriggers beside it', () => {
+    const sf = parse(HANDLER_TEMPLATE('plain_job', ''));
     expect(extractTriggersFromSourceFile(sf, '/tmp/test.ts')).toEqual([]);
   });
 });
@@ -193,7 +212,7 @@ describe('scanHandlerFiles', () => {
   triggers: [{ event: 'evt_y', map: (e) => ({}) }],
 `));
     const triggers = scanHandlerFiles(dir);
-    expect(triggers.map((t) => t.jobType)).toEqual(['a_job', 'b_job']);
+    expect(triggers.map((t) => t.jobKey)).toEqual(['a_job', 'b_job']);
   });
 
   it('returns empty list when handlers dir does not exist', () => {
@@ -233,7 +252,7 @@ describe('validateAgainstEventRegistry', () => {
   it('skips validation when knownEventTypes is empty', () => {
     const triggers: ScannedTrigger[] = [
       {
-        jobType: 'x',
+        jobKey: 'x',
         triggerId: 'x#0',
         event: 'unknown_event',
         mapSource: '() => ({})',
@@ -247,7 +266,7 @@ describe('validateAgainstEventRegistry', () => {
   it('throws UnknownTriggerEventError on first unknown event', () => {
     const triggers: ScannedTrigger[] = [
       {
-        jobType: 'x',
+        jobKey: 'x',
         triggerId: 'x#0',
         event: 'contact_created',
         mapSource: '() => ({})',
@@ -255,7 +274,7 @@ describe('validateAgainstEventRegistry', () => {
         sourceLine: 1,
       },
       {
-        jobType: 'y',
+        jobKey: 'y',
         triggerId: 'y#0',
         event: 'made_up_event',
         mapSource: '() => ({})',
@@ -272,7 +291,7 @@ describe('validateAgainstEventRegistry', () => {
     expect(caught).toBeInstanceOf(UnknownTriggerEventError);
     const err = caught as UnknownTriggerEventError;
     expect(err.event).toBe('made_up_event');
-    expect(err.jobType).toBe('y');
+    expect(err.jobKey).toBe('y');
     expect(err.sourceFile).toBe('/tmp/y.ts');
     expect(err.sourceLine).toBe(7);
     expect(err.message).toContain('made_up_event');
@@ -304,7 +323,7 @@ describe('validateNoAuditTriggers (AUDIT-2)', () => {
   it('throws AuditEventTriggerError when a trigger references an audit event', () => {
     const triggers: ScannedTrigger[] = [
       {
-        jobType: 'log_sync_start',
+        jobKey: 'log_sync_start',
         triggerId: 'log_sync_start#0',
         event: 'crm_sync_started',
         mapSource: '() => ({})',
@@ -324,10 +343,10 @@ describe('validateNoAuditTriggers (AUDIT-2)', () => {
     expect(caught).toBeInstanceOf(AuditEventTriggerError);
     const err = caught as AuditEventTriggerError;
     expect(err.event).toBe('crm_sync_started');
-    expect(err.jobType).toBe('log_sync_start');
+    expect(err.jobKey).toBe('log_sync_start');
     expect(err.triggerId).toBe('log_sync_start#0');
     expect(err.message).toContain(
-      "@JobHandler('log_sync_start') trigger 'log_sync_start#0' references audit-tier event 'crm_sync_started'",
+      "jobTriggers('log_sync_start') trigger 'log_sync_start#0' references audit-tier event 'crm_sync_started'",
     );
     expect(err.message).toContain('Audit events are not bridge-eligible');
     expect(err.message).toContain('§AUDIT-2');
@@ -336,7 +355,7 @@ describe('validateNoAuditTriggers (AUDIT-2)', () => {
   it('does not throw for domain-tier triggers', () => {
     const triggers: ScannedTrigger[] = [
       {
-        jobType: 'send_welcome',
+        jobKey: 'send_welcome',
         triggerId: 'send_welcome#0',
         event: 'contact_created',
         mapSource: '() => ({})',
@@ -353,7 +372,7 @@ describe('validateNoAuditTriggers (AUDIT-2)', () => {
   it('skips validation when tier map is empty', () => {
     const triggers: ScannedTrigger[] = [
       {
-        jobType: 'x',
+        jobKey: 'x',
         triggerId: 'x#0',
         event: 'whatever',
         mapSource: '() => ({})',
@@ -378,7 +397,7 @@ describe('buildBridgeRegistryContent', () => {
   it('groups triggers by event type, sorts keys, preserves declaration order per type', () => {
     const triggers: ScannedTrigger[] = [
       {
-        jobType: 'b_job',
+        jobKey: 'b_job',
         triggerId: 'b_job#0',
         event: 'z_event',
         mapSource: '(e) => ({ b: e.aggregateId })',
@@ -386,7 +405,7 @@ describe('buildBridgeRegistryContent', () => {
         sourceLine: 1,
       },
       {
-        jobType: 'a_job',
+        jobKey: 'a_job',
         triggerId: 'a_job#0',
         event: 'a_event',
         mapSource: '(e) => ({ a1: e.aggregateId })',
@@ -394,7 +413,7 @@ describe('buildBridgeRegistryContent', () => {
         sourceLine: 1,
       },
       {
-        jobType: 'c_job',
+        jobKey: 'c_job',
         triggerId: 'c_job#0',
         event: 'a_event',
         mapSource: '(e) => ({ a2: e.aggregateId })',
@@ -591,13 +610,13 @@ describe('generateBridgeRegistry — orchestration', () => {
 describe('validateNoDuplicateTriggers (BRIDGE-7 follow-up)', () => {
   // ADR-023 §`publishAndStart` + `triggers:` collision: exactly one
   // execution per (event, trigger) pair. Two triggers with the same
-  // (event, jobType) double-spawn the user job because triggerId differs
+  // (event, jobKey) double-spawn the user job because triggerId differs
   // by index. The codegen catches this at build time so authors don't
   // debug double-spawned jobs in production.
   it('passes when no duplicates', () => {
     const triggers: ScannedTrigger[] = [
       {
-        jobType: 'a_job',
+        jobKey: 'a_job',
         triggerId: 'a_job#0',
         event: 'evt_x',
         mapSource: '() => ({})',
@@ -605,7 +624,7 @@ describe('validateNoDuplicateTriggers (BRIDGE-7 follow-up)', () => {
         sourceLine: 1,
       },
       {
-        jobType: 'b_job',
+        jobKey: 'b_job',
         triggerId: 'b_job#0',
         event: 'evt_x',
         mapSource: '() => ({})',
@@ -616,10 +635,10 @@ describe('validateNoDuplicateTriggers (BRIDGE-7 follow-up)', () => {
     expect(() => validateNoDuplicateTriggers(triggers)).not.toThrow();
   });
 
-  it('throws DuplicateTriggerError on (event, jobType) duplicate', () => {
+  it('throws DuplicateTriggerError on (event, jobKey) duplicate', () => {
     const triggers: ScannedTrigger[] = [
       {
-        jobType: 'a_job',
+        jobKey: 'a_job',
         triggerId: 'a_job#0',
         event: 'evt_x',
         mapSource: '() => ({})',
@@ -627,7 +646,7 @@ describe('validateNoDuplicateTriggers (BRIDGE-7 follow-up)', () => {
         sourceLine: 5,
       },
       {
-        jobType: 'a_job',
+        jobKey: 'a_job',
         triggerId: 'a_job#1',
         event: 'evt_x',
         mapSource: '() => ({})',
@@ -644,7 +663,7 @@ describe('validateNoDuplicateTriggers (BRIDGE-7 follow-up)', () => {
     expect(caught).toBeInstanceOf(DuplicateTriggerError);
     const err = caught as DuplicateTriggerError;
     expect(err.event).toBe('evt_x');
-    expect(err.jobType).toBe('a_job');
+    expect(err.jobKey).toBe('a_job');
     expect(err.occurrences).toHaveLength(2);
     expect(err.message).toContain('a_job#0');
     expect(err.message).toContain('a_job#1');
@@ -652,10 +671,10 @@ describe('validateNoDuplicateTriggers (BRIDGE-7 follow-up)', () => {
     expect(err.message).toContain('/tmp/file_two.ts:12');
   });
 
-  it('allows the same jobType to map a different event (no false collision)', () => {
+  it('allows the same jobKey to map a different event (no false collision)', () => {
     const triggers: ScannedTrigger[] = [
       {
-        jobType: 'a_job',
+        jobKey: 'a_job',
         triggerId: 'a_job#0',
         event: 'evt_x',
         mapSource: '() => ({})',
@@ -663,7 +682,7 @@ describe('validateNoDuplicateTriggers (BRIDGE-7 follow-up)', () => {
         sourceLine: 1,
       },
       {
-        jobType: 'a_job',
+        jobKey: 'a_job',
         triggerId: 'a_job#1',
         event: 'evt_y',
         mapSource: '() => ({})',

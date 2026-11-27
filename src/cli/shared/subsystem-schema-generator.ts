@@ -3,10 +3,10 @@
  * a value re-export of every installed subsystem's Drizzle tables AND pgEnums so
  * drizzle-kit discovers them with zero consumer hand-editing.
  *
- * Background (the "#9 footgun"): a subsystem's tables (`domain_events`, `job` /
- * `job_run` / `job_step`, `bridge_delivery`, `integration_*`) and its pgEnums
- * (jobs' 8, bridge's 1, integration's 5; events has none — its enum columns are
- * text-enums) are declared in the subsystem runtime, NOT in the consumer's
+ * Background (the "#9 footgun"): a subsystem's tables (`domain_events`, the
+ * `@pattern-stack/jobs` `job_runs` family, `bridge_delivery`, `integration_*`)
+ * and its pgEnums (bridge's 1, integration's 5; events and jobs have none —
+ * their enum columns are text) are declared in the subsystem runtime, NOT in the consumer's
  * hand-authored `src/schema.ts`. drizzle-kit only emits `CREATE TABLE` / `CREATE
  * TYPE` for schema objects it can reach from its `schema` entrypoint. Before
  * this generator the consumer had to hand-re-export each table + enum or the
@@ -59,7 +59,9 @@ const PACKAGE = '@pattern-stack/codegen';
  *
  *   - events:      `domainEvents` table only — its status/direction/pool/tier
  *                  columns are TEXT-enums (no `pgEnum`), so NO `CREATE TYPE`.
- *   - jobs:        `job` / `job_run` / `job_step` tables + 8 pgEnums.
+ *   - jobs:        the seven `@pattern-stack/jobs/postgres` tables (`job_runs`,
+ *                  `job_run_steps`, …), re-exported by the jobs index; text
+ *                  columns, no pgEnum (JOBS-3).
  *   - bridge:      `bridge_delivery` table + 1 pgEnum.
  *   - integration: `integration_subscriptions` / `integration_runs` /
  *                  `integration_run_items` tables + 5 pgEnums.
@@ -71,17 +73,13 @@ const PACKAGE = '@pattern-stack/codegen';
 const SCHEMA_SYMBOLS: Partial<Record<SubsystemName, string[]>> = {
 	events: ['domainEvents'],
 	jobs: [
-		'jobs',
 		'jobRuns',
-		'jobSteps',
-		'jobRunStatusEnum',
-		'jobStepKindEnum',
-		'jobStepStatusEnum',
-		'collisionModeEnum',
-		'replayFromEnum',
-		'parentClosePolicyEnum',
-		'waitKindEnum',
-		'triggerSourceEnum',
+		'jobRunSteps',
+		'jobRunItems',
+		'jobRunChunks',
+		'jobRunEvents',
+		'jobRunValues',
+		'jobItemResults',
 	],
 	bridge: ['bridgeDelivery', 'bridgeDeliveryStatusEnum'],
 	integration: [

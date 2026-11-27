@@ -5,7 +5,7 @@
  *   - empty installed set → empty barrel + DynamicModule[] type
  *   - single subsystem (events) → 1 import + 1 forRoot call
  *   - full minimum set (events+jobs+bridge+integration) → 4 imports + 4 calls
- *   - jobs `worker_mode: 'embedded'` adds JobWorkerModule
+ *   - jobs → one JobsEngineModule.forRoot; `worker_mode` sets `worker` (JOBS-3)
  *   - per-subsystem config plumbed through (multi_tenant → multiTenant)
  *   - subsystems in install list but with no composer are listed in `skipped`
  *   - the subsystems root is `<backend_src>/shared/subsystems` (there is no
@@ -101,7 +101,7 @@ describe('buildSubsystemBarrel', () => {
 			[inst('integration'), inst('bridge'), inst('jobs'), inst('events')], // unsorted input
 			{
 				events: { backend: 'drizzle', multi_tenant: false },
-				jobs: { backend: 'drizzle', multi_tenant: false, worker_mode: 'standalone' },
+				jobs: { worker_mode: 'standalone' },
 				bridge: { backend: 'drizzle', multi_tenant: false },
 				integration: { backend: 'drizzle', multi_tenant: false },
 			},
@@ -111,32 +111,11 @@ describe('buildSubsystemBarrel', () => {
 		// Module-call order matters at runtime (events provides IEventBus before
 		// bridge subscribes; jobs orchestrator before integration invokes ExecuteIntegrationUseCase
 		// via a job).
-		const callIndices = ['EventsModule', 'JobsDomainModule', 'BridgeModule', 'IntegrationModule'].map(
+		const callIndices = ['EventsModule', 'JobsEngineModule', 'BridgeModule', 'IntegrationModule'].map(
 			(m) => out.content.indexOf(`${m}.forRoot`),
 		);
 		expect(callIndices.every((i) => i >= 0)).toBe(true);
 		expect(callIndices).toEqual([...callIndices].sort((a, b) => a - b));
-	});
-
-	test("jobs `worker_mode: 'embedded'` adds JobWorkerModule.forRoot", () => {
-		const out = buildSubsystemBarrel(
-			[inst('jobs')],
-			{ jobs: { backend: 'drizzle', worker_mode: 'embedded' } },
-			subsystemsRel,
-		);
-		expect(out.content).toContain(
-			"import { JobWorkerModule } from './shared/subsystems/jobs/job-worker.module';",
-		);
-		expect(out.content).toContain("JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModulePools: jobPools }),");
-	});
-
-	test("jobs `worker_mode: 'standalone'` does NOT add JobWorkerModule", () => {
-		const out = buildSubsystemBarrel(
-			[inst('jobs')],
-			{ jobs: { backend: 'drizzle', worker_mode: 'standalone' } },
-			subsystemsRel,
-		);
-		expect(out.content).not.toContain('JobWorkerModule');
 	});
 
 	test('jobs `worker_mode` absent composes what the jobs-config scaffold writes — embedded (JOBS-1, #659)', () => {
@@ -148,51 +127,11 @@ describe('buildSubsystemBarrel', () => {
 		);
 		const scaffolded = /^\s*worker_mode:\s*(\w+)/m.exec(block)?.[1];
 		expect(scaffolded).toBe('embedded');
-		const stated = buildSubsystemBarrel([inst('jobs')], { jobs: { backend: 'drizzle', worker_mode: scaffolded } }, subsystemsRel);
-		for (const cfg of [{ jobs: { backend: 'drizzle' } }, {}]) {
+		const stated = buildSubsystemBarrel([inst('jobs')], { jobs: { worker_mode: scaffolded } }, subsystemsRel);
+		for (const cfg of [{ jobs: {} }, {}]) {
 			expect(buildSubsystemBarrel([inst('jobs')], cfg, subsystemsRel).content).toBe(stated.content);
 		}
-		expect(stated.content).toContain("JobWorkerModule.forRoot({ mode: 'embedded'");
-	});
-
-	test('jobs `backend: bullmq` inlines the extensions block (BULLMQ-1)', () => {
-		const out = buildSubsystemBarrel(
-			[inst('jobs')],
-			{
-				jobs: {
-					backend: 'bullmq',
-					extensions: {
-						bullmq: {
-							redis_url: 'redis://localhost:16379',
-							bull_board: { enabled: true, mount_path: '/api/admin/queues' },
-						},
-					},
-				},
-			},
-			subsystemsRel,
-		);
-		expect(out.content).toContain("backend: 'bullmq'");
-		expect(out.content).toContain('extensions: { bullmq: {');
-		expect(out.content).toContain("redis_url: 'redis://localhost:16379'");
-		expect(out.content).toContain("mount_path: '/api/admin/queues'");
-		expect(out.content).toContain('enabled: true');
-	});
-
-	test("jobs `backend: bullmq` + embedded forwards to JobWorkerModule (BULLMQ-1)", () => {
-		const out = buildSubsystemBarrel(
-			[inst('jobs')],
-			{
-				jobs: {
-					backend: 'bullmq',
-					worker_mode: 'embedded',
-					extensions: { bullmq: { redis_url: 'redis://localhost:16379' } },
-				},
-			},
-			subsystemsRel,
-		);
-		expect(out.content).toContain("backend: 'bullmq'");
-		expect(out.content).toContain('JobWorkerModule.forRoot(');
-		expect(out.content).toContain('domainModuleExtensions: { bullmq:');
+		expect(stated.content).toContain('worker: true');
 	});
 
 	test('subsystem `multi_tenant: true` propagates to forRoot as `multiTenant: true`', () => {
@@ -294,101 +233,41 @@ describe('buildSubsystemBarrel', () => {
 		);
 	});
 
-	// ─── Gate 1: embedded worker pool clause (BRIDGE-8) ──────────────────────
+	// ─── JOBS-3: one JobsEngineModule.forRoot on @pattern-stack/jobs ─────────
 
-	test("embedded worker + bridge installed defaults to `allPools: true` (drains reserved events_* lanes)", () => {
+	const ENGINE_CALL = (worker: boolean) =>
+		`JobsEngineModule.forRoot({ definitions: jobDefinitions, worker: ${worker}, limiters: jobLimiters, inProcess: jobsInProcessOptions }),`;
+
+	test("jobs `worker_mode: 'embedded'` runs the executor in this process (`worker: true`)", () => {
+		const out = buildSubsystemBarrel([inst('jobs')], { jobs: { worker_mode: 'embedded' } }, subsystemsRel);
+		expect(out.content).toContain(
+			"import { JobsEngineModule } from './shared/subsystems/jobs/jobs-engine.module';",
+		);
+		// The pools as limiters and the executor's knobs come from app-config; the jobs from the generated registry.
+		expect(out.content).toContain("import { jobLimiters, jobsInProcessOptions } from './app-config';");
+		expect(out.content).toContain("import { jobDefinitions } from './jobs';");
+		expect(out.content).toContain(ENGINE_CALL(true));
+		for (const gone of ['JobsDomainModule', 'JobWorkerModule', 'jobPools', 'allPools'])
+			expect(out.content).not.toContain(gone);
+	});
+
+	test("jobs `worker_mode: 'standalone'` leaves the executor to src/worker.ts (`worker: false`)", () => {
+		const out = buildSubsystemBarrel([inst('jobs')], { jobs: { worker_mode: 'standalone' } }, subsystemsRel);
+		expect(out.content).toContain(ENGINE_CALL(false));
+	});
+
+	test('jobs + bridge: the bridge adds no pool clause to the jobs line (no reserved events_* pools)', () => {
 		const out = buildSubsystemBarrel(
 			[inst('events'), inst('jobs'), inst('bridge')],
-			{
-				events: {},
-				jobs: { backend: 'drizzle', worker_mode: 'embedded' },
-				bridge: {},
-			},
+			{ events: {}, jobs: {}, bridge: {} },
 			subsystemsRel,
 		);
-		expect(out.content).toContain(
-			"JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModulePools: jobPools, allPools: true }),",
-		);
-	});
-
-	test("embedded worker WITHOUT bridge has no activation clause (`pools` / `allPools`)", () => {
-		const out = buildSubsystemBarrel(
-			[inst('jobs')],
-			{ jobs: { backend: 'drizzle', worker_mode: 'embedded' } },
-			subsystemsRel,
-		);
-		expect(out.content).toContain("JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModulePools: jobPools }),");
-		expect(out.content).not.toContain('allPools');
-		expect(out.content).not.toMatch(/JobWorkerModule\.forRoot\([^)]*\bpools:/);
-	});
-
-	test('jobs threads the generated `jobPools` into both modules (CFG-1)', () => {
-		const out = buildSubsystemBarrel(
-			[inst('jobs')],
-			{ jobs: { backend: 'drizzle', worker_mode: 'embedded' } },
-			subsystemsRel,
-		);
-		expect(out.content).toContain("import { jobPools } from './app-config';");
-		expect(out.content).toContain('pools: jobPools }),');
-		expect(out.content).toContain('domainModulePools: jobPools');
-	});
-
-	test('explicit `jobs.worker_pools` wins over the bridge default → emits `pools: [...]`', () => {
-		const out = buildSubsystemBarrel(
-			[inst('jobs'), inst('bridge')],
-			{
-				jobs: {
-					backend: 'drizzle',
-					worker_mode: 'embedded',
-					worker_pools: ['interactive', 'batch', 'events_inbound'],
-				},
-				bridge: {},
-			},
-			subsystemsRel,
-		);
-		expect(out.content).toContain(
-			"JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModulePools: jobPools, pools: ['interactive', 'batch', 'events_inbound'] }),",
-		);
+		expect(out.content).toContain(ENGINE_CALL(true));
 		expect(out.content).not.toContain('allPools');
 	});
 
-	test('explicit `jobs.all_pools: true` emits `allPools: true` (even without bridge)', () => {
-		const out = buildSubsystemBarrel(
-			[inst('jobs')],
-			{ jobs: { backend: 'drizzle', worker_mode: 'embedded', all_pools: true } },
-			subsystemsRel,
-		);
-		expect(out.content).toContain(
-			"JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModulePools: jobPools, allPools: true }),",
-		);
-	});
-
-	test('bullmq embedded + bridge appends the pool clause after backend/extensions', () => {
-		const out = buildSubsystemBarrel(
-			[inst('jobs'), inst('bridge')],
-			{
-				jobs: {
-					backend: 'bullmq',
-					worker_mode: 'embedded',
-					extensions: { bullmq: { redis_url: 'redis://localhost:16379' } },
-				},
-				bridge: {},
-			},
-			subsystemsRel,
-		);
-		expect(out.content).toContain("backend: 'bullmq'");
-		expect(out.content).toContain('domainModuleExtensions: { bullmq:');
-		expect(out.content).toContain('allPools: true }),');
-	});
-
-	test('standalone worker + bridge does NOT emit a worker (pool clause is embedded-only)', () => {
-		const out = buildSubsystemBarrel(
-			[inst('jobs'), inst('bridge')],
-			{ jobs: { backend: 'drizzle', worker_mode: 'standalone' }, bridge: {} },
-			subsystemsRel,
-		);
-		expect(out.content).not.toContain('JobWorkerModule');
-		expect(out.content).not.toContain('allPools');
+	test('a removed jobs key (ADR-022 `backend`) is refused, not ignored', () => {
+		expect(() => buildSubsystemBarrel([inst('jobs')], { jobs: { backend: 'drizzle' } }, subsystemsRel)).toThrow();
 	});
 
 	// ─── Gate 2b: vendored mode passes NO registry (runtime uses its own) ────
@@ -407,80 +286,6 @@ describe('buildSubsystemBarrel', () => {
 	});
 
 	// ─── LISTEN-NOTIFY-1: drizzle extension threading ────────────────────────
-
-	test('jobs `extensions.drizzle.listen_notify` threads into JobsDomainModule + embedded worker', () => {
-		const out = buildSubsystemBarrel(
-			[inst('jobs')],
-			{
-				jobs: {
-					backend: 'drizzle',
-					worker_mode: 'embedded',
-					extensions: { drizzle: { listen_notify: true, poll_interval_ms: 250 } },
-				},
-			},
-			subsystemsRel,
-		);
-		// Domain module (orchestrator emits the enqueue notify):
-		expect(out.content).toContain(
-			'JobsDomainModule.forRoot({ backend: \'drizzle\', extensions: { drizzle: { listenNotify: true, pollIntervalMs: 250 } }, pools: jobPools }),',
-		);
-		// Embedded worker (holds the listener + honors pollInterval):
-		expect(out.content).toContain(
-			'domainModuleExtensions: { drizzle: { listenNotify: true, pollIntervalMs: 250 } }',
-		);
-	});
-
-	test('jobs `extensions.drizzle` claim-heartbeat knobs (CLAIM-HB-1) thread into both forRoots', () => {
-		const out = buildSubsystemBarrel(
-			[inst('jobs')],
-			{
-				jobs: {
-					backend: 'drizzle',
-					worker_mode: 'embedded',
-					extensions: {
-						drizzle: {
-							stale_threshold_ms: 1_800_000,
-							stale_sweeper_interval_ms: 30_000,
-							claim_heartbeat_interval_ms: 120_000,
-						},
-					},
-				},
-			},
-			subsystemsRel,
-		);
-		// Snake_case YAML → camelCase runtime keys, on the embedded worker path.
-		expect(out.content).toContain('staleThresholdMs: 1800000');
-		expect(out.content).toContain('staleSweeperIntervalMs: 30000');
-		expect(out.content).toContain('claimHeartbeatIntervalMs: 120000');
-		expect(out.content).toContain('domainModuleExtensions: { drizzle:');
-	});
-
-	test('jobs drizzle extensions thread `pollIntervalMs` alone (listen_notify omitted → off by default)', () => {
-		const out = buildSubsystemBarrel(
-			[inst('jobs')],
-			{
-				jobs: {
-					backend: 'drizzle',
-					worker_mode: 'embedded',
-					extensions: { drizzle: { poll_interval_ms: 500 } },
-				},
-			},
-			subsystemsRel,
-		);
-		expect(out.content).toContain('pollIntervalMs: 500');
-		expect(out.content).not.toContain('listenNotify');
-	});
-
-	test('jobs WITHOUT drizzle extensions stays byte-identical (no domainModuleExtensions clause)', () => {
-		const out = buildSubsystemBarrel(
-			[inst('jobs')],
-			{ jobs: { backend: 'drizzle', worker_mode: 'embedded' } },
-			subsystemsRel,
-		);
-		expect(out.content).toContain("JobsDomainModule.forRoot({ backend: 'drizzle', multiTenant: false, pools: jobPools }),");
-		expect(out.content).not.toContain('domainModuleExtensions');
-		expect(out.content).not.toContain('listenNotify');
-	});
 
 	test('events `extensions.drizzle.listen_notify` threads into EventsModule.forRoot (vendored)', () => {
 		const out = buildSubsystemBarrel(
@@ -517,7 +322,7 @@ describe('buildSubsystemBarrel — package mode (ADR-037)', () => {
 			[inst('events'), inst('jobs'), inst('bridge'), inst('integration')],
 			{
 				events: { backend: 'drizzle', multi_tenant: false },
-				jobs: { backend: 'drizzle', worker_mode: 'standalone' },
+				jobs: { worker_mode: 'standalone' },
 				bridge: { backend: 'drizzle' },
 				integration: { backend: 'drizzle' },
 			},
@@ -533,7 +338,7 @@ describe('buildSubsystemBarrel — package mode (ADR-037)', () => {
 		// Jobs / bridge / integration are NOT on the single barrel — they resolve
 		// through the per-subsystem runtime index.
 		expect(out.content).toContain(
-			"import { JobsDomainModule } from '@pattern-stack/codegen/runtime/subsystems/jobs/index';",
+			"import { JobsEngineModule } from '@pattern-stack/codegen/runtime/subsystems/jobs/index';",
 		);
 		expect(out.content).toContain(
 			"import { BridgeModule } from '@pattern-stack/codegen/runtime/subsystems/bridge/index';",
@@ -543,24 +348,11 @@ describe('buildSubsystemBarrel — package mode (ADR-037)', () => {
 		);
 		// The forRoot calls are still emitted.
 		expect(out.content).toContain('EventsModule.forRoot(');
-		expect(out.content).toContain('JobsDomainModule.forRoot(');
+		expect(out.content).toContain('JobsEngineModule.forRoot(');
 		expect(out.content).toContain('BridgeModule.forRoot(');
 		expect(out.content).toContain('IntegrationModule.forRoot(');
 		// And it must NOT reference the vendored relative path in package mode.
 		expect(out.content).not.toContain('./shared/subsystems/');
-	});
-
-	test("jobs `worker_mode: 'embedded'` imports JobWorkerModule from the package", () => {
-		const out = buildSubsystemBarrel(
-			[inst('jobs')],
-			{ jobs: { backend: 'drizzle', worker_mode: 'embedded' } },
-			subsystemsRel,
-			'package',
-		);
-		expect(out.content).toContain(
-			"import { JobWorkerModule } from '@pattern-stack/codegen/runtime/subsystems/jobs/index';",
-		);
-		expect(out.content).toContain("JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModulePools: jobPools }),");
 	});
 
 	test('package-mode events listen_notify threads listenNotify alongside typedBus (LISTEN-NOTIFY-1)', () => {
@@ -575,20 +367,12 @@ describe('buildSubsystemBarrel — package mode (ADR-037)', () => {
 		);
 	});
 
-	test('package-mode jobs drizzle extensions thread into the embedded worker (LISTEN-NOTIFY-1)', () => {
-		const out = buildSubsystemBarrel(
-			[inst('jobs')],
-			{
-				jobs: {
-					backend: 'drizzle',
-					worker_mode: 'embedded',
-					extensions: { drizzle: { listen_notify: true } },
-				},
-			},
-			subsystemsRel,
-			'package',
+	test('package mode imports JobsEngineModule from the package runtime index', () => {
+		const out = buildSubsystemBarrel([inst('jobs')], { jobs: {} }, subsystemsRel, 'package');
+		expect(out.content).toContain(
+			"import { JobsEngineModule } from '@pattern-stack/codegen/runtime/subsystems/jobs/index';",
 		);
-		expect(out.content).toContain('domainModuleExtensions: { drizzle: { listenNotify: true } }');
+		expect(out.content).toContain("import { jobDefinitions } from './jobs';");
 	});
 
 	test('package-mode integration differ.unignore threads into forRoot (DIFFER-UNIGNORE)', () => {
@@ -639,28 +423,6 @@ describe('buildSubsystemBarrel — package mode (ADR-037)', () => {
 		expect(out.content).toContain(
 			"BridgeModule.forRoot({ backend: 'drizzle', multiTenant: false, registry: bridgeRegistry }),",
 		);
-	});
-
-	test('package-mode embedded worker + bridge: allPools AND registry both emitted', () => {
-		const out = buildSubsystemBarrel(
-			[inst('events'), inst('jobs'), inst('bridge')],
-			{
-				events: {},
-				jobs: { backend: 'drizzle', worker_mode: 'embedded' },
-				bridge: { backend: 'drizzle', multi_tenant: false },
-			},
-			subsystemsRel,
-			'package',
-		);
-		// Gate 1 — the embedded worker drains every lane (reserved included).
-		expect(out.content).toContain(
-			"JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModulePools: jobPools, allPools: true }),",
-		);
-		// Gate 2b — the consumer registry is threaded in.
-		expect(out.content).toContain(
-			"import { bridgeRegistry } from './bridge-registry';",
-		);
-		expect(out.content).toContain('registry: bridgeRegistry }),');
 	});
 
 	test('package-mode `multi_tenant: true` survives the manual registry literal', () => {
@@ -786,7 +548,7 @@ describe('buildSubsystemBarrel — package mode (ADR-037)', () => {
 		const idx = (frag: string) => out.content.indexOf(frag);
 		// ObservabilityModule.forRoot must appear after every composed sibling's forRoot.
 		const obs = idx('ObservabilityModule.forRoot');
-		expect(obs).toBeGreaterThan(idx('JobsDomainModule.forRoot'));
+		expect(obs).toBeGreaterThan(idx('JobsEngineModule.forRoot'));
 		expect(obs).toBeGreaterThan(idx('BridgeModule.forRoot'));
 		expect(obs).toBeGreaterThan(idx('IntegrationModule.forRoot'));
 		expect(obs).toBeGreaterThan(idx('EventsModule.forRoot'));

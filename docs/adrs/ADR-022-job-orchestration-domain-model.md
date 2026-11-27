@@ -1,10 +1,30 @@
 # ADR-022 — Job Orchestration Domain Model
 
-**Status:** Draft
+**Status:** Superseded by JOBS-3 (2026-11-26) — see the revision note below
 **Date:** 2026-04-17
 **Owner:** Doug
 **Related:** ADR-008 (Subsystem Architecture), ADR-005 (Entity Family Base Classes)
 **Unblocks:** ADR-023 (Event-to-Job Bridge), ADR-025 (Coordination & Signals), ADR-026 (JobEvent Observability), ADR-027 (Agent Job Extensions)
+
+## 2026-11-26 Revision Note — superseded by `@pattern-stack/jobs` (JOBS-3)
+
+The subsystem this ADR describes is deleted. Generated apps run jobs on `@pattern-stack/jobs` (`packages/jobs`; spec `docs/specs/JOBS-3.md`, app upgrade `docs/MIGRATION-jobs-engine.md`). What
+replaced what:
+
+- `@JobHandler` classes + `JobHandlerBase` → `defineJob` values (`step`, `mapStep`, waits, `children`), listed in the
+  generated `<generated>/jobs.ts`.
+- `job` / `job_run` / `job_step` and their eight pgEnums → the package's seven tables (`job_runs` …,
+  `timestamptz(3)`, `text` tenant, composite tenant FKs).
+- `IJobOrchestrator.start` → `JobStarter.start(key, input, opts, tx?)`; `JobsDomainModule` + `JobWorkerModule` →
+  `JobsEngineModule.forRoot`, an in-process executor with an open-run sweep and an advance lease per run.
+- Pools with queues and reserved `events_*` pools → limiters named by pool (`jobs.pools.<name>.concurrency`).
+- `scope` / `ScopeEntityType` / `entity.scopeable`, `concurrency` keys, `timeoutMs`, `replayFrom`, `parentRunId`,
+  the Drizzle LISTEN wake and the BullMQ backend → gone (collisions on the dedupe key: `join` / `queue` / `replace`;
+  children via a step; budgets and deadlines via `limits`).
+
+Tenancy (`MissingTenantIdError`'s undefined-vs-null contract) moves to the engine's `SYSTEM_TENANT`: a run always
+has a tenant, the system's when the caller names none, and its steps enter the repositories' requester scope from
+that tenant. The body below is kept as the record of the design it replaced.
 
 ## Context
 

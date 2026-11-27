@@ -42,7 +42,7 @@ forRoot`)** — and each is `global: true`, so you register it once in
 | Subsystem | Token / module | Install | Depends on |
 |---|---|---|---|
 | events | `EventsModule` | `subsystem install events` | — |
-| jobs | `JobsDomainModule` + `JobWorkerModule` | `subsystem install jobs` | — |
+| jobs | `JobsEngineModule` (`@pattern-stack/jobs`) | `subsystem install jobs` | — |
 | cache | `CacheModule` | `subsystem install cache` | jobs (optional, for cleanup) |
 | storage | `StorageModule` | `subsystem install storage` | — |
 | integration | `IntegrationModule` | `subsystem install integration` | — |
@@ -59,7 +59,7 @@ In `app.module.ts`, import in this order (omit what you haven't installed):
 1. `DatabaseModule` — provides `DRIZZLE`; must be first.
 2. `OpenApiModule` — the registry singleton (vendored at init).
 3. `EventsModule.forRoot(...)`
-4. `JobsDomainModule.forRoot(...)` **and** `JobWorkerModule.forRoot(...)`
+4. `JobsEngineModule.forRoot(...)` (`@pattern-stack/jobs`)
 5. `CacheModule` / `StorageModule` / `IntegrationModule.forRoot(...)`
 6. `BridgeModule.forRoot(...)` — **after** events + jobs.
 7. `ObservabilityModule.forRoot(...)` — **last** of the subsystems (composes the
@@ -67,21 +67,14 @@ In `app.module.ts`, import in this order (omit what you haven't installed):
 8. `...GENERATED_MODULES` — your entity modules.
 
 For auth: register `AuthModule.forRoot(...)` before the `ConnectionsAuthModule`
-that depends on it. Full per-subsystem `forRoot` signatures, the bridge reserved
-pools, and multi-tenancy are in `wiring-and-order.md`.
+that depends on it. Full per-subsystem `forRoot` signatures and multi-tenancy are
+in `wiring-and-order.md`.
 
 ## Non-obvious rules
 
-- **Jobs is two modules, not one.** `JobsDomainModule.forRoot({ backend })`
-  wires the orchestrator/run-services; `JobWorkerModule.forRoot({ mode, backend,
-  pools })` runs the worker loop. Pool *definitions* (concurrency, reserved
-  lanes) live in `codegen.config.yaml` under `jobs.pools`; `JobWorkerModule`'s
-  `pools:` is the list of *active* pool names this process drains.
-- **The bridge will sit idle unless its reserved pools are polled.** The worker
-  must drain `events_inbound` / `events_change` / `events_outbound` — spread
-  `...BRIDGE_RESERVED_POOLS` into `JobWorkerModule`'s `pools`, or use `allPools:
-  true`. `BridgeModule` fails fast at boot if they aren't polled. See the
-  `bridge` skill.
+- **Jobs is one module on `@pattern-stack/jobs`.** `JobsEngineModule.forRoot({ definitions, worker, limiters,
+  inProcess })`, composed by `SUBSYSTEM_MODULES` from the `jobs:` block; pools are limiters (`jobs.pools`). See the
+  `jobs` skill. The bridge needs no pools of its own: its drain starts runs with `JobStarter`.
 - **Observability composes optionally.** It reads whatever sibling subsystems
   are present; missing ones are simply absent from its output. That's why it
   must be registered after them.

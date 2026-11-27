@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Breaking: jobs run on `@pattern-stack/jobs` (JOBS-3)
+
+ADR-022's jobs subsystem is deleted. Generated apps run jobs on `@pattern-stack/jobs`, a new workspace package
+(`packages/jobs`): a job is a `defineJob` value (or a `jobFactory` when its
+steps need the app's services), runs are stored in the app's Postgres in the package's own tables, and an in-process
+executor advances them under a per-run lease. [docs/MIGRATION-jobs-engine.md](docs/MIGRATION-jobs-engine.md) is the
+upgrade; `docs/specs/JOBS-3.md` the design and the full renamed-names table.
+
+- **Jobs:** `@JobHandler` classes → `defineJob` / `jobFactory` exports under `<backend_src>/jobs/`, listed in the
+  generated `<generated>/jobs.ts`. `JobsDomainModule` + `JobWorkerModule` → `JobsEngineModule.forRoot`.
+  `IJobOrchestrator.start` → `JobStarter.start(key, input, { tenantId, dedupeKey, collision }, tx?)`. Collisions on
+  a dedupe key: `join` (default), `queue`, `replace`; `dedupeWindowMs`. Priority is a pool.
+- **Tables:** `job` / `job_run` / `job_step` and their enums → `job_runs`, `job_run_steps`, `job_run_items`,
+  `job_run_chunks`, `job_run_events`, `job_run_values`, `job_item_results` (`timestamptz(3)`, text tenant).
+- **Bridge (ADR-023):** the outbox drain starts each trigger's run in the event's own transaction; the wrapper job,
+  the reserved `events_*` pools, `BridgeReservedPoolsNotPolledError` and `bridge_delivery.wrapper_run_id` are gone.
+  Triggers are `jobTriggers('<key>', [...])`; `BridgeTriggerEntry.jobType` → `jobKey`; `publishAndStart` drops
+  `parentRunId` and takes `dedupeKey`.
+- **Config:** `jobs.backend`, `extensions`, `worker_pools`, `all_pools`, `multi_tenant` and a pool's `queue` /
+  `reserved`, YAML jobs' `scope` / `concurrency` / `timeoutMs` / `replayFrom` / `dedupe.key`, and
+  `entity.scopeable` are errors naming themselves. New: `jobs.poll_interval_ms`, `open_sweep_every`,
+  `version_grace_ms`; a pool is `{ concurrency }`; YAML `collision`, `dedupe: { windowMs }`.
+- **YAML jobs** emit `define<Type>Job(arms)` and an emit-once factory; an existing emit-once `<type>.job.ts` is not
+  rewritten.
+- **Worker:** `src/worker.ts` boots `AppModule` and starts `JOBS_EXECUTOR`; an old one gets the edit printed.
+- **Observability:** `getPoolDepths`, `getRecentFailedJobs`, `listJobRuns` and the timeline's job runs are removed
+  (`JobsService` is the operator view).
+- **Packages:** `@pattern-stack/jobs` is an optional peer of `@pattern-stack/codegen`; `bullmq` no longer is.
+  The scope-entity-type generator is gone.
+
 ## [0.35.0] — 2026-11-27
 
 Zod 4, and the generation target. The generated code is Zod 4, and so is codegen (ZOD-0 #945, ZOD-1a #953,

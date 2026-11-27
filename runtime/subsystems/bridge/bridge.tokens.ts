@@ -11,8 +11,8 @@
 
 /**
  * Token for the `IJobBridge` repo backend (memory in BRIDGE-3, Drizzle in
- * BRIDGE-4). Consumed by `BridgeDeliveryHandler` (BRIDGE-5), the outbox
- * drain (BRIDGE-4 modification), and `EventFlowService` (BRIDGE-7).
+ * BRIDGE-4). Consumed by `EventFlowService` (BRIDGE-7) and observability;
+ * the outbox drain hook writes the ledger through its own transaction.
  */
 export const BRIDGE_DELIVERY_REPO = 'BRIDGE_DELIVERY_REPO' as const;
 
@@ -27,9 +27,10 @@ export const EVENT_FLOW = 'EVENT_FLOW' as const;
 /**
  * Token for the resolved multi-tenancy flag, provided by
  * `BridgeModule.forRoot({ multiTenant })` in BRIDGE-8. Consumed by
- * `EventFlowService.publishAndStart` (entry), `BridgeDeliveryHandler.handle`
- * (entry), and `DrizzleBridgeDeliveryRepo.insertDelivery` (pre-write) — the
- * three enforcement sites called out in ADR-023 §Multi-tenancy.
+ * `EventFlowService.publishAndStart` (entry) and
+ * `DrizzleBridgeDeliveryRepo.insertDelivery` (pre-write) — the enforcement
+ * sites called out in ADR-023 §Multi-tenancy (ADR-022's handler site is gone,
+ * JOBS-3).
  */
 export const BRIDGE_MULTI_TENANT = 'BRIDGE_MULTI_TENANT' as const;
 

@@ -7,15 +7,17 @@
  *
  *   1. `metadata->>'rootRunId'` JSON extraction (events `listEvents`
  *      rootRunId filter + the correlation timeline's event drain).
- *   2. Keyset-pagination WHERE expansion `(created_at, id) < (c0, id0)` →
- *      `created_at < c0 OR (created_at = c0 AND id < id0)` for BOTH
- *      `DrizzleJobRunService.listJobRuns` and `DrizzleEventBus.listEvents`.
+ *   2. Keyset-pagination WHERE expansion `(occurred_at, id) < (c0, id0)` →
+ *      `occurred_at < c0 OR (occurred_at = c0 AND id < id0)` for
+ *      `DrizzleEventBus.listEvents`.
+ *
+ * (JOBS-3 dropped observability's job reads — `listJobRuns` and the
+ * timeline's runs; `JobsService` is the operator view of runs.)
  *
  * A typo / Drizzle-API misuse in those paths typechecks fine and passes the
  * memory unit tests but breaks at runtime. This suite catches that by running
- * the REAL `DrizzleJobRunService`, the REAL events read port
- * (`DrizzleEventBus` implementing `IEventReadPort`), and the REAL
- * `ObservabilityService` composing them — all pointed at an ephemeral
+ * the REAL events read port (`DrizzleEventBus` implementing
+ * `IEventReadPort`) and the REAL `ObservabilityService` composing it — all pointed at an ephemeral
  * `postgres:16` spun up via testcontainers.
  *
  * Self-contained / CI-friendly: does NOT depend on the shared `just db-up`
@@ -38,19 +40,10 @@ import { sql } from 'drizzle-orm';
 import { Wait } from 'testcontainers';
 
 import type { DrizzleClient } from '../../runtime/types/drizzle';
-import {
-  jobs,
-  jobRuns,
-} from '../../runtime/subsystems/jobs/job-orchestration.schema';
 import { domainEvents } from '../../runtime/subsystems/events/domain-events.schema';
-import { DrizzleJobRunService } from '../../runtime/subsystems/jobs/job-run-service.drizzle-backend';
-import type { IJobOrchestrator } from '../../runtime/subsystems/jobs/job-orchestrator.protocol';
 import { DrizzleEventBus } from '../../runtime/subsystems/events/event-bus.drizzle-backend';
 import { ObservabilityService } from '../../runtime/subsystems/observability/observability.service';
-import type {
-  EventSummary,
-  JobRunSummary,
-} from '../../runtime/subsystems/observability/observability.protocol';
+import type { EventSummary } from '../../runtime/subsystems/observability/observability.protocol';
 import { OBS_LIST_DDL } from './obs-list-schema.sql';
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -89,18 +82,9 @@ let container: import('@testcontainers/postgresql').StartedPostgreSqlContainer;
 let pool: Pool;
 let db: DrizzleClient;
 
-// Real backends under test (single-tenant: JOBS_MULTI_TENANT = false).
-let runService: DrizzleJobRunService;
 // Same instance bound to both EVENT_BUS + EVENT_READ_PORT in production.
 let eventBus: DrizzleEventBus;
 let obs: ObservabilityService;
-// A second run service with multi-tenancy ON, to exercise the tenant gate SQL.
-let runServiceMT: DrizzleJobRunService;
-
-/** Minimal orchestrator stub — listJobRuns/listEvents never touch it. */
-const orchestratorStub = {} as IJobOrchestrator;
-
-const JOB_TYPE = 'obs_test_job';
 
 // Fixed instants (UTC). `tieA`/`tieB` share an instant to exercise the id
 // tie-break in the keyset OR-expansion.
@@ -115,15 +99,6 @@ const T = {
 
 // Deterministic UUIDs so the id tie-break is predictable (id desc).
 const ID = {
-  // runs
-  r1: '00000000-0000-4000-8000-000000000001',
-  r2: '00000000-0000-4000-8000-000000000002',
-  r3: '00000000-0000-4000-8000-000000000003',
-  r4: '00000000-0000-4000-8000-000000000004',
-  // two runs sharing `tie` created_at — rTieHi sorts before rTieLo (id desc)
-  rTieLo: '00000000-0000-4000-8000-0000000000a1',
-  rTieHi: '00000000-0000-4000-8000-0000000000a2',
-  r6: '00000000-0000-4000-8000-000000000006',
   // events
   ev1: '11111111-0000-4000-8000-000000000001',
   ev2: '11111111-0000-4000-8000-000000000002',
@@ -153,115 +128,15 @@ beforeAll(async () => {
   pool = new Pool({ connectionString: container.getConnectionUri() });
   db = drizzle({ client: pool }) as unknown as DrizzleClient;
 
-  // Apply the schema (enums + job + job_run + domain_events + CHECK).
+  // Apply the schema (domain_events + CHECK).
   await pool.query(OBS_LIST_DDL);
 
-  runService = new DrizzleJobRunService(db, orchestratorStub, false);
-  runServiceMT = new DrizzleJobRunService(db, orchestratorStub, true);
   eventBus = new DrizzleEventBus(db);
-  // Combiner composing the real run service + the real events read port.
-  // Order matches the constructor: (jobRuns, bridge, syncRuns, cursors, events)
-  obs = new ObservabilityService(
-    runService,
-    undefined,
-    undefined,
-    undefined,
-    eventBus,
-  );
+  // Combiner composing the real events read port.
+  // Order matches the constructor: (bridge, integrationRuns, cursors, events)
+  obs = new ObservabilityService(undefined, undefined, undefined, eventBus);
 
-  // ── seed ──────────────────────────────────────────────────────────────────
-  await db.insert(jobs).values({
-    type: JOB_TYPE,
-    version: 1,
-    pool: 'default',
-    retryPolicy: { attempts: 1, backoff: 'fixed', baseMs: 0 },
-  });
-
-  // job_run rows. Varied created_at (incl. a tie), pool, status, tenant,
-  // root_run_id. Newest-first expected order is:
-  //   r6 (15:00), [rTieHi, rTieLo] (14:00 — id desc), r4 (13:00),
-  //   r3 (12:00), r2 (11:00), r1 (10:00)
-  const baseRun = {
-    jobType: JOB_TYPE,
-    jobVersion: 1,
-    input: {} as Record<string, unknown>,
-    triggerSource: 'manual' as const,
-  };
-  await db.insert(jobRuns).values([
-    {
-      ...baseRun,
-      id: ID.r1,
-      rootRunId: ROOT_A,
-      pool: 'alpha',
-      status: 'completed',
-      tenantId: 't1',
-      createdAt: T.e1,
-      runAt: T.e1,
-    },
-    {
-      ...baseRun,
-      id: ID.r2,
-      rootRunId: ROOT_A,
-      pool: 'beta',
-      status: 'failed',
-      tenantId: 't2',
-      createdAt: T.e2,
-      runAt: T.e2,
-      error: { message: 'boom', retryable: false, attempt: 1 },
-    },
-    {
-      ...baseRun,
-      id: ID.r3,
-      rootRunId: ROOT_B,
-      pool: 'alpha',
-      status: 'running',
-      tenantId: 't1',
-      createdAt: T.e3,
-      runAt: T.e3,
-    },
-    {
-      ...baseRun,
-      id: ID.r4,
-      rootRunId: ROOT_B,
-      pool: 'beta',
-      status: 'pending',
-      tenantId: null,
-      createdAt: T.e4,
-      runAt: T.e4,
-    },
-    {
-      ...baseRun,
-      id: ID.rTieLo,
-      rootRunId: ROOT_A,
-      pool: 'alpha',
-      status: 'completed',
-      tenantId: 't1',
-      createdAt: T.tie,
-      runAt: T.tie,
-    },
-    {
-      ...baseRun,
-      id: ID.rTieHi,
-      rootRunId: ROOT_A,
-      pool: 'alpha',
-      status: 'completed',
-      tenantId: 't1',
-      createdAt: T.tie,
-      runAt: T.tie,
-    },
-    {
-      ...baseRun,
-      id: ID.r6,
-      rootRunId: ROOT_B,
-      pool: 'alpha',
-      status: 'completed',
-      tenantId: 't1',
-      createdAt: T.e6,
-      runAt: T.e6,
-    },
-  ]);
-
-  // domain_events. Some carry metadata.rootRunId (correlated), some don't.
+  // ── seed ── domain_events. Some carry metadata.rootRunId (correlated), some don't.
   // All domain-tier rows must have pool+direction (CHECK constraint).
   await db.insert(domainEvents).values([
     {
@@ -377,108 +252,6 @@ async function drainPages<TItem>(
 const d = describe.skipIf(!DOCKER_OK);
 
 // ════════════════════════════════════════════════════════════════════════════
-// DrizzleJobRunService.listJobRuns
-// ════════════════════════════════════════════════════════════════════════════
-
-d('DrizzleJobRunService.listJobRuns (real Postgres)', () => {
-  it('returns all runs newest-first with the id tie-break', async () => {
-    const { items, nextCursor } = await runService.listJobRuns({ limit: 100 });
-    expect(items.map((r) => r.runId)).toEqual([
-      ID.r6,
-      ID.rTieHi, // tie instant, higher id first (id desc)
-      ID.rTieLo,
-      ID.r4,
-      ID.r3,
-      ID.r2,
-      ID.r1,
-    ]);
-    expect(nextCursor).toBeNull();
-  });
-
-  it('filters by poolId', async () => {
-    const { items } = await runService.listJobRuns({ poolId: 'beta', limit: 100 });
-    expect(items.map((r) => r.runId).sort()).toEqual([ID.r2, ID.r4].sort());
-    expect(items.every((r) => r.pool === 'beta')).toBe(true);
-  });
-
-  it('filters by status', async () => {
-    const { items } = await runService.listJobRuns({ status: 'failed', limit: 100 });
-    expect(items.map((r) => r.runId)).toEqual([ID.r2]);
-    expect(items[0]!.errorMessage).toBe('boom');
-  });
-
-  it('filters by since (lower bound inclusive on created_at)', async () => {
-    const { items } = await runService.listJobRuns({ since: T.e4, limit: 100 });
-    // r4 (13:00), tie pair (14:00), r6 (15:00) — created_at >= 13:00
-    expect(items.map((r) => r.runId).sort()).toEqual(
-      [ID.r4, ID.rTieHi, ID.rTieLo, ID.r6].sort(),
-    );
-  });
-
-  it('filters by rootRunId', async () => {
-    const { items } = await runService.listJobRuns({ rootRunId: ROOT_B, limit: 100 });
-    expect(items.map((r) => r.runId).sort()).toEqual([ID.r3, ID.r4, ID.r6].sort());
-    expect(items.every((r) => r.rootRunId === ROOT_B)).toBe(true);
-  });
-
-  it('filters by tenantId when multi-tenant is ON (= match)', async () => {
-    const { items } = await runServiceMT.listJobRuns({ tenantId: 't2', limit: 100 });
-    expect(items.map((r) => r.runId)).toEqual([ID.r2]);
-  });
-
-  it('filters tenant_id IS NULL when multi-tenant ON + explicit null', async () => {
-    const { items } = await runServiceMT.listJobRuns({ tenantId: null, limit: 100 });
-    expect(items.map((r) => r.runId)).toEqual([ID.r4]);
-  });
-
-  it('paginates via keyset with no gaps/dupes across page boundaries', async () => {
-    // limit 2 over 7 rows → 4 pages (2,2,2,1). Exercises the
-    // (created_at, id) < (cursor) OR-expansion, including the 14:00 tie split
-    // across a page boundary.
-    const items = await drainPages<JobRunSummary>(
-      (cursor) => runService.listJobRuns({ limit: 2, cursor }),
-      2,
-    );
-    const ids = items.map((r) => r.runId);
-    // Exact expected DESC order across boundaries.
-    expect(ids).toEqual([
-      ID.r6,
-      ID.rTieHi,
-      ID.rTieLo,
-      ID.r4,
-      ID.r3,
-      ID.r2,
-      ID.r1,
-    ]);
-    // Each row exactly once.
-    expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.length).toBe(7);
-  });
-
-  it('keyset pagination respects a filter across pages', async () => {
-    const items = await drainPages<JobRunSummary>(
-      (cursor) => runService.listJobRuns({ rootRunId: ROOT_A, limit: 1, cursor }),
-      1,
-    );
-    // ROOT_A runs newest-first: tie pair (14:00, id desc), r2 (11:00), r1 (10:00)
-    expect(items.map((r) => r.runId)).toEqual([
-      ID.rTieHi,
-      ID.rTieLo,
-      ID.r2,
-      ID.r1,
-    ]);
-  });
-
-  it('treats a malformed cursor as start-from-beginning (no throw)', async () => {
-    const { items } = await runService.listJobRuns({
-      cursor: 'not-a-real-cursor',
-      limit: 100,
-    });
-    expect(items.length).toBe(7);
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
 // DrizzleEventBus.listEvents (IEventReadPort)
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -560,63 +333,38 @@ d('DrizzleEventBus.listEvents (real Postgres)', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// ObservabilityService.getCorrelationTimeline (composes both real backends)
+// ObservabilityService.getCorrelationTimeline (composes the real events backend)
 // ════════════════════════════════════════════════════════════════════════════
 
 d('ObservabilityService.getCorrelationTimeline (real Postgres)', () => {
-  it('stitches runs + events for ROOT_A into ascending order', async () => {
+  it('lists ROOT_A\'s events in ascending order', async () => {
     const timeline = await obs.getCorrelationTimeline(ROOT_A);
 
-    // ROOT_A runs:   r1 (10:00), r2 (11:00), rTieLo+rTieHi (14:00)
     // ROOT_A events: ev1 (10:00), evTieLo+evTieHi (14:00)
-    expect(timeline.summary.runCount).toBe(4);
     expect(timeline.summary.eventCount).toBe(3);
     expect(timeline.summary.startedAt).toEqual(T.e1);
     expect(timeline.summary.lastActivityAt).toEqual(T.tie);
-
-    // Entries strictly ascending by `at`.
     const ats = timeline.entries.map((e) => e.at.getTime());
     for (let i = 1; i < ats.length; i += 1) {
       expect(ats[i]!).toBeGreaterThanOrEqual(ats[i - 1]!);
     }
-
-    // At the 10:00 instant a run and an event coincide → job_run before event.
-    const at10 = timeline.entries.filter((e) => e.at.getTime() === T.e1.getTime());
-    expect(at10.map((e) => e.kind)).toEqual(['job_run', 'event']);
-
-    // Total entries = runs + events.
-    expect(timeline.entries.length).toBe(7);
+    expect(timeline.entries[0]!.event.id).toBe(ID.ev1);
   });
 
-  it('correlation timeline for ROOT_B stitches the single event + its runs', async () => {
+  it('ROOT_B has its single event', async () => {
     const timeline = await obs.getCorrelationTimeline(ROOT_B);
-    // ROOT_B runs: r3 (12:00), r4 (13:00), r6 (15:00). Event: ev3 (12:00).
-    expect(timeline.summary.runCount).toBe(3);
-    expect(timeline.summary.eventCount).toBe(1);
+    expect(timeline.entries.map((e) => e.event.id)).toEqual([ID.ev3]);
     expect(timeline.summary.startedAt).toEqual(T.e3);
-    expect(timeline.summary.lastActivityAt).toEqual(T.e6);
-
-    // At 12:00 run r3 and event ev3 coincide → run before event.
-    const at12 = timeline.entries.filter((e) => e.at.getTime() === T.e3.getTime());
-    expect(at12.map((e) => e.kind)).toEqual(['job_run', 'event']);
   });
 
-  it('combiner listJobRuns / listEvents delegate to the real backends', async () => {
-    const runs = await obs.listJobRuns({ poolId: 'beta', limit: 100 });
-    expect(runs.items.map((r) => r.runId).sort()).toEqual([ID.r2, ID.r4].sort());
-
+  it('combiner listEvents delegates to the real backend', async () => {
     const events = await obs.listEvents({ rootRunId: ROOT_B, limit: 100 });
     expect(events.items.map((e) => e.id)).toEqual([ID.ev3]);
   });
 
   it('empty timeline for an unknown rootRunId', async () => {
-    const timeline = await obs.getCorrelationTimeline(
-      'cccccccc-0000-4000-8000-000000000003',
-    );
-    expect(timeline.summary.runCount).toBe(0);
-    expect(timeline.summary.eventCount).toBe(0);
-    expect(timeline.summary.startedAt).toBeNull();
-    expect(timeline.summary.lastActivityAt).toBeNull();
+    const timeline = await obs.getCorrelationTimeline('cccccccc-0000-4000-8000-000000000003');
+    expect(timeline.summary).toEqual({ eventCount: 0, startedAt: null, lastActivityAt: null });
     expect(timeline.entries).toEqual([]);
   });
 });

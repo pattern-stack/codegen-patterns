@@ -28,11 +28,6 @@
 // Protocol + composed return types (re-exported through the protocol file)
 export type {
   IObservability,
-  PoolStatusCount,
-  JobRunFailure,
-  JobRunSummary,
-  JobRunPage,
-  ListJobRunsQuery,
   EventSummary,
   EventPage,
   ListEventsQuery,

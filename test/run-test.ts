@@ -84,7 +84,7 @@ const OUTPUT_PATHS = [
   // ADR-017 barrels (modules.ts, schema.ts) + the REL-1 relation manifest
   // (relations.ts) — paths.generated, default <backend_src>/generated
   'packages/api/src/generated',
-  // JOB-7: generated scope-entity-type union (post-Hygen step)
+  // JOB-6 / JOBS-3: the vendored job-tables re-export (post-Hygen step)
   'runtime/subsystems/jobs/generated',
   // EVT-3: generated event-codegen artifacts (types, schemas, registry, bus, index)
   'runtime/subsystems/events/generated',
@@ -243,13 +243,6 @@ function runCodegen() {
     { cwd: CODEGEN_DIR, stdio: 'pipe' },
   );
 
-  // JOB-7: generate ScopeEntityType union from fixtures (mirrors EntityNewCommand post-step).
-  console.log('   Generating: scope-entity-type.ts');
-  execSync(
-    `bun -e "import { generateScopeEntityType } from './src/cli/shared/scope-entity-type-generator.js'; await generateScopeEntityType({ entitiesDir: '${stageEntityOnlyFixtures()}', nonEntityDirs: [], outputPath: '${join(ROOT, 'runtime/subsystems/jobs/generated/scope-entity-type.ts')}' });"`,
-    { cwd: CODEGEN_DIR, stdio: 'pipe' },
-  );
-
   // EVT-3: generate event-codegen artifacts from fixture events + entity
   // `events:` blocks (mirrors EntityNewCommand post-step). Writes five files
   // under runtime/subsystems/events/generated/.
@@ -261,11 +254,9 @@ function runCodegen() {
     { cwd: CODEGEN_DIR, stdio: 'pipe' },
   );
 
-  // JOB-6: render both variants of `job-orchestration.schema.ejs.t` so the
-  // baseline captures the scaffold-time `jobs.multi_tenant` conditional in
-  // action. Single-tenant must have zero `tenant_id` references; multi-tenant
-  // must include the column + its JOB-8 guidance comment. The fixtures land
-  // under `runtime/subsystems/jobs/generated/` (already in OUTPUT_PATHS).
+  // JOB-6 / JOBS-3: render `job-orchestration.schema.ejs.t` (the vendored re-export of
+  // @pattern-stack/jobs' tables; it no longer varies by tenancy). It lands under
+  // `runtime/subsystems/jobs/generated/` (in OUTPUT_PATHS).
   //
   // The non-schema templates are muted by pointing their injection targets
   // at a throwaway sandbox and pre-creating `src/worker.ts` there so the
@@ -277,30 +268,17 @@ function runCodegen() {
   // templates print "Cannot inject" and exit non-zero? They don't: Hygen
   // logs the warning and continues. We verify this in the walkthrough.
   const variantOutputs = [
-    {
-      label: 'single-tenant',
-      multiTenant: 'false',
-      out: join(ROOT, 'runtime/subsystems/jobs/generated/job-orchestration.schema.single-tenant.ts'),
-    },
-    {
-      label: 'multi-tenant',
-      multiTenant: 'true',
-      out: join(ROOT, 'runtime/subsystems/jobs/generated/job-orchestration.schema.multi-tenant.ts'),
-    },
+    { label: 'vendored', out: join(ROOT, 'runtime/subsystems/jobs/generated/job-orchestration.schema.ts') },
   ];
   for (const v of variantOutputs) {
     console.log(`   Generating: job-orchestration.schema (${v.label})`);
     execSync(
       `HYGEN_TMPLS="${templatesDir}" bunx --bun hygen subsystem jobs ` +
         `--appName baseline ` +
-        `--multiTenant ${v.multiTenant} ` +
         `--mainTsPath "${join(sandbox, 'src/main.ts')}" ` +
         `--configPath "${join(sandbox, 'codegen.config.yaml')}" ` +
         `--workerExists true ` +
         `--workerPath "${join(sandbox, 'src/worker.ts')}" ` +
-        // CFG-1: required by the jobs prompt (worker.ts imports `jobPools`);
-        // unused here — `--workerExists true` skips the worker template.
-        `--appConfigImport ./generated/app-config ` +
         `--schemaPath "${v.out}" ` +
         // Silence the `mainHookInjected is not defined` EJS error in
         // `templates/subsystem/jobs/main-hook.ejs.t`. The baseline's
@@ -310,7 +288,7 @@ function runCodegen() {
       { cwd: ROOT, stdio: 'pipe' },
     );
   }
-  // Clean up sandbox — baseline only cares about the two schema files.
+  // Clean up sandbox — baseline only cares about the schema file.
   rmSync(sandbox, { recursive: true, force: true });
 
   // Run biome to format generated files (to match baseline formatting)

@@ -159,14 +159,13 @@ describe('runConsumersScan + renderConsumerReport', () => {
 			cwd,
 			'src/jobs/send-welcome-email.job.ts',
 			`
-import { JobHandler } from '../jobs/job-handler.base';
+import { defineJob } from '@pattern-stack/jobs';
+import { jobTriggers } from '@shared/subsystems/bridge';
 
-@JobHandler<{}>('send_welcome_email', {
-  triggers: [
-    { event: 'user.created', map: (e) => ({ userId: e.aggregateId }) },
-  ],
-})
-export class SendWelcomeEmailJob {}
+export const sendWelcomeEmail = defineJob({ key: 'send_welcome_email', steps: [] });
+export const sendWelcomeEmailTriggers = jobTriggers('send_welcome_email', [
+  { event: 'user.created', map: (e) => ({ userId: e.aggregateId }) },
+]);
 			`.trim(),
 		);
 

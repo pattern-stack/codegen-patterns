@@ -58,7 +58,7 @@ import {
   EVENTS_WAKE_CHANNEL,
   PgNotifyListener,
   pgNotify,
-} from '../jobs/pg-notify';
+} from './pg-notify';
 
 /** How long to wait between polling cycles (ms). */
 const POLL_INTERVAL_MS = 1_000;
@@ -179,8 +179,8 @@ export class DrizzleEventBus implements IEventBus, IEventReadPort, OnModuleInit,
      *
      * When provided, `processEvent` is invoked once per drained event
      * INSIDE the per-event tx, before `processed_at` is stamped. The
-     * hook owns all knowledge of `bridge_delivery + wrapper job_run`
-     * shapes; the events subsystem stays unaware of bridge schemas.
+     * hook owns all knowledge of `bridge_delivery` and the jobs engine;
+     * the events subsystem stays unaware of bridge schemas.
      */
     @Optional()
     @Inject(BRIDGE_OUTBOX_DRAIN_HOOK)

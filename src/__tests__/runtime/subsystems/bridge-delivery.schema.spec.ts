@@ -36,7 +36,6 @@ describe('bridge_delivery — column presence', () => {
     'id',
     'eventId',
     'triggerId',
-    'wrapperRunId',
     'userRunId',
     'status',
     'skipReason',
@@ -79,8 +78,8 @@ describe('bridge_delivery — column nullability invariants', () => {
     expect(cols.triggerId.notNull).toBe(true);
   });
 
-  it('wrapper_run_id is nullable (facade-eager path has no wrapper)', () => {
-    expect(cols.wrapperRunId.notNull).toBe(false);
+  it('has no wrapper_run_id (JOBS-3: the drain starts the user run directly, no wrapper job)', () => {
+    expect((cols as Record<string, unknown>).wrapperRunId).toBeUndefined();
   });
 
   it('user_run_id is nullable (null until delivered; never set for skipped/failed)', () => {
@@ -104,7 +103,6 @@ describe('BridgeDeliveryRecord — type-level compile check', () => {
       id: '00000000-0000-0000-0000-000000000000',
       eventId: '00000000-0000-0000-0000-000000000001',
       triggerId: 'send_welcome_email#0',
-      wrapperRunId: null,
       userRunId: null,
       status: 'pending',
       skipReason: null,
@@ -116,7 +114,6 @@ describe('BridgeDeliveryRecord — type-level compile check', () => {
     expect(row.id).toBeDefined();
     expect(row.triggerId).toBe('send_welcome_email#0');
     expect(row.status).toBe('pending');
-    expect(row.wrapperRunId).toBeNull();
     expect(row.userRunId).toBeNull();
   });
 

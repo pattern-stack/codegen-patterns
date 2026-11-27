@@ -6,11 +6,9 @@
  * `Map<"${eventId}::${triggerId}", BridgeDeliveryRecord>` so the UNIQUE
  * `(event_id, trigger_id)` constraint can be simulated cheaply.
  *
- * Precedent: `MemoryEventBus` (EVT-5), `MemoryJobOrchestrator`
- * (jobs subsystem). Same shape — a class implementing the protocol plus
+ * Precedent: `MemoryEventBus` (EVT-5). Same shape — a class implementing the protocol plus
  * test-only helpers (`getDeliveriesForEvent`, `getByStatus`, `clear`) that
- * BRIDGE-5's framework-handler tests and BRIDGE-7's facade tests will
- * exercise.
+ * BRIDGE-7's facade tests exercise.
  *
  * The synthetic `UniqueConstraintError` carries a `constraint` field equal
  * to the Drizzle constraint name (`uq_bridge_delivery_event_trigger`, set
@@ -56,7 +54,6 @@ export class MemoryBridgeDeliveryRepo implements IJobBridge {
       id: row.id ?? randomUUID(),
       eventId: row.eventId,
       triggerId: row.triggerId,
-      wrapperRunId: row.wrapperRunId ?? null,
       userRunId: row.userRunId ?? null,
       status: row.status ?? 'pending',
       skipReason: row.skipReason ?? null,

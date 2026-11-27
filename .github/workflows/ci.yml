@@ -88,6 +88,10 @@ jobs:
       - name: Run the semantic demonstration gate
         run: just test-semantic-integration
 
+      # JOBS-3: @pattern-stack/jobs on real Postgres (storeContract, the executor's restart and two-replica cases).
+      - name: Run the jobs engine's Postgres gate
+        run: just test-jobs-integration
+
   # Publish to npm on every merge to main, gated on green tests. Runs the
   # tarball smoke (#190), then publishes the root + each opted-in workspace
   # package IFF its version isn't already on npm — so merges without a

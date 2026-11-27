@@ -28,19 +28,9 @@ export { EventsModule, DrizzleEventBus, MemoryEventBus } from './events';
 // re-export the `TypedEventBus` class from this barrel.
 export { TYPED_EVENT_BUS } from './events';
 
-// Jobs — orchestration schema only (JOB-1). Protocols / modules land in JOB-2 / JOB-5.
-export { jobs, jobRuns, jobSteps } from './jobs';
-export type { JobDefinitionRow, JobRunRow, JobStepRow } from './jobs';
-export {
-  jobRunStatusEnum,
-  jobStepKindEnum,
-  jobStepStatusEnum,
-  collisionModeEnum,
-  replayFromEnum,
-  parentClosePolicyEnum,
-  waitKindEnum,
-  triggerSourceEnum,
-} from './jobs';
+// Jobs (JOBS-3) are NOT re-exported here: the jobs runtime imports `@pattern-stack/jobs`, an optional peer, and
+// this barrel is what every package-mode app's `main.ts` loads. Import jobs from
+// `@pattern-stack/codegen/runtime/subsystems/jobs/index` (the generated barrels already do).
 
 // Cache
 export { CACHE } from './cache';
@@ -62,8 +52,6 @@ export {
 } from './observability';
 export type {
   IObservability,
-  PoolStatusCount,
-  JobRunFailure,
   StatusHistogram,
   IntegrationRunSummary,
   CursorSnapshot,

@@ -2,26 +2,23 @@
  * LISTEN-NOTIFY-2 (0.17.2) — `app.close()` must leave ZERO surviving
  * `LISTEN %wake%` backends, against a REAL Postgres (testcontainers).
  *
- * The dogfood leak (swe-brain boot-check on 0.17.1): with `listen_notify: true`
- * on the drizzle jobs backend (and events), a Nest app that boots, resolves
- * providers, and calls `app.close()` never exits — at least one
- * `LISTEN codegen_jobs_wake` client survives close, holding an ESTABLISHED pg
- * socket forever. A healthy running app shows N+1 LISTEN backends (one events
- * drainer + one per jobs pool worker); after close there must be zero.
+ * The dogfood leak (swe-brain boot-check on 0.17.1): a Nest app that booted
+ * with `listen_notify: true`, resolved providers and called `app.close()` never
+ * exited — a `LISTEN` client survived close, holding an ESTABLISHED pg socket.
  *
  * Root cause: a `stop()` racing an in-flight `PgNotifyListener.connect()` — the
  * checkout resolved AFTER `releaseClient()` ran, so the resumed connect()
- * assigned the client and issued `LISTEN`, leaking it. With 5 jobs pools + 1
- * events drainer all starting at bootstrap and `app.close()` arriving ~at once,
- * the race fires on ~1 of 6 listeners. This falsifier reproduces the real path
- * (full Nest context, real pg sockets, real LISTEN) and asserts the leak is
- * gone. The deterministic unit-level proof of the race seam lives in
- * `src/__tests__/runtime/subsystems/listen-notify.spec.ts` §6.
+ * assigned the client and issued `LISTEN`, leaking it. ADR-022's jobs workers
+ * were five of the six listeners then; JOBS-3 removed them (the
+ * `@pattern-stack/jobs` executor polls), so the events outbox drainer is the
+ * one `PgNotifyListener` left, and this falsifier keeps it honest: full Nest
+ * context, real pg sockets, real LISTEN, many boot/close cycles. The
+ * deterministic unit-level proof of the race seam lives in
+ * `src/__tests__/runtime/subsystems/listen-notify.spec.ts`.
  *
  * Self-contained / CI-friendly: spins its own ephemeral `postgres:16` via
- * testcontainers and skips gracefully (not fails) when Docker is unavailable —
- * mirrors `jobs-fn-concurrency-key.drizzle.integration.test.ts`. NOT part of
- * `just test-unit`; run via `just test-listen-notify-leak-integration`.
+ * testcontainers and skips gracefully (not fails) when Docker is unavailable.
+ * NOT part of `just test-unit`; run via `just test-listen-notify-leak-integration`.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { Pool } from 'pg';
@@ -32,13 +29,6 @@ import { NestFactory } from '@nestjs/core';
 
 import { DRIZZLE } from '../../runtime/constants/tokens';
 import { EventsModule } from '../../runtime/subsystems/events/events.module';
-import { JobWorkerModule } from '../../runtime/subsystems/jobs/job-worker.module';
-import {
-  JobHandlerBase,
-  JOB_HANDLER_REGISTRY,
-  type JobContext,
-  type JobHandlerMeta,
-} from '../../runtime/subsystems/jobs/job-handler.base';
 import type { DrizzleClient } from '../../runtime/types/drizzle';
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -66,81 +56,11 @@ if (!DOCKER_OK) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// DDL — jobs (job + job_run) AND the events outbox. Mirrors the schema files
-// closely enough to boot the worker module + events drainer end-to-end.
+// DDL — the events outbox. Mirrors the schema file closely enough to boot the
+// events drainer end-to-end.
 // ────────────────────────────────────────────────────────────────────────────
 
 const DDL = /* sql */ `
-DO $$ BEGIN
-  CREATE TYPE job_run_status AS ENUM
-    ('pending','running','waiting','completed','failed','timed_out','canceled');
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-DO $$ BEGIN
-  CREATE TYPE job_collision_mode AS ENUM ('queue','reject','replace');
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-DO $$ BEGIN
-  CREATE TYPE job_replay_from AS ENUM ('scratch','last_step','last_checkpoint');
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-DO $$ BEGIN
-  CREATE TYPE job_parent_close_policy AS ENUM ('terminate','cancel','abandon');
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-DO $$ BEGIN
-  CREATE TYPE job_wait_kind AS ENUM ('signal');
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-DO $$ BEGIN
-  CREATE TYPE job_trigger_source AS ENUM ('manual','schedule','event','parent');
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-
-CREATE TABLE IF NOT EXISTS job (
-  type                     text PRIMARY KEY,
-  version                  integer NOT NULL DEFAULT 1,
-  pool                     text NOT NULL,
-  scope_entity_type        text,
-  retry_policy             jsonb NOT NULL,
-  timeout_ms               integer,
-  concurrency_key_template text,
-  collision_mode           job_collision_mode NOT NULL DEFAULT 'queue',
-  dedupe_key_template      text,
-  dedupe_window_ms         integer,
-  priority_default         integer NOT NULL DEFAULT 0,
-  replay_from              job_replay_from NOT NULL DEFAULT 'last_checkpoint',
-  created_at               timestamptz NOT NULL DEFAULT now(),
-  updated_at               timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS job_run (
-  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  job_type            text NOT NULL REFERENCES job(type),
-  job_version         integer NOT NULL,
-  parent_run_id       uuid REFERENCES job_run(id),
-  root_run_id         uuid NOT NULL,
-  parent_close_policy job_parent_close_policy NOT NULL DEFAULT 'terminate',
-  scope_entity_type   text,
-  scope_entity_id     text,
-  tenant_id           text,
-  tags                jsonb NOT NULL DEFAULT '{}',
-  pool                text NOT NULL,
-  priority            integer NOT NULL DEFAULT 0,
-  concurrency_key     text,
-  dedupe_key          text,
-  status              job_run_status NOT NULL DEFAULT 'pending',
-  input               jsonb NOT NULL,
-  output              jsonb,
-  error               jsonb,
-  trigger_source      job_trigger_source NOT NULL,
-  trigger_ref         text,
-  run_at              timestamptz NOT NULL DEFAULT now(),
-  started_at          timestamptz,
-  finished_at         timestamptz,
-  claimed_at          timestamptz,
-  attempts            integer NOT NULL DEFAULT 0,
-  wait_kind           job_wait_kind,
-  resume_token        text,
-  wait_deadline       timestamptz,
-  created_at          timestamptz NOT NULL DEFAULT now(),
-  updated_at          timestamptz NOT NULL DEFAULT now()
-);
-
 CREATE TABLE IF NOT EXISTS domain_events (
   id            uuid PRIMARY KEY,
   type          text NOT NULL,
@@ -162,13 +82,6 @@ CREATE TABLE IF NOT EXISTS domain_events (
 );
 `;
 
-// A trivial handler so the worker module's boot validator + spawn proceed.
-const JOB_TYPE = 'listen_notify_leak_noop';
-class NoopHandler extends JobHandlerBase<Record<string, unknown>, void> {
-  async run(_ctx: JobContext<Record<string, unknown>>): Promise<void> {}
-}
-const META: JobHandlerMeta<Record<string, unknown>> = { pool: 'batch' };
-
 // ────────────────────────────────────────────────────────────────────────────
 // Container + connection string.
 // ────────────────────────────────────────────────────────────────────────────
@@ -188,19 +101,9 @@ beforeAll(async () => {
   const ddlPool = new Pool({ connectionString });
   await ddlPool.query(DDL);
   await ddlPool.end();
-
-  // Register the noop handler once for all boots in this suite.
-  JOB_HANDLER_REGISTRY.set(JOB_TYPE, {
-    type: JOB_TYPE,
-    meta: META as JobHandlerMeta<unknown>,
-    handlerClass: NoopHandler as unknown as new (
-      ...args: unknown[]
-    ) => JobHandlerBase<unknown>,
-  });
 }, 90_000);
 
 afterAll(async () => {
-  JOB_HANDLER_REGISTRY.delete(JOB_TYPE);
   await container?.stop();
 });
 
@@ -232,9 +135,8 @@ async function pollUntilZeroWakeListeners(
   return last;
 }
 
-// One app module wiring both subsystems with listen_notify ON. The DRIZZLE
-// provider is exposed via a @Global() module so the (global) EventsModule and
-// JobsDomainModule contexts can both inject it — mirrors the consumer's own
+// One app module wiring the events subsystem with listen_notify ON. The DRIZZLE
+// provider is exposed via a @Global() module — mirrors the consumer's own
 // global DatabaseModule.
 function makeAppModule(db: DrizzleClient): DynamicModule {
   @Global()
@@ -248,12 +150,6 @@ function makeAppModule(db: DrizzleClient): DynamicModule {
     imports: [
       DatabaseModule,
       EventsModule.forRoot({ backend: 'drizzle', listenNotify: true }),
-      JobWorkerModule.forRoot({
-        backend: 'drizzle',
-        mode: 'embedded',
-        allPools: true, // → one worker (one listener) per framework pool
-        domainModuleExtensions: { drizzle: { listenNotify: true } },
-      }),
     ],
   })
   class AppModule {}
@@ -263,7 +159,7 @@ function makeAppModule(db: DrizzleClient): DynamicModule {
 const maybe = DOCKER_OK ? describe : describe.skip;
 
 maybe('LISTEN-NOTIFY-2 — app.close() releases every wake listener', () => {
-  it('boots a real Nest context (6 LISTEN backends), then close() leaves zero', async () => {
+  it('boots a real Nest context (the drainer\'s LISTEN backend), then close() leaves zero', async () => {
     // Dedicated observer connection — never counted by the LISTEN query.
     const observer = new Pool({ connectionString, max: 1 });
 
@@ -280,8 +176,8 @@ maybe('LISTEN-NOTIFY-2 — app.close() releases every wake listener', () => {
           { logger: false },
         );
 
-        // Healthy app: events drainer (1) + one worker per framework pool (5)
-        // = 6 LISTEN backends. Allow a beat for the listeners to issue LISTEN.
+        // Healthy app: the events drainer's LISTEN backend. Allow a beat for it
+        // to issue LISTEN.
         await new Promise((r) => setTimeout(r, 250));
         const live = await countWakeListeners(observer);
         expect(live).toBeGreaterThan(0);
@@ -310,7 +206,7 @@ maybe('LISTEN-NOTIFY-2 — app.close() releases every wake listener', () => {
           { logger: false },
         );
         // NO settle delay — close() races the listeners' in-flight connect()s
-        // as hard as possible. This is what made ~1 of 6 leak pre-fix.
+        // as hard as possible.
         await app.close();
         await pool.end();
         const survivors = await pollUntilZeroWakeListeners(observer);

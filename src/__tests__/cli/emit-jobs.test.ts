@@ -61,7 +61,7 @@ describe('emitJobHandlers', () => {
 		expect(res2.scaffoldsSkipped).toEqual([subPath]);
 		expect(res2.scaffoldsWritten).toEqual([]);
 		expect(readFileSync(subPath, 'utf8')).toBe('// AUTHOR EDIT — do not clobber\n');
-		expect(readFileSync(join(dir, 'drive_poll.job.generated.ts'), 'utf8')).toContain('DrivePollJobBase');
+		expect(readFileSync(join(dir, 'drive_poll.job.generated.ts'), 'utf8')).toContain('defineDrivePollJob');
 	});
 
 	it('dryRun computes paths without writing', () => {

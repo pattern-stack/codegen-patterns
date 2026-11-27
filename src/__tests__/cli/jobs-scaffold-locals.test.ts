@@ -3,12 +3,9 @@
  *
  * Covers:
  *   - default locals on first install (no `jobs:` block in config)
- *   - multi_tenant: true honored
  *   - workerExists: '' when src/worker.ts absent, 'true' when present
- *   - jobWorkerModuleImport is mode-aware (package vs vendored) — #513
- *   - the worker carries no config value: it imports `jobWorkerOptions` from
- *     `<generated>/app-config` (GEN-0, #652); `staleWorkerNotice` names the
- *     one-time edit for a pre-GEN-0 worker
+ *   - `staleWorkerNotice` names the one-time edit for a worker that predates
+ *     JOBS-3 (it booted ADR-022's JobWorkerModule)
  *   - localsToHygenArgs serialises booleans safely (skip_if contract)
  */
 import { describe, expect, test } from 'bun:test';
@@ -36,7 +33,6 @@ describe('resolveJobsScaffoldLocals', () => {
 			readFile: () => null,
 		});
 
-		expect(locals.multiTenant).toBe(false);
 		expect(locals.workerExists).toBe(false);
 		expect(locals.appName).toBe('project-fixture');
 		expect(locals.mainTsPath).toBe(path.resolve(CWD, 'src/main.ts'));
@@ -44,12 +40,6 @@ describe('resolveJobsScaffoldLocals', () => {
 		// #513: worker now lands at src/worker.ts (inside the default tsconfig
 		// include, next to app.module.ts).
 		expect(locals.workerPath).toBe(path.resolve(CWD, 'src', 'worker.ts'));
-		// #513: default (no `runtime` key) is package mode (ADR-037).
-		expect(locals.jobWorkerModuleImport).toBe(
-			'@pattern-stack/codegen/runtime/subsystems/jobs/index',
-		);
-		// GEN-0: the worker's options come from the generated app-config.
-		expect(locals.appConfigImport).toBe('./generated/app-config');
 		// Default derives from `backend_src` (fallback 'src') when
 		// The subsystems root derives from `paths.backend_src` — the `project init` layout.
 		expect(locals.schemaPath).toBe(
@@ -72,56 +62,9 @@ describe('resolveJobsScaffoldLocals', () => {
 		);
 	});
 
-	test('jobs.multi_tenant: true flows into multiTenant local', () => {
-		const locals = resolveJobsScaffoldLocals({
-			cwd: CWD,
-			config: { jobs: { multi_tenant: true } } as any,
-			fileExists: () => false,
-			readFile: () => null,
-		});
-		expect(locals.multiTenant).toBe(true);
-	});
 
-	test('jobs.multi_tenant non-boolean values do not leak through', () => {
-		// only the literal `true` flips the flag — defensive against YAML truthy
-		// surprises like `'yes'` / `1`.
-		for (const raw of ['true', 'yes', 1, 'on']) {
-			const locals = resolveJobsScaffoldLocals({
-				cwd: CWD,
-				config: { jobs: { multi_tenant: raw } } as any,
-				fileExists: () => false,
-				readFile: () => null,
-			});
-			expect(locals.multiTenant).toBe(false);
-		}
-	});
 
-	test('jobWorkerModuleImport: package mode (default) resolves the package runtime subpath', () => {
-		// No `runtime` key → package mode (ADR-037). The JobWorkerModule is NOT on
-		// the top-level `/subsystems` barrel; it resolves via the per-subsystem
-		// runtime index.
-		const pkg = resolveJobsScaffoldLocals({
-			cwd: CWD,
-			config: null,
-			fileExists: () => false,
-			readFile: () => null,
-		});
-		expect(pkg.jobWorkerModuleImport).toBe(
-			'@pattern-stack/codegen/runtime/subsystems/jobs/index',
-		);
-	});
 
-	test('jobWorkerModuleImport: vendored mode resolves the @shared jobs barrel', () => {
-		const vendored = resolveJobsScaffoldLocals({
-			cwd: CWD,
-			config: { runtime: 'vendored' } as any,
-			fileExists: () => false,
-			readFile: () => null,
-		});
-		expect(vendored.jobWorkerModuleImport).toBe(
-			'@shared/subsystems/jobs/index',
-		);
-	});
 
 	test('workerExists only probes src/worker.ts', () => {
 		const probed: string[] = [];
@@ -158,7 +101,7 @@ describe('resolveJobsScaffoldLocals', () => {
 			cwd: CWD,
 			config: null,
 			fileExists: () => false,
-			readFile: () => '// JOBS — Embedded worker mode (optional)\n',
+			readFile: () => '  // JOBS — the job executor (@pattern-stack/jobs, JOBS-3)\n',
 		});
 		expect(locals.mainHookInjected).toBe(true);
 	});
@@ -206,23 +149,15 @@ describe('resolveJobsScaffoldLocals', () => {
 describe('localsToHygenArgs', () => {
 	const base: JobsScaffoldLocals = {
 		appName: 'demo',
-		multiTenant: false,
 		mainTsPath: '/abs/src/main.ts',
 		configPath: '/abs/codegen.config.yaml',
 		workerExists: false,
 		workerPath: '/abs/src/worker.ts',
-		jobWorkerModuleImport:
-			'@pattern-stack/codegen/runtime/subsystems/jobs/index',
-		appConfigImport: './generated/app-config',
 		schemaPath: '/abs/shared/subsystems/jobs/job-orchestration.schema.ts',
 		mainHookInjected: false,
 		skipSchema: false,
 	};
 
-	test('multiTenant booleans serialise to the literal strings Hygen expects', () => {
-		expect(localsToHygenArgs(base)).toContain('false');
-		expect(localsToHygenArgs({ ...base, multiTenant: true })).toContain('true');
-	});
 
 	test('workerExists serialises to empty string when absent — skip_if safe', () => {
 		// Hygen's skip_if treats any non-empty string as truthy. Rendering a
@@ -243,13 +178,10 @@ describe('localsToHygenArgs', () => {
 		const args = localsToHygenArgs(base);
 		for (const flag of [
 			'--appName',
-			'--multiTenant',
 			'--mainTsPath',
 			'--configPath',
 			'--workerExists',
 			'--workerPath',
-			'--jobWorkerModuleImport',
-			'--appConfigImport',
 			'--schemaPath',
 			'--mainHookInjected',
 			'--skipSchema',
@@ -272,14 +204,6 @@ describe('localsToHygenArgs', () => {
 		expect(present[idx2 + 1]).toBe('true');
 	});
 
-	test('jobWorkerModuleImport and appConfigImport pass through verbatim; no options literal crosses argv (GEN-0)', () => {
-		const args = localsToHygenArgs(base);
-		expect(args[args.indexOf('--jobWorkerModuleImport') + 1]).toBe(
-			'@pattern-stack/codegen/runtime/subsystems/jobs/index',
-		);
-		expect(args[args.indexOf('--appConfigImport') + 1]).toBe('./generated/app-config');
-		expect(args).not.toContain('--workerForRootOpts');
-	});
 
 	test('localsToHygenArgs serialises mainHookInjected empty-string when false', () => {
 		const args = localsToHygenArgs(base);
@@ -301,35 +225,23 @@ describe('localsToHygenArgs', () => {
 	});
 });
 
-describe('staleWorkerNotice (GEN-0, #652)', () => {
-	test('a current worker needs no edit', () => {
+describe('staleWorkerNotice (JOBS-3)', () => {
+	test('a current worker (it starts JOBS_EXECUTOR) needs no edit', () => {
 		expect(
 			staleWorkerNotice(
-				"import { jobWorkerOptions } from './generated/app-config';\n    JobWorkerModule.forRoot(jobWorkerOptions),",
+				"  await app.get<{ start(): Promise<void> }>(JOBS_EXECUTOR).start();",
 				'src/worker.ts',
-				'./generated/app-config',
 			),
 		).toBeNull();
 	});
 
-	test('the call named only in a comment does not count', () => {
-		expect(
-			staleWorkerNotice(
-				" * plus `JobWorkerModule.forRoot(jobWorkerOptions)`\n    JobWorkerModule.forRoot({ mode: 'standalone', allPools: true }),",
-				'src/worker.ts',
-				'./generated/app-config',
-			),
-		).not.toBeNull();
-	});
-
-	test('a worker that bakes its options gets the exact replacement', () => {
+	test('a pre-JOBS-3 worker (JobWorkerModule) gets the exact replacement', () => {
 		const notice = staleWorkerNotice(
-			"    JobWorkerModule.forRoot({ mode: 'standalone', domainModulePools: jobPools, allPools: true }),",
+			"    JobWorkerModule.forRoot(jobWorkerOptions),",
 			'apps/api/src/worker.ts',
-			'./generated/app-config',
 		);
-		expect(notice).toContain('apps/api/src/worker.ts predates GEN-0 (#652)');
-		expect(notice).toContain("import { jobWorkerOptions } from './generated/app-config';");
-		expect(notice).toContain('JobWorkerModule.forRoot(jobWorkerOptions),');
+		expect(notice).toContain('apps/api/src/worker.ts predates JOBS-3');
+		expect(notice).toContain("import { JOBS_EXECUTOR } from '@pattern-stack/jobs/nest';");
+		expect(notice).toContain('await app.get(JOBS_EXECUTOR).start();');
 	});
 });

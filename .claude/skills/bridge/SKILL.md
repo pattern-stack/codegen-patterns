@@ -1,6 +1,6 @@
 ---
 name: bridge
-description: Load when working on the Event-to-Job Bridge subsystem. Triggers include anything under `runtime/subsystems/bridge/`; the `IJobBridge` / `IEventFlow` protocols; `@JobHandler.triggers` decorator metadata; the `bridge_delivery` table or its Drizzle/Memory backends; the framework `BridgeDeliveryHandler` wrapper on reserved `events_*` pools; `BridgeModule.forRoot()` wiring; the `bridgeRegistry` codegen output; the `codegen events consumers <type>` CLI; and any work referencing ADR-023 or BRIDGE-1..9 specs.
+description: Load when working on the Event-to-Job Bridge subsystem. Triggers include anything under `runtime/subsystems/bridge/`; the `IJobBridge` / `IEventFlow` protocols; `jobTriggers(...)` declarations and their scan (`bridge-registry-generator.ts`); the `bridge_delivery` table or its Drizzle/Memory backends; the outbox drain hook starting runs with `JobStarter` (JOBS-3); `BridgeModule.forRoot()` wiring; the `bridgeRegistry` codegen output; the `codegen events consumers <type>` CLI; and any work referencing ADR-023 or BRIDGE-1..9 specs.
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 user-invocable: false
 ---
@@ -19,13 +19,13 @@ The bridge is the **combiner subsystem** between events (ADR-024) and jobs (ADR-
 |---|---|---|---|---|
 | 1. Subscribe | `IEventBus.subscribe()` / `@OnEvent` in-process | None (at-most-once) | ~ms | metrics, cache busts, logs |
 | 2. Direct invoke | `eventFlow.publishAndStart(event, jobType, input)` | Yes (caller tx) | ~1 poll cycle | request-path work needing durability |
-| 3. Bridge | `@JobHandler({ triggers: [{ event, map, when }] })` | Yes (outbox + ledger) | 2–3 poll cycles | durable async fanout |
+| 3. Bridge | `jobTriggers('<key>', [{ event, map, when }])` beside the job | Yes (outbox + ledger) | ~1 s (the executor's open-run sweep) | durable async fanout |
 
 Tier 2 and Tier 3 both flow through the bridge subsystem at runtime. Tier 1 is events-only and bypasses the bridge entirely.
 
-**Reserved `events_*` pools host framework wrappers.** When the outbox drain claims a `domain_events` row, it inserts — in a single per-event transaction — one `bridge_delivery` ledger row + one wrapper `job_run` row (`type=@framework/bridge_delivery`, `pool=events_<direction>`) per matched trigger. The wrapper is claimed by the ordinary job worker. Its handler reads the ledger, evaluates `when:`, applies `map:`, calls `orchestrator.start(userJob, mapped, { parentRunId: self })`, updates the ledger to `delivered`. The user job runs in its declared pool, parented to the wrapper so cascade-cancel works.
+**The drain starts the run (JOBS-3, ADR-023's 2026-11-26 note).** When the outbox drain claims a `domain_events` row, the drain hook, in that event's transaction, per matched trigger: inserts the `bridge_delivery` row (`ON CONFLICT DO NOTHING`; a conflict is Case B or a replay, skipped), marks it `skipped` if the job isn't registered here (`trigger_unregistered`) or `when` is false (`predicate_false`), else calls `JobStarter.start(jobKey, map(event), { tenantId, trigger: 'event' }, tx)` and marks it `delivered` with the run id. The executor's open-run sweep finds the run after the commit. No wrapper job, no reserved pools.
 
-**Two pool layers.** Pool A (reserved `events_*`) holds wrappers — cheap, high concurrency. Pool B (user-declared `@JobHandler.pool`) holds the actual work — author picks by scarce-resource-protected. Pool-per-class-of-work, 4–8 pools typical.
+**Pools are the jobs subsystem's** (limiters a step names); the bridge has none.
 
 **The ledger is the single source of truth.** `UNIQUE (event_id, trigger_id)` on `bridge_delivery` is the idempotency primitive. It dedups: (a) outbox replay, (b) `publishAndStart` + declared `triggers:` collision (facade pre-writes a `status=delivered` row; drain's later INSERT fails UNIQUE and skips).
 
@@ -40,7 +40,7 @@ This skill is a single file pre-implementation. Load-on-touch depth comes from t
 | Implementing a specific PR in the stack | `docs/specs/BRIDGE-N.md` for that N |
 | Review-pass context / what NOT to re-open | `docs/specs/ADR-023-handoff.md` |
 | Events side (registry, directions, outbox) | `.claude/skills/events/SKILL.md` |
-| Jobs side (pools, orchestrator, worker loop) | `.claude/skills/jobs/SKILL.md` |
+| Jobs side (the engine, JobStarter, pools, job factories) | `.claude/skills/jobs/SKILL.md` |
 
 L1 routing files (e.g., `authoring-triggers.md`, `protocol-and-backends.md`, `facade-semantics.md`) will be added by the implementing session as depth accumulates — per the living-docs principle in CLAUDE.md, don't pre-author them.
 
@@ -48,29 +48,29 @@ L1 routing files (e.g., `authoring-triggers.md`, `protocol-and-backends.md`, `fa
 
 Decisions 1–7 from ADR-023. Read the ADR for rationale; this is the compact form:
 
-1. **Triggers are job-owned**, declared on `@JobHandler({ triggers: [...] })`. Events subsystem stays zero-knowledge about jobs. Do NOT declare triggers on the event YAML side.
-2. **The bridge IS the jobs worker** draining reserved pools. No separate worker process, no subscriber-in-events-subsystem implementation. Wrappers are normal `job_run` rows.
+1. **Triggers are job-owned**, declared with `jobTriggers('<job key>', [...])` beside the job's `defineJob`. Events subsystem stays zero-knowledge about jobs. Do NOT declare triggers on the event YAML side.
+2. **Exactly once is the event's transaction + the UNIQUE key**, never a dedupe key or window: the delivery row and the run commit together or not at all.
 3. **`map:` and `when:` are typed TS callbacks**, not YAML path strings. They get typechecked against `PayloadOfType<T>`.
-4. **`bridge_delivery.status` is four-state** (`pending | delivered | skipped | failed`). No auto-retry beyond the wrapper's own retry policy. No sweeper.
+4. **`bridge_delivery.status` is four-state** (`pending | delivered | skipped | failed`). A throw in `map` or a refused input rolls the event back; the drain retries the event. No sweeper.
 5. **Build-time validation against `eventRegistry`** at `just gen-all`. Unknown event types hard-error.
-6. **`when:` predicates ship in Phase 2.** If provided and returns false, wrapper records `status=skipped` with a reason and does not spawn the user job.
+6. **`when:` predicates.** If provided and false, the drain records `status=skipped` (`predicate_false`) and starts nothing.
 7. **`IEventFlow` facade** with two verbs — `publish()` and `publishAndStart()`. All request-path publishing goes through the facade, not through `IEventBus` directly. Subscribers (Tier 1) remain declarative and bypass the facade.
 
 ### `publishAndStart` + `triggers:` collision handling
 
 When a caller uses `publishAndStart(event, jobType, input)` AND the same `jobType` has a declared `triggers:` entry for `event.type`:
 
-- Facade pre-writes `bridge_delivery(event_id, trigger_id, user_run_id=eagerRunId, wrapper_run_id=null, status='delivered')` in the same transaction as the eager `orchestrator.start()`.
+- Facade pre-writes `bridge_delivery(event_id, trigger_id, user_run_id=eagerRunId, status='delivered')` in the same transaction as the eager `JobStarter.start()`.
 - Outbox drain later attempts to insert its own delivery for the same `(event_id, trigger_id)` → `UNIQUE` violation → drain catches per-trigger and skips (other triggers for the same event still fire normally — the drain uses per-trigger conflict handling, not per-event).
 - Result: exactly one user-job execution per (event, trigger) pair regardless of invocation path.
 
 ### Pool alignment guidance
 
-Reserved `events_*` pools get high concurrency (default 32) — they host cheap wrappers. User pools (`outbound_email`, `external_crm`, etc.) get concurrency tuned to the scarce resource behind them. Do NOT route user work into reserved pools (module-init rejects it).
+Concurrency is the jobs subsystem's: a step's limiter (`jobs.pools`). The bridge adds no pool.
 
 ### Ordering guarantees
 
-Default configuration gives parallelism, not ordering. For per-aggregate ordering, prefer `concurrency_key` on the user `@JobHandler` (granular, parallel across aggregates) over `pool.concurrency = 1` (blunt, serializes all wrappers in that direction).
+Default configuration gives parallelism, not ordering, and a bridge start carries no dedupe key, so per-aggregate ordering of bridge-started runs is not built (ADR-022's `concurrency_key` is gone); Tier 2 with a `dedupeKey` + `collision: 'queue'` is the way today.
 
 ### Audit-tier guard (defense-in-depth)
 
@@ -89,21 +89,22 @@ There is **no** `IObservability` read for audit-blocks today — see plan §AUDI
 
 ### Multi-tenancy
 
-When `multiTenant=true`, three enforcement sites need `assertTenantId` on entry:
-(a) `EventFlowService.publishAndStart`, (b) `BridgeDeliveryHandler.handle`, (c) `DrizzleBridgeDeliveryRepo.insertDelivery` (before write). Same error shape at every site — precedent: JOB-8 / SYNC-6.
+When `multiTenant=true`, two enforcement sites need `assertTenantId` on entry:
+(a) `EventFlowService.publishAndStart`, (c) `DrizzleBridgeDeliveryRepo.insertDelivery` (before write). ADR-022's (b),
+the wrapper handler, is gone (JOBS-3). Same error shape at every site — precedent: JOB-8 / SYNC-6.
 
 **Read methods deliberately bypass `assertTenantId`** (introduced via OBS-3, `IJobBridge.getStatusHistogram`). Reads with `tenantId === undefined` mean *cross-tenant view* by design — appropriate for framework-internal admin dashboards. Writes still fail loud on missing tenant context. When adding a new read method to `IJobBridge`, do NOT call `assertTenantId`; document the cross-tenant semantics in JSDoc instead. The asymmetry is intentional: writes have a single-tenant correctness invariant; reads can legitimately scope to all tenants.
 
 ## Do not
 
 - **Do not collapse the three tiers** into "the bridge is the only path." Tier 1 subscribers remain valid for cheap in-process reactions. Tier 2 (`publishAndStart`) is the request-path durable option. Tier 3 (`triggers:`) is async fanout. The right tool depends on durability + latency needs.
-- **Do not put user `@JobHandler` classes on reserved `events_*` pools.** Module init rejects it. Framework handlers live there.
+- **Do not make the bridge lean on a dedupe key or window** for exactly-once.
 - **Do not re-open ADR-023 decisions** without a new dated revision note. The ADR has been through a review pass and is locked for Phase 2. Additions / clarifications go in revision notes, not by rewriting decided sections.
 - **Do not ship a sweeper or retry scheduler** for `bridge_delivery.failed`. Explicitly out of scope for Phase 2 — mirrors events outbox stance.
 - **Do not build event-owned triggers** (`events/<name>.yaml` listing downstream jobs) as the primary authoring surface. Rejected in Alternative D. A future YAML authoring style can be added additively as a second codegen source into the same `bridgeRegistry`.
 - **Do not ship dual-mode triggers** (`mode: 'bridge' | 'immediate'`) or direction-based auto-routing. Rejected as alternatives F and G — use case doesn't exist; direction is provenance, not latency profile.
 - **Do not use `Date.now()` or randomness for `trigger_id`.** It's codegen-emitted as `<jobType>#<triggerIndex>`, stable across generations so replays resolve to the same `bridge_delivery` row.
-- **Do not drop `tenantId`** when `multiTenant=true`. Event metadata carries it from `TypedEventBus`; the bridge threads it into `job_run.tenant_id` via `orchestrator.start()`. Missing → `MissingTenantIdError` at any of the three enforcement sites.
+- **Do not drop `tenantId`** when `multiTenant=true`. Event metadata carries it from `TypedEventBus`; the drain passes it to `JobStarter.start` as the run's tenant. Missing → `MissingTenantIdError` at the facade or the repo.
 
 ## Current runtime snapshot
 
@@ -139,8 +140,8 @@ src/cli/commands/events/consumers.ts      # `codegen events consumers <type>` fa
 - `docs/specs/ADR-023-handoff.md` — review-pass summary + what the executing session should / should not do.
 - `docs/specs/BRIDGE-1.md` … `BRIDGE-9.md` — per-PR implementation specs (cut in parallel with this skill).
 - `.claude/skills/events/SKILL.md` + `phase-roadmap.md` + `directions-and-pools.md` — events side.
-- `.claude/skills/jobs/SKILL.md` — jobs side; reserved-pool rules and wrapper handler registration.
-- `docs/adrs/ADR-022-job-orchestration-domain-model.md` — reserved `events_*` pools originate here; `trigger_source='event'` + `trigger_ref=<event_id>` columns on `job_run` already anticipated this ADR.
+- `.claude/skills/jobs/SKILL.md` — jobs side (`@pattern-stack/jobs`, `JobStarter`, job factories).
+- `docs/specs/JOBS-3.md` — the jobs engine the bridge starts runs on (ADR-022 is superseded).
 - `docs/adrs/ADR-024-events-domain-formalization.md` — the typed event registry this ADR builds on.
 - `docs/adrs/ADR-039-declarative-time-based-scheduling.md` — **time as an event source.** A scheduled event (`schedule:` on its YAML) is materialised into the outbox by the `EventScheduler` and activates jobs through THIS bridge unchanged. Provenance: a bridge run from a scheduled tick reads `trigger_source='event'` (it came through an event); the clock origin lives on `domain_events.metadata.triggerSource='schedule'`, joinable via `trigger_ref → domain_events.id`. The bridge needs no scheduling awareness — a scheduled event is just an event.
 - `docs/adrs/ADR-026-job-observability.md` (not yet written) — selective job lifecycle events; flows back through this bridge.

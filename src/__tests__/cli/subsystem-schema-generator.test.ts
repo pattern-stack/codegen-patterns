@@ -44,10 +44,11 @@ describe('buildSubsystemSchemaBarrel', () => {
 			"export { domainEvents } from '@pattern-stack/codegen/runtime/subsystems/events/index';",
 		);
 
-		// jobs: 3 tables + 8 pgEnums.
-		expect(out.content).toContain('jobs, jobRuns, jobSteps');
-		expect(out.content).toContain('jobRunStatusEnum');
-		expect(out.content).toContain('triggerSourceEnum');
+		// jobs: the seven @pattern-stack/jobs tables, no pgEnums (JOBS-3).
+		expect(out.content).toContain(
+			'jobRuns, jobRunSteps, jobRunItems, jobRunChunks, jobRunEvents, jobRunValues, jobItemResults',
+		);
+		expect(out.content).not.toContain('jobRunStatusEnum');
 		expect(out.content).toContain(
 			"from '@pattern-stack/codegen/runtime/subsystems/jobs/index';",
 		);

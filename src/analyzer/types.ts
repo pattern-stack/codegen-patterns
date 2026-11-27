@@ -233,8 +233,6 @@ export interface ParsedEntity {
 	 * generated class's `patternConfig` property.
 	 */
 	patternConfig?: Record<string, unknown>;
-	/** Whether this entity is a valid scope target for job scoping (JOB-7). */
-	scopeable?: boolean;
 	/**
 	 * Which layers to generate (entity `expose:`, default
 	 * `['repository', 'rest', 'trpc']`). The frontend field-metadata emitter

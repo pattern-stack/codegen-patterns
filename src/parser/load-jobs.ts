@@ -119,7 +119,7 @@ export function loadJobs(jobsDir: string): LoadJobsResult {
 		const { definition } = result;
 		const baseName = stripYamlExt(filePath);
 
-		// Filename ↔ type match. The job type IS the @JobHandler('<type>')
+		// Filename ↔ type match. The job type IS the `defineJob({ key })`
 		// registry key; a drift between filename and type is a silent footgun.
 		if (baseName !== definition.type) {
 			issues.push({

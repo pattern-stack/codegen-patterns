@@ -7,18 +7,12 @@
  *   - `forRoot({ backend: 'drizzle' })` boots against a mocked DRIZZLE
  *     token; `BRIDGE_DELIVERY_REPO` is a `DrizzleBridgeDeliveryRepo`.
  *   - `multiTenant: true` populates `BRIDGE_MULTI_TENANT` correctly.
- *   - Boot-time pool check (`onModuleInit`):
- *       - `JobWorkerModule` not present → no throw (skipped).
- *       - `JobWorkerModule` present with all three reserved pools → no throw.
- *       - `JobWorkerModule` present missing one or more reserved pools →
- *         throws `BridgeReservedPoolsNotPolledError` listing every missing
- *         pool.
+ *   - (JOBS-3: there is no reserved-pool boot check; the drain starts each
+ *     run with `JobStarter`, so there are no `events_*` pools to poll.)
  *   - Site (c) — `DrizzleBridgeDeliveryRepo.insertDelivery` throws
  *     `MissingTenantIdError` BEFORE any SQL is issued when
- *     `multiTenant=true` + `tenantId === undefined`. (Sites (a) and (b)
- *     are pinned by BRIDGE-7's `event-flow.service.spec.ts` and BRIDGE-5's
- *     `bridge-delivery-handler.spec.ts` and continue to pass post-helper
- *     refactor.)
+ *     `multiTenant=true` + `tenantId === undefined`. (Site (a) is pinned
+ *     by `event-flow.service.spec.ts`.)
  */
 import 'reflect-metadata';
 import { describe, expect, it, mock } from 'bun:test';
@@ -33,8 +27,6 @@ import {
   BRIDGE_MULTI_TENANT,
   BRIDGE_OUTBOX_DRAIN_HOOK,
   BRIDGE_REGISTRY,
-  BRIDGE_RESERVED_POOLS,
-  BridgeReservedPoolsNotPolledError,
   DrizzleBridgeDeliveryRepo,
   EVENT_FLOW,
   EventFlowService,
@@ -44,12 +36,8 @@ import {
   type BridgeRegistry,
 } from '../../../../runtime/subsystems/bridge';
 import { EventsModule } from '../../../../runtime/subsystems/events/events.module';
-import { JobsDomainModule } from '../../../../runtime/subsystems/jobs/jobs-domain.module';
+import { JobStarter } from '../../../../runtime/subsystems/jobs/job-starter';
 import { DRIZZLE } from '../../../../runtime/constants/tokens';
-import {
-  JOB_WORKER_MODULE_OPTIONS,
-  type JobWorkerModuleOptions,
-} from '../../../../runtime/subsystems/jobs/job-worker.module';
 import type { DrizzleClient } from '../../../../runtime/types/drizzle';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -80,17 +68,34 @@ import type { DrizzleClient } from '../../../../runtime/types/drizzle';
 class FakeDrizzleStubModule {}
 
 /**
+ * The jobs side BridgeModule needs: `JobStarter` (which `JobsEngineModule` provides, globally). A stub, since these
+ * tests never start a run and `JobsEngineModule` needs a Postgres store.
+ */
+@Global()
+@Module({
+  providers: [
+    {
+      provide: JobStarter,
+      useValue: {
+        has: () => true,
+        start: () => {
+          throw new Error('stub JobStarter — no run is started in this test');
+        },
+      },
+    },
+  ],
+  exports: [JobStarter],
+})
+class FakeJobsModule {}
+
+/**
  * Mount the prerequisite sibling modules (events + jobs) in memory mode so
- * `BridgeModule` can resolve `EVENT_BUS` / `JOB_ORCHESTRATOR` / etc. via DI.
- * Mirrors the `EventsModule + JobsDomainModule + BridgeModule` layering the
+ * `BridgeModule` can resolve `EVENT_BUS` / `JobStarter` / etc. via DI.
+ * Mirrors the `EventsModule + JobsEngineModule + BridgeModule` layering the
  * consumer wires per ADR-023.
  */
 function siblingsMemory() {
-  return [
-    FakeDrizzleStubModule,
-    EventsModule.forRoot({ backend: 'memory' }),
-    JobsDomainModule.forRoot({ backend: 'memory' }),
-  ];
+  return [FakeDrizzleStubModule, EventsModule.forRoot({ backend: 'memory' }), FakeJobsModule];
 }
 
 /**
@@ -107,20 +112,6 @@ function makeCapturingDb() {
   return { db, captures };
 }
 
-/**
- * Provide a mocked `JOB_WORKER_MODULE_OPTIONS` so `BridgeModule.onModuleInit`
- * sees an "active" worker module without us actually mounting
- * `JobWorkerModule.forRoot()` (which would spin up real workers).
- */
-function workerOptionsModule(opts: JobWorkerModuleOptions) {
-  @Global()
-  @Module({
-    providers: [{ provide: JOB_WORKER_MODULE_OPTIONS, useValue: opts }],
-    exports: [JOB_WORKER_MODULE_OPTIONS],
-  })
-  class FakeWorkerOptionsModule {}
-  return FakeWorkerOptionsModule;
-}
 
 // ─── Memory backend ──────────────────────────────────────────────────────────
 
@@ -255,7 +246,7 @@ describe('BridgeModule.forRoot({ backend: "drizzle" })', () => {
       imports: [
         FakeDrizzleModule,
         EventsModule.forRoot({ backend: 'drizzle' }),
-        JobsDomainModule.forRoot({ backend: 'drizzle' }),
+        FakeJobsModule,
         BridgeModule.forRoot({ backend: 'drizzle' }),
       ],
     }).compile();
@@ -269,148 +260,6 @@ describe('BridgeModule.forRoot({ backend: "drizzle" })', () => {
     expect(moduleRef.get(BRIDGE_MULTI_TENANT)).toBe(false);
 
     await moduleRef.close();
-  });
-});
-
-// ─── Boot-time reserved-pool check ───────────────────────────────────────────
-
-describe('BridgeModule.onModuleInit — reserved-pool boot check', () => {
-  it('does not throw when JobWorkerModule is not wired (token absent)', async () => {
-    // No FakeWorkerOptionsModule → JOB_WORKER_MODULE_OPTIONS is undefined →
-    // the @Optional() inject resolves to undefined → boot check is skipped.
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        ...siblingsMemory(),
-        BridgeModule.forRoot({ backend: 'memory' }),
-      ],
-    }).compile();
-
-    await expect(moduleRef.init()).resolves.toBeDefined();
-    await moduleRef.close();
-  });
-
-  it('does not throw when JobWorkerModule polls all three reserved pools', async () => {
-    const FakeWorker = workerOptionsModule({
-      mode: 'embedded',
-      backend: 'memory',
-      pools: ['interactive', 'batch', ...BRIDGE_RESERVED_POOLS],
-    });
-
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        FakeWorker,
-        ...siblingsMemory(),
-        BridgeModule.forRoot({ backend: 'memory' }),
-      ],
-    }).compile();
-
-    await expect(moduleRef.init()).resolves.toBeDefined();
-    await moduleRef.close();
-  });
-
-  it('short-circuits to pass when worker module sets allPools (BULLMQ-1)', async () => {
-    const FakeWorker = workerOptionsModule({
-      mode: 'standalone',
-      backend: 'memory',
-      allPools: true,
-      // No explicit reserved pools listed — `allPools` proves they are polled.
-    });
-
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        FakeWorker,
-        ...siblingsMemory(),
-        BridgeModule.forRoot({ backend: 'memory' }),
-      ],
-    }).compile();
-
-    await expect(moduleRef.init()).resolves.toBeDefined();
-    await moduleRef.close();
-  });
-
-  it('throws BridgeReservedPoolsNotPolledError when reserved pools are missing', async () => {
-    const FakeWorker = workerOptionsModule({
-      mode: 'embedded',
-      backend: 'memory',
-      pools: ['interactive', 'batch'], // no reserved pools at all
-    });
-
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        FakeWorker,
-        ...siblingsMemory(),
-        BridgeModule.forRoot({ backend: 'memory' }),
-      ],
-    }).compile();
-
-    let caught: unknown = null;
-    try {
-      await moduleRef.init();
-    } catch (err) {
-      caught = err;
-    }
-    expect(caught).toBeInstanceOf(BridgeReservedPoolsNotPolledError);
-    const msg = (caught as Error).message;
-    for (const p of BRIDGE_RESERVED_POOLS) {
-      expect(msg).toContain(p);
-    }
-    expect((caught as BridgeReservedPoolsNotPolledError).missingPools).toEqual([
-      ...BRIDGE_RESERVED_POOLS,
-    ]);
-
-    await moduleRef.close().catch(() => {});
-  });
-
-  it('throws naming only the missing pool when one of the three is absent', async () => {
-    const FakeWorker = workerOptionsModule({
-      mode: 'embedded',
-      backend: 'memory',
-      // Two of three reserved pools — `events_outbound` is missing.
-      pools: ['interactive', 'events_inbound', 'events_change'],
-    });
-
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        FakeWorker,
-        ...siblingsMemory(),
-        BridgeModule.forRoot({ backend: 'memory' }),
-      ],
-    }).compile();
-
-    let caught: unknown = null;
-    try {
-      await moduleRef.init();
-    } catch (err) {
-      caught = err;
-    }
-    expect(caught).toBeInstanceOf(BridgeReservedPoolsNotPolledError);
-    expect(
-      (caught as BridgeReservedPoolsNotPolledError).missingPools,
-    ).toEqual(['events_outbound']);
-    expect((caught as Error).message).toContain('events_outbound');
-
-    await moduleRef.close().catch(() => {});
-  });
-
-  it('treats undefined pools as "no pools" (defensive — same throw as empty list)', async () => {
-    const FakeWorker = workerOptionsModule({
-      mode: 'embedded',
-      backend: 'memory',
-      // pools omitted entirely
-    });
-
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        FakeWorker,
-        ...siblingsMemory(),
-        BridgeModule.forRoot({ backend: 'memory' }),
-      ],
-    }).compile();
-
-    await expect(moduleRef.init()).rejects.toBeInstanceOf(
-      BridgeReservedPoolsNotPolledError,
-    );
-    await moduleRef.close().catch(() => {});
   });
 });
 

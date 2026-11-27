@@ -234,9 +234,9 @@ export function withSuperuserScope<T>(
 // ============================================================================
 
 /**
- * Sentinel actor for work that no user initiated — the background worker
- * entering the ALS from a job run's own tenant (see the jobs subsystem's
- * `JobWorker.processRun`). `job_run` carries a tenant but no user, so the
+ * Sentinel actor for work that no user initiated — a job run entering the ALS
+ * from its own tenant (see the jobs subsystem's `tenantRunScope`, JOBS-3). A
+ * run carries a tenant but no user, so the
  * audit-trail `userId` field needs a value that is obviously not a person.
  *
  * It is paired with `scope: 'superuser'` at every site that uses it: a job is a
@@ -251,8 +251,8 @@ export const SYSTEM_ACTOR_ID = '__system__';
  * `scopeEnforcement: 'strict'` — i.e. a context is active but carries no
  * `tenantId`, or `withAllTenants` is in effect on a WRITE.
  *
- * Mirrors the jobs subsystem's error of the same name (`jobs-errors.ts`) in
- * shape and three-state contract, but is deliberately a SEPARATE class:
+ * Mirrored ADR-022's jobs subsystem error of the same name in shape and
+ * three-state contract, but is deliberately a SEPARATE class:
  * `base-classes` must not depend on a subsystem (the arrow points the other
  * way — `auth` imports this file), and the two carry different payloads.
  *

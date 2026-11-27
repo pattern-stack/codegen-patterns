@@ -498,7 +498,7 @@ function assertCustomLayout(projectDir: string): void {
     }
   }
   const main = fs.readFileSync(path.join(projectDir, P.backendSrc, 'main.ts'), 'utf8');
-  if (!main.includes('JOBS — Embedded worker mode')) {
+  if (!main.includes('JOBS — the job executor (@pattern-stack/jobs, JOBS-3)')) {
     throw new Error(`layout custom: the jobs main.ts hook did not land in ${P.backendSrc}/main.ts`);
   }
 
@@ -690,8 +690,7 @@ async function main(): Promise<number> {
     if (exitCode === 0) {
       log('booting AppModule (NestFactory DI resolution gate)');
       // CFG-1: the custom layout declares non-default `jobs.pools`; the booted
-      // app's JOB_POOL_CONFIG must carry them. GEN-0: and the
-      // `jobs.extensions.drizzle` set after install, via JOBS_LISTEN_NOTIFY.
+      // app's JOBS_LIMITER_CONFIG must carry them as limiters (JOBS-3).
       const boot = runArgv(
         [
           'bun',
@@ -699,7 +698,7 @@ async function main(): Promise<number> {
           result.projectDir,
           `${P.backendSrc}/app.module.ts`,
           ...(layoutArg === 'custom'
-            ? ['--expect-pools', JSON.stringify(CUSTOM_LAYOUT_BOOT_CONFIG.jobsPools), '--expect-listen-notify']
+            ? ['--expect-pools', JSON.stringify(CUSTOM_LAYOUT_BOOT_CONFIG.jobsPools)]
             : []),
         ],
         result.projectDir,
@@ -716,22 +715,21 @@ async function main(): Promise<number> {
     }
 
     // 10b. GEN-0 (#652) — the standalone worker.ts was emitted (emit-once) by
-    // `subsystem install jobs` BEFORE the custom layout set
-    // `jobs.extensions.drizzle`; after regeneration its resolved
-    // `JobWorkerModule` options must carry the new value.
+    // `subsystem install jobs` BEFORE the custom layout set `jobs.pools` and
+    // `jobs.poll_interval_ms`; it must carry no config of its own (JOBS-3: it
+    // boots AppModule and starts JOBS_EXECUTOR), and the regenerated
+    // app-config it runs on must carry the new values.
     if (exitCode === 0 && layoutArg === 'custom') {
-      log('loading worker.ts (GEN-0: the worker options follow the config)');
-      const { jobsDrizzle, jobsPools } = CUSTOM_LAYOUT_BOOT_CONFIG;
+      log('loading worker.ts (GEN-0: the worker runs on the regenerated config)');
+      const { jobsExecutor, jobsPools } = CUSTOM_LAYOUT_BOOT_CONFIG;
       const worker = runArgv(
         [
           'bun',
           path.join(import.meta.dir, 'verify-worker.ts'),
           result.projectDir,
           `${P.backendSrc}/worker.ts`,
-          JSON.stringify({
-            drizzle: { listenNotify: jobsDrizzle.listen_notify, pollIntervalMs: jobsDrizzle.poll_interval_ms },
-            pools: jobsPools,
-          }),
+          `${P.generated}/app-config.ts`,
+          JSON.stringify({ pollMs: jobsExecutor.poll_interval_ms, pools: jobsPools }),
         ],
         result.projectDir,
       );

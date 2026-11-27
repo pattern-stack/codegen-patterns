@@ -9,7 +9,7 @@
  * warning and exiting 0.
  *
  * JOBS-1 (#660) extends the contract to every `entity new` post-step: the
- * scope-entity-type union, event codegen, the bridge registry, orchestration
+ * event codegen, the bridge registry, orchestration
  * modules, the frontend tree, and the provider / adapter / assembly / job
  * handler emitters.
  *

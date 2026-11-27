@@ -94,7 +94,7 @@ JWT scheme.
 |---|---|
 | Author / change an entity YAML (fields, families, queries, EAV, relationships) | the `entities` skill |
 | Install or wire an infrastructure subsystem; get the `forRoot` registration order right | the `subsystems` skill |
-| Write a background `@JobHandler`, configure pools, set concurrency/ordering | the `jobs` skill |
+| Write a background job (`defineJob` / `jobFactory`), configure pools, ordering | the `jobs` skill |
 | Author a domain event, publish via the outbox, use the typed event bus | the `events` skill |
 | React to an event with a durable async job (the event-to-job bridge) | the `bridge` skill |
 | Pull/push data from an external system (`IChangeSource` / `IIntegrationSink`) | the `integration` skill |

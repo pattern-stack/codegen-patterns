@@ -189,8 +189,8 @@ test-family:
 test-post-publish:
     bun test/post-publish/run-tarball-smoke.ts
 
-# Run scaffold integration tests (requires Docker)
-test-integration:
+# Run scaffold integration tests (requires Docker). drizzle-kit reads @pattern-stack/jobs' built tables (JOBS-3).
+test-integration: build-jobs
     bun test/scaffold/run-integration.ts
 
 # Run integration tests, skip codegen (already generated)
@@ -213,19 +213,21 @@ test-obs-integration:
 test-semantic-integration:
     bun test "{{justfile_directory()}}/test/integration/semantic-fanout.drizzle.integration.test.ts"
 
-# JOB-FN-KEY (0.17.1) — function-form concurrency keys serialize at the DB
-# level against a real Postgres (testcontainers). Spins its own ephemeral
-# postgres:16; skips gracefully when Docker is unavailable. NOT in test-unit/CI
-# unit run. Proves two orchestrator instances over one DB persist matching,
-# non-null concurrency_keys + the queue-release gate holds the second behind
-# the first (the swe-brain ADR-0009 Amendment B §B3 regression).
-test-jobs-fnkey-integration:
-    bun test "{{justfile_directory()}}/test/integration/jobs-fn-concurrency-key.drizzle.integration.test.ts"
+# @pattern-stack/jobs (JOBS-3, packages/jobs): its tests, its typecheck with the tests, and its build. Part of test-all.
+test-jobs:
+    cd "{{justfile_directory()}}/packages/jobs" && bun test src
+    cd "{{justfile_directory()}}/packages/jobs" && "{{justfile_directory()}}/node_modules/.bin/tsc" -p tsconfig.check.json
+    just build-jobs
+
+# @pattern-stack/jobs on real Postgres (testcontainers, needs Docker): PostgresJobStore passes storeContract over
+# the package's own tables, and the executor's kill-and-restart and two-replica cases. In CI's test-integration job.
+test-jobs-integration:
+    bun test "{{justfile_directory()}}/test/integration/jobs-postgres-store.integration.test.ts"
 
 # LISTEN-NOTIFY-2 (0.17.2) — `app.close()` leaves ZERO surviving LISTEN %wake%
-# backends. Boots a real Nest context with listen_notify ON (jobs + events)
+# backends. Boots a real Nest context with the events drainer's listen_notify ON
 # against a real Postgres (testcontainers), closes it, and asserts pg_stat_activity
-# shows no orphaned listener sockets. Spins its own ephemeral postgres:16; skips
+# shows no orphaned listener sockets (JOBS-3: the jobs listeners are gone). Spins its own ephemeral postgres:16; skips
 # gracefully when Docker is unavailable. NOT in test-unit/CI unit run. Proves the
 # swe-brain boot-check / CI hang (a stop() racing PgNotifyListener.connect()) is gone.
 test-listen-notify-leak-integration:
@@ -234,8 +236,13 @@ test-listen-notify-leak-integration:
 # Typecheck the generator itself (`tsc --noEmit -p tsconfig.build.json`).
 # In `test-all` because that is what CI runs: this gate was red on main for
 # an unknown span precisely because nothing in CI executed it (GATE-1, #599).
-typecheck:
+# @pattern-stack/jobs first: the runtime reads its built declarations (JOBS-3).
+typecheck: build-jobs
     bun run typecheck
+
+# Builds packages/jobs' dist (its declarations are what codegen's runtime and the generated apps type-check against).
+build-jobs:
+    cd "{{justfile_directory()}}/packages/jobs" && rm -rf dist && "{{justfile_directory()}}/node_modules/.bin/tsc" -p tsconfig.json
 
 # Studio UI gate — `tsc` over `tools/studio` first, then its unit tests (the
 # graph → xyflow adapter, the Zod-issue → editor-line mapping, the API-surface
@@ -262,7 +269,7 @@ test-studio:
 # Run all tests. Docker-free by design — `just test-integration` needs Docker
 # and runs as its own CI job (see .github/workflows/ci.yml) so a Docker flake
 # cannot mask this suite.
-test-all: typecheck test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-capability test-junction test-sqlite test-integration-emit test-smoke-integration test-smoke-frontend test-studio
+test-all: typecheck test-unit test-jobs test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-capability test-junction test-sqlite test-integration-emit test-smoke-integration test-smoke-frontend test-studio
 
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 

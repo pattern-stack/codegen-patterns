@@ -376,12 +376,16 @@ Five subsystems following Protocol → Backend → Factory pattern:
 | Subsystem | Protocol | Default Backend | Test Backend |
 |-----------|----------|----------------|--------------|
 | Events | `IEventBus` | Drizzle (outbox) | Memory |
-| Jobs | `IJobQueue` | Drizzle (pg-boss) | Memory |
+| Jobs | `@pattern-stack/jobs` (`defineJob`, `JobStarter`; JOBS-3) | Postgres store + in-process executor | `MemoryJobStore` (package `./testing`) |
 | Cache | `ICacheService` | Drizzle (TTL) | Memory |
 | Storage | `IStorageService` | Local filesystem | Memory |
 | Observability | `IObservabilityService` | Drizzle (read-only facade) | Memory |
 
-All use `DynamicModule.forRoot({ backend })` with `global: true`.
+All use `DynamicModule.forRoot({ backend })` with `global: true`, except jobs: `JobsEngineModule.forRoot({ definitions, worker, limiters, inProcess })`
+(`runtime/subsystems/jobs/`), the Nest host for the `packages/jobs` workspace package (spec `docs/specs/JOBS-3.md`,
+app upgrade `docs/MIGRATION-jobs-engine.md`). Jobs are `defineJob` exports under `<backend_src>/jobs`, listed in the
+generated `<generated>/jobs.ts`; the bridge's triggers are `jobTriggers('<key>', [...])` beside them, and the outbox
+drain starts each trigger's run in the event's own transaction.
 
 ### Integration Codegen (RFC-0001/0002/0003)
 

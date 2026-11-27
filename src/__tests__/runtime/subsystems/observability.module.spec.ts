@@ -72,8 +72,8 @@ describe('ObservabilityModule.forRoot() — DI resolution', () => {
     // stops implementing the port, the test fails before method calls
     // even execute.
     const typed = obs as IObservability;
-    expect(typeof typed.getPoolDepths).toBe('function');
-    expect(typeof typed.getRecentFailedJobs).toBe('function');
+    // JOBS-3: the job reads are gone (JobsService is the operator view of runs).
+    expect((typed as unknown as Record<string, unknown>).getPoolDepths).toBeUndefined();
     expect(typeof typed.getBridgeDeliveryHistogram).toBe('function');
     expect(typeof typed.getRecentIntegrationRuns).toBe('function');
     expect(typeof typed.getCursors).toBe('function');
@@ -113,8 +113,6 @@ describe('ObservabilityModule.forRoot() — missing siblings', () => {
 
     const obs = moduleRef.get(OBSERVABILITY) as IObservability;
 
-    expect(await obs.getPoolDepths()).toEqual([]);
-    expect(await obs.getRecentFailedJobs(10)).toEqual([]);
     expect(await obs.getBridgeDeliveryHistogram(1)).toEqual({
       pending: 0,
       delivered: 0,

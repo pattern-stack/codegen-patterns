@@ -1,7 +1,8 @@
 /**
  * Jobs emission write-orchestration (RFC-0005, breakdown #7b).
  *
- * Wraps the pure `generateJobHandler{Base,Subclass}` emitters with the file
+ * Wraps the pure `generateJobHandler{Base,Subclass}` emitters (names kept from
+ * ADR-022; they emit a `defineJob` now, JOBS-3) with the file
  * layout + emit-once write logic — exactly as `emitAdapters` wraps the pure sink
  * generators. Per job, into `<backend_src>/jobs/`:
  *   - `<type>.job.generated.ts` — `@generated`, written via `writeIfChanged`
@@ -11,7 +12,7 @@
  *
  * The flat `<backend_src>/jobs/` layout is load-bearing: it is the same dir the
  * bridge-registry generator scans. Job triggers reach the bridge DECLARATIVELY
- * (RFC-0005 fork 1), so the emitted `@JobHandler` carries no `triggers` and the
+ * (RFC-0005 fork 1), so the emitted job carries no `jobTriggers(...)` and the
  * scan never double-registers them.
  */
 

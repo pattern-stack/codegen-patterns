@@ -6,64 +6,26 @@ skip_if: "jobs:"
 ---
 
 jobs:
-  # ── Backend selection (core/extension model — see CLAUDE.md) ──
-  # 'drizzle' is the only Phase 1 backend. Future backends ('bullmq', etc.)
-  # implement the same core IJobOrchestrator contract but expose their own
-  # native features as opt-in extensions below.
-  backend: drizzle
+  # @pattern-stack/jobs, run in process (JOBS-3): jobs are `defineJob` values under src/jobs/, the store is this
+  # app's Postgres, and the executor sweeps open runs and leases each one, so replicas never advance a run twice.
 
-  # ── Backend-specific extensions (typed per backend) ──
-  # Each backend may publish its own extension keys. An unrecognised key is
-  # a codegen.config.yaml validation error naming the key.
-  extensions:
-    drizzle:
-      # listen_notify: true        # Postgres LISTEN/NOTIFY wakes the worker the
-      #                            # instant a job is enqueued (in-tx pg_notify,
-      #                            # delivered on commit), ALONGSIDE interval
-      #                            # polling — polling stays the safety net, so a
-      #                            # lost notify costs latency, never work.
-      #                            # Sub-500ms claim vs ~1s/poll-hop. Off by
-      #                            # default. REQUIRES a direct (or session-mode)
-      #                            # connection — session-scoped LISTEN does NOT
-      #                            # survive a transaction-mode pooler (PgBouncer
-      #                            # pool_mode=transaction); behind one, notifies
-      #                            # are simply never received and the worker
-      #                            # degrades to polling.
-      poll_interval_ms: 1000       # interval-poll heartbeat (the wake fallback)
-      # ── Claim lease / heartbeat (CLAIM-HB-1) ──
-      # A live worker renews `claimed_at` for its in-flight runs every
-      # `claim_heartbeat_interval_ms`, so a legitimately long-running handler is
-      # NEVER swept; only a row whose worker died ages past
-      # `stale_threshold_ms` and is reset to `pending` by the sweeper. Raise the
-      # threshold only if you expect worker-crash recovery to wait longer; the
-      # heartbeat (not the threshold) is what protects long handlers.
-      # stale_threshold_ms: 300000          # dead-worker recovery window (5 min)
-      # stale_sweeper_interval_ms: 60000    # how often the sweeper scans
-      # claim_heartbeat_interval_ms: 100000 # lease renewal cadence
-      #                                     # (default = stale_threshold_ms / 3)
-    # bullmq:                      # Example shape for Phase 6+ BullMQ backend.
-    #   bull_board:                # Mount Bull Board admin UI.
-    #     enabled: true
-    #     mount_path: /admin/queues
-    #   redis_url: redis://...
-
-  # ── Multi-tenancy (JOB-8) ──
-  multi_tenant: false              # true → enforce tenantId on all calls
+  # A run's tenant is the one its start names (JobStarter.start({ tenantId }); the bridge passes the event's);
+  # a start that names none runs as SYSTEM_TENANT, the null tenant partition.
 
   # ── Worker topology ──
-  worker_mode: embedded            # embedded | standalone
+  worker_mode: embedded            # embedded (this process runs the executor) | standalone (bun src/worker.ts does)
 
-  # ── Pools (logical lanes; one worker per pool) ──
-  # Five framework pools always exist: events_inbound (20), events_change (30)
-  # and events_outbound (10) — reserved for the events outbox drain — plus
-  # interactive (20) and batch (5, the @JobHandler default). A framework pool
-  # may tune `concurrency` / `description`; its `queue` and `reserved` are
-  # fixed. A pool of your own needs `queue` + `concurrency`. The generator
-  # validates this block and writes it into <generated>/app-config.ts — edit,
-  # then regenerate (`codegen entity new --all`); the app never reads this file.
+  # ── Pools: limiters a step names (`step({ limiter: 'batch' })`) ──
+  # `interactive` (20) and `batch` (5) always exist; set one to change its cap, or add your own. Priority is a pool:
+  # work that must not wait behind other work names a pool nothing else fills. A step naming an undeclared pool stops
+  # the boot. The generator writes this block into <generated>/app-config.ts; the app never reads this file.
   # pools:
   #   batch:
   #     concurrency: 10
   #   reports:
-  #     queue: jobs-reports
   #     concurrency: 2
+
+  # ── The executor (defaults shown) ──
+  # poll_interval_ms: 250          # how often an idle executor looks for work
+  # open_sweep_every: 4            # polls between open-run sweeps (finds runs other processes started)
+  # version_grace_ms: 0            # set above a deploy's length when replicas roll: the old version's open runs drain

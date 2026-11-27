@@ -16,16 +16,17 @@
  *      other triggers for the same event normally.
  *
  * Status values:
- *   - `pending`   — wrapper run exists; user job not yet started.
+ *   - `pending`   — written; the user job not yet started (the drain marks it
+ *                   in the same transaction, so a committed row is rarely
+ *                   still pending).
  *   - `delivered` — user job started; `user_run_id` populated.
  *   - `skipped`   — intentional no-op (`when:` returned false, or
  *                   facade-eager path pre-empted the bridge spawn).
- *   - `failed`    — wrapper exhausted retry policy; no auto-retry past that
+ *   - `failed`    — recorded by `IJobBridge.markFailed`; no auto-retry
  *                   (mirrors events outbox stance — ops eyes only).
  *
- * `wrapper_run_id` is **nullable**: the facade-eager path (Case B) pre-writes
- * `bridge_delivery` with no wrapper. The bridge-drain path always populates
- * it.
+ * There is no `wrapper_run_id` (JOBS-3): the drain starts the user's run
+ * directly, in the event's transaction.
  *
  * `tenant_id` is emitted **unconditionally and nullable** (per JOB-8
  * 2026-04-20 reversal); enforcement is service-layer (BRIDGE-8) gated on the
@@ -56,7 +57,6 @@ import { sql } from 'drizzle-orm';
 import type { InferSelectModel } from 'drizzle-orm';
 
 import { domainEvents } from '../events/domain-events.schema';
-import { jobRuns } from '../jobs/job-orchestration.schema';
 
 // ─── Enum ───────────────────────────────────────────────────────────────────
 
@@ -84,20 +84,17 @@ export const bridgeDelivery = pgTable(
      */
     triggerId: text('trigger_id').notNull(),
     /**
-     * Wrapper `job_run.id` (the framework `@framework/bridge_delivery` run
-     * that drove this delivery). Nullable: the facade-eager path
-     * (`publishAndStart` Case B) pre-writes a delivered row with no wrapper.
+     * The user's `job_runs.id`, started in the same transaction that wrote this row (JOBS-3: no wrapper run).
+     * Null for `skipped` and `failed` deliveries. A dedupe key may answer with a run that was already open, so two
+     * deliveries can name one run. No foreign key: the job tables are `@pattern-stack/jobs`', and this file is vendored
+     * by an events-only install too (the events backend types against the bridge protocol), which has no jobs
+     * package. The row and the run commit in one transaction and the engine never deletes a run.
      */
-    wrapperRunId: uuid('wrapper_run_id').references(() => jobRuns.id),
-    /**
-     * Spawned user `job_run.id`. Null until status is `delivered`; remains
-     * null for `skipped` and `failed` deliveries.
-     */
-    userRunId: uuid('user_run_id').references(() => jobRuns.id),
+    userRunId: uuid('user_run_id'),
     status: bridgeDeliveryStatusEnum('status').notNull().default('pending'),
     /** Populated when status=`skipped` (e.g. `'when_returned_false'`, `'trigger_unregistered'`). */
     skipReason: text('skip_reason'),
-    /** Populated when status=`failed`. Mirrors `job_run.error` shape. */
+    /** Populated when status=`failed`. */
     error: jsonb('error').$type<Record<string, unknown>>(),
     /**
      * Emitted unconditionally and nullable (JOB-8 / SYNC-6 precedent).

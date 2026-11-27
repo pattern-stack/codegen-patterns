@@ -5,10 +5,10 @@
  *
  *   - `IJobBridge`  — repo-shaped contract over the `bridge_delivery`
  *                     ledger. Backends: memory (BRIDGE-3), Drizzle
- *                     (BRIDGE-4). Consumed by the framework
- *                     `BridgeDeliveryHandler` (BRIDGE-5), the modified
- *                     outbox drain (BRIDGE-4), and the `EventFlowService`
- *                     facade for Case B pre-writes (BRIDGE-7).
+ *                     (BRIDGE-4). Consumed by the `EventFlowService`
+ *                     facade for Case B pre-writes (BRIDGE-7) and by
+ *                     observability; the outbox drain hook writes the same
+ *                     table through the event's transaction.
  *
  *   - `IEventFlow`  — the developer-facing facade from ADR-023 §Decision 7.
  *                     Two verbs: `publish` and `publishAndStart`. All
@@ -44,7 +44,7 @@ import type {
  * Insert payload for `IJobBridge.insertDelivery`. Derived from the
  * Drizzle schema so the contract stays in sync with the table — adding a
  * column to `bridge_delivery` propagates to every backend without manual
- * sync. `id`, `attemptedAt` carry DB defaults; `wrapperRunId`, `userRunId`,
+ * sync. `id`, `attemptedAt` carry DB defaults; `userRunId`,
  * `skipReason`, `error`, `tenantId`, `deliveredAt` are nullable per BRIDGE-1.
  */
 export type BridgeDeliveryInsert = InferInsertModel<typeof bridgeDelivery>;
@@ -88,9 +88,7 @@ export interface IJobBridge {
   /**
    * Lookup a delivery by its idempotency key. Returns `null` when no row
    * matches. Used in tests / dashboards for the canonical (event, trigger)
-   * lookup — distinct from `findDeliveryById`, which is what the
-   * `BridgeDeliveryHandler` (BRIDGE-5) uses given that the wrapper input
-   * only carries the delivery id.
+   * lookup.
    */
   findDelivery(
     eventId: string,
@@ -100,15 +98,14 @@ export interface IJobBridge {
   /**
    * Lookup a delivery by primary key. Drizzle backend (BRIDGE-4):
    * `SELECT … WHERE id = ? LIMIT 1`. Memory backend (BRIDGE-3): linear
-   * scan (small N). Returns `null` when no row matches — handler treats
-   * that as `delivery_row_missing` and the wrapper completes cleanly.
+   * scan (small N). Returns `null` when no row matches.
    */
   findDeliveryById(id: string): Promise<BridgeDeliveryRecord | null>;
 
   /**
    * Transition `pending` → `delivered`, populating `user_run_id` and
-   * `delivered_at`. Called by `BridgeDeliveryHandler` after
-   * `orchestrator.start(userJob)` returns.
+   * `delivered_at`. (The outbox drain hook writes the same transition
+   * inline, in the event's transaction; JOBS-3.)
    */
   markDelivered(
     id: string,
@@ -117,10 +114,9 @@ export interface IJobBridge {
   ): Promise<void>;
 
   /**
-   * Transition `pending` → `skipped`, populating `skip_reason`. Called by
-   * `BridgeDeliveryHandler` when the trigger's `when:` predicate returns
-   * `false` or when the trigger no longer exists in the registry (rename
-   * scenario from ADR-023 §Consequences).
+   * Transition `pending` → `skipped`, populating `skip_reason`: the
+   * trigger's `when:` predicate returned `false`, or its job is not
+   * registered (rename scenario from ADR-023 §Consequences).
    */
   markSkipped(
     id: string,
@@ -129,8 +125,7 @@ export interface IJobBridge {
   ): Promise<void>;
 
   /**
-   * Transition `pending` → `failed`, populating `error`. Called by the
-   * wrapper after its retry policy is exhausted; surfaces in ops
+   * Transition `pending` → `failed`, populating `error`; surfaces in ops
    * dashboards via the `idx_bridge_delivery_status` partial index.
    */
   markFailed(
@@ -143,7 +138,7 @@ export interface IJobBridge {
    * Count bridge_delivery rows by status, filtered to rows where
    * attemptedAt >= (now - windowHours) and (optionally) tenantId matches.
    *
-   * Tenant semantics mirror the jobs subsystem (job-orchestrator.protocol.ts):
+   * Tenant semantics:
    *   - tenantId omitted or explicit undefined: no tenant filter (counts across
    *     all tenants — appropriate for framework-internal admin dashboards).
    *   - tenantId === null: match rows where tenant_id IS NULL (cross-tenant
@@ -177,18 +172,16 @@ export interface IJobBridge {
 /**
  * Caller-supplied options for `IEventFlow.publishAndStart`.
  *
- * `tenantId` semantics match `IJobOrchestrator.StartOptions.tenantId`
- * (JOB-8): explicit `null` opts into cross-tenant work; `undefined` throws
- * `MissingTenantIdError` when `BridgeModule` is configured with
- * `multiTenant: true`.
- *
- * `parentRunId` lets request-path callers attach the eagerly-started run
- * to an existing run hierarchy (e.g. a higher-level orchestration that
- * publishes events as side effects of its own steps).
+ * `tenantId`: explicit `null` opts into cross-tenant work (the run is
+ * `SYSTEM_TENANT`'s); `undefined` throws `MissingTenantIdError` when
+ * `BridgeModule` is configured with `multiTenant: true`. (ADR-022's
+ * `parentRunId` is gone in JOBS-3: a child run is a step's `children`.)
  */
 export interface PublishAndStartOptions {
-  parentRunId?: string;
+  /** The run's tenant; none is `SYSTEM_TENANT` (JOBS-3). */
   tenantId?: string | null;
+  /** The run's dedupe key: an open run on it answers the start (`@pattern-stack/jobs`' collision rules). */
+  dedupeKey?: string;
 }
 
 /**
@@ -206,7 +199,7 @@ export interface IEventFlow {
    *
    * Writes the event to the outbox (or in-memory bus, depending on the
    * backend). Bridge triggers fire asynchronously (via
-   * `@JobHandler.triggers`); in-process `IEventBus.subscribe` handlers
+   * `jobTriggers(...)`); in-process `IEventBus.subscribe` handlers
    * fire in-call. Returns when the outbox row is committed.
    *
    * Delegates to `IEventBus.publish` under the hood.
@@ -230,12 +223,12 @@ export interface IEventFlow {
    * Behaviour:
    *   1. Writes the event to the outbox (so bridge triggers and Tier 1
    *      subscribers fire as normal).
-   *   2. Synchronously calls `IJobOrchestrator.start(jobType, input,
-   *      opts)` to enqueue the user job before returning to the caller.
-   *   3. **Case B dedup** — if the (event, jobType) pair has a declared
-   *      `@JobHandler.triggers` entry, the facade pre-writes a
+   *   2. Starts the user job with `JobStarter.start(jobKey, input, opts, tx)`
+   *      (`@pattern-stack/jobs`' `startRun`, in the same transaction).
+   *   3. **Case B dedup** — if the (event, jobKey) pair has a declared
+   *      `jobTriggers(...)` entry, the facade pre-writes a
    *      `bridge_delivery(status='delivered', user_run_id=<eagerRunId>)`
-   *      row in the same transaction as `orchestrator.start(...)`. The
+   *      row in the same transaction as the start. The
    *      drain's later `INSERT … ON CONFLICT (event_id, trigger_id) DO
    *      NOTHING` then sees the existing row and skips that trigger while
    *      still spawning any other triggers for the same event.
@@ -245,50 +238,48 @@ export interface IEventFlow {
    * fanout where Tier 3 alone suffices, use `publish` instead.
    *
    * **Same-tx invariant** (BRIDGE-7): the outbox insert, the
-   * `orchestrator.start` insert, and the Case B `bridge_delivery`
+   * run's insert, and the Case B `bridge_delivery`
    * pre-write must all share a transaction. A crash between any two
    * leaves the system inconsistent (e.g. event published but no eager
    * run, or eager run with no Case B dedup row → drain double-spawns).
    *
    * **Note on signature:** ADR-023 §Decision 7 sketches `JobType` /
-   * `JobInputOf<J>` parameters; the jobs subsystem currently models the
-   * orchestrator's `start` as `start(type: string, input: unknown, …)`
-   * with no generated `JobType` union analogous to events' `EventTypeName`.
-   * The facade matches that shape today; tightening the surface is a
-   * post-Phase-2 follow-up that requires generated job typing first.
+   * `JobInputOf<J>` parameters; `JobStarter.start` takes `(jobKey: string,
+   * input: unknown, …)` and the job's own input schema checks the input at
+   * the start. A generated job-key union is a follow-up.
    */
   publishAndStart<T extends EventTypeName>(
     event: EventOfType<T>,
-    jobType: string,
+    jobKey: string,
     input: unknown,
     opts?: PublishAndStartOptions,
   ): Promise<PublishAndStartResult>;
 }
 
 // ============================================================================
-// bridgeRegistry — emitted by codegen (BRIDGE-6), consumed by drain (BRIDGE-4),
-// the framework handler (BRIDGE-5), and the EventFlow facade (BRIDGE-7).
+// bridgeRegistry — emitted by codegen (BRIDGE-6), consumed by the drain hook
+// (BRIDGE-4) and the EventFlow facade (BRIDGE-7).
 // ============================================================================
 
 /**
  * One entry in the `bridgeRegistry`. Generated from a user job's
- * `@JobHandler({ triggers: [...] })` decorator metadata in BRIDGE-6.
+ * `jobTriggers('<job key>', [...])` declaration (BRIDGE-6, JOBS-3), and from YAML jobs (RFC-0005).
  *
  * The `T extends EventTypeName` parameter is what gives `map`/`when`
  * callbacks compile-time access to the typed payload via `EventOfType<T>`.
  * Codegen emits one entry per (job, trigger-index) pair, so `triggerId` is
  * stable across re-runs.
  *
- * `triggerId` shape: `<jobType>#<triggerIndex>`. Forms the second half of
+ * `triggerId` shape: `<jobKey>#<triggerIndex>`. Forms the second half of
  * the `bridge_delivery (event_id, trigger_id)` UNIQUE idempotency key.
  *
- * `map` is required and returns the input payload to pass to
- * `IJobOrchestrator.start(jobType, input, ...)` — typed as `unknown` here
+ * `map` is required and returns the input payload the job's run starts with
+ * (`JobStarter.start(jobKey, input, ...)`) — typed as `unknown` here
  * because the registry is event-keyed, not job-keyed (one event can fan
  * out to N jobs with N input shapes).
  *
  * `when` is optional. When provided and the predicate returns `false` at
- * handler time, `BridgeDeliveryHandler` records the delivery as
+ * drain time, the drain records the delivery as
  * `skipped` with `skip_reason='predicate_false'` rather than spawning the
  * user job (ADR-023 §Decision 6).
  */
@@ -296,9 +287,12 @@ export interface BridgeTriggerEntry<
   T extends EventTypeName = EventTypeName,
 > {
   triggerId: string;
-  jobType: string;
+  /** The `defineJob` key the trigger starts. */
+  jobKey: string;
   map: (event: EventOfType<T>) => unknown;
   when?: (event: EventOfType<T>) => boolean;
+  /** The start's dedupe key (see `JobTriggerDeclaration.dedupeKey`). */
+  dedupeKey?: (event: EventOfType<T>) => string;
 }
 
 /**
@@ -323,8 +317,8 @@ export type BridgeRegistry = {
 /**
  * Result of one drain-hook invocation, returned for observability + tests.
  *
- * `delivered`: number of `bridge_delivery + wrapper job_run` row pairs the
- * hook actually inserted for this event (post-`ON CONFLICT DO NOTHING`).
+ * `delivered`: number of triggers whose run the hook started for this event
+ * (a `bridge_delivery` row marked `delivered`, post-`ON CONFLICT DO NOTHING`).
  *
  * `dedupSkips`: number of triggers whose `bridge_delivery` insert tripped
  * `UNIQUE (event_id, trigger_id)` and was skipped (Case B from ADR-023's
@@ -332,7 +326,9 @@ export type BridgeRegistry = {
  * are not failures — they're the dedup mechanism doing its job.
  *
  * `triggerCount`: total triggers matched in the registry for this event;
- * `triggerCount === delivered + dedupSkips`.
+ * `triggerCount === delivered + dedupSkips + skipped`, where a skipped
+ * trigger's `when` was false or its job is not registered here (its row is
+ * marked `skipped`).
  *
  * `auditBlocked`: number of audit-tier events the dispatcher refused to fan
  * out *because they had a trigger registered against them*. Audit-tier events
@@ -361,7 +357,7 @@ export interface BridgeOutboxDrainResult {
  *
  * Why a port and not direct schema imports inside the events subsystem:
  *   - Keeps the events subsystem free of any knowledge of bridge_delivery
- *     and wrapper job_run shape; the layering inversion that ADR-023
+ *     and the jobs engine; the layering inversion that ADR-023
  *     names ("the drain must know about bridge") is captured in this one
  *     port, not strewn across every bridge column the drain touches.
  *   - Tests can mock the port and assert call-shape without spinning up
@@ -374,8 +370,9 @@ export interface BridgeOutboxDrainResult {
 export interface IBridgeOutboxDrainHook {
   /**
    * Process one drained event's bridge fanout. Called inside the drain's
-   * per-event transaction; the hook writes `bridge_delivery + wrapper
-   * job_run` row pairs for every matched trigger via the supplied `tx`.
+   * per-event transaction; for every matched trigger the hook writes a
+   * `bridge_delivery` row and starts the trigger's run via the supplied `tx`
+   * (JOBS-3).
    *
    * Behaviour:
    *   0. **Audit-tier guard (defense-in-depth).** Runs *after* the registry
@@ -396,31 +393,62 @@ export interface IBridgeOutboxDrainHook {
    *      `processed_at`.
    *   2. For each matched trigger:
    *      - `INSERT INTO bridge_delivery (event_id, trigger_id, status,
-   *        wrapper_run_id, tenant_id, ...) VALUES (...) ON CONFLICT
-   *        (event_id, trigger_id) DO NOTHING RETURNING id`. Empty
-   *        result ⇒ Case B / replay collision; skip wrapper insert for
-   *        this trigger; sibling triggers still fire normally.
-   *      - On insert success: `INSERT INTO job_run (type=
-   *        '@framework/bridge_delivery', pool='events_<direction>',
-   *        input={ deliveryId }, trigger_source='event', trigger_ref=
-   *        event.id, tenant_id)`. The wrapper row is what the framework
-   *        `BridgeDeliveryHandler` (BRIDGE-5) will eventually claim.
+   *        tenant_id, ...) VALUES (...) ON CONFLICT (event_id, trigger_id)
+   *        DO NOTHING RETURNING id`. Empty result ⇒ Case B / replay
+   *        collision; start nothing for this trigger; sibling triggers
+   *        still fire normally.
+   *      - Its job not registered here ⇒ mark `skipped`
+   *        (`trigger_unregistered`); its `when` false ⇒ mark `skipped`
+   *        (`predicate_false`).
+   *      - Otherwise `JobStarter.start(jobKey, map(event), { tenantId,
+   *        trigger: 'event' }, tx)` and mark the row `delivered` with the
+   *        run's id. The jobs executor's open-run sweep finds the run once
+   *        the drain commits.
    *   3. Returns the counts for observability.
    *
    * Throwing aborts the per-event tx — bridge inserts roll back, the
    * `processed_at` stamp is not made, and the event re-claims on the next
-   * drain cycle. Callers should let infra exceptions propagate; recoverable
-   * conditions (null direction, missing registry entry) are handled
-   * inline and do not throw.
-   *
-   * Null `event.metadata.direction` MUST be tolerated: the wrapper pool
-   * is derived from direction; absent direction means the publisher
-   * predates ADR-024 (manual `eventBus.publish(...)` rather than
-   * `TypedEventBus.publish(...)`). Hook should log + return zeros so the
-   * drain still stamps `processed_at` and dispatches subscribers.
+   * drain cycle. Callers should let infra exceptions propagate; a missing
+   * registry entry is handled inline and does not throw. A `map` that
+   * throws, or an input the job refuses, throws (the event retries).
    */
   processEvent(
     event: DomainEvent,
     tx: DrizzleTransaction,
   ): Promise<BridgeOutboxDrainResult>;
+}
+
+// ============================================================================
+// jobTriggers — how a job declares the events that start it (JOBS-3)
+// ============================================================================
+
+/** One trigger a job declares: the event, the job input mapped from it, and an optional predicate. */
+export interface JobTriggerDeclaration<T extends EventTypeName = EventTypeName> {
+  event: T;
+  map: (event: EventOfType<T>) => unknown;
+  when?: (event: EventOfType<T>) => boolean;
+  /**
+   * The start's dedupe key: a run of the job still open on this key (per tenant) meets the job's `collision` (`join`,
+   * `queue`, `replace`) instead of a second concurrent run — how a scheduled job keeps an overrun from overlapping.
+   * Exactly once per (event, trigger) is still the ledger's and the transaction's, never this key's.
+   */
+  dedupeKey?: (event: EventOfType<T>) => string;
+}
+
+/**
+ * Declares the events that start a job, beside its `defineJob`:
+ *
+ * ```ts
+ * export const reindex = defineJob({ key: 'document.reindex', … });
+ * export const reindexTriggers = jobTriggers('document.reindex', [
+ *   { event: 'document_updated', map: (e) => ({ documentId: e.aggregateId }) },
+ * ]);
+ * ```
+ *
+ * Codegen reads these calls from source (BRIDGE-6) into the generated `bridgeRegistry`, so `map` and `when` must be
+ * self-contained arrow functions (they are copied, not imported). At runtime it is the identity.
+ */
+export function jobTriggers<const T extends readonly JobTriggerDeclaration[]>(jobKey: string, triggers: T): T {
+  void jobKey;
+  return triggers;
 }

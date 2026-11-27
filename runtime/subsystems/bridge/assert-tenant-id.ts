@@ -2,11 +2,11 @@
  * `assertTenantId` — shared multi-tenancy enforcement helper for the
  * bridge subsystem (BRIDGE-8, ADR-023 §Multi-tenancy null-tenantId).
  *
- * Single source of truth for the three enforcement sites named in
- * ADR-023 §Multi-tenancy and the BRIDGE-2 spec:
+ * Single source of truth for the enforcement sites named in
+ * ADR-023 §Multi-tenancy and the BRIDGE-2 spec (ADR-022's (b), the wrapper
+ * handler's entry, is gone with the wrapper, JOBS-3):
  *
  *   (a) `EventFlowService.publishAndStart`           — request-path entry
- *   (b) `BridgeDeliveryHandler.run`                  — wrapper handler entry
  *   (c) `DrizzleBridgeDeliveryRepo.insertDelivery`   — last-line repo defense
  *
  * Contract (mirrors JOB-8 / SYNC-6 — locked 2026-04-18 for jobs and
@@ -36,7 +36,6 @@ import { MissingTenantIdError } from './bridge-errors';
  *
  * @param site         Canonical site name — one of:
  *                     `'EventFlowService.publishAndStart'`,
- *                     `'BridgeDeliveryHandler.run'`,
  *                     `'DrizzleBridgeDeliveryRepo.insertDelivery'`.
  *                     Stable strings; ops dashboards / review reports key
  *                     on these. Use the same string the existing tests

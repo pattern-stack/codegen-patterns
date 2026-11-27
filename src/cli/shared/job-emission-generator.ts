@@ -3,17 +3,18 @@
  *
  * Compiles a `JobDefinition` (definitions/jobs/*.yaml, validated by #5/#6) into:
  *
- *   1. A seam-split `@JobHandler` skeleton — mirroring `sink-emission-generator.ts`:
+ *   1. A seam-split `@pattern-stack/jobs` job (JOBS-3) — mirroring `sink-emission-generator.ts`:
  *      - `<type>.job.generated.ts` — `@generated` (regenerated via writeIfChanged):
- *        the `<type>Meta` const (JobHandlerMeta, reflowed from YAML), the per-arm
- *        `DetectionConfig` literals, and an abstract `<Type>JobBase` whose `run()`
- *        loop is concrete and whose per-arm vendor wiring is an author seam.
- *      - `<type>.job.ts` — emit-once (existsSync-skip in the caller): the concrete
- *        `@JobHandler('<type>', <type>Meta) class <Type>Job extends <Type>JobBase`
- *        the author fills.
+ *        the input schema, the per-arm `DetectionConfig` literals, the arms
+ *        interface, and `define<Type>Job(arms)`: a `defineJob` keyed by the YAML
+ *        type with one step per arm (the YAML pool as its limiter, the retry,
+ *        collision and dedupe window reflowed from YAML).
+ *      - `<type>.job.ts` — emit-once (existsSync-skip in the caller):
+ *        `export const <type>Job = define<Type>Job({ … })`, the arm bodies the
+ *        author fills.
  *   2. Bridge contributions (`buildJobBridgeTriggers`) — synthetic `ScannedTrigger`s
  *      fed DECLARATIVELY into the bridge registry generator's `extraTriggers` seam
- *      (RFC-0005 fork 1). The decorator's meta carries NO `triggers`; the bridge
+ *      (RFC-0005 fork 1). The emitted job carries NO `jobTriggers`; the bridge
  *      mapping is contributed here with a generated `map` string, never round-
  *      tripped through the AST scan.
  *   3. Scheduled events (`buildJobScheduledEvents`) — one job-private domain event
@@ -36,10 +37,11 @@ import {
 	type EventDefinition,
 	DIRECTION_TO_POOL,
 } from "../../schema/event-definition.schema";
-import type {
-	JobDefinition,
-	JobArm,
-	JobTriggerDef,
+import {
+	DEFAULT_JOB_LIMITS,
+	type JobDefinition,
+	type JobArm,
+	type JobTriggerDef,
 } from "../../schema/job-definition.schema";
 
 // ============================================================================
@@ -62,9 +64,11 @@ function camelCase(snake: string): string {
 }
 
 interface JobNames {
-	jobClass: string; // DrivePollJob
-	jobBaseClass: string; // DrivePollJobBase
-	metaConst: string; // drivePollMeta
+	jobConst: string; // drivePollJob
+	defineFn: string; // defineDrivePollJob
+	armsType: string; // DrivePollArms
+	inputSchema: string; // drivePollInput
+	armResultSchema: string; // drivePollArmResult
 	detectionConst: string; // drivePollArmDetection
 	inputType: string; // DrivePollInput
 	armResultType: string; // DrivePollArmResult
@@ -75,9 +79,11 @@ function jobNames(jobType: string): JobNames {
 	const Pascal = pascalCase(jobType);
 	const camel = camelCase(jobType);
 	return {
-		jobClass: `${Pascal}Job`,
-		jobBaseClass: `${Pascal}JobBase`,
-		metaConst: `${camel}Meta`,
+		jobConst: `${camel}Job`,
+		defineFn: `define${Pascal}Job`,
+		armsType: `${Pascal}Arms`,
+		inputSchema: `${camel}Input`,
+		armResultSchema: `${camel}ArmResult`,
 		detectionConst: `${camel}ArmDetection`,
 		inputType: `${Pascal}Input`,
 		armResultType: `${Pascal}ArmResult`,
@@ -142,12 +148,18 @@ export function buildJobBridgeTriggers(job: JobDefinition, sourceFile: string): 
 				? scheduledEventType(job.type, index, total)
 				: trigger.event;
 		return {
-			jobType: job.type,
+			jobKey: job.type,
 			triggerId: `${job.type}#${index}`,
 			event,
 			// Generated map: a sync job's start payload is uniform/minimal (RFC-0005
 			// fork 3). The bridge inlines this verbatim; keep it self-contained.
 			mapSource: "() => ({})",
+			// A job that declares `collision` or `dedupe` (RFC-0005 / JOBS-3): every start of it shares one dedupe key per
+			// tenant, so a tick while the last run is open meets the collision (overrun protection, ADR-022's
+			// `concurrency.key`) and the dedupe window. Without either, starts never collide.
+			...(job.collision !== undefined || job.dedupe !== undefined
+				? { dedupeKeySource: `() => ${JSON.stringify(job.type)}` }
+				: {}),
 			sourceFile,
 			sourceLine: index + 1,
 		};
@@ -183,44 +195,27 @@ export function buildJobScheduledEvents(job: JobDefinition): EventDefinition[] {
 }
 
 // ============================================================================
-// Meta const — JobHandlerMeta reflowed from YAML (the 7 non-trigger fields)
+// Job facts — the defineJob options reflowed from YAML (JOBS-3)
 // ============================================================================
 
-/** Render the YAML `scope.from` template (`{{field}}` or a bare field name) as a
- *  `(input) => string` accessor. Index access + cast keeps it compiling against
- *  any `TInput` shape (the field may not be on the minimal generated input). */
-function renderScopeFrom(from: string): string {
-	const m = /^\{\{\s*(\w+)\s*\}\}$/.exec(from);
-	const field = m ? m[1] : from;
-	return `(input) => String((input as Record<string, unknown>)[${JSON.stringify(field)}] ?? '')`;
+/** The YAML retry as `@pattern-stack/jobs`' `RetryPolicy` (attempts in all; a fixed backoff is coefficient 1). */
+function renderRetry(job: JobDefinition): string | null {
+	const r = job.retry;
+	if (!r) return null;
+	const nonRetryable = r.nonRetryableErrors ? `, nonRetryableErrorTypes: ${JSON.stringify(r.nonRetryableErrors)}` : "";
+	return `{ maximumAttempts: ${Math.max(1, r.attempts)}, initialIntervalMs: ${r.baseMs}, backoffCoefficient: ${r.backoff === "exponential" ? 2 : 1}${nonRetryable} }`;
 }
 
-function buildMetaLines(job: JobDefinition): string[] {
+/** The job-level options: its limits, the collision rule and the dedupe window. */
+function buildJobFactLines(job: JobDefinition): string[] {
 	const lines: string[] = [];
-	if (job.pool !== undefined) lines.push(`  pool: ${JSON.stringify(job.pool)},`);
-	if (job.scope !== undefined) {
-		lines.push(
-			`  scope: { entity: ${JSON.stringify(job.scope.entity)}, from: ${renderScopeFrom(job.scope.from)} },`,
-		);
-	}
-	if (job.retry !== undefined) {
-		const r = job.retry;
-		const extra = r.nonRetryableErrors ? `, nonRetryableErrors: ${JSON.stringify(r.nonRetryableErrors)}` : "";
-		lines.push(`  retry: { attempts: ${r.attempts}, backoff: ${JSON.stringify(r.backoff)}, baseMs: ${r.baseMs}${extra} },`);
-	}
-	if (job.concurrency !== undefined) {
-		// `key` stays a `{{field}}` template string — the runtime evaluates it
-		// (keySelectorToTemplate / evaluateKeyTemplate). The function form is not
-		// YAML-authorable, so the string form is always emitted.
-		lines.push(
-			`  concurrency: { key: ${JSON.stringify(job.concurrency.key)}, collisionMode: ${JSON.stringify(job.concurrency.collisionMode)} },`,
-		);
-	}
-	if (job.dedupe !== undefined) {
-		lines.push(`  dedupe: { key: ${JSON.stringify(job.dedupe.key)}, windowMs: ${job.dedupe.windowMs} },`);
-	}
-	if (job.timeoutMs !== undefined) lines.push(`  timeoutMs: ${job.timeoutMs},`);
-	if (job.replayFrom !== undefined) lines.push(`  replayFrom: ${JSON.stringify(job.replayFrom)},`);
+	// Always: a bridge or schedule start names no budget, and a job with no limits refuses such a start.
+	const limits = { ...DEFAULT_JOB_LIMITS, ...(job.limits ?? {}) };
+	lines.push(
+		`    limits: { maxItems: ${limits.maxItems}, maxUsd: ${limits.maxUsd}, maxCalls: ${limits.maxCalls}, maxDurationMs: ${limits.maxDurationMs} },`,
+	);
+	if (job.collision !== undefined) lines.push(`    collision: ${JSON.stringify(job.collision)},`);
+	if (job.dedupe !== undefined) lines.push(`    dedupeWindowMs: ${job.dedupe.windowMs},`);
 	return lines;
 }
 
@@ -256,132 +251,122 @@ export function generateJobHandlerBase(input: JobEmitInput): string {
 	const { job } = input;
 	const mode = input.mode ?? "package";
 	const n = jobNames(job.type);
-	// Jobs handler symbols (JobHandlerBase/JobContext/JobHandlerMeta/JobHandler) are
-	// NOT on the top-level `/subsystems` barrel — they resolve via the deeper
-	// `subsystems/jobs/index` path (the same convention jobs-scaffold-locals uses).
-	// DetectionConfig IS on the top barrel, so it stays on subsystemsImport.
-	const jobsImport = runtimeImport(mode, "subsystems/jobs/index");
+	// DetectionConfig is on the top `/subsystems` barrel.
 	const integrationImport = subsystemsImport(mode, "integration");
-
-	const metaLines = buildMetaLines(job);
 	const detectionLines = buildDetectionLines(job);
-
-	const runLines = job.arms.map(
+	const retry = renderRetry(job);
+	const stepOptions = [
+		...(job.pool !== undefined ? [`limiter: ${JSON.stringify(job.pool)}`] : []),
+		...(retry ? [`retry: ${retry}`] : []),
+	];
+	const stepLines = job.arms.map(
 		(arm) =>
-			`    results.push(await ctx.step(${JSON.stringify(arm.domain)}, () => this.runArm${pascalCase(arm.domain)}(ctx)));`,
+			`      .add(${JSON.stringify(arm.domain)}, step({ ${[...stepOptions, `run: (ctx) => arms.${arm.domain}(ctx)`].join(", ")} }))`,
 	);
-	const seamLines = job.arms.map((arm) => {
-		const Pascal = pascalCase(arm.domain);
-		return [
-			`  /**`,
-			`   * Author seam — arm '${arm.domain}' (kind: ${arm.kind}, action: ${armAction(arm)}).`,
-			`   * Build a change source from \`${n.detectionConst}.${arm.domain}\` via \`buildChangeSource(...)\``,
-			`   * and run your provider's ExecuteIntegrationUseCase with it as \`sourceOverride\``,
-			`   * (provider/use-case resolution is author-side — RFC-0005 OQ-4 b).`,
-			`   */`,
-			`  protected abstract runArm${Pascal}(ctx: JobContext<${n.inputType}>): Promise<${n.armResultType}>;`,
-		].join("\n");
-	});
-
 	const armKinds = Array.from(new Set(job.arms.map((a) => a.kind)))
 		.map((k) => JSON.stringify(k))
 		.join(" | ");
-
+	const armSignatures = job.arms.map(
+		(arm) =>
+			`  /** Arm '${arm.domain}' (kind: ${arm.kind}, action: ${armAction(arm)}): build a change source from \`${n.detectionConst}.${arm.domain}\` and run your provider's ExecuteIntegrationUseCase with it (RFC-0005 OQ-4 b). */\n  ${arm.domain}: (ctx: ${n.inputType}Context) => Promise<${n.armResultType}>;`,
+	);
 	const banner =
 		`// @generated by @pattern-stack/codegen from definitions/jobs/${job.type}.yaml — DO NOT EDIT.\n` +
 		`// Hand edits are overwritten on re-emit. Regenerate with \`bun run codegen\`.\n` +
 		`//\n` +
-		`// Two-file seam (RFC-0005 #7, mirrors the sink seam-split):\n` +
-		`//   THIS FILE  — @generated base: ${n.metaConst} + ${n.detectionConst} + abstract ${n.jobBaseClass}.\n` +
-		`//                A YAML change reflows the meta + detection here on every run.\n` +
-		`//   ${job.type}.job.ts — emit-once subclass: \`@JobHandler('${job.type}', ${n.metaConst}) class ${n.jobClass}\`.\n` +
-		`//                Fills the per-arm runArm* vendor seams. Author overrides survive regen.\n` +
+		`// Two-file seam (RFC-0005, JOBS-3):\n` +
+		`//   THIS FILE  — @generated: the input, the per-arm detection, and ${n.defineFn}(arms), the job's\n` +
+		`//                \`defineJob\` with one step per arm (its pool as the step's limiter).\n` +
+		`//   ${job.type}.job.ts — emit-once: \`export const ${n.jobConst} = ${n.defineFn}({ … })\`, the\n` +
+		`//                author's arm bodies. Author edits survive regen.\n` +
 		`//\n` +
-		`// Triggers are NOT on the decorator meta — they are contributed to the bridge\n` +
-		`// registry declaratively by the jobs emitter (RFC-0005 fork 1).`;
-
+		`// Triggers are contributed to the bridge registry by the jobs emitter (RFC-0005 fork 1).`;
 	return `${banner}
-import { JobHandlerBase, type JobContext, type JobHandlerMeta } from '${jobsImport}';
+import { defineJob, step } from '@pattern-stack/jobs';
+import { z } from 'zod';
 import type { DetectionConfig } from '${integrationImport}';
 
-/** The job's start-payload input. Extend in the subclass if your triggers carry
- *  more than the uniform sync-job fields. */
-export interface ${n.inputType} {
-  readonly provider?: string;
-  readonly tenantId?: string | null;
+/** The job's start-payload input: a sync job's start is uniform (RFC-0005 fork 3). */
+export const ${n.inputSchema} = z.object({ provider: z.string().optional() });
+export type ${n.inputType} = z.output<typeof ${n.inputSchema}>;
+
+/** What an arm's body is handed: the run's input, its ids, and its abort signal. */
+export interface ${n.inputType}Context {
+  readonly input: ${n.inputType};
+  readonly runId: string;
+  readonly tenantId: string;
+  readonly signal: AbortSignal;
 }
 
-/** Per-arm summary the run loop collects (one per arm, in declaration order). */
-export interface ${n.armResultType} {
-  readonly domain: string;
-  readonly kind: ${armKinds};
-  readonly recordsProcessed: number;
-}
+/** Per-arm summary (one per arm, a step's output). Its arm kinds here: ${armKinds}. */
+const ${n.armResultSchema} = z.object({ domain: z.string(), kind: z.string(), recordsProcessed: z.number() });
+export type ${n.armResultType} = z.output<typeof ${n.armResultSchema}>;
 
-/** JobHandlerMeta reflowed from the YAML (the non-trigger fields). Imported by the
- *  emit-once subclass into \`@JobHandler('${job.type}', ${n.metaConst})\`. */
-export const ${n.metaConst}: JobHandlerMeta<${n.inputType}> = {
-${metaLines.join("\n")}
-};
-
-/** Per-arm detection configs (the embedded \`read:\` leaf), reflowed from YAML.
- *  Pass an entry into \`buildChangeSource(...)\` in the matching runArm* seam. */
+/** Per-arm detection configs (the embedded \`read:\` leaf), reflowed from YAML. */
 export const ${n.detectionConst} = {
 ${detectionLines.join("\n")}
 };
 
-export abstract class ${n.jobBaseClass} extends JobHandlerBase<${n.inputType}, ${n.armResultType}[]> {
-  async run(ctx: JobContext<${n.inputType}>): Promise<${n.armResultType}[]> {
-    const results: ${n.armResultType}[] = [];
-${runLines.join("\n")}
-    return results;
-  }
+/** The author's arm bodies, one per arm. */
+export interface ${n.armsType} {
+${armSignatures.join("\n")}
+}
 
-${seamLines.join("\n\n")}
+/** The job, for these arm bodies: one plain step per arm, in declaration order. */
+export function ${n.defineFn}(arms: ${n.armsType}) {
+  return defineJob({
+    key: ${JSON.stringify(job.type)},
+    input: ${n.inputSchema},
+    // The last step's output is the job's: the last arm's summary.
+    output: ${n.armResultSchema},
+${buildJobFactLines(job).join("\n")}
+    steps: (s) =>
+      s
+${stepLines.join("\n")},
+  });
 }
 `;
 }
 
-/** Emit the emit-once author subclass (`<type>.job.ts`). */
+/** Emit the emit-once author file (`<type>.job.ts`). */
 export function generateJobHandlerSubclass(input: JobEmitInput): string {
 	const { job } = input;
-	const mode = input.mode ?? "package";
 	const n = jobNames(job.type);
-	const jobsImport = runtimeImport(mode, "subsystems/jobs/index");
-
-	const seamImpls = job.arms
-		.map((arm) => {
-			const Pascal = pascalCase(arm.domain);
-			return [
-				`  protected async runArm${Pascal}(_ctx: JobContext<${n.inputType}>): Promise<${n.armResultType}> {`,
-				`    // TODO(author): build the change source from ${n.detectionConst}.${arm.domain} and run`,
-				`    // your provider's ExecuteIntegrationUseCase with it as sourceOverride. See RFC-0005.`,
-				`    throw new Error('${n.jobClass}.runArm${Pascal} not implemented');`,
-				`  }`,
-			].join("\n");
-		})
-		.join("\n\n");
-
+	const armImpls = job.arms
+		.map((arm) =>
+			[
+				`      ${arm.domain}: async (_ctx) => {`,
+				`        // TODO(author): build the change source from ${n.detectionConst}.${arm.domain} and run`,
+				`        // your provider's ExecuteIntegrationUseCase (a dependency above) with it. See RFC-0005.`,
+				`        throw new Error('${job.type}: arm ${arm.domain} is not implemented');`,
+				`      },`,
+			].join("\n"),
+		)
+		.join("\n");
 	return `// Emit-once — author-owned. Regen never overwrites this file.
-// The mechanical meta + detection live in ${n.baseModule}.ts and reflow on every run.
-// Fill each runArm* seam with your vendor read + ExecuteIntegrationUseCase wiring.
+// The mechanical options + detection live in ${n.baseModule}.ts and reflow on every run.
 // Source: definitions/jobs/${job.type}.yaml.
-import { JobHandler, type JobContext } from '${jobsImport}';
-import {
-  ${n.jobBaseClass},
-  ${n.metaConst},
-  ${n.detectionConst},
-  type ${n.inputType},
-  type ${n.armResultType},
-} from './${n.baseModule}';
+import { jobFactory } from '@pattern-stack/jobs';
 
-// Reference the regenerated detection so the import is live even before the seams
-// are filled (the author reads ${n.detectionConst}.<domain> per arm).
+import { ${n.detectionConst}, ${n.defineFn} } from './${n.baseModule}';
+
+// Reference the regenerated detection so the import is live before the arms are filled.
 void ${n.detectionConst};
 
-@JobHandler<${n.inputType}>('${job.type}', ${n.metaConst})
-export class ${n.jobClass} extends ${n.jobBaseClass} {
-${seamImpls}
-}
+/**
+ * The job, as a factory of the app's services its arms need (JOBS-3). Name each in \`deps\` by its token: a class,
+ * or \`injected<T>('<TOKEN>')\` (from '@pattern-stack/jobs') — for an arm's sync, the provider's integration use case,
+ * \`injected<ExecuteIntegrationUseCase<…>>('<ENTITY>_INTEGRATION_USE_CASE__<PROVIDER>')\`. The app builds it with
+ * them resolved; use them inside an arm, never while building the job.
+ */
+export const ${n.jobConst} = jobFactory({
+  deps: {},
+  create: (deps) => {
+    void deps;
+    return ${n.defineFn}({
+${armImpls}
+    });
+  },
+});
 `;
 }

@@ -293,34 +293,38 @@ services.
 
 `ExecuteIntegrationUseCase` does not schedule itself. Common triggers:
 
-**Scheduled job (typical polling)** — wrap the use case in a normal background
-job on one of *your own* pools (never a reserved `events_*` pool — those belong
-to the event/bridge machinery and throw at boot) and give it a cron trigger
-(see the `jobs` skill for the handler shape + scheduling):
+**Scheduled job (typical polling)** — wrap the use case in a job factory (the
+use case is its dependency, by the assembly's token) whose step names one of
+your pools, and trigger it from a scheduled event (see the `jobs` skill; a YAML
+job, `definitions/jobs/*.yaml`, emits this shape for you):
 
 ```ts
-@JobHandler<{ subscriptionId: string; tenantId?: string }>('integration_opportunity_poll', {
-  pool: 'batch',
-})
-export class IntegrationOpportunityPollHandler extends JobHandlerBase<{
-  subscriptionId: string;
-  tenantId?: string;
-}> {
-  constructor(private readonly execute: ExecuteIntegrationUseCase<CanonicalOpportunity>) {
-    super();
-  }
+import { defineJob, injected, jobFactory, step } from '@pattern-stack/jobs';
+import { z } from 'zod';
 
-  async run(ctx: JobContext<{ subscriptionId: string; tenantId?: string }>) {
-    return this.execute.execute({
-      subscription: { id: ctx.input.subscriptionId, domain: 'opportunity' },
-      userId: 'system',
-      provider: 'salesforce-crm',
-      direction: 'inbound',
-      action: 'poll',
-      tenantId: ctx.input.tenantId ?? null,
-    });
-  }
-}
+export const opportunityPoll = jobFactory({
+  deps: {
+    execute: injected<ExecuteIntegrationUseCase<CanonicalOpportunity>>('OPPORTUNITY_INTEGRATION_USE_CASE__SALESFORCE_CRM'),
+  },
+  create: ({ execute }) =>
+    defineJob({
+      key: 'integration_opportunity_poll',
+      input: z.object({ subscriptionId: z.string() }),
+      output: z.object({ recordsProcessed: z.number() }),
+      limits: { maxItems: 1, maxUsd: 1, maxCalls: 1, maxDurationMs: 600_000 },
+      steps: (s) =>
+        s.add('sync', step({
+          limiter: 'batch',
+          run: async ({ input, tenantId }) => {
+            const result = await execute.execute({
+              subscription: { id: input.subscriptionId, domain: 'opportunity' },
+              userId: 'system', provider: 'salesforce-crm', direction: 'inbound', action: 'poll', tenantId,
+            });
+            return { recordsProcessed: result.recordsProcessed };
+          },
+        })),
+    }),
+});
 ```
 
 **Webhook handler** — pass `action: 'webhook'` and, if the payload carries the

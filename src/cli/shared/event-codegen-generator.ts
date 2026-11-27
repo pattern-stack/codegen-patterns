@@ -10,7 +10,7 @@
  *   import type { AppDomainEvent, EventTypeName, PayloadOfType }
  *     from './runtime/subsystems/events/generated';
  *
- * Pattern mirrors scope-entity-type-generator.ts: HEADER constant, pure
+ * Pattern mirrors barrel-generator.ts: HEADER constant, pure
  * content-builders unit-tested in isolation, one orchestrating entrypoint that
  * handles disk I/O with dryRun semantics.
  *
@@ -66,7 +66,7 @@ const PACKAGE_EVENTS_RUNTIME_IMPORT =
  * declaration-merges the consumer's events into that interface via the events
  * INDEX module specifier — the public, stable augmentation target the runtime
  * re-exports the interface from. After this merges, the consumer's
- * `bridge-registry.ts` and their `@JobHandler({ triggers })` see their own
+ * `bridge-registry.ts` and their `jobTriggers(...)` see their own
  * `EventTypeName` union with full `EventOfType<T>` payload typing.
  *
  * In vendored mode this is unnecessary (the bridge/job types import the
@@ -80,7 +80,7 @@ function buildRegistryAugmentationBlock(events: EventDefinition[]): string {
 		`// Package-mode trigger typing (ADR-037): merge these events into the runtime's`,
 	);
 	chunks.push(
-		`// augmentable \`DomainEventRegistry\` so the bridge + \`@JobHandler({ triggers })\``,
+		`// augmentable \`DomainEventRegistry\` so the bridge + \`jobTriggers(...)\``,
 	);
 	chunks.push(
 		`// types (which key off the published \`EventTypeName\`) see THIS project's events`,
@@ -174,7 +174,7 @@ export interface EventCodegenResult {
 }
 
 // ---------------------------------------------------------------------------
-// Header — mirrors scope-entity-type-generator and barrel-generator.
+// Header — mirrors barrel-generator.
 // ---------------------------------------------------------------------------
 
 const HEADER =

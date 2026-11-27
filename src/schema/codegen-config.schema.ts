@@ -2,7 +2,6 @@ import { z } from "./zod.js";
 import { DEFAULT_TARGET_PAIR, supportedTargetPairs, TARGET_PAIRS } from '../targets/pairs.js';
 import { DEFAULT_TENANT_COLUMN, TENANT_COLUMN_PATTERN } from "./tenancy.js";
 import { TABLE_PREFIX_PATTERN } from "../config/table-naming.js";
-import { poolOverrideIssues } from "../../runtime/subsystems/jobs/pool-config.js";
 
 /**
  * Codegen Configuration Schemas
@@ -16,8 +15,7 @@ import { poolOverrideIssues } from "../../runtime/subsystems/jobs/pool-config.js
  *
  * Ships in the package's `files` (the hygen prompts import the loader, `.ts`
  * resolved by bun), so it may import only `zod`, other shipped schema files,
- * and pure shipped runtime modules (`runtime/subsystems/jobs/pool-config.ts`,
- * whose pool rules `jobs.pools` runs — CFG-1).
+ * and pure shipped runtime modules.
  *
  * Only two blocks are open maps, because they model a map: `jobs.pools` (keyed
  * by pool name; each value is strict) and `frontend.parsers` (keyed by Electric
@@ -689,101 +687,51 @@ export const EventsConfigSchema = z
   .strict();
 
 /**
- * One `jobs.pools.<name>` entry. Emitted by the generator into
- * `<generated>/app-config.ts` (`jobPools`, CFG-1) and handed to
- * `JobsDomainModule.forRoot({ pools })`, which merges it onto the five
- * framework pools. The pool rules (a framework pool's `queue`/`reserved` are
- * fixed; a user pool needs `queue` + `concurrency`; `reserved` is
- * framework-only) are the runtime's `poolOverrideIssues`, run on the whole map
- * below — so they fail here, at generation, naming the key.
+ * One `jobs.pools.<name>` entry (JOBS-3): a pool is a `@pattern-stack/jobs` limiter of that name, and
+ * `concurrency` is its `inFlight`. A job's step names its pool as `step({ limiter: '<name>' })`; a step naming a pool
+ * with no entry stops the boot. Priority is a pool of its own (codegen-targets d36).
  */
+/** A key JOBS-3 removed, declared so the error names it and what replaces it (as `generate.analytics` does). */
+const removedJobsKey = (key: string, instead: string) =>
+  z.never({ error: `'${key}' was removed by JOBS-3 (@pattern-stack/jobs) — ${instead}; see docs/MIGRATION-jobs-engine.md` }).optional();
+
 const JobsPoolSchema = z
   .object({
-    queue: z.string().optional(),
-    concurrency: z.number().int().positive().optional(),
-    reserved: z.boolean().optional(),
+    concurrency: z.number().int().positive(),
     description: z.string().optional(),
+    queue: removedJobsKey('jobs.pools.<name>.queue', 'a pool is a limiter now, named by the pool key alone'),
+    reserved: removedJobsKey('jobs.pools.<name>.reserved', 'there are no framework-reserved pools'),
   })
   .strict();
 
 /**
- * `jobs:` — written by `templates/subsystem/jobs-config/`; read by
- * `subsystem-barrel-generator.ts` (`JobsDomainModule` / `JobWorkerModule`
- * options), `jobs-scaffold-locals.ts`, `subsystem-detect.ts` (`backend`) and
- * the jobs runtime (`pools`).
+ * `jobs:` (JOBS-3) — `@pattern-stack/jobs` run in process. Written by `templates/subsystem/jobs-config/`; read by
+ * `subsystem-barrel-generator.ts` (`JobsEngineModule.forRoot`), `app-config-generator.ts` (`jobLimiters`,
+ * `jobsEngineOptions`) and `jobs-scaffold-locals.ts`.
  *
- * `pools` is the one open map: keyed by pool name, each value strict.
- *
- * `worker_mode` defaults to `embedded` (JOBS-1, #659) — declared once, here;
- * the jobs composer reads the parsed value. It is what the jobs-config
- * injector writes on a fresh install, so a hand-written block that omits the
- * key gets the same topology `subsystem install jobs` would have given it.
- *
- * JOBS-0 (#656): `backend: memory` with a standalone worker is rejected — a
- * separate worker process cannot share the in-memory job store.
+ * - `worker_mode`: `embedded` (default: the HTTP process runs the executor) or `standalone` (`src/worker.ts` runs it;
+ *   the HTTP process only starts runs, which the worker's open-run sweep finds).
+ * - `pools`: the limiters steps name, keyed by name.
+ * - `poll_interval_ms`, `open_sweep_every`, `version_grace_ms`: the in-process executor's poll, how many polls
+ *   between open-run sweeps, and the drain window a version bump gives the old version's open runs (set it above a
+ *   deploy's length when replicas roll).
+ * - A run's tenant is the start's (`JobStarter.start({ tenantId })`; the bridge passes the event's), so there is no
+ *   `multi_tenant` key.
  */
 export const JobsConfigSchema = z
   .object({
-    backend: z.enum(['drizzle', 'memory', 'bullmq']).optional(),
-    multi_tenant: z.boolean().optional(),
+    multi_tenant: removedJobsKey('jobs.multi_tenant', "a run's tenant is what the caller passes to JobStarter.start (the bridge passes the event's; none is SYSTEM_TENANT); delete the key"),
     worker_mode: z.enum(['embedded', 'standalone']).default('embedded'),
-    /** Embedded worker's explicit pool list (`JobWorkerModule.forRoot({ pools })`). */
-    worker_pools: z.array(z.string()).optional(),
-    /** Embedded worker drains every pool (`JobWorkerModule.forRoot({ allPools })`). */
-    all_pools: z.boolean().optional(),
-    pools: z
-      .record(z.string(), JobsPoolSchema)
-      .superRefine((pools, ctx) => {
-        for (const issue of poolOverrideIssues(pools)) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, path: issue.path, message: issue.message });
-        }
-      })
-      .optional(),
-    extensions: z
-      .object({
-        /** LISTEN-NOTIFY-1 / CLAIM-HB-1 knobs, camelCased into the module options. */
-        drizzle: z
-          .object({
-            listen_notify: z.boolean().optional(),
-            poll_interval_ms: z.number().int().positive().optional(),
-            stale_threshold_ms: z.number().int().positive().optional(),
-            stale_sweeper_interval_ms: z.number().int().positive().optional(),
-            claim_heartbeat_interval_ms: z.number().int().positive().optional(),
-          })
-          .strict()
-          .optional(),
-        /** BULLMQ-1 — passed verbatim as the runtime's `BullMqExtensionsConfig`. */
-        bullmq: z
-          .object({
-            redis_url: z.string().optional(),
-            queue_prefix: z.string().optional(),
-            bull_board: z
-              .object({
-                enabled: z.boolean(),
-                mount_path: z.string().optional(),
-              })
-              .strict()
-              .optional(),
-          })
-          .strict()
-          .optional(),
-      })
-      .strict()
-      .optional(),
+    pools: z.record(z.string(), JobsPoolSchema).optional(),
+    poll_interval_ms: z.number().int().positive().optional(),
+    open_sweep_every: z.number().int().positive().optional(),
+    version_grace_ms: z.number().int().nonnegative().optional(),
+    backend: removedJobsKey('jobs.backend', "the store is always the app's Postgres; delete the key"),
+    extensions: removedJobsKey('jobs.extensions', 'use poll_interval_ms / open_sweep_every; there is no BullMQ or LISTEN option'),
+    worker_pools: removedJobsKey('jobs.worker_pools', 'every executor runs every pool; delete the key'),
+    all_pools: removedJobsKey('jobs.all_pools', 'every executor runs every pool; delete the key'),
   })
-  .strict()
-  .superRefine((jobs, ctx) => {
-    if (jobs.backend === 'memory' && jobs.worker_mode === 'standalone') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['worker_mode'],
-        message:
-          '`jobs.backend: memory` cannot run a standalone worker (`jobs.worker_mode: standalone`) — a separate ' +
-          'process cannot share the in-memory job store. Set `jobs.worker_mode: embedded`, or use ' +
-          '`jobs.backend: drizzle` / `bullmq`.',
-      });
-    }
-  });
+  .strict();
 
 /**
  * `bridge:` — written by `templates/subsystem/bridge-config/`; read by

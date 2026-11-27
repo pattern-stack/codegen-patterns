@@ -68,12 +68,9 @@ export interface IEventBus {
   /**
    * Lookup a single event by its id. Returns `null` when no event matches.
    *
-   * Added in BRIDGE-5 (ADR-023 Phase 2). The bridge `BridgeDeliveryHandler`
-   * uses this to re-fetch the authoritative `domain_events` row at claim
-   * time so `triggers[].when` and `triggers[].map` callbacks see the
-   * committed payload, not a copy that may have drifted between drain and
-   * handler execution. Other consumers may use it for replay tooling and
-   * audit dashboards.
+   * Added in BRIDGE-5 (ADR-023 Phase 2) for ADR-022's bridge wrapper job
+   * (gone in JOBS-3: the drain hook reads the event it is draining). Kept for
+   * replay tooling and audit dashboards.
    *
    * Backends:
    *   - `MemoryEventBus` — searches its in-memory `publishedEvents` log.

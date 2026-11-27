@@ -12,7 +12,7 @@
  * @Module({
  *   imports: [
  *     EventsModule.forRoot({ backend: 'drizzle' }),
- *     JobsDomainModule.forRoot({ backend: 'drizzle' }),
+ *     JobsEngineModule.forRoot({ definitions: jobDefinitions, worker: true }),
  *     BridgeModule.forRoot({ backend: 'drizzle' }),
  *     IntegrationModule.forRoot({ backend: 'drizzle' }),
  *     ObservabilityModule.forRoot({

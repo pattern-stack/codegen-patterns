@@ -73,7 +73,16 @@ export * from '@gen/modules/report-documents/report-document.entity';
 // job_parent_close_policy does not exist"), leaving later tables — including
 // this file's own — uncreated.
 export * from '@shared/subsystems/events/domain-events.schema';
-export * from '@shared/subsystems/jobs/job-orchestration.schema';
+// JOBS-3: the job tables are @pattern-stack/jobs' own (text columns, no pgEnums).
+export {
+  jobItemResults,
+  jobRunChunks,
+  jobRunEvents,
+  jobRunItems,
+  jobRunSteps,
+  jobRuns,
+  jobRunValues,
+} from '@pattern-stack/jobs/postgres';
 export * from '@shared/subsystems/cache/cache.schema';
 
 // ============================================================================

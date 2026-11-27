@@ -58,9 +58,8 @@ export class DrizzleBridgeDeliveryRepo implements IJobBridge {
     row: BridgeDeliveryInsert,
     tx?: DrizzleTransaction,
   ): Promise<void> {
-    // Multi-tenancy gate — last-line defense. Even if callers skipped
-    // sites (a) `EventFlowService.publishAndStart` and (b)
-    // `BridgeDeliveryHandler.run`, a direct repo call still fails fast
+    // Multi-tenancy gate — last-line defense. Even if a caller skipped
+    // site (a) `EventFlowService.publishAndStart`, a direct repo call still fails fast
     // BEFORE any SQL is issued.
     assertTenantId(
       'DrizzleBridgeDeliveryRepo.insertDelivery',

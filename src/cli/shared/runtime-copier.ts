@@ -112,7 +112,7 @@ export async function copyRuntime(opts: RuntimeCopyOptions): Promise<RuntimeCopy
 	// sourceDir when computing the destination.
 	//
 	// Skips `generated/` directories by convention — those are produced by
-	// post-install codegen steps (event codegen, scope-entity-type, etc.)
+	// post-install codegen steps (event codegen, the job registry, etc.)
 	// and must not be shipped as static snapshots from the runtime source.
 	function walk(dir: string): void {
 		for (const entry of fs.readdirSync(dir)) {
