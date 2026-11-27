@@ -38,6 +38,7 @@ import {
 	DIRECTION_TO_POOL,
 } from "../../schema/event-definition.schema";
 import {
+	BACKOFF_COEFFICIENT,
 	DEFAULT_JOB_LIMITS,
 	type JobDefinition,
 	type JobArm,
@@ -203,7 +204,7 @@ function renderRetry(job: JobDefinition): string | null {
 	const r = job.retry;
 	if (!r) return null;
 	const nonRetryable = r.nonRetryableErrors ? `, nonRetryableErrorTypes: ${JSON.stringify(r.nonRetryableErrors)}` : "";
-	return `{ maximumAttempts: ${Math.max(1, r.attempts)}, initialIntervalMs: ${r.baseMs}, backoffCoefficient: ${r.backoff === "exponential" ? 2 : 1}${nonRetryable} }`;
+	return `{ maximumAttempts: ${Math.max(1, r.attempts)}, initialIntervalMs: ${r.baseMs}, backoffCoefficient: ${BACKOFF_COEFFICIENT[r.backoff]}${nonRetryable} }`;
 }
 
 /** The job-level options: its limits, the collision rule and the dedupe window. */

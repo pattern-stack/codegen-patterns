@@ -39,14 +39,8 @@ export type StepContext<I, O> = {
 } & Readonly<O>;
 
 /** Names a step may not take: the context's own fields. */
-export const RESERVED_STEP_NAMES: readonly string[] = [
-  'input',
-  'tenantId',
-  'runId',
-  'dryRun',
-  'signal',
-  'outputOf',
-];
+export const RESERVED_STEP_NAMES = ['input', 'tenantId', 'runId', 'dryRun', 'signal', 'outputOf'] as const;
+export type ReservedStepName = (typeof RESERVED_STEP_NAMES)[number];
 
 /**
  * The explicit opt-out from recording a value: only a void value may take it. A value is never dropped silently; one

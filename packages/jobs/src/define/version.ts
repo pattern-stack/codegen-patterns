@@ -87,7 +87,7 @@ function stepShape(name: string, erased: ErasedStep): Record<string, unknown> {
         // Present only when declared, so a step without a stop keeps the version it had.
         ...(erased.stopWhen ? { stopWhen: true } : {}),
       };
-    default:
+    case 'step':
       return {
         name,
         kind: erased.kind,

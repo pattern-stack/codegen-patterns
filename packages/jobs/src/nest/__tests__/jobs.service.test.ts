@@ -661,11 +661,11 @@ describe('JobsService', () => {
       expect(stale).toBeInstanceOf(JobCursorStaleError);
       const decoded = JSON.parse(
         Buffer.from(first.nextCursor ?? '', 'base64url').toString('utf8'),
-      ) as { t: string; i: string; f: string };
+      ) as { p: { t: string; i: string }; f: string };
       for (const forged of [
-        { ...decoded, i: 'x' },
-        { ...decoded, t: 'yesterday' },
-        { ...decoded, t: '2026-11-15T12:00:00Z' },
+        { ...decoded, p: { ...decoded.p, i: 'x' } },
+        { ...decoded, p: { ...decoded.p, t: 'yesterday' } },
+        { ...decoded, p: { ...decoded.p, t: '2026-11-15T12:00:00Z' } },
       ]) {
         const err = await expectThrown(
           service.listRuns(tenantKey(), 'toy.public-dry', {

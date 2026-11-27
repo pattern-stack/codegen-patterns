@@ -14,6 +14,7 @@ import {
   type ErasedStep,
   type NoneFor,
   RESERVED_STEP_NAMES,
+  type ReservedStepName,
   type StepContext,
   type StepDef,
 } from './step.ts';
@@ -36,16 +37,7 @@ export interface StepEntry {
 export interface StepChain<I, O, Last> {
   add<K extends string, Out>(
     name: K &
-      (K extends
-        | keyof O
-        | 'input'
-        | 'tenantId'
-        | 'runId'
-        | 'dryRun'
-        | 'signal'
-        | 'outputOf'
-        ? never
-        : K),
+      (K extends keyof O | ReservedStepName ? never : K),
     def: StepDef<StepContext<I, O>, Out>,
   ): StepChain<I, O & { [P in K]: Out }, Out>;
   readonly entries: readonly StepEntry[];
@@ -59,7 +51,7 @@ function chain<I, O, Last>(
   return {
     entries,
     add(name, def) {
-      if (RESERVED_STEP_NAMES.includes(name))
+      if ((RESERVED_STEP_NAMES as readonly string[]).includes(name))
         throw new JobDefinitionError(`a step may not be named ${name}`);
       if (entries.some((e) => e.name === name))
         throw new JobDefinitionError(`two steps are named ${name}`);

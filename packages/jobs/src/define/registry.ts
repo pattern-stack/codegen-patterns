@@ -151,7 +151,7 @@ function describeStep(
         batchMax: erased.batchMax,
         limiters: erased.limiters.map((l) => ({ ...l })),
       };
-    default:
+    case 'step':
       return {
         name,
         kind: 'step',

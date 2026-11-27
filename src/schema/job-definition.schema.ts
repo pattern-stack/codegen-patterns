@@ -1,3 +1,4 @@
+import type { Collision } from "@pattern-stack/jobs";
 import { z } from "./zod";
 import { DetectionConfigSchema as RuntimeDetectionConfigSchema } from "../../runtime/subsystems/integration";
 import { ScheduleSchema } from "./event-definition.schema";
@@ -69,9 +70,16 @@ const DetectionConfigSchema = RuntimeDetectionConfigSchema.describe(
 export const JOB_BACKOFF_STRATEGIES = ["fixed", "exponential"] as const;
 export type JobBackoffStrategy = (typeof JOB_BACKOFF_STRATEGIES)[number];
 
-/** What a start whose dedupe key already has an open run does (`@pattern-stack/jobs` `Collision`, JOBS-3). */
-export const COLLISION_MODES = ["join", "queue", "replace"] as const;
+/** Each backoff's `RetryPolicy.backoffCoefficient`: a table, so a new strategy is a compile error until it has one. */
+export const BACKOFF_COEFFICIENT = { fixed: 1, exponential: 2 } as const satisfies Record<JobBackoffStrategy, number>;
+
+/**
+ * What a start whose dedupe key already has an open run does: the package's own `Collision`, tied both ways, so a
+ * mode the package adds or renames fails to compile here.
+ */
+export const COLLISION_MODES = ["join", "queue", "replace"] as const satisfies readonly Collision[];
 export type CollisionMode = (typeof COLLISION_MODES)[number];
+true satisfies [Exclude<Collision, CollisionMode>] extends [never] ? true : never;
 
 /** Source-usage shapes (ADR-0018). Discriminant of the `arms[]` union. */
 export const ARM_KINDS = ["poll", "reconcile", "realtime"] as const;
