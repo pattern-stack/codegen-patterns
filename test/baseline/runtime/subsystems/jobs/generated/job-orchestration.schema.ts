@@ -6,12 +6,4 @@
  * JSON), `job_run_events` (the event log). The tenant column is `text`; a single-tenant app's runs are
  * `SYSTEM_TENANT`'s.
  */
-export {
-  jobItemResults,
-  jobRunChunks,
-  jobRunEvents,
-  jobRunItems,
-  jobRunSteps,
-  jobRuns,
-  jobRunValues,
-} from '@pattern-stack/jobs/postgres';
+export * from '@pattern-stack/jobs/schema';

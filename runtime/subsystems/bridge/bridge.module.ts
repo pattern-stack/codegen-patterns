@@ -67,13 +67,21 @@ export interface BridgeModuleOptions {
   registry?: BridgeRegistry;
 }
 
+/** The delivery repo per backend: one row each, so a new backend is a compile error here until it has one. */
+const DELIVERY_REPOS: Record<NonNullable<BridgeModuleOptions['backend']>, Provider> = {
+  // Framework-free (a plain host builds it too), so Nest builds it with the multi-tenant flag by hand.
+  memory: {
+    provide: BRIDGE_DELIVERY_REPO,
+    useFactory: (multiTenant: boolean) => new MemoryBridgeDeliveryRepo(multiTenant),
+    inject: [BRIDGE_MULTI_TENANT],
+  },
+  drizzle: { provide: BRIDGE_DELIVERY_REPO, useClass: DrizzleBridgeDeliveryRepo },
+};
+
 @Module({})
 export class BridgeModule {
   static forRoot(opts: BridgeModuleOptions): DynamicModule {
-    const repoProvider: Provider =
-      opts.backend === 'memory'
-        ? { provide: BRIDGE_DELIVERY_REPO, useClass: MemoryBridgeDeliveryRepo }
-        : { provide: BRIDGE_DELIVERY_REPO, useClass: DrizzleBridgeDeliveryRepo };
+    const repoProvider = DELIVERY_REPOS[opts.backend ?? 'drizzle'];
 
     return {
       module: BridgeModule,

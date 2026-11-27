@@ -27,11 +27,8 @@ import type {
   StatusHistogram,
 } from './bridge.protocol';
 import type { BridgeDeliveryRecord } from './bridge-delivery.schema';
-import { Inject, Injectable, Optional } from '@nestjs/common';
-
 import { assertTenantId } from './assert-tenant-id';
 import { UniqueConstraintError } from './bridge-errors';
-import { BRIDGE_MULTI_TENANT } from './bridge.tokens';
 
 const BRIDGE_DELIVERY_UNIQUE_CONSTRAINT =
   'uq_bridge_delivery_event_trigger' as const;
@@ -40,16 +37,14 @@ function key(eventId: string, triggerId: string): string {
   return `${eventId}::${triggerId}`;
 }
 
-@Injectable()
 export class MemoryBridgeDeliveryRepo implements IJobBridge {
   private readonly deliveries = new Map<string, BridgeDeliveryRecord>();
 
-  /** The Drizzle backend's twin: `multiTenant` makes a delivery with no tenant `MissingTenantIdError`. */
-  constructor(
-    @Optional()
-    @Inject(BRIDGE_MULTI_TENANT)
-    private readonly multiTenant: boolean = false,
-  ) {}
+  /**
+   * The Drizzle backend's twin: `multiTenant` makes a delivery with no tenant `MissingTenantIdError`. No framework:
+   * `BridgeModule` builds it with the flag, and a plain host can too.
+   */
+  constructor(private readonly multiTenant: boolean = false) {}
 
   async claimDelivery(
     row: Pick<BridgeDeliveryInsert, 'eventId' | 'triggerId' | 'tenantId'>,
