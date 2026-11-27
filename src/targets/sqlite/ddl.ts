@@ -9,8 +9,8 @@
  * - A single-column reference is inline (`REFERENCES t(c) ON DELETE …`); a composite foreign key, a UNIQUE constraint
  *   (a referenced unique) and every CHECK — the table's own and SQLite's storage CHECKs (`./checks.ts`) — are
  *   table constraints; a unique or plain index is a `CREATE INDEX`.
- * - A reference names its target by the Drizzle export; the SQL table is resolved from the set being rendered, so a
- *   target outside the set is an error naming it.
+ * - A reference carries its target's SQL table and column (TGT-2b), so one table's DDL needs no other table's facts:
+ *   `<entity>.sql` per entity references tables created by their own files.
  * - Tables are written in reference order where there is one. Two tables that reference each other (#631's case) are
  *   written in declaration order: SQLite checks a foreign key when a row is written, not when a table is created.
  * - SQLite has no NULLS NOT DISTINCT: such a unique (a tenant-scoped entity's default) is a unique index over
@@ -74,17 +74,19 @@ function columnOf(table: SqliteTableFacts, prop: string): string {
 	return col.name;
 }
 
-/** Tables in reference order; within a cycle, in declaration order (SQLite resolves FKs at write time). */
-function ordered(tables: readonly SqliteTableFacts[], tableOf: (exp: string, from: string) => SqliteTableFacts) {
+/**
+ * Tables in reference order, among the tables being rendered; within a cycle, in declaration order (SQLite resolves
+ * FKs at write time). A reference to a table outside the set is not a dependency here.
+ */
+function ordered(tables: readonly SqliteTableFacts[]) {
+	const byName = new Map(tables.map((t) => [t.name, t]));
 	const deps = new Map<SqliteTableFacts, Set<SqliteTableFacts>>();
 	for (const t of tables) {
 		const d = new Set<SqliteTableFacts>();
 		for (const c of t.constraints) {
-			const target =
-				c.kind === 'reference' ? c.fact.targetExport : c.kind === 'foreignKey' ? c.fact.targetExport : null;
-			if (target === null) continue;
-			const dep = tableOf(target, t.name);
-			if (dep !== t) d.add(dep);
+			const target = c.kind === 'reference' || c.kind === 'foreignKey' ? c.fact.targetTable : null;
+			const dep = target === null ? undefined : byName.get(target);
+			if (dep && dep !== t) d.add(dep);
 		}
 		deps.set(t, d);
 	}
@@ -102,33 +104,25 @@ function ordered(tables: readonly SqliteTableFacts[], tableOf: (exp: string, fro
 	return out;
 }
 
-/** The DDL for a set of tables. Every reference must point into the set. */
+/** The DDL for a set of tables (one entity's, or a whole module's). */
 export function renderSqliteDdl(tables: readonly SqliteTableFacts[]): string {
-	const byExport = new Map(tables.map((t) => [t.export, t]));
-	const tableOf = (exp: string, from: string) => {
-		const t = byExport.get(exp);
-		if (!t) throw new Error(`sqlite ddl: '${from}' references '${exp}', which is not in the set being rendered.`);
-		return t;
-	};
 	const statements: string[] = [];
-	for (const table of ordered(tables, tableOf)) {
+	for (const table of ordered(tables)) {
 		const refs = new Map<string, string>();
 		const tableConstraints: string[] = [];
 		const indexes: string[] = [];
 		for (const c of table.constraints) {
 			switch (c.kind) {
 				case 'reference': {
-					const target = tableOf(c.fact.targetExport, table.name);
 					const action = c.fact.onDelete === undefined ? '' : ` ON DELETE ${c.fact.onDelete.toUpperCase()}`;
-					refs.set(c.fact.column, ` REFERENCES "${target.name}"("${columnOf(target, c.fact.targetProp)}")${action}`);
+					refs.set(c.fact.column, ` REFERENCES "${c.fact.targetTable}"("${c.fact.targetColumn}")${action}`);
 					break;
 				}
 				case 'foreignKey': {
-					const target = tableOf(c.fact.targetExport, table.name);
-					const cols = c.fact.props.map((p) => `"${columnOf(table, p)}"`).join(', ');
-					const targetCols = c.fact.targetProps.map((p) => `"${columnOf(target, p)}"`).join(', ');
+					const cols = c.fact.columns.map((n) => `"${n}"`).join(', ');
+					const targetCols = c.fact.targetColumns.map((n) => `"${n}"`).join(', ');
 					tableConstraints.push(
-						`CONSTRAINT "${c.fact.name}" FOREIGN KEY (${cols}) REFERENCES "${target.name}"(${targetCols}) ON DELETE ${c.fact.onDelete.toUpperCase()}`,
+						`CONSTRAINT "${c.fact.name}" FOREIGN KEY (${cols}) REFERENCES "${c.fact.targetTable}"(${targetCols}) ON DELETE ${c.fact.onDelete.toUpperCase()}`,
 					);
 					break;
 				}

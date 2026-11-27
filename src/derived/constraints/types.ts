@@ -26,6 +26,10 @@ export interface ColumnReferenceFact {
 	readonly column: string;
 	/** The referenced table's generated export — its `plural`, NOT its SQL name (TABLE-0). */
 	readonly targetExport: string;
+	/** The referenced table's SQL name (TABLE-0) — what DDL names; a table's facts stand alone (TGT-2b). */
+	readonly targetTable: string;
+	/** The referenced column's SQL name. */
+	readonly targetColumn: string;
 	/**
 	 * The referenced column's property on the target export. `id` for a `belongs_to` / junction endpoint. For a field
 	 * `foreign_key: <table>.<column>` it is the column as the YAML writes it, which is the property only while that
@@ -70,10 +74,16 @@ export interface ForeignKeyFact {
 	readonly name: string;
 	/** The TypeScript properties of this table's columns, in order. */
 	readonly props: readonly string[];
+	/** The same columns' SQL names, in order. */
+	readonly columns: readonly string[];
 	/** The referenced table's generated export — its `plural` (TABLE-0). */
 	readonly targetExport: string;
+	/** The referenced table's SQL name. */
+	readonly targetTable: string;
 	/** The TypeScript properties of the referenced columns, in the same order. */
 	readonly targetProps: readonly string[];
+	/** The referenced columns' SQL names, in the same order. */
+	readonly targetColumns: readonly string[];
 	readonly onDelete: ReferentialAction;
 }
 

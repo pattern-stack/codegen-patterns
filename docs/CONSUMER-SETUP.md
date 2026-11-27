@@ -80,6 +80,33 @@ Generated code imports from `@shared/*` and `@modules/*`. Your `tsconfig.json` m
 
 `@generated/*` is not currently a required alias — generated code imports from its own tree via relative paths. If you plan to reference the barrels from application code (e.g. `@generated/modules`), add `"@generated/*": ["./src/generated/*"]`.
 
+## A SQLite project (`target: { database: sqlite, orm: drizzle }`)
+
+TGT-2b. A SQLite target emits the **storage layer**: per entity, a Drizzle `sqliteTable` module
+(`<module>/<entity>.entity.ts`) and its SQLite DDL (`<module>/<entity>.sql`), plus the schema barrel
+(`<generated>/schema.ts`). It has no NestJS layer (repository, service, controller, module, DTOs, use cases) and no
+Nest post-steps: `entity new` says what it skipped. Those come with `wiring: plain`.
+
+```yaml
+# codegen.config.yaml
+target:
+  database: sqlite
+  orm: drizzle
+```
+
+- **Apply the DDL** at start-up: concatenate every `<entity>.sql` and run it (`CREATE … IF NOT EXISTS`, so it can run
+  again). SQLite checks foreign keys on write, so file order doesn't matter. Turn `PRAGMA foreign_keys = ON` on per
+  connection.
+- **Query through Drizzle** with the generated tables. On Bun, `drizzle-orm/sqlite-proxy` over your connection works
+  well; its callback must return rows as **positional arrays** (`Statement.values()`), not objects.
+- **Storage:**
+  - instants are ISO 8601 TEXT, and decimals are TEXT (exact strings; ordering by one is lexical);
+  - booleans are INTEGER 0/1, and JSON and arrays are TEXT;
+  - enums are TEXT with a `CHECK`, except an enum array, which has none on SQLite;
+  - `max_length` is a `CHECK`;
+  - ids are app-made uuids (TEXT);
+  - a tenant-scoped NULLS NOT DISTINCT unique is a unique index over `ifnull(col, X'00')`.
+
 ## `DatabaseModule` contract
 
 Every generated repository expects the `DRIZZLE` injection token to resolve to a Drizzle client. A `@Global()` `DatabaseModule` is the standard way to satisfy that. Minimum viable scaffold — author this once:
@@ -555,7 +582,7 @@ blocks are:
 | Block | What it configures |
 |---|---|
 | `runtime` | `package` (default) \| `vendored` — where generated code imports the runtime from (ADR-037) |
-| `target` | `{ database, orm }` — the data layer the generated tables, columns and repositories are written for. Supported pairs: `{ database: postgres, orm: drizzle }` (the default). An unsupported pair is an error naming the supported ones; when written, both keys are required. `http`, `wiring` and `runtime` join when they have a second value, so any other key under `target:` is an error. The driver follows from the database (and, later, the runtime) and has no key (ADR-047) |
+| `target` | `{ database, orm }` — the data layer the generated tables, columns and repositories are written for. Supported pairs: `{ database: postgres, orm: drizzle }` (the default), `{ database: sqlite, orm: drizzle }` (TGT-2b: the storage layer — `sqliteTable` modules and `<entity>.sql`; the Nest layers come with `wiring: plain`). An unsupported pair is an error naming the supported ones; when written, both keys are required. `http`, `wiring` and `runtime` join when they have a second value, so any other key under `target:` is an error. The driver follows from the database (and, later, the runtime) and has no key (ADR-047) |
 | `paths` | `backend_src`, `frontend_src`, `entities`, `events_dir`, `jobs_dir`, `providers`, `modules_dir`, `orchestration_src`, `generated` |
 | `generate` | `frontend`, `semantic` |
 | `tables` | `prefix` — prepended to the SQL table name of every entity and junction that does not set `table:` (the literal name, used verbatim) or its own `table_prefix:` (`''` opts out); default `''`. Only SQL-facing names follow it — `pgTable('…')`, index / constraint names, Electric shapes, the semantic model's `tableName`, `foreign_key:` targets. The Drizzle export, `db.query` key, module folder and classes stay on `plural` (`src/config/table-naming.ts`) |

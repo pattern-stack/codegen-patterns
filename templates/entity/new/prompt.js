@@ -470,6 +470,13 @@ export default {
       generator: 'entity',
       seam: 'a pattern (src/patterns/*.pattern.ts) or the entity YAML',
     });
+    // The same banner with SQL's comment leader, for a `.sql` output (TGT-2b's `<entity>.sql`).
+    const generatedSqlBanner = renderGeneratedBanner({
+      source: path.relative(process.cwd(), fullPath),
+      generator: 'entity',
+      seam: 'a pattern (src/patterns/*.pattern.ts) or the entity YAML',
+      comment: '--',
+    });
 
     return {
       // #636 — the Drizzle tables codegen OWNS. A field-level `foreign_key:`
@@ -478,6 +485,7 @@ export default {
       ownedTableNames,
       // @generated DO-NOT-EDIT banner (see renderGeneratedBanner)
       generatedBanner,
+      generatedSqlBanner,
 
       // Runtime mode (ADR-037) — drives runtime import specifiers; read by the
       // backend prompt-extension to rewrite base-class imports.

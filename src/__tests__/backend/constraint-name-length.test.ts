@@ -20,18 +20,20 @@ import { withEntities } from './_entity-lookup';
 
 const entry = (name: string) => ({ name, builder: 'index', expr: `index('${name}')`, source: 'test' });
 
+const PG = { identifierMaxBytes: PG_IDENTIFIER_MAX_BYTES, database: 'postgres' };
+
 describe('assertDistinctConstraints — C5, the 63-byte limit', () => {
   it('accepts a name of exactly 63 bytes', () => {
-    expect(() => assertDistinctConstraints([entry('a'.repeat(PG_IDENTIFIER_MAX_BYTES))], 'thing')).not.toThrow();
+    expect(() => assertDistinctConstraints([entry('a'.repeat(PG_IDENTIFIER_MAX_BYTES))], 'thing', PG)).not.toThrow();
   });
 
   it('rejects 64 bytes, naming the entity, the name and entity.table: as the escape hatch', () => {
     const name = 'a'.repeat(PG_IDENTIFIER_MAX_BYTES + 1);
-    expect(() => assertDistinctConstraints([entry(name)], 'thing')).toThrow(/'thing'.*64 bytes.*entity\.table:/s);
+    expect(() => assertDistinctConstraints([entry(name)], 'thing', PG)).toThrow(/'thing'.*64 bytes.*entity\.table:/s);
   });
 
   it('counts bytes, not characters', () => {
-    expect(() => assertDistinctConstraints([entry('é'.repeat(32))], 'thing')).toThrow(/64 bytes/);
+    expect(() => assertDistinctConstraints([entry('é'.repeat(32))], 'thing', PG)).toThrow(/64 bytes/);
   });
 
   it('a long entity name fails generation on its own tenant index, a name that predates RFC-0006', () => {

@@ -124,16 +124,20 @@ describe('SQLite-only rules, on rows', () => {
 		expect(() => insert(db, 'c', null, 'toolong')).toThrow(/CHECK constraint failed/);
 	});
 
-	it('a reference outside the set is an error naming it; a cycle (#631) renders, and applies', () => {
-		const ref = (from: string, to: string) => ({ kind: 'reference' as const, fact: { column: 'id', targetExport: to, targetProp: 'id' } });
-		expect(() => renderSqliteDdl([fact({ constraints: [ref('items', 'ghosts')] })])).toThrow(/'items' references 'ghosts'/);
+	it('a reference to a table outside the set is written (each entity has its own .sql); a cycle (#631) applies', () => {
+		const ref = (to: string) => ({
+			kind: 'reference' as const,
+			fact: { column: 'id', targetExport: to, targetTable: to, targetColumn: 'id', targetProp: 'id' },
+		});
+		expect(renderSqliteDdl([fact({ constraints: [ref('ghosts')] })])).toContain('REFERENCES "ghosts"("id")');
 		const cyclic = renderSqliteDdl([
-			fact({ name: 'a', export: 'a', constraints: [ref('a', 'b')] }),
-			fact({ name: 'b', export: 'b', constraints: [ref('b', 'a')] }),
+			fact({ name: 'a', export: 'a', constraints: [ref('b')] }),
+			fact({ name: 'b', export: 'b', constraints: [ref('a')] }),
 		]);
 		const db = new Database(':memory:');
 		db.exec('PRAGMA foreign_keys = ON');
 		db.exec(cyclic);
 		expect(db.query("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").values().flat()).toEqual(['a', 'b']);
 	});
+
 });

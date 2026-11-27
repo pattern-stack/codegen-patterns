@@ -136,3 +136,18 @@ keys `const` and described.
   database, not the ORM. Any ORM on SQLite shares it, and the DDL ↔ Drizzle parity gate holds the two together.
 - **Drizzle text the dialects share** (`sql` predicates, `index`, `foreignKey`, `check`) lives once in
   `src/targets/drizzle/shared.ts`.
+
+## Revision — 2026-11-26 (TGT-2b)
+
+- **Two pairs.** `{ database: sqlite, orm: drizzle }` is a row. Each row carries database facts the generator reads:
+  `identifierMaxBytes` (C5; Postgres 63, SQLite none) and `layers` (`nest` | `storage`). A storage-only target emits
+  the table modules, their DDL and the schema barrel. Its other layers wait for a wiring that can serve them
+  (`wiring: plain`), and the skip is named, never silent (`docs/specs/TGT-2b.md`).
+- **Facts can come from rows as well as YAML** (a rule, for a possible interpreted mode that builds Zod, Drizzle and
+  DDL at runtime from domain rows):
+  1. facts are JSON-serializable plain data: no functions, no class instances, no meaningful `undefined`;
+  2. facts never carry template text; SQL that every SQL database shares is a fact (TGT-1);
+  3. derivations take parsed definitions and plain lookups, never files;
+  4. renderers (`src/targets/**`) read facts only.
+
+  `facts-are-data.test.ts` holds it: a strict JSON round trip, and byte-equal rendering from the copy.

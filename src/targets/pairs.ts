@@ -19,6 +19,24 @@ export const TARGET_PAIRS = [
 		database: 'postgres',
 		ormDescription: 'Drizzle ORM: tables, columns and repositories written against drizzle-orm',
 		databaseDescription: 'PostgreSQL: pg-core column builders, node-postgres driver on Node',
+		/** Postgres keeps 63 bytes of an identifier and truncates the rest without a word (C5). */
+		identifierMaxBytes: 63,
+		/** What `entity new` emits: the whole Nest app (`nest`), or the storage layer only (`storage`). */
+		layers: 'nest',
+	},
+	{
+		orm: 'drizzle',
+		database: 'sqlite',
+		ormDescription: 'Drizzle ORM: sqlite-core tables, plus SQLite DDL (.sql) from the same facts',
+		databaseDescription:
+			'SQLite: sqlite-core column builders, ISO TEXT instants, TEXT + CHECK enums; storage layer only until wiring: plain',
+		/** SQLite has no identifier length limit. */
+		identifierMaxBytes: null,
+		/**
+		 * The storage layer only: `sqliteTable` modules, `<entity>.sql`, the schema barrel. The Nest layers are
+		 * `node-postgres`-typed through runtime/base-classes; a SQLite project's stores come from `wiring: plain` (G7).
+		 */
+		layers: 'storage',
 	},
 ] as const;
 
@@ -40,4 +58,11 @@ export function supportedTargetPairs(
 	pairs: ReadonlyArray<{ readonly database: string; readonly orm: string }> = TARGET_PAIRS,
 ): string[] {
 	return pairs.map((p) => `{ database: ${p.database}, orm: ${p.orm} }`);
+}
+
+/** The row for a resolved `target:` (the schema has already refused an unsupported pair). */
+export function targetPairRow(target: { database: string; orm: string }): (typeof TARGET_PAIRS)[number] {
+	const row = TARGET_PAIRS.find((p) => p.database === target.database && p.orm === target.orm);
+	if (!row) throw new Error(`target { database: ${target.database}, orm: ${target.orm} } is not a supported pair.`);
+	return row;
 }

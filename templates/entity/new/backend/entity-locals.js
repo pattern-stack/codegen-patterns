@@ -35,9 +35,12 @@ import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
 import { arrayElementType, deriveFieldFacts, isArrayType } from '../../../../src/derived/columns/fields.js';
 import { columnRendererFor } from '../../../../src/targets/columns.js';
 import { constraintRendererFor } from '../../../../src/targets/constraints.js';
+import { targetPairRow } from '../../../../src/targets/pairs.js';
 import { tokenizePredicate } from '../../../../src/derived/constraints/predicate.js';
 import { onDeleteAction } from '../../../../src/derived/constraints/on-delete.js';
 import { deriveTableColumns } from '../../../../src/derived/tables/columns.js';
+import { renderSqliteTable } from '../../../../src/targets/drizzle/sqlite/table.js';
+import { renderSqliteDdl } from '../../../../src/targets/sqlite/ddl.js';
 import {
   familyConstName,
   familyHelperName,
@@ -725,7 +728,13 @@ export function processFieldFeatures(renderedFields, fields, naming, ownedTables
           }
         }
         // Every FK callback is annotated (#631): see `hasFk`. The suffix is the target's text (TGT-1).
-        pf.drizzleChain += constraints.columnReference({ column: pf.name, targetExport: relatedExport, targetProp: fkColumn });
+        pf.drizzleChain += constraints.columnReference({
+          column: pf.name,
+          targetExport: relatedExport,
+          targetTable: relatedTable,
+          targetColumn: fkColumn,
+          targetProp: fkColumn,
+        });
         hasFieldFk = true;
       }
       // else: host-owned target — plain column, no FK, no import. `index: true`
@@ -858,7 +867,10 @@ export const PG_IDENTIFIER_MAX_BYTES = 63;
  * from C4 — two partial entries over the same columns with different
  * predicates are the documented use.
  */
-export function assertDistinctConstraints(tableConstraints, entityName) {
+export function assertDistinctConstraints(tableConstraints, entityName, { identifierMaxBytes, database }) {
+  if (identifierMaxBytes === undefined || !database) {
+    throw new Error(`assertDistinctConstraints(${entityName}): the pair's identifierMaxBytes and database are required (TGT-2b).`);
+  }
   const names = new Map();
   const colSets = new Map();
   for (const c of tableConstraints) {
@@ -866,10 +878,11 @@ export function assertDistinctConstraints(tableConstraints, entityName) {
     // constraint the author cannot find by the name they read). Only the names the entity table's extra-config
     // callback declares pass through here; a single-column `.references()` FK is named by Drizzle and a
     // junction / relationship table never calls this (a known gap, filed for a decision).
-    if (Buffer.byteLength(c.name) > PG_IDENTIFIER_MAX_BYTES) {
+    // The limit is the database's (TGT-2b: `identifierMaxBytes` on the pair's row; SQLite has none).
+    if (identifierMaxBytes !== null && Buffer.byteLength(c.name) > identifierMaxBytes) {
       throw new Error(
         `[codegen] '${entityName}': the name '${c.name}' (${c.source}) is ${Buffer.byteLength(c.name)} bytes; ` +
-          `Postgres keeps ${PG_IDENTIFIER_MAX_BYTES} and would truncate it. A name starts with the SQL table ` +
+          `${database === 'postgres' ? 'Postgres' : database} keeps ${identifierMaxBytes} and would truncate it. A name starts with the SQL table ` +
           `name, so shorten that with \`entity.table:\` (TABLE-0), or rename the entity or relationship.`,
       );
     }
@@ -1413,6 +1426,14 @@ export function buildBackendLocals(definition, baseLocals) {
   const projectTablePrefix = baseLocals.tablePrefix ?? DEFAULT_CODEGEN_CONFIG.tables.prefix;
   const projectTenancyColumn = baseLocals.tenancyColumn ?? DEFAULT_CODEGEN_CONFIG.tenancy.column;
   const entityTableName = sqlTableName(entity, projectTablePrefix);
+  // TGT-2b: another entity's SQL table name, from its own YAML — a reference fact carries it so a table's facts stand
+  // alone (the per-entity DDL needs no other table's facts).
+  const sqlTableOf = (name) => {
+    if (name === entity.name) return entityTableName;
+    const block = entityLookup ? entityLookup(name) : null;
+    if (!block) throw new Error(`[codegen] '${entity.name}': no entity YAML for '${name}', so its SQL table is unknown.`);
+    return sqlTableName(block, projectTablePrefix);
+  };
   const targetNaming = { entityName, ownNaming, entityTableName, modulesDir, entityLookup };
   const entityNamePlural = ownNaming.plural;
   // NAME-2: the emitted file stems. `entityName` / `entityNamePlural` stay the
@@ -1718,7 +1739,14 @@ export function buildBackendLocals(definition, baseLocals) {
       .filter((rel) => !rel.match)
       .map((rel) => [
         rel.field,
-        constraints.columnReference({ column: rel.field, targetExport: rel.relatedTable, targetProp: 'id', onDelete: rel.onDelete }),
+        constraints.columnReference({
+          column: rel.field,
+          targetExport: rel.relatedTable,
+          targetTable: sqlTableOf(rel.relatedEntity),
+          targetColumn: 'id',
+          targetProp: 'id',
+          onDelete: rel.onDelete,
+        }),
       ]),
   );
 
@@ -2151,9 +2179,18 @@ export function buildBackendLocals(definition, baseLocals) {
   // RFC-0006 constraints (§2.1, §2.2, §2.4), appended after every other entry. Facts here; text from the target's
   // constraint renderer (TGT-1).
   const propOf = (column) => camelCase(column);
-  const fkExpr = (name, columns, targetExport, targetColumns, onDelete) =>
+  const fkExpr = (name, columns, targetExport, targetTable, targetColumns, onDelete) =>
     constraints.foreignKey(
-      { name, props: columns.map(propOf), targetExport, targetProps: targetColumns.map(propOf), onDelete },
+      {
+        name,
+        props: columns.map(propOf),
+        columns,
+        targetExport,
+        targetTable,
+        targetProps: targetColumns.map(propOf),
+        targetColumns,
+        onDelete,
+      },
       T,
     );
   // The targets of other tables' composite FKs: unique(id, <cols>), one per column set.
@@ -2188,7 +2225,7 @@ export function buildBackendLocals(definition, baseLocals) {
     const name = `${entityTableName}_${fk.relName}_match_fk`;
     tableConstraints.push({
       comment: `match: (${[rel.field, ...fk.pairs.map(([l]) => l)].join(', ')}) → ${rel.relatedEntity}(id, ${fk.pairs.map(([, t]) => t).join(', ')})`,
-      expr: fkExpr(name, [rel.field, ...fk.pairs.map(([l]) => l)], rel.relatedTable, ['id', ...fk.pairs.map(([, t]) => t)], rel.onDelete),
+      expr: fkExpr(name, [rel.field, ...fk.pairs.map(([l]) => l)], rel.relatedTable, sqlTableOf(rel.relatedEntity), ['id', ...fk.pairs.map(([, t]) => t)], rel.onDelete),
       name,
       builder: 'foreignKey',
       source: `match: on relationship '${fk.relName}'`,
@@ -2240,7 +2277,7 @@ export function buildBackendLocals(definition, baseLocals) {
     const kindFk = `${entityTableName}_${baseName}_${disc}_fk`;
     tableConstraints.push({
       comment: `inherits ${baseName}: this row sits only under a ${baseName} row whose ${disc} is ${inheritedChild.as}`,
-      expr: fkExpr(kindFk, ['id', disc], inheritedChild.baseTable, ['id', disc], 'cascade'),
+      expr: fkExpr(kindFk, ['id', disc], inheritedChild.baseTable, sqlTableOf(baseName), ['id', disc], 'cascade'),
       name: kindFk,
       builder: 'foreignKey',
       source: 'inherits: kind FK',
@@ -2250,7 +2287,7 @@ export function buildBackendLocals(definition, baseLocals) {
       const tenantFk = `${entityTableName}_${baseName}_tenant_fk`;
       tableConstraints.push({
         comment: `inherits ${baseName}: the tenant of this row is the tenant of its ${baseName} row`,
-        expr: fkExpr(tenantFk, ['id', t.column], inheritedChild.baseTable, ['id', t.column], 'cascade'),
+        expr: fkExpr(tenantFk, ['id', t.column], inheritedChild.baseTable, sqlTableOf(baseName), ['id', t.column], 'cascade'),
         name: tenantFk,
         builder: 'foreignKey',
           source: 'inherits: tenant FK',
@@ -2279,7 +2316,7 @@ export function buildBackendLocals(definition, baseLocals) {
       );
     }
   }
-  assertDistinctConstraints(tableConstraints, entityName);
+  assertDistinctConstraints(tableConstraints, entityName, targetPairRow(baseLocals.target));
 
   // Enum field declarations — surface a separate collection so the entity
   // template can emit `export const xEnum = pgEnum('x', [...])` ahead of
@@ -2368,6 +2405,22 @@ export function buildBackendLocals(definition, baseLocals) {
   const hasUseCase = (kind) => apiSurface.useCases.some((u) => u.kind === kind);
 
   // Output paths
+  const tableFacts = { name: entityTableName, export: entityNamePlural, columns: tableColumnFacts, constraints: recordedConstraints };
+  // The import of every other table a SQLite module references: a belongs_to / field FK target, or the joined-table
+  // base (the composite FKs). The paths are the ones the Postgres template imports from.
+  const sqliteTableImportsFor = (exportsNeeded) => {
+    const paths = new Map([
+      ...belongsToTableImports.map((i) => [i.relatedTable, i.importPath]),
+      ...fieldFkImports.map((i) => [i.relatedTable, i.importPath]),
+      ...(isChild ? [[inheritedChild.baseTable, inheritedChild.baseImportPath]] : []),
+    ]);
+    return exportsNeeded.map((name) => {
+      const importPath = paths.get(name);
+      if (!importPath) throw new Error(`[codegen] '${entityName}': no import path for the referenced table '${name}'.`);
+      return { name, importPath };
+    });
+  };
+
   const outputPaths = {
     entity: `${ownNaming.entityFile}.ts`,
     repository: ownNaming.repositoryFile,
@@ -2430,7 +2483,26 @@ export function buildBackendLocals(definition, baseLocals) {
     // are removed by RFC-0001 §8 (D4). The surface-scoped typed view
     // (`src/integrations/<surface>/types.generated.ts`) is the single source of
     // provider truth now — see src/cli/shared/adapter-emission-generator.ts.
+    // TGT-2b: a SQLite pair's table module and its `.sql`; null on Postgres.
+    sqliteEntity: null,
+    sqliteDdl: null,
   };
+
+  // TGT-2b: a SQLite target emits its storage layer only — the `sqliteTable` module and `<entity>.sql` from the same
+  // facts. The Nest layers (repository, service, controller, module, DTOs, use cases) are `node-postgres`-typed through
+  // runtime/base-classes; a SQLite project's stores come from `wiring: plain` (G7). Every other path is null, so hygen
+  // writes nothing else, and the skip is printed (never silent).
+  const isSqlite = targetPairRow(baseLocals.target).layers === 'storage';
+  if (isSqlite) {
+    const skipped = Object.keys(outputPaths).filter((k) => k !== 'entity' && outputPaths[k] !== null);
+    for (const k of Object.keys(outputPaths)) outputPaths[k] = null;
+    outputPaths.sqliteEntity = `${ownNaming.entityFile}.ts`;
+    outputPaths.sqliteDdl = `${moduleDir}/${emittedStem(entityName)}.sql`;
+    console.log(
+      `[codegen] '${entityName}': target sqlite writes the storage layer (sqliteTable module, .sql); ` +
+        `skipped ${skipped.length} Nest-layer files — they come with wiring: plain (G7).`,
+    );
+  }
 
   // Architecture-specific imports for backend. The integration-source module
   // imports the entity type sibling-style (`./<entity>.entity`) since the
@@ -2819,7 +2891,11 @@ export function buildBackendLocals(definition, baseLocals) {
     tableColumns,
     // TGT-2a: the table as facts — its columns and every constraint it renders. No template reads it; the SQLite DDL
     // renders it (TGT-2b writes the file), and the DDL golden pins it.
-    tableFacts: { name: entityTableName, export: entityNamePlural, columns: tableColumnFacts, constraints: recordedConstraints },
+    tableFacts,
+    // TGT-2b: the SQLite table module's body, its cross-table imports, and its DDL; null on Postgres.
+    sqliteTable: isSqlite ? renderSqliteTable(tableFacts, T) : null,
+    sqliteTableImports: isSqlite ? sqliteTableImportsFor(renderSqliteTable(tableFacts, T).referencedExports) : [],
+    sqliteDdl: isSqlite ? renderSqliteDdl([tableFacts]).trimEnd() : null,
     // Every FK `references()` callback carries a `: AnyPgColumn` return-type
     // annotation (#631). An unannotated callback whose target table is on an
     // FK cycle with this one — a self-FK, or A → B → A across files — makes

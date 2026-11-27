@@ -59,6 +59,7 @@ function readTemplate(rel: string): Template {
 function promptLocals(set: DefinitionSet): Record<string, unknown> {
 	return {
 		generatedBanner: '',
+		generatedSqlBanner: '',
 		runtimeMode: 'vendored',
 		...runtimeImportLocals('vendored'),
 		hasDetection: false,

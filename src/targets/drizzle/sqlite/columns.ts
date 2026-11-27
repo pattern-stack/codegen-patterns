@@ -102,7 +102,7 @@ export function renderSqliteColumn(c: ColumnFact): RenderedColumn {
 	return { drizzleType, drizzleChain: out, tsType: c.isArray ? `(${element})[]` : element };
 }
 
-export const drizzleSqliteColumns: ColumnRenderer<'drizzle/sqlite'> = {
+export const drizzleSqliteColumns: ColumnRenderer = {
 	pair: 'drizzle/sqlite',
 	render(f: FieldFacts): RenderedColumn {
 		return renderSqliteColumn(fieldColumn(f));

@@ -86,7 +86,7 @@ YAML ──► deriveTableColumns            src/derived/tables/       ColumnFac
 3. **The DDL golden:** `test/sqlite-ddl-golden/baseline.sql`, 15 baseline tables including the joined-table family.
    - It applies twice to `bun:sqlite` with foreign keys on, and `foreign_key_check` is clean.
    - On rows: NULL-tenant conflicts, per-tenant codes, the enum and length CHECKs, and the enum default.
-4. **The parity gate** (`just test-sqlite-parity`, in `just test-all`):
+4. **The parity gate** (`just test-sqlite` (named `test-sqlite-parity` until TGT-2b), in `just test-all`):
    - the drizzle/sqlite renderers write a `sqlite-core` module for every baseline table, and drizzle-kit
      `generate --dialect=sqlite` turns it into SQL;
    - it is applied beside the DDL and compared through `table_info`, `foreign_key_list`, `index_list` /

@@ -5,6 +5,8 @@
  * helper so behavior matches the legacy src/cli.ts.
  */
 
+import { configOrDefaults } from '../../config/project-config.js';
+import { targetPairRow } from '../../targets/pairs.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Command, Option } from 'clipanion';
@@ -401,6 +403,38 @@ export class EntityNewCommand extends Command {
 			buildJobBridgeTriggers(j, path.join(jobsDir, `${j.type}.yaml`)),
 		);
 
+		// TGT-2b: a storage-only target (`layers: 'storage'` on its TARGET_PAIRS row — SQLite) writes the table modules,
+		// their .sql and the schema barrel, nothing else; the dry run predicts exactly that.
+		const target = configOrDefaults(ctx.config).target;
+		const storageOnly = targetPairRow(target).layers === 'storage';
+		const storageOnlyNote =
+			`target ${target.database}: storage layer only — the schema barrel; skipped the modules barrel, relations ` +
+			'manifest, subsystem barrels, event / bridge / jobs codegen, orchestration, frontend and integrations ' +
+			'(they come with wiring: plain, G7).';
+
+		if (this.dryRun && storageOnly) {
+			const barrelPlan = await regenerateBarrels({
+				ctx,
+				entitiesDir,
+				nonEntityDirs,
+				relationshipsDir,
+				generatedDir,
+				dryRun: true,
+				modulesBarrel: false,
+			});
+			if (isJsonMode()) {
+				printJson({
+					command: 'entity new',
+					dryRun: true,
+					storageOnly: true,
+					barrels: { modules: null, schema: barrelPlan.schemaBarrel, entityCount: barrelPlan.entityCount },
+				});
+			} else {
+				printInfo(`[dry run] ${storageOnlyNote}`);
+			}
+			return invalid.length === 0 ? 0 : 1;
+		}
+
 		if (this.dryRun) {
 			const barrelPlan = await regenerateBarrels({
 				ctx,
@@ -590,6 +624,7 @@ export class EntityNewCommand extends Command {
 			continueOnError: this.continueOnError,
 		});
 		const succeeded = rendered.succeeded;
+
 		const failed: RejectionEntry[] = [...invalid.map(rejectionEntry), ...rendered.failed];
 
 		// Regenerate the barrels once, after all Hygen invocations. Each is total:
@@ -610,9 +645,35 @@ export class EntityNewCommand extends Command {
 				nonEntityDirs,
 				relationshipsDir,
 				generatedDir,
+				modulesBarrel: !storageOnly,
 			});
 		} catch (err: unknown) {
 			return reportRegenerationFailure('entity new', err);
+		}
+
+		// TGT-2b: a storage-only target (`layers: 'storage'` on its TARGET_PAIRS row — SQLite) stops at the schema barrel.
+		// Every post-step below writes Nest-shaped code (the relations manifest's scopes, subsystems, events, the bridge,
+		// the jobs scope union, orchestration, the frontend, integrations) that the storage layer has no use for yet; they
+		// come with `wiring: plain` (G7). Named, never silent.
+		if (storageOnly) {
+			if (!isJsonMode()) {
+				console.log('');
+				printInfo(`${storageOnlyNote} Wrote ${path.relative(ctx.cwd, barrelResult.schemaBarrel)}.`);
+				const total = validated.length + invalid.length;
+				if (failed.length === 0) printSuccess(`${total} entities · ${succeeded.length} succeeded`);
+				else printWarning(`${total} entities · ${succeeded.length} succeeded · ${failed.length} failed`);
+			} else {
+				// The real run's shape, with the skipped steps absent and `storageOnly` saying why.
+				printJson({
+					command: 'entity new',
+					storageOnly: true,
+					totals: { succeeded: succeeded.length, failed: failed.length },
+					succeeded,
+					failed,
+					barrels: { modules: null, schema: barrelResult.schemaBarrel, entityCount: barrelResult.entityCount },
+				});
+			}
+			return failed.length === 0 ? 0 : 1;
 		}
 
 		// Relations manifest (REL-1, ADR-044) — one `defineRelations()` over the
