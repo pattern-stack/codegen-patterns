@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added: events under `wiring: pattern-stack` (S-1)
+
+- `emits:` is no longer refused under pattern-stack wiring. `codegen subsystem install events` (drizzle or memory)
+  vendors the Nest-free closure: no `events.module.ts` and no Nest barrel.
+- The next `entity new` writes:
+  - the typed bus without decorators;
+  - `<generated>/events-system.ts`, an `events` system whose `start` runs the drain loop and the scheduler after
+    every system and module was created, and whose `stop` stops them;
+  - `SYSTEMS` in `<generated>/composition.ts`, which `compose.ts` composes after the database.
+- A module whose use cases publish uses the system. Its use cases take `db` and the typed bus, and publish in the
+  write's transaction.
+- The other subsystems are refused under pattern-stack, each naming the step that brings it.
+- Runtime, Nest unchanged:
+  - `DrizzleEventBus` and `MemoryEventBus` are plain classes with `start()` / `stop()`;
+  - `EventsModule.forRoot` builds them through factories, and Nest still runs their init and destroy hooks;
+  - `EventsModuleOptions` moved to `events-options.ts`, and `events/core` exports it.
+- Package mode augments `DomainEventRegistry` through `…/events/core` (the PW-0 gap).
+- `project init --wiring pattern-stack` points drizzle-kit at the subsystem schema barrel too.
+- docs/specs/S-1.md.
+
 ### Added: EAV under `wiring: pattern-stack`
 
 - `eav: true` and `eav_value_table: true` are no longer refused under pattern-stack wiring.

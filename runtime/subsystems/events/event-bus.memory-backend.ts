@@ -20,7 +20,6 @@
  *   and keeping them unified avoids drift between backends.
  */
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type {
   DomainEvent,
   IEventBus,
@@ -37,8 +36,8 @@ import {
   decodeEventCursor,
   encodeEventCursor,
 } from './event-keyset-cursor';
-import { EVENTS_MODULE_OPTIONS } from './events.tokens';
-import type { EventsModuleOptions } from './events.module';
+import type { EventsModuleOptions } from './events-options';
+import { createLogger } from '../../logger';
 
 /**
  * Project an in-memory `DomainEvent` into the narrow `EventSummary` shape.
@@ -70,9 +69,9 @@ function toEventSummary(event: DomainEvent): EventSummary {
   };
 }
 
-@Injectable()
+/** A plain class (S-1): `EventsModule` builds it through a factory, the pattern-stack `events` system directly. */
 export class MemoryEventBus implements IEventBus, IEventReadPort {
-  private readonly logger = new Logger(MemoryEventBus.name);
+  private readonly logger = createLogger(MemoryEventBus.name);
 
   /** All events published since construction (or last clear). */
   readonly publishedEvents: DomainEvent[] = [];
@@ -80,14 +79,18 @@ export class MemoryEventBus implements IEventBus, IEventReadPort {
   private readonly handlers = new Map<string, Set<(event: DomainEvent) => Promise<void>>>();
   private readonly opts: EventsModuleOptions;
 
-  constructor(
-    @Optional() @Inject(EVENTS_MODULE_OPTIONS) opts?: EventsModuleOptions,
-  ) {
+  constructor(opts?: EventsModuleOptions) {
     // Default so direct construction (e.g. `new MemoryEventBus()` from a
     // unit test outside NestJS DI) keeps working without an explicit
     // options object.
     this.opts = opts ?? { backend: 'memory' };
   }
+
+  /** Nothing to start: the memory bus dispatches inline. (The pattern-stack `events` system calls it like the drizzle bus's.) */
+  async start(): Promise<void> {}
+
+  /** Nothing to stop. */
+  async stop(): Promise<void> {}
 
   async publish(event: DomainEvent): Promise<void> {
     // Mirror the `domain_events_tier_routing_check` DB constraint at the

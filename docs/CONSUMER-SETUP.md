@@ -133,6 +133,13 @@ decorator flags in `tsconfig.json`. In their place:
 Read a module with `app.module('<context>')` (one module per entity `context:`) and call its use cases. There is no HTTP
 layer yet.
 
+**Events.** `bunx codegen subsystem install events` (drizzle or memory backend) vendors the Nest-free events runtime.
+The next `entity new` writes the typed bus and an `events` system, `<generated>/events-system.ts`. That system is
+listed in `SYSTEMS` (`<generated>/composition.ts`), which `compose.ts` composes after the database. A use case of an
+entity with `emits:` publishes in its write's transaction. The drain loop starts on `app.start()`; subscribe with
+`app.system('events').typed.subscribe('<event>', handler)` before then. The other subsystems are refused under
+pattern-stack wiring until their own step.
+
 ## A SQLite project (`target: { database: sqlite, orm: drizzle }`)
 
 TGT-2b. A SQLite target emits the **storage layer**: per entity, a Drizzle `sqliteTable` module

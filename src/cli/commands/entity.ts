@@ -81,7 +81,12 @@ import { generating } from '../../utils/generated-file.js';
 import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
-import { planPatternStackComposition, printPatternStackComposition, writePatternStackComposition } from '../shared/pattern-stack-composition.js';
+import {
+	eventsInstalled,
+	planPatternStackComposition,
+	printPatternStackComposition,
+	writePatternStackComposition,
+} from '../shared/pattern-stack-composition.js';
 import { patternStackRelationshipYamlsRefusal } from '../shared/storage-only.js';
 
 // ---------------------------------------------------------------------------
@@ -426,8 +431,26 @@ export class EntityNewCommand extends Command {
 				ctx, entitiesDir, nonEntityDirs, relationshipsDir, generatedDir, dryRun: true, modulesBarrel: false, junctions: true,
 			});
 			let compositionFiles: string[];
+			// S-1: with events installed, the real run also writes the event set and the subsystem schema barrel.
+			let eventFiles: string[] = [];
 			try {
 				compositionFiles = planPatternStackComposition(ctx).map((f) => f.path);
+				if (eventsInstalled(ctx)) {
+					const plannedEvents = await generateEventCodegen({
+						entitiesDir,
+						nonEntityDirs,
+						eventsDir,
+						outputDir: eventCodegenOutputDir,
+						mode: runtimeMode,
+						wiring: 'pattern-stack',
+						extraSugarEvents: jobScheduledEvents,
+						dryRun: true,
+					});
+					eventFiles = [
+						...plannedEvents.files.map((f) => f.outputPath),
+						path.resolve(generatedDir, 'subsystems-schema.ts'),
+					];
+				}
 			} catch (err: unknown) {
 				printError(err instanceof Error ? err.message : String(err));
 				return 1;
@@ -439,9 +462,11 @@ export class EntityNewCommand extends Command {
 					wiring: 'pattern-stack',
 					barrels: { modules: null, schema: barrelPlan.schemaBarrel, entityCount: barrelPlan.entityCount },
 					composition: compositionFiles,
+					events: eventFiles,
 				});
 			} else {
 				for (const f of compositionFiles) printInfo(`[dry run] composition: ${path.relative(ctx.cwd, f)}`);
+				for (const f of eventFiles) printInfo(`[dry run] events: ${path.relative(ctx.cwd, f)}`);
 			}
 			return invalid.length === 0 ? 0 : 1;
 		}
@@ -722,6 +747,33 @@ export class EntityNewCommand extends Command {
 		// frontend, integrations) come with S-1..S-3 and H-1; they are skipped by name, never silently.
 		if (patternStackWiring) {
 			if (relationsFailed) return 1;
+			// S-1: with the events subsystem installed, its generated files (the typed bus without Nest, the registry the
+			// scheduler reads) and the `domain_events` table in the subsystem schema barrel; the composition then writes
+			// the `events` system.
+			const withEvents = eventsInstalled(ctx);
+			if (withEvents) {
+				try {
+					await regenerateSubsystemSchemaBarrel({ ctx, generatedDir });
+					await generating(eventCodegenOutputDir, async () => {
+						const result = await generateEventCodegen({
+							entitiesDir,
+							nonEntityDirs,
+							eventsDir,
+							outputDir: eventCodegenOutputDir,
+							mode: runtimeMode,
+							wiring: 'pattern-stack',
+							extraSugarEvents: jobScheduledEvents,
+						});
+						const errors = result.issues.filter((i) => i.severity === 'error');
+						if (errors.length > 0) {
+							throw new Error(errors.map((i) => `${i.message}${i.path ? ` (${i.path})` : ''}`).join('; '));
+						}
+						return result;
+					});
+				} catch (err: unknown) {
+					return reportRegenerationFailure('entity new', err);
+				}
+			}
 			let patternStackResult: ReturnType<typeof writePatternStackComposition>;
 			try {
 				patternStackResult = writePatternStackComposition(ctx);
@@ -733,10 +785,11 @@ export class EntityNewCommand extends Command {
 			if (!isJsonMode()) {
 				console.log('');
 				printPatternStackComposition(ctx, patternStackResult);
+				if (withEvents) printInfo(`events: ${path.relative(ctx.cwd, eventCodegenOutputDir)} (the typed bus, the registry), the events system`);
 				printInfo(
-					'wiring: pattern-stack — skipped the post-steps that write Nest code or need a Nest app: subsystems, the ' +
-						'ScopeEntityType union, events, bridge, jobs, orchestration, the semantic model, frontend, integrations ' +
-						'(S-1..S-3, H-1).',
+					'wiring: pattern-stack — skipped the post-steps that write Nest code or need a Nest app: the subsystem ' +
+						'barrel, the ScopeEntityType union, bridge, jobs, orchestration, the semantic model, frontend, ' +
+						'integrations (S-2, S-3, H-1).',
 				);
 				if (failed.length === 0) printSuccess(`${total} entities · ${succeeded.length} succeeded`);
 				else printWarning(`${total} entities · ${succeeded.length} succeeded · ${failed.length} failed`);

@@ -29,7 +29,6 @@
  * via EventsModule.forRoot({ backend: '...' }) without touching use cases.
  */
 import { randomUUID } from 'node:crypto';
-import { Injectable, OnModuleDestroy, OnModuleInit, Inject, Logger, Optional } from '@nestjs/common';
 import { eq, and, inArray, asc, desc, gte, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 import type {
   DomainEvent,
@@ -49,11 +48,9 @@ import {
 } from './event-keyset-cursor';
 import type { DrizzleClient } from '../../types/drizzle';
 import { domainEvents, type DomainEventRecord } from './domain-events.schema';
-import { DRIZZLE } from '../../constants/tokens';
-import { EVENTS_MODULE_OPTIONS } from './events.tokens';
-import type { EventsModuleOptions } from './events.module';
-import { BRIDGE_OUTBOX_DRAIN_HOOK } from '../bridge/bridge.tokens';
+import type { EventsModuleOptions } from './events-options';
 import type { IBridgeOutboxDrainHook } from '../bridge/bridge.protocol';
+import { createLogger } from '../../logger';
 import {
   EVENTS_WAKE_CHANNEL,
   PgNotifyListener,
@@ -152,9 +149,12 @@ function isUniqueViolation(err: unknown): boolean {
   return code?.code === '23505' || code?.cause?.code === '23505';
 }
 
-@Injectable()
-export class DrizzleEventBus implements IEventBus, IEventReadPort, OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(DrizzleEventBus.name);
+/**
+ * A plain class (S-1): `EventsModule` builds it through a factory under Nest, and the pattern-stack `events` system
+ * constructs it directly. `start()` / `stop()` run the drain loop; Nest calls them as onModuleInit / onModuleDestroy.
+ */
+export class DrizzleEventBus implements IEventBus, IEventReadPort {
+  private readonly logger = createLogger(DrizzleEventBus.name);
   private polling = false;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly handlers = new Map<string, Set<(event: DomainEvent) => Promise<void>>>();
@@ -169,8 +169,8 @@ export class DrizzleEventBus implements IEventBus, IEventReadPort, OnModuleInit,
   private wakeRecheckPending = false;
 
   constructor(
-    @Inject(DRIZZLE) private readonly db: DrizzleClient,
-    @Optional() @Inject(EVENTS_MODULE_OPTIONS) opts?: EventsModuleOptions,
+    private readonly db: DrizzleClient,
+    opts?: EventsModuleOptions,
     /**
      * Bridge subsystem hook (BRIDGE-4). Optional — when the bridge
      * subsystem is not installed in the consuming app, this token is
@@ -182,8 +182,6 @@ export class DrizzleEventBus implements IEventBus, IEventReadPort, OnModuleInit,
      * hook owns all knowledge of `bridge_delivery` and the jobs engine;
      * the events subsystem stays unaware of bridge schemas.
      */
-    @Optional()
-    @Inject(BRIDGE_OUTBOX_DRAIN_HOOK)
     private readonly bridgeHook: IBridgeOutboxDrainHook | null = null,
   ) {
     // Default so direct construction (e.g. integration tests not going
@@ -195,7 +193,18 @@ export class DrizzleEventBus implements IEventBus, IEventReadPort, OnModuleInit,
   // Lifecycle
   // ============================================================================
 
+  /** Nest's hook: `start()`. */
   async onModuleInit(): Promise<void> {
+    await this.start();
+  }
+
+  /** Nest's hook: `stop()`. */
+  async onModuleDestroy(): Promise<void> {
+    await this.stop();
+  }
+
+  /** Starts the drain loop (and the LISTEN wake listener, when `listenNotify`). */
+  async start(): Promise<void> {
     this.polling = true;
     this.schedulePoll();
 
@@ -222,7 +231,8 @@ export class DrizzleEventBus implements IEventBus, IEventReadPort, OnModuleInit,
     }
   }
 
-  async onModuleDestroy(): Promise<void> {
+  /** Stops the drain loop and the wake listener. A drain in flight finishes; no new one starts. */
+  async stop(): Promise<void> {
     this.polling = false;
     if (this.pollTimer) {
       clearTimeout(this.pollTimer);

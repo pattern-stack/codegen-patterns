@@ -54,11 +54,10 @@ already had the EAV edges, but nothing used them:
   The module's header comment now says so.
   A cycle among a module's classes is an error that names them (the class graph refuses cycles before this).
 
-### Still refused
+### EAV on a family member
 
-EAV on a family child (`eav: true` with `inherits:`) is refused by name under pattern-stack. Its EAV repository
-constructor drops the base's repository, which the child's pair writes use, and the with-fields reads type the child
-row instead of its flat shape. Nest has the same gap, so it isn't ported; a fix to the EAV child templates lifts it.
+The schema refuses `eav: true` on a family base or child (R9), so it never reaches the templates. PW-EAV first added a
+pattern-stack refusal for EAV with `inherits:` too; it could never fire, and S-1 removed it.
 
 ## The gate
 
@@ -70,7 +69,7 @@ row instead of its flat shape. Nest has the same gap, so it isn't ported; a fix 
 - The Postgres half creates a definition, creates a lead with `fields: { budget }`, reads it back with
   `findByIdWithFields`, updates the value, and finds it merged in `listWithFields`.
 - `eav-pattern-stack.test.ts` covers the wiring parts (the FieldValueService block, the with-fields use cases, the
-  value table's definition repository) and the refusal on a family child.
+  value table's definition repository).
 - `emit-composition.test.ts` pins:
   - the cross-module refs and `dependsOn`;
   - the value table's definition repository;

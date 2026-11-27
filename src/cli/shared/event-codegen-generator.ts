@@ -19,6 +19,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import type { TargetWiring } from '../../targets/apps.js';
 
 import type { AnalysisIssue } from '../../analyzer/types.js';
 import { loadEntityFromYaml } from '../../utils/yaml-loader.js';
@@ -56,6 +57,18 @@ const PACKAGE_EVENTS_RUNTIME_IMPORT =
 	'@pattern-stack/codegen/runtime/subsystems/events/index';
 
 /**
+ * Under `target.wiring: pattern-stack` (S-1) the package-mode imports and the registry augmentation go through the
+ * Nest-free entry, `…/events/core`: the `index` re-exports the Nest module, so even a type import of it would need
+ * `@nestjs/*`. (The PW-0 known gap: `DomainEventRegistry` is declared in `event-registry.ts` and re-exported by both
+ * entries, so augmenting `core` merges into the same interface.)
+ */
+const PACKAGE_EVENTS_CORE_IMPORT = '@pattern-stack/codegen/runtime/subsystems/events/core';
+
+function packageEventsImport(wiring: TargetWiring): string {
+	return wiring === 'pattern-stack' ? PACKAGE_EVENTS_CORE_IMPORT : PACKAGE_EVENTS_RUNTIME_IMPORT;
+}
+
+/**
  * Build the package-mode `DomainEventRegistry` augmentation block (ADR-037,
  * package-mode trigger typing). Emitted ONLY in package mode and ONLY when the
  * project declares at least one event.
@@ -73,7 +86,7 @@ const PACKAGE_EVENTS_RUNTIME_IMPORT =
  * consumer's vendored `./generated/types` directly) and not emitted, so
  * vendored output stays byte-stable.
  */
-function buildRegistryAugmentationBlock(events: EventDefinition[]): string {
+function buildRegistryAugmentationBlock(events: EventDefinition[], wiring: TargetWiring): string {
 	const sorted = [...events].sort((a, b) => a.type.localeCompare(b.type));
 	const chunks: string[] = [];
 	chunks.push(
@@ -86,7 +99,7 @@ function buildRegistryAugmentationBlock(events: EventDefinition[]): string {
 		`// types (which key off the published \`EventTypeName\`) see THIS project's events`,
 	);
 	chunks.push(`// with full \`EventOfType<T>\` payload typing.`);
-	chunks.push(`declare module '${PACKAGE_EVENTS_RUNTIME_IMPORT}' {`);
+	chunks.push(`declare module '${packageEventsImport(wiring)}' {`);
 	chunks.push(`\tinterface DomainEventRegistry {`);
 	for (const ev of sorted) {
 		chunks.push(`\t\t'${ev.type}': ${toPascalCase(ev.type)}Event;`);
@@ -105,13 +118,10 @@ interface EventsRuntimeImports {
 	errors: string;
 }
 
-function eventsRuntimeImports(mode: RuntimeMode): EventsRuntimeImports {
+function eventsRuntimeImports(mode: RuntimeMode, wiring: TargetWiring = 'nest'): EventsRuntimeImports {
 	if (mode === 'package') {
-		return {
-			protocol: PACKAGE_EVENTS_RUNTIME_IMPORT,
-			tokens: PACKAGE_EVENTS_RUNTIME_IMPORT,
-			errors: PACKAGE_EVENTS_RUNTIME_IMPORT,
-		};
+		const from = packageEventsImport(wiring);
+		return { protocol: from, tokens: from, errors: from };
 	}
 	return {
 		protocol: '../event-bus.protocol',
@@ -141,6 +151,11 @@ export interface EventCodegenGeneratorOptions {
 	 * consumer's generated files then typecheck from `src/generated/events/`.
 	 */
 	mode?: RuntimeMode;
+	/**
+	 * `target.wiring` (S-1). `pattern-stack` ⇒ the typed bus has no decorators (the `events` system constructs it) and
+	 * package-mode imports go through `…/events/core`. Defaults to `nest` (byte-stable).
+	 */
+	wiring?: TargetWiring;
 	/** If true, compute content but don't write to disk. */
 	dryRun?: boolean;
 	/**
@@ -429,9 +444,10 @@ export function collectMergedEvents(
 export function buildTypesContent(
 	events: EventDefinition[],
 	mode: RuntimeMode = 'vendored',
+	wiring: TargetWiring = 'nest',
 ): string {
 	const sorted = [...events].sort((a, b) => a.type.localeCompare(b.type));
-	const protocolImport = eventsRuntimeImports(mode).protocol;
+	const protocolImport = eventsRuntimeImports(mode, wiring).protocol;
 
 	if (sorted.length === 0) {
 		return (
@@ -510,7 +526,7 @@ export function buildTypesContent(
 	// block so they pick up this project's events. Vendored mode imports the
 	// local types directly and needs no augmentation (byte-stable).
 	if (mode === 'package') {
-		chunks.push(buildRegistryAugmentationBlock(sorted));
+		chunks.push(buildRegistryAugmentationBlock(sorted, wiring));
 		chunks.push('');
 	}
 
@@ -831,21 +847,43 @@ export class TypedEventBus {
 }
 `;
 
+/**
+ * The bus under `wiring: pattern-stack` (S-1): the same class without Nest. The `events` system constructs it with the
+ * bus and the multi-tenant flag, so there are no decorators and no tokens.
+ */
+function patternStackBusBody(body: string): string {
+	const replace = (text: string, from: string, to: string): string => {
+		if (!text.includes(from)) throw new Error(`buildBusContent: the bus body no longer has ${JSON.stringify(from)}`);
+		return text.replace(from, to);
+	};
+	let out = replace(body, `import { Injectable, Inject } from '@nestjs/common';\n`, '');
+	out = replace(out, `import { EVENT_BUS, EVENTS_MULTI_TENANT } from '../events.tokens';\n`, '');
+	out = replace(out, `@Injectable()\n`, '');
+	out = replace(
+		out,
+		`\t\t@Inject(EVENT_BUS) private readonly bus: IEventBus,\n\t\t@Inject(EVENTS_MULTI_TENANT) private readonly multiTenant: boolean,\n`,
+		`\t\tprivate readonly bus: IEventBus,\n\t\tprivate readonly multiTenant: boolean = false,\n`,
+	);
+	return out;
+}
+
 export function buildBusContent(
 	_events: EventDefinition[],
 	mode: RuntimeMode = 'vendored',
+	wiring: TargetWiring = 'nest',
 ): string {
 	// Body is identical for empty and non-empty projects; the behaviour
 	// difference lives in registry.ts (empty throws on any lookup). Only the
 	// three runtime imports are mode-dependent (ADR-037) — in package mode they
 	// resolve through the published events index barrel. Vendored mode returns
 	// BUS_BODY untouched (byte-stable).
-	let body = BUS_BODY;
+	let body = wiring === 'pattern-stack' ? patternStackBusBody(BUS_BODY) : BUS_BODY;
 	if (mode === 'package') {
+		const from = packageEventsImport(wiring);
 		body = body
-			.replace(`from '../events.tokens'`, `from '${PACKAGE_EVENTS_RUNTIME_IMPORT}'`)
-			.replace(`from '../events-errors'`, `from '${PACKAGE_EVENTS_RUNTIME_IMPORT}'`)
-			.replace(`from '../event-bus.protocol'`, `from '${PACKAGE_EVENTS_RUNTIME_IMPORT}'`);
+			.replace(`from '../events.tokens'`, `from '${from}'`)
+			.replace(`from '../events-errors'`, `from '${from}'`)
+			.replace(`from '../event-bus.protocol'`, `from '${from}'`);
 	}
 	return HEADER + '\n' + body;
 }
@@ -887,12 +925,13 @@ const OUTPUT_FILE_NAMES = [
 export function buildEventCodegenContents(
 	events: EventDefinition[],
 	mode: RuntimeMode = 'vendored',
+	wiring: TargetWiring = 'nest',
 ): Array<{ name: (typeof OUTPUT_FILE_NAMES)[number]; content: string }> {
 	return [
-		{ name: 'types.ts', content: buildTypesContent(events, mode) },
+		{ name: 'types.ts', content: buildTypesContent(events, mode, wiring) },
 		{ name: 'schemas.ts', content: buildSchemasContent(events) },
 		{ name: 'registry.ts', content: buildRegistryContent(events) },
-		{ name: 'bus.ts', content: buildBusContent(events, mode) },
+		{ name: 'bus.ts', content: buildBusContent(events, mode, wiring) },
 		{ name: 'index.ts', content: buildIndexContent(events) },
 	];
 }
@@ -900,7 +939,7 @@ export function buildEventCodegenContents(
 export async function generateEventCodegen(
 	opts: EventCodegenGeneratorOptions,
 ): Promise<EventCodegenResult> {
-	const { entitiesDir, eventsDir, outputDir, mode = 'vendored', dryRun = false, extraSugarEvents, nonEntityDirs } = opts;
+	const { entitiesDir, eventsDir, outputDir, mode = 'vendored', wiring = 'nest', dryRun = false, extraSugarEvents, nonEntityDirs } = opts;
 
 	// 1–3. Load + merge via the shared helper. `no_events_dir` / `no_files`
 	// warnings are retained — the generator still emits stub files, matching
@@ -913,7 +952,7 @@ export async function generateEventCodegen(
 	});
 
 	// 4. Build all file contents (mode-aware import resolution).
-	const files: EventCodegenFileOutput[] = buildEventCodegenContents(merged, mode).map(
+	const files: EventCodegenFileOutput[] = buildEventCodegenContents(merged, mode, wiring).map(
 		({ name, content }) => ({
 			name,
 			outputPath: path.join(outputDir, name),

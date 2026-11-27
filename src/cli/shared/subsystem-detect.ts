@@ -18,6 +18,8 @@
  * surface (`subsystem list`).
  */
 
+import { configOrDefaults } from '../../config/project-config.js';
+import { isPatternStackWiring } from '../../targets/apps.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Context } from './context.js';
@@ -240,7 +242,9 @@ async function detectSubsystemStatesImpl(
 			const dir = path.join(root, name);
 			if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) continue;
 			const files = fs.readdirSync(dir);
-			const moduleFile = subsystemModuleFile(name);
+			// S-1: under pattern-stack wiring the events subsystem vendors no Nest module; its Nest-free entry marks it.
+			const moduleFile =
+				name === 'events' && isPatternStackWiring(configOrDefaults(ctx.config).target) ? 'core.ts' : subsystemModuleFile(name);
 			const hasModule = moduleFile ? files.includes(moduleFile) : false;
 			// "Present" gate. #287: auth's protocols live under
 			// `<dir>/protocols/`, not at the subsystem root — its module file

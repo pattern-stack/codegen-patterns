@@ -34,6 +34,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { configOrDefaults } from '../../config/project-config.js';
+import { isPatternStackWiring, type TargetWiring } from '../../targets/apps.js';
 import type { Context } from './context.js';
 import {
 	configuredInstalledSubsystems,
@@ -146,10 +148,13 @@ function schemaImportFor(
 	mode: RuntimeMode,
 	subsystem: SubsystemName,
 	subsystemsRel: string,
+	wiring: TargetWiring,
 ): string {
+	// Under pattern-stack wiring (S-1) through the Nest-free entry: the `index` re-exports the Nest module.
+	const entry = wiring === 'pattern-stack' ? 'core' : 'index';
 	return mode === 'vendored'
-		? `${subsystemsRel}/${subsystem}`
-		: `${PACKAGE}/runtime/subsystems/${subsystem}/index`;
+		? `${subsystemsRel}/${subsystem}${wiring === 'pattern-stack' ? '/core' : ''}`
+		: `${PACKAGE}/runtime/subsystems/${subsystem}/${entry}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +171,7 @@ export function buildSubsystemSchemaBarrel(
 	installed: InstalledSubsystem[],
 	subsystemsRel: string,
 	mode: RuntimeMode,
+	wiring: TargetWiring = 'nest',
 ): { content: string; emitted: SubsystemName[] } {
 	const actable = installed.filter((i) => i.status !== 'incomplete');
 	const installedNames = new Set(actable.map((i) => i.name));
@@ -176,7 +182,7 @@ export function buildSubsystemSchemaBarrel(
 		if (!installedNames.has(name)) continue;
 		const symbols = SCHEMA_SYMBOLS[name];
 		if (!symbols || symbols.length === 0) continue;
-		const importSpec = schemaImportFor(mode, name, subsystemsRel);
+		const importSpec = schemaImportFor(mode, name, subsystemsRel, wiring);
 		lines.push(`export { ${symbols.join(', ')} } from '${importSpec}';`);
 		emitted.push(name);
 	}
@@ -225,7 +231,12 @@ export async function regenerateSubsystemSchemaBarrel(
 	}
 
 	const { content, emitted } = generating(barrelAbs, () =>
-		buildSubsystemSchemaBarrel(installed, subsystemsRel, mode),
+		buildSubsystemSchemaBarrel(
+			installed,
+			subsystemsRel,
+			mode,
+			isPatternStackWiring(configOrDefaults(ctx.config).target) ? 'pattern-stack' : 'nest',
+		),
 	);
 
 	let written = false;

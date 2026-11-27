@@ -27,12 +27,15 @@ import type { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.fi
 <%_ patternStackWiringParts.junctionServices.forEach((j) => { _%>
 import type { <%= j.serviceClass %> } from '<%= j.importPath %>';
 <%_ }) _%>
-<%_ const _eav = patternStackWiringParts.eav; const _eavDef = patternStackWiringParts.eavDefinition; _%>
+<%_ const _eav = patternStackWiringParts.eav; const _eavDef = patternStackWiringParts.eavDefinition; const _events = patternStackWiringParts.events; _%>
 <%_ if (_eav) { _%>
 import type { <%= _eav.serviceClass %> } from '<%= _eav.importPath %>';
 <%_ } _%>
 <%_ if (_eavDef) { _%>
 import type { <%= _eavDef.repositoryClass %> } from '<%= _eavDef.importPath %>';
+<%_ } _%>
+<%_ if (_events) { _%>
+import type { TypedEventBus } from '<%= _events.busImport %>';
 <%_ } _%>
 <%_ openApiSchemas.forEach((s) => { _%>
 import { <%= s.schemaName %> } from '<%= s.importFile %>';

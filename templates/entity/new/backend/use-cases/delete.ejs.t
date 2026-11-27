@@ -5,10 +5,16 @@ force: true
 ---
 <%- generatedBanner %>
 <% if (hasEmits && deleteEventType) { -%>
+<% if (patternStackWiring) { -%>
+import { NotFoundError } from '<%= errorsImport %>';
+<% } else { -%>
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
+<% } -%>
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
-<% if (typedEventBusImport === eventsTokenImport) { -%>
+<% if (patternStackWiring) { -%>
+import type { TypedEventBus } from '<%= typedEventBusImport %>';
+<% } else if (typedEventBusImport === eventsTokenImport) { -%>
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
 <% } else { -%>
 import { TYPED_EVENT_BUS } from '<%= eventsTokenImport %>';
@@ -27,8 +33,8 @@ import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 export class <%= classNames.deleteUseCase %> {
   constructor(
     private readonly service: <%= classNames.service %>,
-    @Inject(DRIZZLE) private readonly db: DrizzleClient,
-    @Inject(TYPED_EVENT_BUS) private readonly typedEvents: TypedEventBus,
+    <%= patternStackWiring ? '' : '@Inject(DRIZZLE) ' %>private readonly db: DrizzleClient,
+    <%= patternStackWiring ? '' : '@Inject(TYPED_EVENT_BUS) ' %>private readonly typedEvents: TypedEventBus,
   ) {}
 
   async execute(
@@ -41,7 +47,7 @@ export class <%= classNames.deleteUseCase %> {
 <% } -%>
       const entity = await this.service.<%= apiSurface.useCases.find((u) => u.kind === 'delete').preRead.method %>(id);
       if (!entity) {
-        throw new NotFoundException(`<%= classNames.entity %> with id ${id} not found`);
+        throw new <%= patternStackWiring ? 'NotFoundError' : 'NotFoundException' %>(`<%= classNames.entity %> with id ${id} not found`);
       }
       await this.service.delete(id, tx);
       // TODO: verify payload mapping against events/<%= deleteEventType.type %>.yaml

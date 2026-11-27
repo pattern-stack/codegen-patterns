@@ -54,6 +54,12 @@ import {
 	regenerateSubsystemBarrel,
 } from '../shared/subsystem-barrel-generator.js';
 import { regenerateSubsystemSchemaBarrel } from '../shared/subsystem-schema-generator.js';
+import { buildEventCodegenContents } from '../shared/event-codegen-generator.js';
+import { eventsGeneratedDir } from '../shared/pattern-stack-composition.js';
+import { generating } from '../../utils/generated-file.js';
+import type { RuntimeMode } from '../shared/runtime-import.js';
+import { configOrDefaults } from '../../config/project-config.js';
+import { isPatternStackWiring } from '../../targets/apps.js';
 import {
 	SUBSYSTEMS,
 	configuredSubsystemNames,
@@ -282,6 +288,58 @@ export function backendFileFilter(
 	};
 }
 
+/**
+ * Under `target.wiring: pattern-stack` (S-1): why `subsystem install <name>` is refused, or null. Events is the one
+ * subsystem with a Nest-free system yet, on its drizzle or memory backend.
+ */
+export function patternStackSubsystemRefusal(name: SubsystemName, backend: SubsystemBackend): string | null {
+	// Config-only: writes the `openapi:` block, which pattern-stack's `<generated>/openapi.ts` reads too.
+	if (name === 'openapi-config') return null;
+	if (name === 'events') {
+		return backend === 'redis'
+			? "the events subsystem's redis backend isn't supported under target.wiring: pattern-stack yet (use drizzle or memory)."
+			: null;
+	}
+	const step: Partial<Record<SubsystemName, string>> = {
+		auth: 'S-2',
+		'auth-integrations': 'S-2',
+		integration: 'S-3',
+		jobs: 'J-1',
+		bridge: 'J-1',
+	};
+	return (
+		`the ${name} subsystem isn't supported under target.wiring: pattern-stack yet` +
+		(step[name] ? ` — it comes with ${step[name]}.` : '.') +
+		' Events is (S-1).'
+	);
+}
+
+/**
+ * The files a pattern-stack project doesn't vendor (S-1): the Nest module, the barrel that re-exports it, and the
+ * bundled `generated/` set, whose bus is Nest's. `entity new` writes the pattern-stack `generated/` files.
+ */
+const PATTERN_STACK_SKIPPED = new Set(['events.module.ts', 'index.ts', 'bus.ts', 'registry.ts', 'schemas.ts', 'types.ts']);
+
+export function patternStackFileFilter(base: (file: string) => boolean): (file: string) => boolean {
+	return (file) => base(file) && !file.startsWith('generated/') && !PATTERN_STACK_SKIPPED.has(file);
+}
+
+/** The empty pattern-stack event set (S-1), iff none was generated yet. */
+function writeEmptyPatternStackEvents(dir: string, mode: RuntimeMode): void {
+	if (fs.existsSync(path.join(dir, 'registry.ts'))) return;
+	fs.mkdirSync(dir, { recursive: true });
+	for (const { name, content } of buildEventCodegenContents([], mode, 'pattern-stack')) {
+		const file = path.join(dir, name);
+		generating(file, () => fs.writeFileSync(file, content));
+	}
+}
+
+const PATTERN_STACK_EVENTS_NEXT_STEP =
+	'Next: `codegen entity new --all` writes the typed bus and the `events` system (`<generated>/events-system.ts`), ' +
+	'listed in `SYSTEMS` (`<generated>/composition.ts`). compose.ts must compose them — ' +
+	'`systems: [databaseSystem(...), ...SYSTEMS]` (`project init` writes it so; add it to an older compose.ts) — and ' +
+	"drizzle.config.ts's `schema` must include `<generated>/subsystems-schema.ts` (the `domain_events` table).";
+
 export class SubsystemInstallCommand extends Command {
 	static paths = [['subsystem', 'install']];
 	static usage = Command.Usage({
@@ -342,6 +400,17 @@ export class SubsystemInstallCommand extends Command {
 				)}`
 			);
 			return 2;
+		}
+
+		// S-1: under `target.wiring: pattern-stack` only events has a Nest-free system yet; every other subsystem is
+		// refused by name, with the step that brings it. Its Redis backend is Nest-only.
+		const patternStack = isPatternStackWiring(configOrDefaults(ctx.config).target);
+		if (patternStack) {
+			const refusal = patternStackSubsystemRefusal(desc.name, backend);
+			if (refusal) {
+				printError(refusal);
+				return 2;
+			}
 		}
 
 		// OPENAPI-4: `openapi-config` is a config-only pseudo-subsystem.
@@ -423,7 +492,7 @@ export class SubsystemInstallCommand extends Command {
 		const result = await copyRuntime({
 			sourceDir: source,
 			targetDir: subsystemTarget,
-			filter: backendFileFilter(backend, desc.name),
+			filter: patternStack ? patternStackFileFilter(backendFileFilter(backend, desc.name)) : backendFileFilter(backend, desc.name),
 			resolveDeps: true,
 			runtimeRoot: runtimeRoot(),
 			depsTargetRoot: path.resolve(targetRoot, '..'),
@@ -561,6 +630,13 @@ export class SubsystemInstallCommand extends Command {
 			try {
 				const generatedDir = projectLayout(refreshed.cwd, refreshed.config).generated;
 				await regenerateSubsystemBarrel({ ctx: refreshed, generatedDir });
+				// S-1: pattern-stack's drizzle-kit entry reads the subsystem schema barrel (`domain_events`), and the
+				// generated set the events system imports exists before the first `entity new` (any command that writes
+				// the composition may run first), empty, never clobbering one already generated.
+				if (patternStack) {
+					await regenerateSubsystemSchemaBarrel({ ctx: refreshed, generatedDir });
+					writeEmptyPatternStackEvents(eventsGeneratedDir(refreshed, generatedDir), resolveRuntimeMode(refreshed.config));
+				}
 			} catch (err: unknown) {
 				return reportRegenerationFailure('subsystem install', err);
 			}
@@ -722,7 +798,9 @@ export class SubsystemInstallCommand extends Command {
 		}
 		printSuccess(`${desc.name} subsystem installed with ${backend} backend.`);
 
-		if (desc.name === 'auth') {
+		if (patternStack) {
+			printInfo(PATTERN_STACK_EVENTS_NEXT_STEP);
+		} else if (desc.name === 'auth') {
 			// #287: auth's forRoot shape is richer than `{ backend }` —
 			// it takes encryptionKey, oauthStateStore, enableController,
 			// redirectUriBase. The TODO appended to app.module.ts has the
@@ -892,6 +970,9 @@ export class SubsystemInstallCommand extends Command {
 			barrelEmitted = barrel.emitted;
 			const schema = await regenerateSubsystemSchemaBarrel({ ctx: refreshed, generatedDir });
 			schemaEmitted = schema.emitted;
+			if (desc.name === 'events' && isPatternStackWiring(configOrDefaults(refreshed.config).target)) {
+				writeEmptyPatternStackEvents(eventsGeneratedDir(refreshed, generatedDir), 'package');
+			}
 		} catch (err: unknown) {
 			return reportRegenerationFailure('subsystem install', err);
 		}
@@ -950,6 +1031,12 @@ export class SubsystemInstallCommand extends Command {
 					`jobs scaffold (Hygen) failed — config + barrels were written; re-run after fixing: ${jobsScaffold.error ?? 'unknown error'}`,
 				);
 			}
+		}
+		if (isPatternStackWiring(configOrDefaults(refreshed.config).target)) {
+			// No Nest subsystem barrel under pattern-stack (S-1): only the schema barrel was written.
+			printInfo(`Regenerated <generated>/subsystems-schema.ts (${schemaEmitted.join(', ') || 'none'}).`);
+			printInfo(PATTERN_STACK_EVENTS_NEXT_STEP);
+			return 0;
 		}
 		printInfo(
 			`Regenerated <generated>/subsystems.ts (${barrelEmitted.join(', ') || 'none'}) + subsystems-schema.ts (${schemaEmitted.join(', ') || 'none'}).`,
