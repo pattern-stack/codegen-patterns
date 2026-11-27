@@ -44,8 +44,13 @@ import path from 'node:path';
 import type { CodegenConfig } from './context.js';
 import { projectLayout } from './project-layout.js';
 
-/** Default `redirectUriBase` when the consumer hasn't overridden via config. */
-const DEFAULT_REDIRECT_URI_BASE = 'http://localhost:3000';
+// The default `redirectUriBase` when the consumer hasn't overridden it in config, and the env var names, are the
+// settings derivation's (SET-1).
+import {
+	AUTH_REDIRECT_URI_BASE_ENV,
+	DEFAULT_AUTH_REDIRECT_URI_BASE as DEFAULT_REDIRECT_URI_BASE,
+} from '../../derived/settings/index.js';
+import { TOKEN_ENCRYPTION_KEY_ENV } from '../../../runtime/subsystems/auth/backends/encryption-key/env.js';
 
 export interface AuthScaffoldLocals {
 	/** Fallback basename for logs; not rendered in templates today. */
@@ -145,5 +150,8 @@ export function localsToHygenArgs(locals: AuthScaffoldLocals): string[] {
 		'--envConfigPath', locals.envConfigPath,
 		'--redirectUriBase', locals.redirectUriBase,
 		'--tokenEncryptionKey', locals.tokenEncryptionKey,
+		// SET-1: the env var names the template writes, from the settings derivation.
+		'--tokenEncryptionKeyEnv', TOKEN_ENCRYPTION_KEY_ENV,
+		'--redirectUriBaseEnv', AUTH_REDIRECT_URI_BASE_ENV,
 	];
 }

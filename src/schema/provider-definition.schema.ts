@@ -120,6 +120,28 @@ const DisplaySchema = z
 // Full Provider Definition
 // ============================================================================
 
+/**
+ * One provider setting (SET-1): a value the app reads at startup. `env` defaults to `<SLUG>_<NAME>` upper snake case;
+ * no `default` means required; `secret` marks a credential (masked, blank in `.env.example`, what sops encrypts).
+ */
+export const ProviderSettingSchema = z
+  .object({
+    env: z
+      .string()
+      .regex(/^[A-Z][A-Z0-9_]*$/, "settings.<name>.env must be an UPPER_SNAKE_CASE environment variable name")
+      .optional(),
+    secret: z.boolean().optional(),
+    default: z.string().optional(),
+    description: z.string().optional(),
+  })
+  .strict()
+  .refine((s) => !(s.secret && s.default !== undefined), {
+    message: "a secret setting has no default (put a dev value in .env, not the YAML)",
+    path: ["default"],
+  });
+
+export type ProviderSetting = z.infer<typeof ProviderSettingSchema>;
+
 export const ProviderDefinitionSchema = z
   .object({
     // Provider id — the canonical string used as detection: keys, audit rows,
@@ -154,6 +176,16 @@ export const ProviderDefinitionSchema = z
     // Optional auth lifecycle hints consumed by provider-module emission (D2).
     // `refresh_behavior` is left as a free string in D1 — its domain firms up
     // when D2 consumes it; carrying it now keeps the YAML lossless.
+    /**
+     * The values this provider's classes need at startup (SET-1), keyed by snake_case name. `client.base_url` is
+     * always one (`base_url`); an entry here overrides it.
+     */
+    settings: z
+      .record(
+        z.string().regex(/^[a-z][a-z0-9_]*$/, "a setting name is snake_case (e.g. 'client_id')"),
+        ProviderSettingSchema,
+      )
+      .optional(),
     token_lifetime: z.number().int().positive().optional(),
     refresh_behavior: z.string().optional(),
   })

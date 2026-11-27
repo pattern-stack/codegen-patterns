@@ -484,9 +484,38 @@ async function patternStackLeg(): Promise<number> {
 			log('tsc OK — the pattern-stack integration tree compiles with no @nestjs');
 		}
 
-		const main = spawnSync('bun', ['src/main.ts'], { cwd: tmpDir, encoding: 'utf8' });
+		// SET-1: the settings, from the YAML alone. Salesforce declares client_id and client_secret (secrets, no
+		// default): the check names both, and passes once they are set; compose fails once, naming both, and composes
+		// once they are set. `.env.example` and `settings.ts` carry them.
+		const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('SALESFORCE_')));
+		const SET = { ...cleanEnv, SALESFORCE_CLIENT_ID: 'smoke-id', SALESFORCE_CLIENT_SECRET: 'smoke-secret' };
+		const check = spawnSync('bun', [CLI_PATH, 'project', 'settings', '--check'], { cwd: tmpDir, encoding: 'utf8', env: cleanEnv });
+		const checkOut = check.stdout + check.stderr;
+		if (check.status !== 1 || !/SALESFORCE_CLIENT_ID/.test(checkOut) || !/SALESFORCE_CLIENT_SECRET/.test(checkOut)) {
+			throw new Error(`project settings --check should fail naming both Salesforce secrets; exit ${check.status}:\n${checkOut}`);
+		}
+		if (/smoke-/.test(checkOut)) throw new Error('project settings printed a secret');
+		const checkSet = spawnSync('bun', [CLI_PATH, 'project', 'settings', '--check'], { cwd: tmpDir, encoding: 'utf8', env: SET });
+		if (checkSet.status !== 0) throw new Error(`project settings --check should pass once set:\n${checkSet.stdout}${checkSet.stderr}`);
+		if (/smoke-id|smoke-secret/.test(checkSet.stdout + checkSet.stderr)) throw new Error('project settings printed a secret');
+		const envExample = fs.readFileSync(path.join(tmpDir, '.env.example'), 'utf8');
+		for (const line of ['SALESFORCE_CLIENT_ID=', 'SALESFORCE_CLIENT_SECRET=', '# SALESFORCE_BASE_URL=https://login.salesforce.com', '# DATABASE_URL=']) {
+			if (!envExample.includes(line)) throw new Error(`.env.example should carry ${line}:\n${envExample}`);
+		}
+		const settingsTs = fs.readFileSync(path.join(tmpDir, 'src/generated/settings.ts'), 'utf8');
+		if (!settingsTs.includes("clientId: { env: 'SALESFORCE_CLIENT_ID', secret: true, format: 'string' },")) {
+			throw new Error(`settings.ts should declare salesforce.clientId:\n${settingsTs}`);
+		}
+		const unset = spawnSync('bun', ['src/main.ts'], { cwd: tmpDir, encoding: 'utf8', env: cleanEnv });
+		const unsetOut = unset.stdout + unset.stderr;
+		if (unset.status === 0 || !/2 settings could not be loaded/.test(unsetOut) || !/SALESFORCE_CLIENT_SECRET/.test(unsetOut)) {
+			throw new Error(`main.ts should fail at compose naming both missing settings; exit ${unset.status}:\n${unsetOut}`);
+		}
+		log('settings: the check names the missing secrets and passes once set; compose fails once naming both; .env.example and settings.ts carry them');
+
+		const main = spawnSync('bun', ['src/main.ts'], { cwd: tmpDir, encoding: 'utf8', env: SET });
 		const order = /composed: (.*)/.exec(main.stdout)?.[1] ?? '';
-		const expected = ['salesforceProvider', 'googleProvider', 'crmAdapters', 'calendarAdapters', 'mailAdapters', 'transcriptAdapters', 'integrations'];
+		const expected = ['settings', 'salesforceProvider', 'googleProvider', 'crmAdapters', 'calendarAdapters', 'mailAdapters', 'transcriptAdapters', 'integrations'];
 		if (main.status !== 0 || !expected.every((n) => order.split(', ').includes(n))) {
 			throw new Error(`main.ts should compose ${expected.join(', ')}; exit ${main.status}:\n${main.stdout}${main.stderr}`);
 		}

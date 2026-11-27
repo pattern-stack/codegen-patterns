@@ -17,7 +17,8 @@
  * `wiring: 'pattern-stack'`; their Nest text is unchanged.
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 import { SCAFFOLD_SENTINEL, writeGeneratedFile, writeGeneratedFileIfChanged } from '../../utils/generated-file';
 import { relativeImport } from '../../utils/import-path.js';
@@ -54,6 +55,7 @@ import { changeEmitterClass, generateChangeEmitter } from './change-emitter-emis
 import { providerPascalCase } from './provider-module-generator';
 import { generateSinkBase, generateSinkSubclass } from './sink-emission-generator';
 import { subsystemCoreImport, type RuntimeMode } from './runtime-import';
+import { providerSettings, providerSettingsGroup, type ProjectSetting } from '../../derived/settings/index.js';
 
 /** A system the composition lists in `SYSTEMS` and `SystemApis`: the composition's own type. */
 export type PatternStackIntegrationSystem = CompositionIntegrationsInput['systems'][number];
@@ -246,18 +248,36 @@ function servingProviders(bySurface: Map<string, string[]>): string[] {
 	return [...new Set([...bySurface.values()].flat())].sort();
 }
 
-/** `<slug>.provider.factory.ts`: emit-once, author-owned — where the provider's auth strategy and client are built. */
-export function generateProviderFactory(def: ActiveProviderDefinition): string {
+/**
+ * `<slug>.provider.factory.ts`: emit-once, author-owned — where the provider's auth strategy and client are built,
+ * from the provider's typed settings (SET-1). The calls are not prefilled with arguments (the constructors are the
+ * author's); the comment shows them with this provider's keys.
+ */
+export function generateProviderFactory(
+	def: ActiveProviderDefinition,
+	settings: readonly ProjectSetting[],
+	factoryFile: string,
+	settingsFile: string,
+): string {
 	const n = providerSystemNames(def.slug);
 	const strategy = parseImportRef(def.auth.strategy);
 	const clientless = isClientlessProvider(def.surfaces);
 	const client = clientless ? null : parseImportRef(def.client.class);
+	const group = providerSettingsGroup(def.slug);
+	const keys = settings.map((x) => x.key);
+	const authKeys = keys.filter((k) => k !== 'baseUrl');
+	const arg = (list: string[]) => `{ ${list.map((k) => `${k}: settings.${k}`).join(', ')} }`;
+	const examples = [
+		...(authKeys.length > 0 ? [`//   new ${strategy.exportName}(${arg(authKeys)})`] : []),
+		...(client && keys.includes('baseUrl') ? [`//   new ${client.exportName}(${arg(['baseUrl'])})`] : []),
+	];
 	return `${SCAFFOLD_SENTINEL}
 // Scaffolded once by @pattern-stack/codegen, then author-owned. Re-running
 // codegen detects the sentinel above and SKIPS this file — your edits are safe.
 // Source: definitions/providers/${def.slug}.yaml.
 import { ${strategy.exportName} } from '${strategy.path}';
-${client ? `import { ${client.exportName} } from '${client.path}';\n` : ''}
+${client ? `import { ${client.exportName} } from '${client.path}';\n` : ''}import type { Settings } from '${relativeImport(factoryFile, settingsFile)}';
+
 /**
  * What the \`${n.name}\` system holds: ${client ? "the provider's auth strategy and API client." : "the provider's auth strategy. A per-connection provider\n * (RFC-0003 R5) has no client: each adapter builds one per connection."}
  * The adapters type theirs from this, so whatever these classes are, the adapters take them as they are.
@@ -266,8 +286,12 @@ export interface ${n.apiType} {
   auth: ${strategy.exportName};
 ${client ? `  client: ${client.exportName};\n` : ''}}
 
-/** Build them here: pass a constructor whatever config it needs (a base URL, a credential reader). */
-export function ${n.factory}(): ${n.apiType} {
+/**
+ * Build them here, from the provider's settings: ${keys.length > 0 ? keys.map((k) => `\`${k}\``).join(', ') : 'none'} (declared in its YAML;
+ * \`codegen project settings\` lists them). Pass each constructor what it takes${examples.length > 0 ? ', e.g.' : '.'}
+${examples.map((e) => ` * ${e.slice(3)}`).join('\n')}${examples.length > 0 ? '\n' : ''} */
+export function ${n.factory}(settings: Settings['${group}']): ${n.apiType} {
+  void settings;
   return {
     auth: new ${strategy.exportName}(),
 ${client ? `    client: new ${client.exportName}(),\n` : ''}  };
@@ -275,13 +299,14 @@ ${client ? `    client: new ${client.exportName}(),\n` : ''}  };
 `;
 }
 
-/** `<slug>.provider.ts`: the provider as a system, built by the author's factory. */
+/** `<slug>.provider.ts`: the provider as a system, built by the author's factory from its settings. */
 export function generateProviderSystem(def: ActiveProviderDefinition, file: string, wiringFile: string): string {
 	const n = providerSystemNames(def.slug);
+	const group = providerSettingsGroup(def.slug);
 	return `${generatedBanner(`definitions/providers/${def.slug}.yaml`)}
 /**
  * The \`${def.slug}\` provider (surfaces: ${def.surfaces.join(', ')}) as a \`@pattern-stack/wiring\` system: its parts
- * come from \`${n.factory}\` (\`${def.slug}.provider.factory.ts\`, yours).
+ * come from \`${n.factory}\` (\`${def.slug}.provider.factory.ts\`, yours), given its settings (\`settings.${group}\`).
  */
 import { ${n.factory}, type ${n.apiType} } from '${relativeImport(providerSystemFile('/', def.slug), providerFactoryFile('/', def.slug))}';
 import { defineSystem } from '${relativeImport(file, wiringFile)}';
@@ -290,8 +315,8 @@ export type { ${n.apiType} };
 
 export const ${n.exportName} = defineSystem({
   name: '${n.name}',
-  uses: [],
-  create: (): ${n.apiType} => ${n.factory}(),
+  uses: ['settings'],
+  create: ({ settings }): ${n.apiType} => ${n.factory}(settings.${group}),
 });
 `;
 }
@@ -377,12 +402,14 @@ export interface EmitPatternStackIntegrationsResult {
 	/** Emit-once scaffolds written this run, and those left (author-owned). */
 	scaffoldsWritten: string[];
 	scaffoldsSkipped: string[];
+	/** Existing provider factories that take no settings (written before SET-1): the provider system passes them one. */
+	factoriesBehind: string[];
 }
 
 /** Write the pattern-stack integration files. The `integrations` module is the composition's. */
 export function emitPatternStackIntegrations(opts: EmitPatternStackIntegrationsOptions): EmitPatternStackIntegrationsResult {
 	const plan = planPatternStackIntegrations(opts);
-	const result: EmitPatternStackIntegrationsResult = { plan, written: [], scaffoldsWritten: [], scaffoldsSkipped: [] };
+	const result: EmitPatternStackIntegrationsResult = { plan, written: [], scaffoldsWritten: [], scaffoldsSkipped: [], factoriesBehind: [] };
 	const generated = (file: string, content: string) => {
 		if (!opts.dryRun) writeGeneratedFileIfChanged(file, content);
 		result.written.push(file);
@@ -398,7 +425,12 @@ export function emitPatternStackIntegrations(opts: EmitPatternStackIntegrationsO
 	const defBySlug = new Map(plan.providers.map((p) => [p.slug, p.def]));
 
 	for (const p of plan.providers) {
-		scaffold(p.factoryFile, () => generateProviderFactory(p.def));
+		const own = providerSettings({ definition: p.def, filePath: '' });
+		scaffold(p.factoryFile, () => generateProviderFactory(p.def, own, p.factoryFile, join(dirname(opts.wiringFile), 'settings.ts')));
+		const n = providerSystemNames(p.slug);
+		if (existsSync(p.factoryFile) && new RegExp(`export function ${n.factory}\\(\\s*\\)`).test(readFileSync(p.factoryFile, 'utf8'))) {
+			result.factoriesBehind.push(p.factoryFile);
+		}
 		generated(p.systemFile, generateProviderSystem(p.def, p.systemFile, opts.wiringFile));
 	}
 

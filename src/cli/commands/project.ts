@@ -63,6 +63,7 @@ import { SUBSYSTEMS } from '../shared/subsystem-detect.js';
 import { ProjectUpgradeOpenapiCommand } from './project-upgrade-openapi.js';
 import { ProjectUpgradeAuthCommand } from './project-upgrade-auth.js';
 import { ProjectUpdateCommand } from './project-update.js';
+import { ProjectSettingsCommand } from './project-settings.js';
 import { runSkillsInstall } from './skills.js';
 
 import { theme } from '../ui/theme.js';
@@ -1119,6 +1120,7 @@ const projectNoun: NounModule = {
 		ProjectUpgradeOpenapiCommand,
 		ProjectUpgradeAuthCommand,
 		ProjectUpdateCommand,
+		ProjectSettingsCommand,
 	] as CommandClass[],
 	summary,
 	hints,

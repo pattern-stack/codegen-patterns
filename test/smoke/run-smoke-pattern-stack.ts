@@ -191,7 +191,7 @@ async function main(): Promise<number> {
 		// 5c'. main.ts composes, starts, runs and stops (no database needed: the pool connects on first use).
 		const main = spawnSync('bun', ['src/main.ts'], { cwd: tmpDir, encoding: 'utf8' });
 		if (main.status !== 0) fail(`bun src/main.ts exited ${main.status}:\n${main.stdout}${main.stderr}`);
-		if (!/composed: database, events, integration, .*crm.*billing/.test(main.stdout)) fail(`main.ts should print the composed order: ${main.stdout}`);
+		if (!/composed: settings, database, events, integration, .*crm.*billing/.test(main.stdout)) fail(`main.ts should print the composed order: ${main.stdout}`);
 		log(`main.ts: ${main.stdout.trim()}`);
 
 		// 5d. The OpenAPI document needs no database: every schema registers, every $ref resolves, every prefill parses.

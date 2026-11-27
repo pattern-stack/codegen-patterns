@@ -43,6 +43,9 @@ export default {
       envConfigPath: args.envConfigPath ?? ".env.config",
       redirectUriBase: args.redirectUriBase ?? "http://localhost:3000",
       tokenEncryptionKey: args.tokenEncryptionKey ?? "",
+      // SET-1: the env var names, from the settings derivation (the CLI passes them; one owner of each name).
+      tokenEncryptionKeyEnv: requiredPathArg(args, "tokenEncryptionKeyEnv", "subsystem auth"),
+      redirectUriBaseEnv: requiredPathArg(args, "redirectUriBaseEnv", "subsystem auth"),
       // @generated DO-NOT-EDIT banner — the auth subsystem schema is
       // force-overwritten on every `subsystem install`.
       generatedBanner: renderGeneratedBanner({

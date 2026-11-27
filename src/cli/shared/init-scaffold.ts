@@ -29,6 +29,8 @@ import { configOrDefaults } from '../../config/project-config.js';
 import { buildSubsystemSchemaBarrel } from './subsystem-schema-generator.js';
 import { emptyPatternStackComposition } from './pattern-stack-composition.js';
 import { DATABASE_SYSTEM } from '../../emitters/composition/emit-composition.js';
+import { DATABASE_URL_ENV, DEFAULT_DATABASE_URL, deriveProjectSettings } from '../../derived/settings/index.js';
+import { envExampleContent } from '../../emitters/settings/emit-settings.js';
 import {
 	importSpecifier,
 	projectLayout,
@@ -224,6 +226,8 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	// The plain errors (PW-0) — the error-body owner db-constraint-errors.ts imports, and what a pattern-stack
 	// wiring project's use cases throw (PW-3).
 	{ runtime: 'errors.ts', target: 'errors.ts' },
+	// The settings loader (SET-1) — what a pattern-stack project's `<generated>/settings.ts` calls.
+	{ runtime: 'settings.ts', target: 'settings.ts', wirings: ['pattern-stack'] },
 	{ runtime: 'base-classes/base-read-use-cases.ts', target: 'base-classes/base-read-use-cases.ts' },
 	// Types + constants reached via `@shared/types/*` and `@shared/constants/*`
 	{ runtime: 'types/drizzle.ts', target: 'types/drizzle.ts' },
@@ -330,7 +334,7 @@ export type DrizzleDB = NodePgDatabase<typeof relations>;
       provide: DRIZZLE,
       useFactory: () => {
         const pool = new Pool({
-          connectionString: process.env.DATABASE_URL ?? 'postgresql://localhost:5432/app_dev',
+          connectionString: process.env.${DATABASE_URL_ENV} ?? '${DEFAULT_DATABASE_URL}',
         });
         // Drizzle 1.0 takes a config object; \`schema\` was removed from it.
         // \`relations\` is the generated manifest — what makes RQBv2's nested
@@ -593,15 +597,20 @@ import { defineSystem } from '${importSpecifier(from, path.join(layout.generated
 
 /**
  * The \`database\` system: the Drizzle client every generated repository takes. \`relations\` is the generated manifest
- * (what makes \`db.query.<table>.findMany({ with: … })\` typed). The pool connects on first use and ends on stop.
+ * (what makes \`db.query.<table>.findMany({ with: … })\` typed). It connects to \`settings.database.url\`
+ * (\`${DATABASE_URL_ENV}\`, checked with every other setting) unless given a URL. The pool connects on first use and
+ * ends on stop.
  */
-export function databaseSystem(connectionString = process.env.DATABASE_URL ?? 'postgresql://localhost:5432/app_dev') {
-  const pool = new Pool({ connectionString });
+export function databaseSystem(connectionString?: string) {
+  let pool: Pool | undefined;
   return defineSystem({
     name: '${DATABASE_SYSTEM}',
-    uses: [],
-    create: () => ({ db: drizzle({ client: pool, relations }) }),
-    stop: () => pool.end(),
+    uses: ['settings'],
+    create: ({ settings }) => {
+      pool = new Pool({ connectionString: connectionString ?? settings.database.url });
+      return { db: drizzle({ client: pool, relations }) };
+    },
+    stop: () => pool?.end(),
   });
 }
 `;
@@ -1072,7 +1081,7 @@ export default defineConfig({
   schema: ${Array.isArray(schema) ? `[${schema.map((p) => `'${p}'`).join(', ')}]` : `'${schema}'`},
   out: './drizzle',
   dialect: 'postgresql',
-  dbCredentials: { url: process.env.DATABASE_URL! },
+  dbCredentials: { url: process.env.${DATABASE_URL_ENV}! },
 });
 `;
 }
@@ -1324,6 +1333,12 @@ export async function buildInitPlan(
 			// Never forced: over a project with entities it would empty `MODULES` until the next `entity new`.
 			entries.push(fileEntry(cwd, f.path, f.content, { skipReason: 'exists — `entity new` keeps it current' }));
 		}
+		// SET-1: `.env.example` over the project's own settings; `entity new` rewrites it with every provider's.
+		entries.push(
+			fileEntry(cwd, path.join(cwd, '.env.example'), envExampleContent(deriveProjectSettings({ providers: [], installedSubsystems: [] })), {
+				skipReason: 'exists — `entity new` keeps it current',
+			}),
+		);
 	} else {
 		entries.push(fileEntry(cwd, path.join(layout.generated, 'modules.ts'), emptyModulesBarrel(), { force }));
 	}

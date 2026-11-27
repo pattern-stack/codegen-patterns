@@ -1515,6 +1515,7 @@ export interface MailProviderEntities {
 // codegen detects the sentinel above and SKIPS this file — your edits are safe.
 // Source: definitions/providers/google.yaml.
 import { GoogleOAuthStrategy } from '@app/integrations/providers/google/google-oauth.strategy';
+import type { Settings } from '../../../generated/settings';
 
 /**
  * What the \`googleProvider\` system holds: the provider's auth strategy. A per-connection provider
@@ -1525,8 +1526,12 @@ export interface GoogleProvider {
   auth: GoogleOAuthStrategy;
 }
 
-/** Build them here: pass a constructor whatever config it needs (a base URL, a credential reader). */
-export function createGoogleProvider(): GoogleProvider {
+/**
+ * Build them here, from the provider's settings: \`baseUrl\` (declared in its YAML;
+ * \`codegen project settings\` lists them). Pass each constructor what it takes.
+ */
+export function createGoogleProvider(settings: Settings['google']): GoogleProvider {
+  void settings;
   return {
     auth: new GoogleOAuthStrategy(),
   };
@@ -1537,7 +1542,7 @@ export function createGoogleProvider(): GoogleProvider {
 // Hand edits are overwritten on re-emit. Regenerate with \`bun run codegen\`.
 /**
  * The \`google\` provider (surfaces: calendar, mail, transcript) as a \`@pattern-stack/wiring\` system: its parts
- * come from \`createGoogleProvider\` (\`google.provider.factory.ts\`, yours).
+ * come from \`createGoogleProvider\` (\`google.provider.factory.ts\`, yours), given its settings (\`settings.google\`).
  */
 import { createGoogleProvider, type GoogleProvider } from './google.provider.factory';
 import { defineSystem } from '../../../generated/wiring';
@@ -1546,8 +1551,8 @@ export type { GoogleProvider };
 
 export const googleProviderSystem = defineSystem({
   name: 'googleProvider',
-  uses: [],
-  create: (): GoogleProvider => createGoogleProvider(),
+  uses: ['settings'],
+  create: ({ settings }): GoogleProvider => createGoogleProvider(settings.google),
 });
 
 // ===== FILE: providers/salesforce/salesforce.provider.factory.ts =====
@@ -1557,6 +1562,7 @@ export const googleProviderSystem = defineSystem({
 // Source: definitions/providers/salesforce.yaml.
 import { SalesforceOAuthStrategy } from '@app/integrations/providers/salesforce/salesforce-oauth.strategy';
 import { SalesforceClient } from '@app/integrations/providers/salesforce/salesforce.client';
+import type { Settings } from '../../../generated/settings';
 
 /**
  * What the \`salesforceProvider\` system holds: the provider's auth strategy and API client.
@@ -1567,8 +1573,14 @@ export interface SalesforceProvider {
   client: SalesforceClient;
 }
 
-/** Build them here: pass a constructor whatever config it needs (a base URL, a credential reader). */
-export function createSalesforceProvider(): SalesforceProvider {
+/**
+ * Build them here, from the provider's settings: \`baseUrl\`, \`clientId\`, \`clientSecret\` (declared in its YAML;
+ * \`codegen project settings\` lists them). Pass each constructor what it takes, e.g.
+ *   new SalesforceOAuthStrategy({ clientId: settings.clientId, clientSecret: settings.clientSecret })
+ *   new SalesforceClient({ baseUrl: settings.baseUrl })
+ */
+export function createSalesforceProvider(settings: Settings['salesforce']): SalesforceProvider {
+  void settings;
   return {
     auth: new SalesforceOAuthStrategy(),
     client: new SalesforceClient(),
@@ -1580,7 +1592,7 @@ export function createSalesforceProvider(): SalesforceProvider {
 // Hand edits are overwritten on re-emit. Regenerate with \`bun run codegen\`.
 /**
  * The \`salesforce\` provider (surfaces: crm) as a \`@pattern-stack/wiring\` system: its parts
- * come from \`createSalesforceProvider\` (\`salesforce.provider.factory.ts\`, yours).
+ * come from \`createSalesforceProvider\` (\`salesforce.provider.factory.ts\`, yours), given its settings (\`settings.salesforce\`).
  */
 import { createSalesforceProvider, type SalesforceProvider } from './salesforce.provider.factory';
 import { defineSystem } from '../../../generated/wiring';
@@ -1589,8 +1601,8 @@ export type { SalesforceProvider };
 
 export const salesforceProviderSystem = defineSystem({
   name: 'salesforceProvider',
-  uses: [],
-  create: (): SalesforceProvider => createSalesforceProvider(),
+  uses: ['settings'],
+  create: ({ settings }): SalesforceProvider => createSalesforceProvider(settings.salesforce),
 });
 
 // ===== FILE: transcript/adapters/google/google-transcript.adapter.ts =====

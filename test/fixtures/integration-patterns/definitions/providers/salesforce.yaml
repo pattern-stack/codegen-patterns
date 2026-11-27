@@ -12,3 +12,8 @@ client:
   class: '@app/integrations/providers/salesforce/salesforce.client#SalesforceClient'
   base_url: https://login.salesforce.com
 surfaces: [crm]
+# SET-1: the values the app reads at startup. `codegen project settings` lists them (env SALESFORCE_CLIENT_ID,
+# SALESFORCE_CLIENT_SECRET, and SALESFORCE_BASE_URL from client.base_url), and the pattern-stack factory takes them.
+settings:
+  client_id: { secret: true, description: The connected app's consumer key }
+  client_secret: { secret: true, description: The connected app's consumer secret }
