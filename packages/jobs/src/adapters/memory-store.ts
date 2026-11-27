@@ -893,7 +893,8 @@ export class MemoryJobStore implements JobStore {
     name: string,
     settle: { signal: string; output: unknown; by: string | null },
   ): Promise<boolean> {
-    this.run(runId);
+    // An ended run leaves its waiting step as it was: the run must be open too.
+    if (TERMINAL_RUN.includes(this.run(runId).status)) return false;
     const state = this.steps.get(runId)?.get(name)?.state;
     if (
       state?.status !== 'waiting' ||

@@ -1006,6 +1006,22 @@ export function storeContract(make: () => StoreHarness): ContractCase[] {
     );
   });
 
+  it('settleWait on an ended run settles nothing: a cancel leaves the waiting step as it was', async () => {
+    const h = make();
+    const { store } = h;
+    const run = await running(h);
+    const approval = { name: 'approval', index: 2, kind: 'wait' as const };
+    await store.park(run.id, approval, { kind: 'signal', name: 'approve', wakeAt: null });
+    await store.transition(run.id, { to: 'canceled' });
+    const value = store.keepsValues ? { publish: ['v1'] } : undefined;
+    assert.equal(
+      await store.settleWait(run.id, 'approval', { signal: 'approve', output: value, by: h.user }),
+      false,
+    );
+    assert.equal((await store.getRun(run.id)).status, 'canceled');
+    assert.equal(await store.stepOutput(run.id, 'approval'), undefined);
+  });
+
   it('settleWait on a paused run records the signal and leaves the run paused for its resume', async () => {
     const h = make();
     const { store } = h;

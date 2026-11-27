@@ -4,7 +4,7 @@ import type { JobAuthorityLevel } from '../define/facts.ts';
 import type { Registry } from '../define/registry.ts';
 import type { ErasedWaitStep } from '../define/step.ts';
 import { SignalRefusedError } from '../model/errors.ts';
-import type { Run } from '../model/run.ts';
+import { type Run, TERMINAL_RUN } from '../model/run.ts';
 import type { Clock } from '../ports/clock.ts';
 import type { EventSink } from '../ports/event-sink.ts';
 import type { Executor } from '../ports/executor.ts';
@@ -71,6 +71,12 @@ export async function signalRun(
 ): Promise<{ run: Run }> {
   const { store, registry, clock, events } = deps;
   const run = await store.getRun(request.runId);
+  // An ended run keeps its waiting step's row as it was; its wait is not open.
+  if (TERMINAL_RUN.includes(run.status))
+    throw new SignalRefusedError(
+      'wait_not_open',
+      `run ${run.id} is ${run.status}: its waits are closed`,
+    );
   const job = registry.get(run.jobKey);
   const wait = waitStepOf(job, request.step, request.signal);
   const state = (await store.stepStates(run.id)).find(

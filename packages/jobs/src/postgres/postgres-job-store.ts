@@ -1296,13 +1296,15 @@ export class PostgresJobStore implements JobStore, JobOperatorReads {
     return this.db.transaction(async (tx) => {
       await this.lockRun(tx, runId);
       const now = tsOf(this.now());
-      // The CAS: the step is waiting for this signal. The first signal wins.
+      // The CAS: the run is open and the step is waiting for this signal. The first signal wins. An ended run leaves
+      // its waiting step as it was, so the run's status is read too (under the lock, so a cancel can't land between).
       const settled = await rowsOf(
         tx,
         sql`UPDATE ${S} SET ${refOf(S.status)} = 'completed', ${refOf(S.settledByUserId)} = ${settle.by},
             ${refOf(S.wakeAt)} = NULL, ${refOf(S.completedAt)} = ${now}, ${refOf(S.updatedAt)} = ${now}
           WHERE ${S.runId} = ${runId} AND ${S.name} = ${name} AND ${S.status} = 'waiting'
             AND ${S.waitKind} = 'signal' AND ${S.waitName} = ${settle.signal}
+            AND EXISTS (SELECT 1 FROM ${R} WHERE ${R.id} = ${runId} AND ${R.status} NOT IN ${TERMINAL})
           RETURNING 1 AS "one"`,
       );
       if (!settled.length) return false;

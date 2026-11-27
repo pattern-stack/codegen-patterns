@@ -6,7 +6,7 @@ import { defineJob } from '../define/define-job.ts';
 import { createRegistry } from '../define/registry.ts';
 import { step, waitFor } from '../define/step.ts';
 import { signalAuthorityOf, signalRun } from '../engine/signals.ts';
-import { pauseRun, resumeRun, startRun } from '../engine/start-run.ts';
+import { cancelRun, pauseRun, resumeRun, startRun } from '../engine/start-run.ts';
 import {
   InputRefusedError,
   JobDefinitionError,
@@ -227,6 +227,23 @@ describe('signals', () => {
       executor: fast,
     });
     expect(done.output).toEqual({ published: ['v1'] });
+  });
+
+  test('a signal for a run canceled while it waited is wait_not_open, and records nothing (review #969)', async () => {
+    const job = approvalJob();
+    const store = new MemoryJobStore();
+    const { outcome, clock } = await waitingRun(job, store);
+    const registry = createRegistry([job]);
+    const sink = recordingSink();
+    await cancelRun({ store, clock }, outcome.run.id);
+    await expect(
+      signalRun(
+        { store, registry, clock, events: sink },
+        { runId: outcome.run.id, step: 'approval', signal: 'approve', value: { publish: ['v1'] }, by: null },
+      ),
+    ).rejects.toMatchObject({ code: 'wait_not_open' });
+    expect(sink.events.map((e) => e.type)).not.toContain('step.signaled');
+    expect(await store.stepOutput(outcome.run.id, 'approval')).toBeUndefined();
   });
 
   test("who may send it: the wait's own level, else the level that started the run", async () => {
