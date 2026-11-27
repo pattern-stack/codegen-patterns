@@ -4,6 +4,8 @@ description: Load when a person is describing a new app, feature or concept and 
 user-invocable: false
 ---
 
+<!-- managed by @pattern-stack/codegen — re-run `codegen skills install` to refresh. Edit the package source, not this vendored copy. -->
+
 # Modelling an app: from an idea to entities, parts and edges
 
 Use this to help a person talk an idea through until the relationships are right. The output is a small tree they
