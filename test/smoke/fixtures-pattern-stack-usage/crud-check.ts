@@ -1,5 +1,5 @@
 /**
- * Plain-wiring usage (PW-3a), as a consumer writes it: a `database` system, the generated modules composed with
+ * Pattern-stack wiring usage (PW-3a), as a consumer writes it: a `database` system, the generated modules composed with
  * `@pattern-stack/wiring`, then CRUD through the use cases. Copied into the smoke project's `src/`: the compile
  * half type-checks it (every key it reads is the composition's real API); `--postgres <url>` runs it.
  */

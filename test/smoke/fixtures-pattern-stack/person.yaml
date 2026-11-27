@@ -1,4 +1,4 @@
-# Plain-wiring smoke (PW-3a): a child of `party` — its repository takes PartyRepository.
+# Pattern-stack wiring smoke (PW-3a): a child of `party` — its repository takes PartyRepository.
 entity:
   name: person
   plural: people

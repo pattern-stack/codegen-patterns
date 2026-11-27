@@ -1,11 +1,11 @@
-# PW-3a: `target: { wiring: plain, http: none }` — decorator-free classes, one composition per context
+# PW-3a: `target: { wiring: pattern-stack, http: none }` — decorator-free classes, one composition per context
 
 **Status:** implemented · **Follows:** PW-0, PW-1, PW-2 · **Next:**
-PW-3b (repository interfaces, `<Context>Repositories` bundles, `openapi.ts`, junctions), PW-4 (`project init` for plain)
+PW-3b (repository interfaces, `<Context>Repositories` bundles, `openapi.ts`, junctions), PW-4 (`project init` for pattern-stack)
 
 ## Problem
 
-Codegen emits a NestJS app. Plain wiring is the same repositories, services and use cases with no decorators,
+Codegen emits a NestJS app. Pattern-stack wiring is the same repositories, services and use cases with no decorators,
 composed by a typed composition with no DI container (`@pattern-stack/wiring`, PW-2), and no HTTP layer at all for
 CLI, hook and MCP apps.
 
@@ -14,20 +14,20 @@ CLI, hook and MCP apps.
 ### The keys: `target.wiring` and `target.http`, one table
 
 - `TARGET_APPS` (`src/targets/apps.ts`) lists the supported combinations: `{ wiring: nest, http: nest }` (the
-  default, the first row) and `{ wiring: plain, http: none }`. H-1 adds `plain/hono`.
+  default, the first row) and `{ wiring: pattern-stack, http: none }`. H-1 adds `pattern-stack/hono`.
 - The config schema derives from that table, the way `TARGET_PAIRS` drives the pair.
   - Both keys are optional, and an absent `http` follows the wiring's own row.
-  - An unsupported combination is refused, naming the supported ones (`{ wiring: plain, http: nest } is not a
+  - An unsupported combination is refused, naming the supported ones (`{ wiring: pattern-stack, http: nest } is not a
     supported app`).
   - A wrong value names the key and its values (`http: hono is not one of nest, none`).
-  - `wiring: plain` on a storage-only pair (SQLite) is refused until G7.
+  - `wiring: pattern-stack` on a storage-only pair (SQLite) is refused until G7.
 - A config without the keys parses as before, so the Nest output is byte-identical. `codegen-config.schema.json`
   is regenerated.
 
-### What plain emits, per entity
+### What pattern-stack emits, per entity
 
 - The table, DTOs, repository, service and use cases, from the **same templates**. Each Nest line is wrapped in a
-  `plainWiring` conditional, so the Nest text is unchanged byte for byte:
+  `patternStackWiring` conditional, so the Nest text is unchanged byte for byte:
   - no `@Injectable()`;
   - `db` is a plain constructor parameter, not `@Inject(DRIZZLE)`;
   - the service has no `@Optional() @Inject(EVENT_BUS)` property (lifecycle events come with S-1);
@@ -40,7 +40,7 @@ CLI, hook and MCP apps.
     create, update, delete, <query method>…, search } }`. A search takes the list use case.
   - The service-deps keys are `repositoryPropertyName(entity)` (`src/derived/api/names.ts`), the one rule the
     service's constructor parameters also use.
-- **Skipped by name** (printed: `wiring plain — skipped N Nest-only files (…)`): the controller, the search
+- **Skipped by name** (printed: `wiring pattern-stack — skipped N Nest-only files (…)`): the controller, the search
   controller, the Nest module, the integration-source module, and the `<generated>/modules.ts` Nest barrel. The
   barrel exports the repository and service instead of the module and controller.
 - **Refused by name, each with the step that lifts it:**
@@ -48,7 +48,7 @@ CLI, hook and MCP apps.
   - EAV;
   - an integration `surface:` (S-3);
   - an entity a junction fans out to (PW-3b);
-  - `junction new` and `relationship new` (`plainWiringRefusal`, `src/cli/shared/storage-only.ts`: junctions PW-3b,
+  - `junction new` and `relationship new` (`patternStackWiringRefusal`, `src/cli/shared/storage-only.ts`: junctions PW-3b,
     relationships #679);
   - `entity new` in a project that has junction or relationship YAMLs, rather than generating with their tables
     silently missing from the schema barrel.
@@ -56,7 +56,7 @@ CLI, hook and MCP apps.
 ### The composition: one module per context (d27, d29)
 
 `emitComposition` (`src/emitters/composition/emit-composition.ts`) is a whole-set emitter. It runs as the
-`entity new` post-step under plain, after the schema barrel and the relations manifest, and the Nest post-steps
+`entity new` post-step under pattern-stack, after the schema barrel and the relations manifest, and the Nest post-steps
 after it are skipped by name.
 - **`<modules_dir>/<context>/module.ts`** per `context:`, and `<modules_dir>/module.ts` (module `entities`) for the
   entities with none. Each one:
@@ -71,17 +71,17 @@ after it are skipped by name.
 - **Module names are a context's own.** A context whose camelCased name is `entities` (the root module) or
   `database` (the system) is refused, and so are two contexts that camelCase to one name.
 - **One set of composed repositories.** The composition passes each service its repositories from the class
-  graph's service edges, and `<entity>.wiring.ts` declares them from `repositoryDeps`. Under plain,
+  graph's service edges, and `<entity>.wiring.ts` declares them from `repositoryDeps`. Under pattern-stack,
   `entity-locals.js` throws, naming both, if they ever differ.
-- **The dry run predicts a plain run:** the schema barrel without the modules barrel, and the composition's files
+- **The dry run predicts a pattern-stack run:** the schema barrel without the modules barrel, and the composition's files
   (or its refusal: a context cycle, a reserved name).
 - **Switching `target.wiring` removes the other wiring's generated files** (`stale-files.ts`). It removes only files
   whose first line is codegen's banner, and names each one.
-  - Going plain removes the Nest controllers, `*.module.ts` and `<generated>/modules.ts`, plus any context
+  - Going pattern-stack removes the Nest controllers, `*.module.ts` and `<generated>/modules.ts`, plus any context
     `module.ts` no longer composed.
   - Going nest removes every context `module.ts`, every `*.wiring.ts`, `<generated>/wiring.ts` and
     `<generated>/composition.ts`.
-- The skip line names every post-step plain doesn't run: subsystems, the ScopeEntityType union, events, bridge,
+- The skip line names every post-step pattern-stack doesn't run: subsystems, the ScopeEntityType union, events, bridge,
   jobs, orchestration, the semantic model, frontend and integrations.
 - **`<generated>/wiring.ts`**: `ModuleApis` (each module's `ReturnType`), `SystemApis` (`database: { db }`), and
   `createWiring`'s `defineModule` / `defineSystem` / `compose` typed against them.
@@ -92,17 +92,17 @@ arguments: relation methods (a composed repository) and junction fan-out (a junc
 onto its base go through its own repository, which holds the base's, so they are no longer service edges. The Nest
 module imports are unchanged (byte-identical).
 
-## The gate: `test-smoke-plain` (in `test-all`)
+## The gate: `test-smoke-pattern-stack` (in `test-all`)
 
-`test/smoke/run-smoke-plain.ts` with `test/smoke/fixtures-plain/`. The fixtures are:
+`test/smoke/run-smoke-pattern-stack.ts` with `test/smoke/fixtures-pattern-stack/`. The fixtures are:
 - crm: `account` with a has_many `contacts`, a query and a search; `contact`, which belongs_to `account`; and a
   joined-table family, `party` (base, discriminator `kind`) with its child `person`;
 - billing: `invoice`, which belongs_to `account`;
 - a root `note`. The steps:
 1. Install `drizzle-orm`, `pg`, `zod` and `@pattern-stack/wiring`, the last built from `packages/wiring`. Nothing
    from `@nestjs` and no `reflect-metadata`.
-2. Run `project init --runtime vendored`, set the target to plain, and delete every scaffolded file that imports
-   `@nestjs`, naming each, before generating. Plain `project init` is PW-4.
+2. Run `project init --runtime vendored`, set the target to pattern-stack, and delete every scaffolded file that imports
+   `@nestjs`, naming each, before generating. Pattern-stack `project init` is PW-4.
 3. Turn `experimentalDecorators` and `emitDecoratorMetadata` off, and run `entity new --all`.
 4. Check:
    - no source file imports `@nestjs/*` or `reflect-metadata`, and neither is installed;
@@ -112,10 +112,10 @@ module imports are unchanged (byte-identical).
    - there is no controller and no Nest module;
    - `tsc` passes, scoped by location only.
 
-**The Postgres half, in the integration job.** `run-integration.ts` runs `run-smoke-plain.ts --postgres
+**The Postgres half, in the integration job.** `run-integration.ts` runs `run-smoke-pattern-stack.ts --postgres
 <scaffold url>` after the Nest suite.
-- The smoke creates a database of its own on that server, pushes the plain schema with drizzle-kit, and runs
-  `src/crud-check.ts` (`test/smoke/fixtures-plain-usage/`).
+- The smoke creates a database of its own on that server, pushes the pattern-stack schema with drizzle-kit, and runs
+  `src/crud-check.ts` (`test/smoke/fixtures-pattern-stack-usage/`).
 - That file is a consumer's usage: a `database` system, `compose({ systems, modules: [...MODULES] })`, `start()`,
   then through the composed use cases:
   - create;
@@ -132,8 +132,8 @@ module imports are unchanged (byte-identical).
 
 ## Known for later
 
-- PW-4: `project init` for plain writes no Nest scaffold and doesn't vendor `nest-logger.ts`. It writes
+- PW-4: `project init` for pattern-stack writes no Nest scaffold and doesn't vendor `nest-logger.ts`. It writes
   `compose.ts`, the `database` system and `main.ts`.
-- S-1: under plain, the event codegen must augment `…/events/core`, not `…/events/index` (PW-0's gap).
+- S-1: under pattern-stack, the event codegen must augment `…/events/core`, not `…/events/index` (PW-0's gap).
 - From #965: one error-body owner. `runtime/errors.ts` gains 409 / 422, and a constraint violation becomes an
   `AppError`.

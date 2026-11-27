@@ -32,15 +32,15 @@
               "description": "Drizzle ORM: tables, columns and repositories written against drizzle-orm"
             },
             "wiring": {
-              "description": "How the generated classes are composed (PW-3); default nest. Supported: { wiring: nest, http: nest }, { wiring: plain, http: none }.",
+              "description": "How the generated classes are composed (PW-3); default nest. Supported: { wiring: nest, http: nest }, { wiring: pattern-stack, http: none }.",
               "type": "string",
               "enum": [
                 "nest",
-                "plain"
+                "pattern-stack"
               ]
             },
             "http": {
-              "description": "The HTTP layer (PW-3); default follows wiring. Supported: { wiring: nest, http: nest }, { wiring: plain, http: none }.",
+              "description": "The HTTP layer (PW-3); default follows wiring. Supported: { wiring: nest, http: nest }, { wiring: pattern-stack, http: none }.",
               "type": "string",
               "enum": [
                 "nest",
@@ -60,7 +60,7 @@
             "database": {
               "type": "string",
               "const": "sqlite",
-              "description": "SQLite: sqlite-core column builders, ISO TEXT instants, TEXT + CHECK enums; storage layer only until wiring: plain"
+              "description": "SQLite: sqlite-core column builders, ISO TEXT instants, TEXT + CHECK enums; storage layer only until wiring: pattern-stack"
             },
             "orm": {
               "type": "string",
@@ -68,15 +68,15 @@
               "description": "Drizzle ORM: sqlite-core tables, plus SQLite DDL (.sql) from the same facts"
             },
             "wiring": {
-              "description": "How the generated classes are composed (PW-3); default nest. Supported: { wiring: nest, http: nest }, { wiring: plain, http: none }.",
+              "description": "How the generated classes are composed (PW-3); default nest. Supported: { wiring: nest, http: nest }, { wiring: pattern-stack, http: none }.",
               "type": "string",
               "enum": [
                 "nest",
-                "plain"
+                "pattern-stack"
               ]
             },
             "http": {
-              "description": "The HTTP layer (PW-3); default follows wiring. Supported: { wiring: nest, http: nest }, { wiring: plain, http: none }.",
+              "description": "The HTTP layer (PW-3); default follows wiring. Supported: { wiring: nest, http: nest }, { wiring: pattern-stack, http: none }.",
               "type": "string",
               "enum": [
                 "nest",

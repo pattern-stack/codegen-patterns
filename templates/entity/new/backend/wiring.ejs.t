@@ -3,9 +3,9 @@ to: "<%= outputPaths.wiring %>"
 force: true
 ---
 <%- generatedBanner %>
-<%_ if (plainWiringParts) { _%>
+<%_ if (patternStackWiringParts) { _%>
 /**
- * <%= classNames.entity %>'s plain wiring (PW-3): how its classes are constructed, with no DI container.
+ * <%= classNames.entity %>'s pattern-stack wiring (PW-3): how its classes are constructed, with no DI container.
  *
  * Two phases, because entities compose each other's repositories (a `belongs_to` one way, a `has_many` back):
  * every repository is built first, then every service and its use cases. The context's composition
@@ -23,8 +23,8 @@ import type { <%= familyChild.baseRepositoryClass %> } from '<%= familyChild.bas
 import type { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.fileStem %>.repository';
 <%_ } _%>
 <%_ }) _%>
-<%_ const _queries = plainWiringParts.useCases.filter((u) => u.kind === 'query'); _%>
-<%_ plainWiringParts.useCases.filter((u) => u.kind !== 'query').forEach((u) => { _%>
+<%_ const _queries = patternStackWiringParts.useCases.filter((u) => u.kind === 'query'); _%>
+<%_ patternStackWiringParts.useCases.filter((u) => u.kind !== 'query').forEach((u) => { _%>
 import { <%= u.className %> } from '<%= u.importPath %>';
 <%_ }) _%>
 <%_ if (_queries.length > 0) { _%>
@@ -52,12 +52,12 @@ export interface <%= classNames.entity %>ServiceDeps {
 /** Builds <%= classNames.entity %>'s service and its use cases. */
 export function create<%= classNames.entity %>Services(deps: <%= classNames.entity %>ServiceDeps) {
   const service = new <%= classNames.service %>(deps.repository<% repositoryDeps.forEach((dep) => { %>, deps.<%= dep.property %><% }) %>);
-<%_ const _list = plainWiringParts.useCases.find((u) => u.kind === 'list'); _%>
+<%_ const _list = patternStackWiringParts.useCases.find((u) => u.kind === 'list'); _%>
   const <%= _list.key %> = new <%= _list.className %>(service);
   return {
     service,
     useCases: {
-<%_ plainWiringParts.useCases.forEach((u) => { _%>
+<%_ patternStackWiringParts.useCases.forEach((u) => { _%>
 <%_ if (u.kind === 'list') { _%>
       <%= u.key %>,
 <%_ } else if (u.kind === 'search') { _%>

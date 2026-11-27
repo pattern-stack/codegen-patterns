@@ -3,8 +3,8 @@
  *
  * Everything in the events public API that loads no `@nestjs/*` package, type
  * imports included: the protocols, the augmentable registry, the tokens, the
- * errors, the scheduler and the outbox schema. A plain app (`target.wiring:
- * plain`) imports through this file (`subsystemCoreImport(mode, 'events')`);
+ * errors, the scheduler and the outbox schema. A pattern-stack app (`target.wiring:
+ * pattern-stack`) imports through this file (`subsystemCoreImport(mode, 'events')`);
  * `./index` re-exports it beside the Nest module and the decorated backends.
  * `src/__tests__/runtime/nest-free.test.ts` holds it Nest-free.
  */

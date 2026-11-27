@@ -3,7 +3,7 @@ to: "<%= outputPaths.repository %>"
 force: true
 ---
 <%- generatedBanner %>
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 import { Injectable, Inject } from '@nestjs/common';
 <% } -%>
 <%_
@@ -89,7 +89,7 @@ const _parentImports = [...new Map(matchFills.flatMap((f) => f.sources).filter((
 _%>
 <%# READ-1: `eq` / `inArray` are unconditional — `findById` / `findByIds` use them. %>
 import { <%- _orm.join(', ') %> } from 'drizzle-orm';
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 <% } -%>
 import type { DrizzleClient<% if (_needsTx) { %>, DrizzleTx<% } %> } from '<%= drizzleTypeImport %>';
@@ -366,7 +366,7 @@ const <%= _C('UPSERT_NEVER') %>: globalThis.ReadonlySet<string> = new globalThis
 ]);
 
 <%_ } _%>
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 @Injectable()
 <% } -%>
 <%_ /* ADR-041: the spine alone, the spine wrapped in one capability mixin, or
@@ -448,7 +448,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
 
 <%_ if (eavEnabled) { -%>
   constructor(
-    <%= plainWiring ? '' : '@Inject(DRIZZLE) ' %>db: DrizzleClient<Relations>,
+    <%= patternStackWiring ? '' : '@Inject(DRIZZLE) ' %>db: DrizzleClient<Relations>,
     private readonly fieldValues: FieldValueService,
   ) {
     super(db);
@@ -471,12 +471,12 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
 <%_ } else { -%>
 <%_ if (_child) { _%>
   constructor(
-    <%= plainWiring ? '' : '@Inject(DRIZZLE) ' %>db: DrizzleClient<Relations>,
+    <%= patternStackWiring ? '' : '@Inject(DRIZZLE) ' %>db: DrizzleClient<Relations>,
     // The pair write goes through the base's OWN repository, so its tenant stamp and timestamps apply (RFC-0006 §4.1).
     private readonly baseRepo: <%= _child.baseRepositoryClass %>,
   ) {
 <%_ } else { _%>
-  constructor(<%= plainWiring ? '' : '@Inject(DRIZZLE) ' %>db: DrizzleClient<Relations>) {
+  constructor(<%= patternStackWiring ? '' : '@Inject(DRIZZLE) ' %>db: DrizzleClient<Relations>) {
 <%_ } _%>
     super(db);
     // Every read runs on db.query.<%= entityNamePlural %> — fail HERE, naming the cause,

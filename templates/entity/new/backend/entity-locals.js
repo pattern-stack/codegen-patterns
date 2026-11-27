@@ -33,7 +33,7 @@ import { resolvePatternComposition } from '../../../../src/patterns/resolve-comp
 import '../../../../src/patterns/library/index.js';
 import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
 import { EAV_FIELD_VALUE_ENTITY, entityClassGraph, moduleImports } from '../../../../src/derived/wiring/classes.js';
-import { isPlainWiring } from '../../../../src/targets/apps.js';
+import { isPatternStackWiring } from '../../../../src/targets/apps.js';
 import { arrayElementType, deriveFieldFacts, isArrayType } from '../../../../src/derived/columns/fields.js';
 import { columnRendererFor } from '../../../../src/targets/columns.js';
 import { constraintRendererFor } from '../../../../src/targets/constraints.js';
@@ -2421,8 +2421,8 @@ export function buildBackendLocals(definition, baseLocals) {
     entityLookup: (name) => (entityLookup ? entityLookup(name) : null),
   };
   const apiSurface = deriveEntityApiSurface(apiInput);
-  // PW-3 — `target.wiring: plain`: no decorators, no Nest module (TARGET_APPS, src/targets/apps.ts).
-  const plainWiring = isPlainWiring(baseLocals.target);
+  // PW-3 — `target.wiring: pattern-stack`: no decorators, no Nest module (TARGET_APPS, src/targets/apps.ts).
+  const patternStackWiring = isPatternStackWiring(baseLocals.target);
   // PW-1 — the classes this entity emits and what each one's constructor takes (`src/derived/wiring/`). The module
   // template prints its module imports, providers and controllers from it.
   const classGraph = entityClassGraph(apiInput, apiSurface);
@@ -2542,21 +2542,21 @@ export function buildBackendLocals(definition, baseLocals) {
     // TGT-2b: a SQLite pair's table module and its `.sql`; null on Postgres.
     sqliteEntity: null,
     sqliteDdl: null,
-    // PW-3: the entity's plain-wiring factories (`<entity>.wiring.ts`); null under wiring: nest.
-    wiring: plainWiring ? `${moduleDir}/${emittedStem(entityName)}.wiring.ts` : null,
+    // PW-3: the entity's pattern-stack wiring factories (`<entity>.wiring.ts`); null under wiring: nest.
+    wiring: patternStackWiring ? `${moduleDir}/${emittedStem(entityName)}.wiring.ts` : null,
   };
 
-  // PW-3: plain wiring (`target: { wiring: plain, http: none }`) emits the same table, DTOs, repository, service and use
+  // PW-3: pattern-stack wiring (`target: { wiring: pattern-stack, http: none }`) emits the same table, DTOs, repository, service and use
   // cases without decorators, and no Nest-only file: the controllers, the Nest module and the integration-source
   // module are skipped by name (printed, never silent). The per-context composition is the whole-set post-step's.
-  // What plain cannot emit yet is refused by name, with the step that lifts it.
-  if (plainWiring) {
+  // What pattern-stack cannot emit yet is refused by name, with the step that lifts it.
+  if (patternStackWiring) {
     const refuse = (what, step) => {
-      throw new Error(`[codegen] '${entityName}': ${what} is not supported under target.wiring: plain yet — it comes with ${step}.`);
+      throw new Error(`[codegen] '${entityName}': ${what} is not supported under target.wiring: pattern-stack yet — it comes with ${step}.`);
     };
-    if (Array.isArray(definition.emits) && definition.emits.length > 0) refuse('`emits:` (the typed event bus)', 'S-1 (events on plain wiring)');
-    if (definition.eav === true || definition.eav_value_table === true) refuse('EAV (`eav:` / `eav_value_table:`)', 'a later plain-wiring step');
-    if (definition.entity?.surface || definition.surface) refuse('an integration `surface:`', 'S-3 (integrations on plain wiring)');
+    if (Array.isArray(definition.emits) && definition.emits.length > 0) refuse('`emits:` (the typed event bus)', 'S-1 (events on pattern-stack wiring)');
+    if (definition.eav === true || definition.eav_value_table === true) refuse('EAV (`eav:` / `eav_value_table:`)', 'a later pattern-stack wiring step');
+    if (definition.entity?.surface || definition.surface) refuse('an integration `surface:`', 'S-3 (integrations on pattern-stack wiring)');
     if (junctionFanOut.length > 0) refuse('a junction fan-out (a junction names this entity)', 'PW-3b');
     const nestOnly = ['controller', 'searchController', 'module', 'integrationSourceModule'];
     // `integrationSourceModule` always has a path; its template writes only for a `detection:` entity, so it is named
@@ -2566,7 +2566,7 @@ export function buildBackendLocals(definition, baseLocals) {
     );
     for (const k of nestOnly) outputPaths[k] = null;
     console.log(
-      `[codegen] '${entityName}': wiring plain — skipped ${skipped.length} Nest-only files (${skipped.join(', ')}); ` +
+      `[codegen] '${entityName}': wiring pattern-stack — skipped ${skipped.length} Nest-only files (${skipped.join(', ')}); ` +
         'the per-context composition replaces the Nest module.',
     );
   }
@@ -2588,8 +2588,8 @@ export function buildBackendLocals(definition, baseLocals) {
   const fromModuleDir = (file) => `./${file.slice(moduleDir.length + 1).replace(/\.ts$/, '')}`;
   // The composition (`emitComposition`) passes the service its composed repositories from the class graph's service
   // edges; `<entity>.wiring.ts` declares them from `repositoryDeps`. One set, or the generated code fails to compile:
-  // held here, naming both, under plain (where the composition reads them).
-  if (plainWiring) {
+  // held here, naming both, under pattern-stack (where the composition reads them).
+  if (patternStackWiring) {
     const serviceNode = classGraph.nodes.find((n) => n.role === 'service');
     const graphRepos = classGraph.edges
       .filter((e) => e.from === serviceNode?.id && e.toOwner !== entityName && e.to.endsWith('Repository'))
@@ -2603,11 +2603,11 @@ export function buildBackendLocals(definition, baseLocals) {
       );
     }
   }
-  const plainWiringParts = plainWiring
+  const patternStackWiringParts = patternStackWiring
     ? {
         useCases: apiSurface.useCases.map((u) => {
           const file = useCaseFiles[u.kind];
-          if (!file) throw new Error(`[codegen] '${entityName}': no file for the ${u.kind} use case under wiring: plain.`);
+          if (!file) throw new Error(`[codegen] '${entityName}': no file for the ${u.kind} use case under wiring: pattern-stack.`);
           return {
             className: u.className,
             kind: u.kind,
@@ -2620,7 +2620,7 @@ export function buildBackendLocals(definition, baseLocals) {
 
   // TGT-2b: a SQLite target emits its storage layer only — the `sqliteTable` module and `<entity>.sql` from the same
   // facts. The Nest layers (repository, service, controller, module, DTOs, use cases) are `node-postgres`-typed through
-  // runtime/base-classes; a SQLite project's stores come from `wiring: plain` (G7). Every other path is null, so hygen
+  // runtime/base-classes; a SQLite project's stores come from `wiring: pattern-stack` (G7). Every other path is null, so hygen
   // writes nothing else, and the skip is printed (never silent).
   const isSqlite = targetPairRow(baseLocals.target).layers === 'storage';
   if (isSqlite) {
@@ -2630,7 +2630,7 @@ export function buildBackendLocals(definition, baseLocals) {
     outputPaths.sqliteDdl = `${moduleDir}/${emittedStem(entityName)}.sql`;
     console.log(
       `[codegen] '${entityName}': target sqlite writes the storage layer (sqliteTable module, .sql); ` +
-        `skipped ${skipped.length} Nest-layer files — they come with wiring: plain (G7).`,
+        `skipped ${skipped.length} Nest-layer files — they come with wiring: pattern-stack (G7).`,
     );
   }
 
@@ -3165,8 +3165,8 @@ export function buildBackendLocals(definition, baseLocals) {
     // #632: every other entity's repository the service composes, once each
     repositoryDeps: repositoryDeps,
     wiring,
-    plainWiring,
-    plainWiringParts,
+    patternStackWiring,
+    patternStackWiringParts,
     // JUNC-0 (#678): the junction fan-out this entity's service + module carry
     junctionFanOut: junctionFanOut,
     // The EAV definition repository is imported + injected by its own block

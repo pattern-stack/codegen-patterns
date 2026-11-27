@@ -1,15 +1,15 @@
 # PW-0: Nest-free runtime seams — a logger port, plain errors, Nest-free subsystem entries
 
 **Status:** implemented · **Issue:** none · **Next:** PW-1 (the class graph), then PW-2 (`@pattern-stack/wiring`),
-PW-3 (`target: { wiring: plain, http: none }`)
+PW-3 (`target: { wiring: pattern-stack, http: none }`)
 
-The first step of plain wiring: generated apps without NestJS. Nothing generated changes. The runtime gains the three
-seams that plain output (PW-3) imports through, and the base classes stop loading `@nestjs/common`.
+The first step of pattern-stack wiring: generated apps without NestJS. Nothing generated changes. The runtime gains the three
+seams that pattern-stack output (PW-3) imports through, and the base classes stop loading `@nestjs/common`.
 
 ## Problem
 
 Generated repositories, services and use cases are plain classes under thin Nest decorators, but the runtime they
-import reaches Nest in three places a plain app can't avoid:
+import reaches Nest in three places a pattern-stack app can't avoid:
 
 - **The base classes.** `runtime/base-classes/lifecycle-events.ts` imported Nest's `Logger`, so `BaseService`, every
   family service and `base-classes/index.ts` loaded `@nestjs/common`. It was the only leak in the base classes.
@@ -58,14 +58,14 @@ import reaches Nest in three places a plain app can't avoid:
     `path`), which Nest sends as given.
   `errors.spec.ts` compares `JSON.stringify` of both sides against Nest's own exceptions, so a parity gate comparing
   bodies byte for byte holds.
-- The Nest target keeps Nest's exceptions, byte for byte. PW-3's plain templates throw these; H-1's error middleware
+- The Nest target keeps Nest's exceptions, byte for byte. PW-3's pattern-stack templates throw these; H-1's error middleware
   sends `errorBody`.
 
 ### Nest-free subsystem entries: `runtime/subsystems/<name>/core.ts`
 
 - `events/core.ts`: the protocols, the augmentable registry types, the read port, the tokens, the errors, the event
   scheduler (Nest-free now that it logs through the port) and the outbox schema. Not in it: `TypedEventBus`
-  (`generated/bus.ts`, decorated; PW-3 emits it without decorators under plain), the module and the two decorated
+  (`generated/bus.ts`, decorated; PW-3 emits it without decorators under pattern-stack), the module and the two decorated
   backends.
 - `auth/core.ts`: the protocols, tokens, the OAuth2 refresh strategy and `withAuthRetry`, the errors, the OAuth-state
   schema and the three backends. Not in it: the controller, the guard, `@Public`, the requester-context middleware
@@ -78,12 +78,12 @@ import reaches Nest in three places a plain app can't avoid:
 - No `jobs/core.ts`: the jobs subsystem is replaced, not de-Nested (d24, J-0b brings `@pattern-stack/jobs`).
 - `subsystemCoreImport(mode, name)` (`src/cli/shared/runtime-import.ts`, twin in `src/config/runtime-mode.mjs`) gives
   the specifier: `@pattern-stack/codegen/runtime/subsystems/<name>/core` (the package's existing `./runtime/*` export)
-  or `@shared/subsystems/<name>/core` (vendored). `NEST_FREE_SUBSYSTEMS` lists the names. Plain output imports
+  or `@shared/subsystems/<name>/core` (vendored). `NEST_FREE_SUBSYSTEMS` lists the names. Pattern-stack output imports
   subsystems through this, never through `subsystemsImport`.
 - **Known gap, for PW-3:** the generated `events/types.ts` augments `DomainEventRegistry` through
   `declare module '…/runtime/subsystems/events/index'` (`event-codegen-generator.ts`), and resolving that module loads
-  the Nest half's types. The plain target's event codegen must augment `…/events/core` instead (the interface is the
-  same symbol). Changing it here would change Nest output, so it waits for the plain branch of that generator.
+  the Nest half's types. The pattern-stack target's event codegen must augment `…/events/core` instead (the interface is the
+  same symbol). Changing it here would change Nest output, so it waits for the pattern-stack branch of that generator.
 - The barrel split (each `index.ts` into a Nest-free `index.ts` and a `nest.ts` entry for the Nest half)
   would change Nest import lines in generated code. Not done here; if wanted, it's its own PR.
 
@@ -92,13 +92,13 @@ import reaches Nest in three places a plain app can't avoid:
 `src/__tests__/runtime/nest-free.test.ts` walks the relative-import closure of every Nest-free entry (`logger.ts`,
 `errors.ts`, `base-classes/index.ts`, `types/drizzle.ts`, `constants/tokens.ts`, `eav-helpers.ts`,
 `http/{pagination,includes}.ts`, `shared/openapi/index.ts` and each `subsystems/<name>/core.ts`) with
-`ts.preProcessFile` (a relative specifier it can't resolve fails the gate rather than being skipped) and fails on any `@nestjs/*` or `reflect-metadata` import, **type-only imports included**: a plain
+`ts.preProcessFile` (a relative specifier it can't resolve fails the gate rather than being skipped) and fails on any `@nestjs/*` or `reflect-metadata` import, **type-only imports included**: a pattern-stack
 app installs no `@nestjs`, so even `import type` from it fails to compile there. The failure prints the chain
 (`base-classes/index.ts → base-classes/base-service.ts → base-classes/lifecycle-events.ts → @nestjs/common`). A control
 case checks the walk does see Nest in `events/index.ts` and `nest-logger.ts`. The same file holds the `.mjs` twin of
 `subsystemCoreImport` to the TypeScript one.
 
-The proof that a plain app really compiles and boots without `@nestjs` installed is `test-smoke-plain` (PW-3); this
+The proof that a pattern-stack app really compiles and boots without `@nestjs` installed is `test-smoke-pattern-stack` (PW-3); this
 gate is the static half that PW-3 builds on.
 
 ## Byte-identity

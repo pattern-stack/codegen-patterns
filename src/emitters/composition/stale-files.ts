@@ -5,10 +5,10 @@
  * Only files codegen wrote are touched: a file is removed only when its first line is one of codegen's banners. A
  * hand-written file is never removed, whatever its name.
  *
- * - Going **plain**: the Nest-only files — `*.controller.ts` and `*.module.ts` under `modules_dir` (not a context's
+ * - Going **pattern-stack**: the Nest-only files — `*.controller.ts` and `*.module.ts` under `modules_dir` (not a context's
  *   `module.ts`) and `<generated>/modules.ts` — plus any context `module.ts` the current composition no longer writes
  *   (a context renamed or emptied).
- * - Going **nest**: the plain files — every context `module.ts`, every `*.wiring.ts`, `<generated>/wiring.ts` and
+ * - Going **nest**: the pattern-stack files — every context `module.ts`, every `*.wiring.ts`, `<generated>/wiring.ts` and
  *   `<generated>/composition.ts`.
  */
 
@@ -32,10 +32,10 @@ function walk(dir: string): string[] {
 
 /** The other wiring's generated files under `modulesDir` / `generatedDir`, removed unless `dryRun`. */
 export function removeOtherWiringFiles(input: {
-	wiring: 'nest' | 'plain';
+	wiring: 'nest' | 'pattern-stack';
 	modulesDir: string;
 	generatedDir: string;
-	/** Plain only: the composition files this run writes, which are kept. */
+	/** Pattern-stack only: the composition files this run writes, which are kept. */
 	keep?: ReadonlySet<string>;
 	dryRun?: boolean;
 }): string[] {
@@ -43,7 +43,7 @@ export function removeOtherWiringFiles(input: {
 	const keep = input.keep ?? new Set<string>();
 	const underModules = walk(modulesDir);
 	const candidates =
-		wiring === 'plain'
+		wiring === 'pattern-stack'
 			? [
 					...underModules.filter(
 						(f) => f.endsWith('.controller.ts') || (f.endsWith('.module.ts') && path.basename(f) !== 'module.ts'),

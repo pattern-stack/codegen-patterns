@@ -84,7 +84,7 @@ export function repositoryClassName(entityName: string): string {
 }
 
 /**
- * The name a service gives a composed entity's repository (#632): its constructor parameter, and under plain wiring
+ * The name a service gives a composed entity's repository (#632): its constructor parameter, and under pattern-stack wiring
  * its key in `<Entity>ServiceDeps` (PW-3). One rule for the template and the composition emitter.
  */
 export function repositoryPropertyName(entityName: string): string {

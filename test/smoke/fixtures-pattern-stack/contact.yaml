@@ -1,4 +1,4 @@
-# Plain-wiring smoke (PW-3): belongs_to account, in the same context.
+# Pattern-stack wiring smoke (PW-3): belongs_to account, in the same context.
 entity:
   name: contact
   plural: contacts

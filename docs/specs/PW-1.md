@@ -1,11 +1,11 @@
 # PW-1: the class graph, derived once; `module.ejs.t` prints from it; no class cycles
 
 **Status:** implemented · **Issue:** none · **Follows:** PW-0 · **Next:** PW-2 (`@pattern-stack/wiring`), PW-3
-(`target: { wiring: plain, http: none }`)
+(`target: { wiring: pattern-stack, http: none }`)
 
 ## Problem
 
-Plain wiring (PW-3) emits one flat composition that constructs every generated class in dependency order
+Pattern-stack wiring (PW-3) emits one flat composition that constructs every generated class in dependency order
 (`new ContactRepository(db); new ContactService(contactRepository, …)`). That needs two things the generator didn't
 have:
 

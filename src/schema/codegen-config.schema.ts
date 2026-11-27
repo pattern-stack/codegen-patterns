@@ -327,8 +327,8 @@ export function targetConfigSchemaFor(
  * a table can't say in its own type.
  */
 export const TargetConfigSchema = targetConfigSchemaFor(TARGET_PAIRS).superRefine((target, ctx) => {
-  // PW-3: the (wiring, http) combination is one of `TARGET_APPS`' rows, and plain wiring needs a pair whose row emits
-  // the app layers (Postgres today; SQLite plain is G7).
+  // PW-3: the (wiring, http) combination is one of `TARGET_APPS`' rows, and pattern-stack wiring needs a pair whose row emits
+  // the app layers (Postgres today; SQLite pattern-stack is G7).
   if (!targetAppRow(target)) {
     ctx.addIssue({
       code: 'custom',
@@ -337,11 +337,11 @@ export const TargetConfigSchema = targetConfigSchemaFor(TARGET_PAIRS).superRefin
     });
     return;
   }
-  if (target.wiring === 'plain' && targetPairRow(target).layers !== 'nest') {
+  if (target.wiring === 'pattern-stack' && targetPairRow(target).layers !== 'nest') {
     ctx.addIssue({
       code: 'custom',
       path: ['wiring'],
-      message: `wiring: plain needs a pair that emits the app layers; { database: ${target.database}, orm: ${target.orm} } emits the storage layer only until G7`,
+      message: `wiring: pattern-stack needs a pair that emits the app layers; { database: ${target.database}, orm: ${target.orm} } emits the storage layer only until G7`,
     });
   }
 }) as unknown as z.ZodType<TargetConfig>;

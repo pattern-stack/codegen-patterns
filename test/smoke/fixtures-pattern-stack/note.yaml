@@ -1,4 +1,4 @@
-# Plain-wiring smoke (PW-3): no context — the root `entities` module.
+# Pattern-stack wiring smoke (PW-3): no context — the root `entities` module.
 entity:
   name: note
   plural: notes

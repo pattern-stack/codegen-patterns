@@ -12,7 +12,7 @@
  *   4. Dir:    junctions/ (not relationships/)
  */
 
-import { plainWiringRefusal, storageOnlyRefusal } from '../shared/storage-only.js';
+import { patternStackWiringRefusal, storageOnlyRefusal } from '../shared/storage-only.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Command, Option } from 'clipanion';
@@ -173,7 +173,7 @@ export class JunctionNewCommand extends Command {
 			skipDetection: true,
 		});
 
-		const refusal = storageOnlyRefusal(ctx, 'junction new') ?? plainWiringRefusal(ctx, 'junction new');
+		const refusal = storageOnlyRefusal(ctx, 'junction new') ?? patternStackWiringRefusal(ctx, 'junction new');
 		if (refusal) {
 			printError(refusal);
 			return 1;

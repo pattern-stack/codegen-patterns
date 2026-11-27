@@ -1,7 +1,7 @@
 /**
- * The plain-wiring composition (PW-3): one module per context, composed with `@pattern-stack/wiring`.
+ * The pattern-stack wiring composition (PW-3): one module per context, composed with `@pattern-stack/wiring`.
  *
- * A whole-set TypeScript emitter (the ADR-038 kind), run as the `entity new` post-step under `target.wiring: plain`.
+ * A whole-set TypeScript emitter (the ADR-038 kind), run as the `entity new` post-step under `target.wiring: pattern-stack`.
  * It reads the class graph (PW-1, `src/derived/wiring/`) and writes:
  *
  * - `<modules_dir>/<context>/module.ts` per `context:` (d27, d29: the YAML says context, the code says module), and
@@ -13,7 +13,7 @@
  *   `defineSystem` and `compose`, typed against it;
  * - `<generated>/composition.ts`: `MODULES`, every module's manifest, for the app's `compose.ts` (PW-4).
  *
- * The only system plain wiring needs here is `database` (`{ db }`). Modules depend on each other one way: a cycle
+ * The only system pattern-stack wiring needs here is `database` (`{ db }`). Modules depend on each other one way: a cycle
  * between contexts is refused, naming it.
  */
 
@@ -69,7 +69,7 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 	const { graph, order, contextCycles } = deriveProjectClassGraph(relations);
 	if (contextCycles.length > 0) {
 		throw new Error(
-			`[codegen] wiring: plain composes one module per context, and contexts must depend on each other one way; ` +
+			`[codegen] wiring: pattern-stack composes one module per context, and contexts must depend on each other one way; ` +
 				`these depend on each other in a cycle: ${contextCycles.map((c) => c.join(' → ')).join('; ')}`,
 		);
 	}
@@ -85,14 +85,14 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 			// A context's module name must be its own: not the root module's, not a system's, not another context's.
 			if (RESERVED_MODULE_NAMES.has(name)) {
 				throw new Error(
-					`[codegen] wiring: plain: context '${context}' (entity '${d.entity.name}') would be the module '${name}', ` +
+					`[codegen] wiring: pattern-stack: context '${context}' (entity '${d.entity.name}') would be the module '${name}', ` +
 						`a name the composition reserves (${[...RESERVED_MODULE_NAMES].join(', ')}); rename the context`,
 				);
 			}
 			const other = contextOfModule.get(name);
 			if (other !== undefined && other !== context) {
 				throw new Error(
-					`[codegen] wiring: plain: contexts '${other}' and '${context}' would both be the module '${name}'; rename one`,
+					`[codegen] wiring: pattern-stack: contexts '${other}' and '${context}' would both be the module '${name}'; rename one`,
 				);
 			}
 			contextOfModule.set(name, context);
@@ -205,7 +205,7 @@ export const ${plan.name}Module = defineModule({
 		path: registryFile,
 		content: `${input.banner}
 /**
- * The plain-wiring registry (PW-3): every module and system by name, and the wiring typed against it
+ * The pattern-stack wiring registry (PW-3): every module and system by name, and the wiring typed against it
  * (\`@pattern-stack/wiring\`). A manifest that uses something it didn't declare is a type error.
  */
 import { createWiring } from '@pattern-stack/wiring';

@@ -3,7 +3,7 @@ to: "<%= outputPaths.findByIdUseCase %>"
 force: true
 ---
 <%- generatedBanner %>
-<% if (plainWiring) { -%>
+<% if (patternStackWiring) { -%>
 import { NotFoundError } from '<%= errorsImport %>';
 <% } else { -%>
 import { Injectable, NotFoundException } from '@nestjs/common';
@@ -23,7 +23,7 @@ import type {
 import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 <% } -%>
 
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 @Injectable()
 <% } -%>
 export class <%= classNames.findByIdUseCase %> {
@@ -66,7 +66,7 @@ export class <%= classNames.findByIdUseCase %> {
     const entity = await this.service.findById(id);
 <% } -%>
     if (entity === null || entity === undefined) {
-      throw new <%= plainWiring ? 'NotFoundError' : 'NotFoundException' %>(`<%= classNames.entity %> not found: ${id}`);
+      throw new <%= patternStackWiring ? 'NotFoundError' : 'NotFoundException' %>(`<%= classNames.entity %> not found: ${id}`);
     }
     return entity;
   }

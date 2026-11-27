@@ -31,7 +31,7 @@ import type { IEventBus, DomainEvent } from '../subsystems/events/event-bus.prot
  * runtime's logger port (`../logger`), not bare `console`: a Nest app binds it
  * to Nest's `Logger`, so consumers configuring `app.useLogger` or the factory
  * `logger:` option format and filter it like any other framework log line; a
- * plain app binds its own or keeps the console default.
+ * pattern-stack app binds its own or keeps the console default.
  */
 const logger = createLogger('LifecycleEvents');
 

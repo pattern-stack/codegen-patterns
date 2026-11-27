@@ -1,15 +1,15 @@
 #!/usr/bin/env bun
 /**
- * Plain-wiring smoke (PW-3): a project with `target: { wiring: plain, http: none }` compiles with NO `@nestjs/*`
+ * Pattern-stack wiring smoke (PW-3): a project with `target: { wiring: pattern-stack, http: none }` compiles with NO `@nestjs/*`
  * package, no `reflect-metadata`, and decorators off.
  *
  * 1. A fresh tmp project: `bun init`, then the runtime deps WITHOUT Nest, and `@pattern-stack/wiring` from this
  *    checkout's `packages/wiring` (PW-2).
- * 2. `codegen project init --runtime vendored`, then the target set to plain. `project init` for plain is PW-4; until
+ * 2. `codegen project init --runtime vendored`, then the target set to pattern-stack. `project init` for pattern-stack is PW-4; until
  *    it lands, init still writes the Nest scaffold, so this harness deletes every scaffolded file that imports
  *    `@nestjs` BEFORE generating, naming each. Nothing `entity new` writes is exempt.
  * 3. `tsconfig.json`: `experimentalDecorators` and `emitDecoratorMetadata` off.
- * 4. The fixtures in `test/smoke/fixtures-plain/` (two contexts, a cross-context `belongs_to`, a mutual composition,
+ * 4. The fixtures in `test/smoke/fixtures-pattern-stack/` (two contexts, a cross-context `belongs_to`, a mutual composition,
  *    a root entity) through `entity new --all`.
  * 5. Gates:
  *    - no file in the project imports `@nestjs/*` or `reflect-metadata`, and `node_modules` has neither;
@@ -28,10 +28,10 @@ import { tscGateErrors } from './_consumer-errors';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI = `bun ${path.join(REPO_ROOT, 'src', 'cli', 'index.ts')}`;
-const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures-plain');
-const USAGE_FILE = path.join(import.meta.dirname, 'fixtures-plain-usage', 'crud-check.ts');
+const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures-pattern-stack');
+const USAGE_FILE = path.join(import.meta.dirname, 'fixtures-pattern-stack-usage', 'crud-check.ts');
 // `--postgres <url>` (the integration job): after the compile gate, push the schema into a fresh database on that
-// server and run CRUD through the composed use cases (`fixtures-plain-usage/crud-check.ts`).
+// server and run CRUD through the composed use cases (`fixtures-pattern-stack-usage/crud-check.ts`).
 const POSTGRES_URL = (() => {
 	const i = process.argv.indexOf('--postgres');
 	return i === -1 ? null : (process.argv[i + 1] ?? null);
@@ -71,7 +71,7 @@ function sourceFiles(tmpDir: string): string[] {
 }
 
 async function main(): Promise<number> {
-	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegen-smoke-plain-'));
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegen-smoke-pattern-stack-'));
 	log(`tmp dir: ${tmpDir}`);
 	try {
 		// 1. Project + deps, without Nest. `@pattern-stack/wiring` installs from this checkout as a consumer gets it:
@@ -81,14 +81,14 @@ async function main(): Promise<number> {
 		run(`bun add ${RUNTIME_DEPS.join(' ')}`, tmpDir);
 		run(`bun add -D ${DEV_DEPS.join(' ')}`, tmpDir);
 
-		// 2. Init, then plain; the Nest scaffold out (PW-4 makes init write none).
+		// 2. Init, then pattern-stack; the Nest scaffold out (PW-4 makes init write none).
 		run(`${CLI} project init --yes --with-tsconfig --runtime vendored`, tmpDir);
 		const configPath = path.join(tmpDir, 'codegen.config.yaml');
 		const config = fs.readFileSync(configPath, 'utf8');
 		const targetLine = /^target:.*\n(?:[ \t]+.*\n)*/m;
-		const plainTarget = 'target:\n  database: postgres\n  orm: drizzle\n  wiring: plain\n  http: none\n';
+		const plainTarget = 'target:\n  database: postgres\n  orm: drizzle\n  wiring: pattern-stack\n  http: none\n';
 		fs.writeFileSync(configPath, targetLine.test(config) ? config.replace(targetLine, plainTarget) : `${config.trimEnd()}\n\n${plainTarget}`);
-		log('set target: { wiring: plain, http: none }');
+		log('set target: { wiring: pattern-stack, http: none }');
 		const nestScaffold = sourceFiles(tmpDir).filter((f) => NEST_IMPORT.test(fs.readFileSync(f, 'utf8')));
 		for (const f of nestScaffold) {
 			fs.rmSync(f);
@@ -131,7 +131,7 @@ async function main(): Promise<number> {
 		if (!/dependsOn: \['crm'\]/.test(billing)) fail("billing's module should dependsOn ['crm'] (invoice belongs_to account)");
 		for (const s of ['.controller.ts', '.module.ts']) {
 			const nest = generated.filter((f) => f.endsWith(s) && !f.endsWith('/module.ts'));
-			if (nest.length > 0) fail(`wiring: plain emitted Nest-only files: ${nest.join(', ')}`);
+			if (nest.length > 0) fail(`wiring: pattern-stack emitted Nest-only files: ${nest.join(', ')}`);
 		}
 		log('composition files present; billing dependsOn crm; no controllers or Nest modules');
 
@@ -141,13 +141,13 @@ async function main(): Promise<number> {
 		const errors = tscGateErrors({ code: tsc.status, output: (tsc.stdout ?? '') + (tsc.stderr ?? '') }, tmpDir);
 		if (errors.length > 0) {
 			for (const line of errors) console.error(line);
-			fail(`${errors.length} typecheck errors in the plain project`);
+			fail(`${errors.length} typecheck errors in the pattern-stack project`);
 		}
-		log('tsc OK: the plain project compiles with no @nestjs and decorators off');
+		log('tsc OK: the pattern-stack project compiles with no @nestjs and decorators off');
 
 		// 6. Boot and CRUD on Postgres (integration job only).
 		if (POSTGRES_URL) {
-			const dbName = `plain_smoke_${process.pid}`;
+			const dbName = `pattern_stack_smoke_${process.pid}`;
 			const admin = (sql: string) =>
 				run(`bun -e "const { Client } = require('pg'); const c = new Client({ connectionString: process.argv[1] }); await c.connect(); await c.query(process.argv[2]); await c.end();" '${POSTGRES_URL}' '${sql}'`, tmpDir);
 			admin(`CREATE DATABASE ${dbName}`);
@@ -161,7 +161,7 @@ async function main(): Promise<number> {
 				admin(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
 			}
 		}
-		console.log('\nPASS — plain-wiring smoke');
+		console.log('\nPASS — pattern-stack wiring smoke');
 		return 0;
 	} catch (err) {
 		console.error(`\nFAIL — ${(err as Error).message}`);

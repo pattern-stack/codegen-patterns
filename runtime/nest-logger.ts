@@ -4,7 +4,7 @@
  * The Nest subsystem modules call `useNestLogger()` when they load, so a Nest
  * app's runtime lines (lifecycle events, the event scheduler, the jobs
  * listener) print through Nest's `Logger`, as they did before the port: same
- * format, same `app.useLogger` routing. Plain apps never load this file.
+ * format, same `app.useLogger` routing. Pattern-stack apps never load this file.
  */
 import { Logger as NestLogger } from '@nestjs/common';
 import { consoleLoggerFactory, getLoggerFactory, setLoggerFactory, type LoggerFactory } from './logger';

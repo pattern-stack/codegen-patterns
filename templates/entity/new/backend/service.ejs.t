@@ -3,11 +3,11 @@ to: "<%= outputPaths.service %>"
 force: true
 ---
 <%- generatedBanner %>
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 import { Injectable, Inject, Optional<% if (junctionFanOut.length > 0) { %>, forwardRef<% } %> } from '@nestjs/common';
 <% } -%>
 import { WithAnalytics } from '<%= withAnalyticsImport %>';
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 import { EVENT_BUS } from '<%= drizzleTokenImport %>';
 <% } -%>
 import { <%= serviceBaseClass %> } from '<%= serviceBaseImport %>';
@@ -92,7 +92,7 @@ import type { <%= fan.counterpartyPascal %> } from '<%= fan.counterpartyEntityIm
 <%_ } _%>
 <%_ }) _%>
 
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 @Injectable()
 <% } -%>
 export class <%= classNames.service %> extends WithAnalytics(
@@ -106,7 +106,7 @@ export class <%= classNames.service %> extends WithAnalytics(
   protected override readonly baseSliceKeys = <%= _C('BASE_KEYS') %>;
 <%_ } _%>
 
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
   /** Injected by NestJS when EventsModule is registered. */
   @Optional() @Inject(EVENT_BUS)
   protected override eventBus: any = undefined;

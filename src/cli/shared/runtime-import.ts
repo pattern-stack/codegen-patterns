@@ -61,7 +61,7 @@ export function subsystemsImport(mode: RuntimeMode, subsystem?: string): string 
 /**
  * Import specifier for a subsystem's Nest-free entry (PW-0): the part of its
  * public API that loads no `@nestjs/*` package (`runtime/subsystems/<name>/core.ts`).
- * Plain-wiring output imports subsystems through this, never through
+ * Pattern-stack wiring output imports subsystems through this, never through
  * {@link subsystemsImport}, whose barrels re-export the Nest modules.
  *
  * Package mode reaches the file through the package's `./runtime/*` export;

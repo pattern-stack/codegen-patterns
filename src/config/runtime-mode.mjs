@@ -101,7 +101,7 @@ export function runtimeImportLocals(mode) {
     // `entity-locals.js` computes it (`typedEventBusImport`, #814).
     eventsTokenImport: subsystemsImport(mode, "events"),
     drizzleTokenImport: runtimeImport(mode, "constants/tokens"),
-    // PW-0/PW-3: the plain errors (`NotFoundError`, `BadRequestError`) a plain-wiring use case throws.
+    // PW-0/PW-3: the plain errors (`NotFoundError`, `BadRequestError`) a pattern-stack wiring use case throws.
     errorsImport: runtimeImport(mode, "errors"),
     drizzleTypeImport: runtimeImport(mode, "types/drizzle"),
     // ADR-043 §5: use-cases read the acting principal from the ambient

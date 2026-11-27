@@ -39,7 +39,7 @@ import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
  * events/<%= updateEventType.type %>.yaml before shipping.
 <% } -%>
  */
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 @Injectable()
 <% } -%>
 export class <%= classNames.updateUseCase %> {
@@ -117,7 +117,7 @@ import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
  * EXTENSION POINT (EVT-7): verify payload mapping against
  * events/<%= updateEventType.type %>.yaml before shipping.
  */
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 @Injectable()
 <% } -%>
 export class <%= classNames.updateUseCase %> {
@@ -155,7 +155,7 @@ export class <%= classNames.updateUseCase %> {
   }
 }
 <% } else { -%>
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 import { Injectable } from '@nestjs/common';
 <% } -%>
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
@@ -166,7 +166,7 @@ import type { <%= classNames.entity %>Flat } from '../<%= entityFileStem %>.repo
 import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 <% } -%>
 
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 @Injectable()
 <% } -%>
 export class <%= classNames.updateUseCase %> {

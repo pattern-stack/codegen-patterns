@@ -4,13 +4,13 @@ skip_if: "<%= !outputPaths.listWithFieldsUseCase %>"
 force: true
 ---
 <%- generatedBanner %>
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 import { Injectable } from '@nestjs/common';
 <% } -%>
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 @Injectable()
 <% } -%>
 export class <%= classNames.listWithFieldsUseCase %> {

@@ -96,7 +96,7 @@ export function entityClassGraph(input: EntityApiInput, surface: EntityApiSurfac
 	if (eav) g.add({ from: repository, ...fieldValues, reason: 'eav_field_values' });
 
 	// ── The service: its repository, EAV, then every other entity's repository or junction's service it delegates to ──
-	// The event bus is Nest's optional property injection, not a constructor argument; plain wiring has none until S-1.
+	// The event bus is Nest's optional property injection, not a constructor argument; pattern-stack wiring has none until S-1.
 	node(service, 'service', []);
 	g.add({ from: service, ...local(repository), reason: 'own' });
 	if (eav) g.add({ from: service, ...fieldValues, reason: 'eav_field_values' });

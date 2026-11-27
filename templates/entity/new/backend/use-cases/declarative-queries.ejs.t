@@ -12,7 +12,7 @@ force: true
  * Register all via `declarativeQueryClasses` in the module providers.
  */
 
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 import { Injectable } from '@nestjs/common';
 <% } -%>
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
@@ -32,7 +32,7 @@ const _m = _service.find((s) => s.name === u.calls.method);
 const _t = queryTypes[_m.name];
 const _cols = _m.params.filter((p) => p.field !== undefined);
 _%>
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 @Injectable()
 <% } -%>
 export class <%= u.className %> {

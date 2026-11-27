@@ -6,7 +6,7 @@
  * detection schema, the middleware, the poll / incremental-read / webhook
  * primitives, `buildChangeSource`, the tokens, the errors and the audit schemas.
  * Not here: the memory and Drizzle backends, the differ and the use case (all
- * decorated; S-3 gives them plain twins) and the module. A plain app imports
+ * decorated; S-3 gives them plain twins) and the module. A pattern-stack app imports
  * through this file (`subsystemCoreImport(mode, 'integration')`); `./index`
  * re-exports it beside the Nest half. `src/__tests__/runtime/nest-free.test.ts`
  * holds it Nest-free.

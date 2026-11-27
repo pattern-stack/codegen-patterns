@@ -1,4 +1,4 @@
-# Plain-wiring smoke (PW-3): the crm context's root. An enum, a declarative query and a search, so the composition
+# Pattern-stack wiring smoke (PW-3): the crm context's root. An enum, a declarative query and a search, so the composition
 # wires a query use case and the search → list use-case edge. `contacts` is a has_many: AccountService composes
 # ContactRepository while ContactService composes AccountRepository — an entity-level cycle the two-phase
 # composition must build (every repository first).

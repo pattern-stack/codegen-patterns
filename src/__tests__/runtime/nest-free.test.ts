@@ -1,7 +1,7 @@
 /**
- * The Nest-free runtime (PW-0): every entry plain-wiring output may import loads
+ * The Nest-free runtime (PW-0): every entry pattern-stack wiring output may import loads
  * no `@nestjs/*` package and no `reflect-metadata`, through any chain of relative
- * imports, type-only imports included (a plain app installs no `@nestjs`, so even
+ * imports, type-only imports included (a pattern-stack app installs no `@nestjs`, so even
  * a type import would fail to compile there).
  *
  * The failure names the chain, so a new import that drags Nest in is easy to find.

@@ -2,7 +2,7 @@
  * The class graph (PW-1): every class the generator emits, and what each one's constructor takes.
  *
  * Derived once (ADR-046) from the entity's API surface and its derivation input. Nest's `module.ejs.t` prints its
- * module imports, providers and controllers from it; plain wiring (PW-3) prints its composition from it, in
+ * module imports, providers and controllers from it; pattern-stack wiring (PW-3) prints its composition from it, in
  * dependency order, which exists because the graph has no cycle (checked at generation, `orderClasses`).
  *
  * Types only, and no import paths or file names (ADR-046 §4): a module's import path is the template's.

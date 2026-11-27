@@ -3,7 +3,7 @@
  * one-axis-per-key rule). Like `TARGET_PAIRS`, every reader derives from it: the config schema offers exactly its
  * values, and the refusal of an unsupported combination names its rows.
  *
- * - `wiring`: how the generated classes are composed — `nest` (decorators, a Nest module per entity) or `plain` (no
+ * - `wiring`: how the generated classes are composed — `nest` (decorators, a Nest module per entity) or `pattern-stack` (no
  *   decorators; one composition and one `@pattern-stack/wiring` manifest per context).
  * - `http`: the HTTP layer — `nest` (Nest controllers) or `none` (no HTTP: a CLI, hook or MCP app). H-1 adds `hono`.
  *
@@ -20,7 +20,7 @@ export const TARGET_APPS = [
 		description: 'A NestJS app: a Nest module per entity, Nest controllers',
 	},
 	{
-		wiring: 'plain',
+		wiring: 'pattern-stack',
 		http: 'none',
 		description:
 			'No NestJS and no HTTP: decorator-free classes composed per context with @pattern-stack/wiring (PW-3)',
@@ -38,14 +38,14 @@ export const TARGET_HTTPS = [...new Set(TARGET_APPS.map((a) => a.http))] as [Tar
 /** The default app, when `target:` names neither key — the first row. */
 export const DEFAULT_TARGET_APP = TARGET_APPS[0];
 
-/** The supported combinations as `target:` spells them, for messages and docs: `{ wiring: plain, http: none }`. */
+/** The supported combinations as `target:` spells them, for messages and docs: `{ wiring: pattern-stack, http: none }`. */
 export function supportedTargetApps(apps: ReadonlyArray<{ wiring: string; http: string }> = TARGET_APPS): string[] {
 	return apps.map((a) => `{ wiring: ${a.wiring}, http: ${a.http} }`);
 }
 
 /**
  * The row for a `target:`'s wiring and http, each defaulting to the first row's. An absent `http` follows the
- * wiring's own row (`wiring: plain` alone is `plain/none`). Returns null for an unsupported combination; the schema
+ * wiring's own row (`wiring: pattern-stack` alone is `pattern-stack/none`). Returns null for an unsupported combination; the schema
  * refuses it before any reader asks.
  */
 export function targetAppRow(target: { wiring?: string; http?: string }): TargetApp | null {
@@ -66,7 +66,7 @@ export function targetApp(target: { wiring?: string; http?: string }): TargetApp
 	return row;
 }
 
-/** Is this `target:` plain wiring? */
-export function isPlainWiring(target: { wiring?: string }): boolean {
-	return (target.wiring ?? DEFAULT_TARGET_APP.wiring) === 'plain';
+/** Is this `target:` pattern-stack wiring? */
+export function isPatternStackWiring(target: { wiring?: string }): boolean {
+	return (target.wiring ?? DEFAULT_TARGET_APP.wiring) === 'pattern-stack';
 }

@@ -6,7 +6,7 @@
  * relationship template set.
  */
 
-import { plainWiringRefusal, storageOnlyRefusal } from '../shared/storage-only.js';
+import { patternStackWiringRefusal, storageOnlyRefusal } from '../shared/storage-only.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Command, Option } from 'clipanion';
@@ -169,7 +169,7 @@ export class RelationshipNewCommand extends Command {
 			skipDetection: true,
 		});
 
-		const refusal = storageOnlyRefusal(ctx, 'relationship new') ?? plainWiringRefusal(ctx, 'relationship new');
+		const refusal = storageOnlyRefusal(ctx, 'relationship new') ?? patternStackWiringRefusal(ctx, 'relationship new');
 		if (refusal) {
 			printError(refusal);
 			return 1;

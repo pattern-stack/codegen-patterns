@@ -21,7 +21,7 @@ import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
  * EXTENSION POINT (EVT-7): verify payload mapping against
  * events/<%= deleteEventType.type %>.yaml before shipping.
  */
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 @Injectable()
 <% } -%>
 export class <%= classNames.deleteUseCase %> {
@@ -63,12 +63,12 @@ export class <%= classNames.deleteUseCase %> {
   }
 }
 <% } else { -%>
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 import { Injectable } from '@nestjs/common';
 <% } -%>
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 
-<% if (!plainWiring) { -%>
+<% if (!patternStackWiring) { -%>
 @Injectable()
 <% } -%>
 export class <%= classNames.deleteUseCase %> {
