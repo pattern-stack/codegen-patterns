@@ -679,8 +679,9 @@ export class EntityNewCommand extends Command {
 		// codegen.config.yaml every time. The app imports it, so a failed
 		// regeneration fails the command naming the file (JOBS-0, #655) — the
 		// warn-but-don't-fail this block used to do was the defect.
+		let barrel: Awaited<ReturnType<typeof regenerateSubsystemBarrel>>;
 		try {
-			await regenerateSubsystemBarrel({ ctx, generatedDir });
+			barrel = await regenerateSubsystemBarrel({ ctx, generatedDir });
 			await regenerateSubsystemSchemaBarrel({ ctx, generatedDir });
 		} catch (err: unknown) {
 			return reportRegenerationFailure('entity new', err);
@@ -945,6 +946,8 @@ export class EntityNewCommand extends Command {
 						jobs: jobLoad.jobs,
 						jobsHandlersDir: bridgeHandlersDir,
 						mode: runtimeMode,
+						// The registry was written with the barrel, before these files: list them in it now.
+						...(barrel.emitted.includes('jobs') ? { registryDir: generatedDir } : {}),
 					}),
 				);
 			} catch (err: unknown) {

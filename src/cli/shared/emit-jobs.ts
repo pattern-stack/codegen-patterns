@@ -23,6 +23,7 @@ import type { AnalysisIssue } from "../../analyzer/types";
 import type { RuntimeMode } from "./runtime-import";
 import type { JobArm, JobDefinition } from "../../schema/job-definition.schema";
 import type { SubsystemName } from "./subsystem-detect";
+import { generateJobRegistry, JOB_REGISTRY_FILE } from "./job-registry-generator";
 import { issueRejections } from "./run-rejections";
 import {
 	generateJobHandlerBase,
@@ -38,6 +39,12 @@ export interface EmitJobsOptions {
 	mode?: RuntimeMode;
 	/** If true, compute paths but don't write. */
 	dryRun?: boolean;
+	/**
+	 * The generated dir whose job registry (`<generated>/jobs.ts`) lists these jobs. Given (the jobs subsystem is
+	 * installed), the registry is regenerated once the job files are written: `entity new` writes it with the barrel,
+	 * before these files exist, so without this a new YAML job is missing from it until a second run.
+	 */
+	registryDir?: string;
 }
 
 export interface EmitJobsResult {
@@ -155,6 +162,13 @@ export function emitJobHandlers(opts: EmitJobsOptions): EmitJobsResult {
 			if (!opts.dryRun) writeFresh(subPath, generateJobHandlerSubclass({ job, mode }));
 			result.scaffoldsWritten.push(subPath);
 		}
+	}
+
+	if (opts.registryDir && !opts.dryRun) {
+		const registryDir = opts.registryDir;
+		generating(join(registryDir, JOB_REGISTRY_FILE), () =>
+			generateJobRegistry({ jobsDir: opts.jobsHandlersDir, outputDir: registryDir }),
+		);
 	}
 
 	return result;
