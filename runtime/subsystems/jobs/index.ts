@@ -6,12 +6,4 @@
 export { JobsEngineModule, type JobsEngineOptions, JobsService } from './jobs-engine.module';
 export { JobStarter, type JobStartOptions } from './job-starter';
 export { tenantRunScope } from './tenant-run-scope';
-export {
-  jobItemResults,
-  jobRunChunks,
-  jobRunEvents,
-  jobRunItems,
-  jobRunSteps,
-  jobRuns,
-  jobRunValues,
-} from '@pattern-stack/jobs/postgres';
+export * from '@pattern-stack/jobs/schema';

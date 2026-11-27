@@ -22,6 +22,11 @@
       "types": "./dist/postgres.d.ts",
       "default": "./dist/postgres.js"
     },
+    "./schema": {
+      "bun": "./src/postgres/schema.ts",
+      "types": "./dist/postgres/schema.d.ts",
+      "default": "./dist/postgres/schema.js"
+    },
     "./bullmq": {
       "bun": "./src/bullmq.ts",
       "types": "./dist/bullmq.d.ts",

@@ -22,13 +22,5 @@ export {
   PostgresJobStore,
   type PostgresJobStoreOptions,
 } from './postgres/postgres-job-store.ts';
-export {
-  jobItemResults,
-  jobRunChunks,
-  jobRunEvents,
-  jobRunItems,
-  jobRunSteps,
-  jobRuns,
-  jobRunValues,
-  jobTables,
-} from './postgres/tables.ts';
+export * from './postgres/schema.ts';
+export { jobTables } from './postgres/tables.ts';

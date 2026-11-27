@@ -70,7 +70,7 @@ const PACKAGE = '@pattern-stack/codegen';
  * subsystems whose tables drizzle-kit must create are listed. (auth's
  * `auth_oauth_state` lands via its own Hygen schema template, not here.)
  */
-const SCHEMA_SYMBOLS: Partial<Record<SubsystemName, string[]>> = {
+export const SCHEMA_SYMBOLS: Partial<Record<SubsystemName, string[]>> = {
 	events: ['domainEvents'],
 	jobs: [
 		'jobRuns',
