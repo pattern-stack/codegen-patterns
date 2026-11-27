@@ -258,6 +258,20 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
     ]);
   }
 
+  /**
+   * Emit the LIFECYCLE event of a write the repository addressed by a key other than `id`: a junction link, by its
+   * pair (`deleteLink` / `updateLink`). `key` is the event's entity id; `row` is the written row's snapshot, when there
+   * is one. No per-field CHANGE events: no row is read before the write.
+   */
+  protected emitKeyedLifecycle(action: 'updated' | 'deleted', key: string, row?: object): void {
+    if (!this._shouldEmit()) return;
+    const snap = row ? entitySnapshot(row as Record<string, unknown>) : undefined;
+    void emitSafely(this.eventBus, [
+      buildLifecycleEvent(this.entityName!, action, key, snap),
+      ...this._baseLifecycle(action, key, snap),
+    ]);
+  }
+
   /** The base's copy of a child's lifecycle event, its payload cut to the base's columns. */
   private _baseLifecycle(
     action: 'created' | 'updated' | 'deleted',
