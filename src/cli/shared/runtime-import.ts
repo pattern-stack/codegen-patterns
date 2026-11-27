@@ -59,6 +59,27 @@ export function subsystemsImport(mode: RuntimeMode, subsystem?: string): string 
 }
 
 /**
+ * Import specifier for a subsystem's Nest-free entry (PW-0): the part of its
+ * public API that loads no `@nestjs/*` package (`runtime/subsystems/<name>/core.ts`).
+ * Plain-wiring output imports subsystems through this, never through
+ * {@link subsystemsImport}, whose barrels re-export the Nest modules.
+ *
+ * Package mode reaches the file through the package's `./runtime/*` export;
+ * vendored mode through the vendored subsystem folder.
+ *
+ * @param subsystem one of {@link NEST_FREE_SUBSYSTEMS}.
+ */
+export function subsystemCoreImport(mode: RuntimeMode, subsystem: NestFreeSubsystem): string {
+  return mode === 'vendored'
+    ? `@shared/subsystems/${subsystem}/core`
+    : `${PACKAGE}/runtime/subsystems/${subsystem}/core`;
+}
+
+/** The subsystems with a Nest-free entry (`runtime/subsystems/<name>/core.ts`). */
+export const NEST_FREE_SUBSYSTEMS = ['events', 'auth', 'integration'] as const;
+export type NestFreeSubsystem = (typeof NEST_FREE_SUBSYSTEMS)[number];
+
+/**
  * Import specifier for a non-subsystem runtime file — base classes, types,
  * constants, helpers, pipes. `relpath` is the path under the runtime root
  * WITHOUT a leading slash (e.g. `base-classes/integrated-entity-repository`,

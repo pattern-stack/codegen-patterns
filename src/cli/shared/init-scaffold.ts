@@ -200,6 +200,10 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	{ runtime: 'base-classes/with-communication.ts', target: 'base-classes/with-communication.ts' },
 	// base-classes — transitive deps of base-service
 	{ runtime: 'base-classes/lifecycle-events.ts', target: 'base-classes/lifecycle-events.ts' },
+	// The runtime's logger port (PW-0) — imported by lifecycle-events.ts, the event scheduler and the jobs
+	// listener; and its Nest binding, which the vendored events / jobs modules call when they load.
+	{ runtime: 'logger.ts', target: 'logger.ts' },
+	{ runtime: 'nest-logger.ts', target: 'nest-logger.ts' },
 	{ runtime: 'base-classes/base-read-use-cases.ts', target: 'base-classes/base-read-use-cases.ts' },
 	// Types + constants reached via `@shared/types/*` and `@shared/constants/*`
 	{ runtime: 'types/drizzle.ts', target: 'types/drizzle.ts' },

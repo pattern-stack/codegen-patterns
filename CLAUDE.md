@@ -387,6 +387,14 @@ app upgrade `docs/MIGRATION-jobs-engine.md`). Jobs are `defineJob` exports under
 generated `<generated>/jobs.ts`; the bridge's triggers are `jobTriggers('<key>', [...])` beside them, and the outbox
 drain starts each trigger's run in the event's own transaction.
 
+**The Nest-free runtime (PW-0, `docs/specs/PW-0.md`).** Plain-wiring output imports only entries that load no
+`@nestjs/*` package, type imports included: `runtime/logger.ts` (the logger port; runtime code logs through
+`createLogger`, and the Nest modules bind Nest's `Logger` via `runtime/nest-logger.ts`), `runtime/errors.ts`
+(`NotFoundError` / `BadRequestError`, whose `errorBody` is Nest's body byte for byte), the base classes, and
+`runtime/subsystems/<name>/core.ts` for events, auth and integration (reached by `subsystemCoreImport`; each
+`index.ts` is `export * from './core'` plus its Nest half). `src/__tests__/runtime/nest-free.test.ts` holds the list.
+Never add a Nest import, even `import type`, under one of those entries.
+
 ### Integration Codegen (RFC-0001/0002/0003)
 
 For entities tagged with `surface:` (when `definitions/providers/*.yaml` exist), the `entity new` post-step emits the **full** integration layer per `(surface, provider, entity)`, not just the read side:

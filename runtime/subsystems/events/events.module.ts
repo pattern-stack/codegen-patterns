@@ -80,6 +80,10 @@ import {
 // import below makes TS treat the specifier as `any` so the consumer's tsc
 // never tries to resolve the absent file.
 import { TypedEventBus } from './generated/bus';
+import { useNestLogger } from '../../nest-logger';
+
+// The runtime's logger port prints through Nest's Logger in a Nest app (PW-0).
+useNestLogger();
 
 /**
  * Lazy-load the Redis backend. Routed through a non-literal specifier so

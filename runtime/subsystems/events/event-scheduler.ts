@@ -29,7 +29,7 @@
  * idempotency can't be enforced there (mirrors bridge-on-Redis being
  * unsupported); the scheduler is not wired under `backend: 'redis'`.
  */
-import { Logger } from '@nestjs/common';
+import { createLogger } from '../../logger';
 import type { IEventBus } from './event-bus.protocol';
 import { ScheduleConfigError } from './events-errors';
 
@@ -212,7 +212,7 @@ export interface EventSchedulerOptions {
 }
 
 export class EventScheduler {
-  private readonly logger = new Logger(EventScheduler.name);
+  private readonly logger = createLogger(EventScheduler.name);
   private readonly now: () => number;
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly anchorMs: number;

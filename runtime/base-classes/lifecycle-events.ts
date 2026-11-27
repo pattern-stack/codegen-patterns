@@ -23,16 +23,17 @@
  */
 
 import { randomUUID } from 'crypto';
-import { Logger } from '@nestjs/common';
+import { createLogger } from '../logger';
 import type { IEventBus, DomainEvent } from '../subsystems/events/event-bus.protocol';
 
 /**
  * Module-level logger for fire-and-forget emission failures. Routed through the
- * Nest `Logger` (not bare `console`) so consumers configuring `app.useLogger`
- * or the factory `logger:` option can format and filter it like any other
- * framework log line.
+ * runtime's logger port (`../logger`), not bare `console`: a Nest app binds it
+ * to Nest's `Logger`, so consumers configuring `app.useLogger` or the factory
+ * `logger:` option format and filter it like any other framework log line; a
+ * plain app binds its own or keeps the console default.
  */
-const logger = new Logger('LifecycleEvents');
+const logger = createLogger('LifecycleEvents');
 
 // ============================================================================
 // Event categories (subset of pattern-stack's EventCategory)
@@ -169,7 +170,7 @@ export async function emitSafely(
 		// Never fail the CRUD operation — but surface the cause. The bare
 		// `catch` that used to live here swallowed the error entirely, so a
 		// failing bus printed `failed to emit N event(s)` with zero
-		// diagnosability. Route through the Nest Logger (not bare console) at
+		// diagnosability. Route through the logger port (not bare console) at
 		// warn level, including the distinct event types and the error message;
 		// the stack follows at debug so it's available without noising the
 		// default-threshold output.
