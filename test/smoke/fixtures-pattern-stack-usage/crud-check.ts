@@ -105,6 +105,7 @@ export async function crudCheck(url: string): Promise<void> {
     await integrationCheck(app.system('integration'), db);
     await authCheck(app.system('auth'), app.system('connections'), db);
     await identityCheck(app, url);
+    await workspaceCommandsCheck(app);
 
     // A junction inside crm (PW-3c): attached from one parent, listed from the other, read from `crm.junctions`.
     const tag = await crm.tag.useCases.create.execute({ label: 'priority' });
@@ -407,6 +408,64 @@ async function identityCheck(app: App, url: string): Promise<void> {
   } finally {
     await other.stop();
   }
+}
+
+/**
+ * The workspace operations through the commands table (ID-1b), as a way in runs them: the requester resolved from the
+ * request, then the command inside it. Each refusal comes back with its reason and the Nest body's status, never a throw.
+ */
+async function workspaceCommandsCheck(app: App): Promise<void> {
+  const users = app.module('identity').user.useCases;
+  const requester = app.system('requester');
+  const stamp = Date.now();
+  const [d, e] = await Promise.all(['d', 'e'].map((n) => users.create.execute({ email: `${n}-${stamp}@smoke.test`, displayName: n })));
+  const run = (name: string, input: unknown) => {
+    const command = commandNamed(name);
+    assert(command, `COMMANDS has '${name}': ${COMMANDS.map((x) => x.name).join(', ')}`);
+    return invokeCommand(command!, app, input, {});
+  };
+  /** A request from `who` in `workspace`: resolved by the requester port, then the command runs inside it. */
+  const as = async (who: string, workspace: string | undefined, name: string, input: unknown) => {
+    const resolved = await requester.resolve(requestFacts('/anything', { 'X-Smoke-Principal': who, 'X-Workspace': workspace }));
+    assert('requester' in resolved, `${who} resolves: ${JSON.stringify(resolved)}`);
+    return withRequester((resolved as { requester: Parameters<typeof withRequester>[0] }).requester, () => run(name, input));
+  };
+  const refused = (out: Awaited<ReturnType<typeof run>>, reason: string, status: number, what: string) => {
+    assert(
+      !out.ok && out.refusal.reason === reason && out.refusal.data?.statusCode === status && out.refusal.instead.length > 0,
+      `${what}: ${reason} (${status}): ${JSON.stringify(out)}`,
+    );
+  };
+
+  const slug = `cmd-${stamp}`;
+  const created = await as(d!.id, undefined, 'workspace create', { name: 'Commands', slug });
+  assert(created.ok && (created.result as { role: string }).role === 'owner', `workspace create makes D the owner: ${JSON.stringify(created)}`);
+  const ws = (created as { result: { workspace: { id: string } } }).result.workspace.id;
+  refused(await as(d!.id, undefined, 'workspace create', { name: 'Again', slug }), 'unique-violation', 409, 'a taken slug');
+  // A boundary that set no user (the port itself refuses an unsigned request before any command runs).
+  const nobody = await withRequester({}, () => run('workspace create', { name: 'Nobody', slug: `none-${stamp}` }));
+  refused(nobody, 'unauthenticated', 401, 'nobody signed in');
+
+  const added = await as(d!.id, ws, 'membership add', { userId: e!.id, role: 'member' });
+  assert(added.ok, `membership add adds E: ${JSON.stringify(added)}`);
+  refused(await as(d!.id, ws, 'membership add', { userId: e!.id, role: 'member' }), 'conflict', 409, 'adding E twice');
+  refused(await as(e!.id, ws, 'membership add', { userId: d!.id, role: 'admin' }), 'forbidden', 403, 'a member adding');
+  refused(await as(d!.id, ws, 'membership change-role', { userId: d!.id, role: 'member' }), 'conflict', 409, 'demoting the last owner');
+  const badRole = await as(d!.id, ws, 'membership add', { userId: e!.id, role: 'boss' });
+  assert(!badRole.ok && badRole.refusal.reason === 'invalid-input', `a role that isn't one is invalid-input: ${JSON.stringify(badRole)}`);
+
+  const changed = await as(d!.id, ws, 'membership change-role', { userId: e!.id, role: 'admin' });
+  assert(changed.ok && (changed.result as { role: string }).role === 'admin', `membership change-role makes E an admin: ${JSON.stringify(changed)}`);
+  const mine = await as(e!.id, ws, 'workspace list-mine', {});
+  assert(
+    mine.ok && (mine.result as Array<{ workspace: { id: string }; role: string }>).some((m) => m.workspace.id === ws && m.role === 'admin'),
+    `workspace list-mine shows E's role: ${JSON.stringify(mine)}`,
+  );
+
+  assert((await as(d!.id, ws, 'membership remove', { userId: e!.id })).ok, 'membership remove removes E');
+  refused(await as(d!.id, ws, 'membership remove', { userId: e!.id }), 'not-found', 404, 'removing E twice');
+  const gone = await requester.resolve(requestFacts('/anything', { 'X-Smoke-Principal': e!.id, 'X-Workspace': ws }));
+  assert(refusalOf(gone) === 'not-a-member', `a removed member is refused at once: ${JSON.stringify(gone)}`);
 }
 
 /** A provider's refresh strategy, as an author writes one: the token endpoint is stubbed (`fetch`), the store is real. */

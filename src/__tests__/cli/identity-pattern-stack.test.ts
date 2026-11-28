@@ -176,6 +176,12 @@ describe('the requester system and the workspaces module', () => {
 		expect(commands).toContain('accountCommands');
 	});
 
+	it('the workspace operations are in the commands table, hand-written, on the workspaces module (ID-1b)', () => {
+		const commands = file('/generated/commands.ts')!;
+		expect(commands).toMatch(/import \{ WORKSPACE_COMMANDS \} from '[^']+';/);
+		expect(commands).toContain("  ...allOnApis(WORKSPACE_COMMANDS, (app: App) => app.module('workspaces')),\n];");
+	});
+
 	it('both are registered: SystemApis, ModuleApis, SYSTEMS, MODULES', () => {
 		expect(file('/generated/wiring.ts')).toContain('  requester: RequesterApi;\n');
 		expect(file('/generated/wiring.ts')).toContain('  workspaces: WorkspacesModule;\n');

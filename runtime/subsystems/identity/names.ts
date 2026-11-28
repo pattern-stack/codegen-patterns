@@ -33,6 +33,12 @@ export const REQUESTER_LISTENER_HEARTBEAT = { everyMs: 10_000, timeoutMs: 5_000 
 export const ROLES = ['owner', 'admin', 'member'] as const;
 export type Role = (typeof ROLES)[number];
 
+/**
+ * A workspace's field limits, as the commands' input checks them: `workspace.yaml`'s `max_length`s (a test holds the
+ * shipped YAML to these), so a name too long is `invalid-input`, never the database's truncation error.
+ */
+export const WORKSPACE_FIELD_MAX = { name: 255, slug: 64 } as const;
+
 /** The config defaults: an `X-Workspace` header, checked on every request through the Postgres-invalidated cache. */
 export const IDENTITY_DEFAULTS = {
   workspace_from: 'header',

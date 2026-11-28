@@ -669,21 +669,21 @@ export const MODULES = [${[...names.map((n) => `${n}Module`), ...(integrationsMo
 		content: `${input.banner}
 /**
  * Every command the app answers (H-1): each entity's use cases, as every way in calls them (HTTP, MCP tools, a CLI).
- * A command takes the composed app and reaches its use cases through its context's module. Call one with
+ * A command takes the composed app and reaches its use cases through its context's module.${identityPlan ? ' With identity, the\n * workspace operations too, through the `workspaces` module; a way in runs them inside `withRequester(…)`.' : ''} Call one with
  * \`invokeCommand(command, app, input, ctx)\`, which checks the input first.
  */
 import type { Wired } from '@pattern-stack/wiring';
 import { allOnApis, type Command } from '@pattern-stack/wiring/commands';
 import type { ModuleApis, SystemApis } from './wiring';
 ${allEntities.map(({ entity }) => `import { ${commandsConstName(entity)} } from '${relativeImport(commandsFile, commandsOf(entity))}';`).join('\n')}
-
+${identityPlan ? `import { WORKSPACE_COMMANDS } from '${input.identity!.coreImport}';\n` : ''}
 /** The composed app, as \`compose\` returns it. */
 export type App = Wired<ModuleApis, SystemApis>;
 
 /** Each with its input and result typed loosely; an entity's own list (\`<entity>.commands.ts\`) keeps them exact. */
 export const COMMANDS: readonly Command<App>[] = [
 ${allEntities.map(({ entity, module }) => `  ...allOnApis(${commandsConstName(entity)}, (app: App) => app.module('${module}').${camelCase(entity)}.useCases),`).join('\n')}
-];
+${identityPlan ? "  // ID-1b: the workspace operations, hand-written (identity's entities have no generated commands).\n  ...allOnApis(WORKSPACE_COMMANDS, (app: App) => app.module('workspaces')),\n" : ''}];
 
 /** A command by name (\`contact create\`), or undefined. */
 export function commandNamed(name: string): Command<App> | undefined {
