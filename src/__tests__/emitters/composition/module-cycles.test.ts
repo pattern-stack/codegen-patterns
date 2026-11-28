@@ -34,6 +34,7 @@ function plan(files: Record<string, string>, junctions: Record<string, string> =
 			modulesDir: path.join(root, 'src/modules'),
 			generatedDir: path.join(root, 'src/generated'),
 			drizzleTypeImport: '@shared/types/drizzle',
+			commandsImport: '@shared/commands',
 			banner: '// @generated',
 			dryRun: true,
 		});

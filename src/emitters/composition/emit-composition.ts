@@ -56,7 +56,7 @@ import { generating } from '../../utils/generated-file.js';
 import { relativeImport } from '../../utils/import-path.js';
 import { JOBS_WORKER_ENV, type ProjectSetting } from '../../derived/settings/index.js';
 import { SETTINGS_FILE, settingsContent } from '../settings/emit-settings.js';
-import { IDENTITY_ENTITIES } from '../../../runtime/subsystems/identity/names.js';
+import { IDENTITY_ENTITIES, type WorkspaceFieldLimits } from '../../../runtime/subsystems/identity/names.js';
 import { HTTP_APP_FILE, HTTP_RENDERERS } from '../http/index.js';
 import { HTTP_LAYERS, type PatternStackHttp } from '../../targets/http.js';
 import { routesOn } from '../../derived/api/entity.js';
@@ -124,6 +124,8 @@ export interface CompositionInput {
 	drizzleTypeImport: string;
 	/** The import specifier of `OpenApiRegistry` (`openApiImport(mode)`). */
 	openApiImport: string;
+	/** The import specifier of the commands runtime (`runtimeImport(mode, 'commands')`): `CommandHttp`. */
+	commandsImport: string;
 	/** The banner every emitted file starts with (`CODEGEN_BANNER`). */
 	banner: string;
 	/**
@@ -664,29 +666,41 @@ export const MODULES = [${[...names.map((n) => `${n}Module`), ...(integrationsMo
 	const allEntities = [...plans.values()]
 		.flatMap((p) => p.entities.filter(withCommands).map((e) => ({ entity: e, module: p.name })))
 		.sort((a, b) => (a.entity < b.entity ? -1 : a.entity > b.entity ? 1 : 0));
+	// The hand-written lists the table joins, one row each: identity's workspace operations (ID-1b), when composed.
+	const handWritten: HandWrittenCommands[] = identityPlan ? [identityCommands(identityPlan, input.identity!)] : [];
 	files.push({
 		path: commandsFile,
 		content: `${input.banner}
 /**
  * Every command the app answers (H-1): each entity's use cases, as every way in calls them (HTTP, MCP tools, a CLI).
  * A command takes the composed app and reaches its use cases through its context's module. Call one with
- * \`invokeCommand(command, app, input, ctx)\`, which checks the input first.
+ * \`invokeCommand(command, app, input, ctx)\`, which checks the input first.${handWritten.map((h) => `\n * ${h.doc}`).join('')}
  */
 import type { Wired } from '@pattern-stack/wiring';
 import { allOnApis, type Command } from '@pattern-stack/wiring/commands';
+import type { CommandHttp } from '${input.commandsImport}';
 import type { ModuleApis, SystemApis } from './wiring';
-${allEntities.map(({ entity }) => `import { ${commandsConstName(entity)} } from '${relativeImport(commandsFile, commandsOf(entity))}';`).join('\n')}
+${[
+	...allEntities.map(({ entity }) => `import { ${commandsConstName(entity)} } from '${relativeImport(commandsFile, commandsOf(entity))}';`),
+	...handWritten.flatMap((h) => h.imports),
+].join('\n')}
 
 /** The composed app, as \`compose\` returns it. */
 export type App = Wired<ModuleApis, SystemApis>;
 
+/** A command in the table, with its HTTP binding when it carries one (a hand-written command's \`http\`). */
+export type AppCommand = Command<App> & { readonly http?: CommandHttp };
+
 /** Each with its input and result typed loosely; an entity's own list (\`<entity>.commands.ts\`) keeps them exact. */
-export const COMMANDS: readonly Command<App>[] = [
-${allEntities.map(({ entity, module }) => `  ...allOnApis(${commandsConstName(entity)}, (app: App) => app.module('${module}').${camelCase(entity)}.useCases),`).join('\n')}
+export const COMMANDS: readonly AppCommand[] = [
+${[
+	...allEntities.map(({ entity, module }) => `  ...allOnApis(${commandsConstName(entity)}, (app: App) => app.module('${module}').${camelCase(entity)}.useCases),`),
+	...handWritten.flatMap((h) => h.entries),
+].join('\n')}
 ];
 
 /** A command by name (\`contact create\`), or undefined. */
-export function commandNamed(name: string): Command<App> | undefined {
+export function commandNamed(name: string): AppCommand | undefined {
   return COMMANDS.find((c) => c.name === name);
 }
 `,
@@ -808,6 +822,31 @@ function generatedSystems(
 
 }
 
+/** A hand-written list of commands the commands table joins: a line for its doc, its imports, its entries. */
+interface HandWrittenCommands {
+	doc: string;
+	imports: string[];
+	entries: string[];
+}
+
+/**
+ * Identity's share of the commands table (ID-1b): the workspace commands, built for the project (the requester system's
+ * workspace source, \`workspace.yaml\`'s limits), on the \`workspaces\` module.
+ */
+function identityCommands(plan: IdentityPlan, identity: CompositionIdentityInput): HandWrittenCommands {
+	return {
+		doc: 'With identity, the workspace operations too, on the `workspaces` module; a way in runs them inside `withRequester(…)`.',
+		imports: [
+			`import { workspaceCommandsFor } from '${identity.coreImport}';`,
+			`import { workspaceSource } from './${REQUESTER_SYSTEM_FILE.replace(/\.ts$/, '')}';`,
+		],
+		entries: [
+			"  // ID-1b: the workspace operations, hand-written (identity's entities have no generated commands).",
+			`  ...allOnApis(workspaceCommandsFor({ source: workspaceSource, limits: { name: ${plan.limits.name}, slug: ${plan.limits.slug} } }), (app: App) => app.module('${WORKSPACES_MODULE}')),`,
+		],
+	};
+}
+
 interface IdentityPlan {
 	/** The module holding identity's repositories (the `identity` context's). */
 	module: string;
@@ -816,6 +855,8 @@ interface IdentityPlan {
 	membershipWiringFile: string;
 	/** Absolute, without its extension: `membership.entity` (the `memberships` table the locked reads select from). */
 	membershipEntityFile: string;
+	/** `workspace.yaml`'s `max_length`s, which `workspace create` checks. */
+	limits: WorkspaceFieldLimits;
 }
 
 /**
@@ -824,7 +865,9 @@ interface IdentityPlan {
  */
 function planIdentity(
 	input: CompositionInput,
-	definitions: ReadonlyArray<{ entity: { name: string; context?: string }; fields?: Record<string, { choices?: unknown }> }>,
+	definitions: ReadonlyArray<
+		{ entity: { name: string; context?: string }; fields?: Record<string, { choices?: unknown; max_length?: unknown }> }
+	>,
 	moduleOf: Map<string, string>,
 	plans: Map<string, ModulePlan>,
 	naming: (entity: string) => EntityModuleNaming,
@@ -861,6 +904,19 @@ function planIdentity(
 				'which is missing: re-run `codegen subsystem install identity` to write it, then bind your sign-in there.',
 		);
 	}
+	// ID-1b: `workspace create` checks the project's own limits, so a value its column can't hold is `invalid-input`.
+	const workspace = definitions.find((x) => x.entity.name === 'workspace')!;
+	const limitOf = (field: keyof WorkspaceFieldLimits): number => {
+		const max = workspace.fields?.[field]?.max_length;
+		if (typeof max !== 'number') {
+			throw new Error(
+				`[codegen] wiring: pattern-stack: workspace.yaml's '${field}' needs a max_length: \`workspace create\` checks it, ` +
+					'so a value its column cannot hold is refused as invalid input rather than reaching the database.',
+			);
+		}
+		return max;
+	};
+	const limits: WorkspaceFieldLimits = { name: limitOf('name'), slug: limitOf('slug') };
 	const module = moduleOf.get('membership')!;
 	const membershipFiles = naming('membership');
 	return {
@@ -868,6 +924,7 @@ function planIdentity(
 		moduleFile: plans.get(module)!.file,
 		membershipWiringFile: membershipFiles.wiringFile,
 		membershipEntityFile: membershipFiles.entityFile,
+		limits,
 	};
 }
 
@@ -906,6 +963,12 @@ export interface RequesterApi extends RequesterResolver {
   workspaces: WorkspaceSource;
 }
 
+/**
+ * How a request names its workspace: the \`${identity.workspaceFrom}\` row, built once. The requester resolves through it, and the
+ * commands table routes the workspace commands under its \`routePrefix\`, so the two can't disagree.
+ */
+export const workspaceSource: WorkspaceSource = WORKSPACE_SOURCES['${identity.workspaceFrom}']();
+
 export const requesterSystem = defineSystem({
   name: 'requester',
   uses: ['database'],
@@ -916,7 +979,7 @@ export const requesterSystem = defineSystem({
       lookup: async ({ principalId, workspaceId }) =>
         (await memberships.findByWorkspaceIdAndUserId(workspaceId, principalId))?.role ?? null,
     });
-    const workspaces = WORKSPACE_SOURCES['${identity.workspaceFrom}']();
+    const workspaces = workspaceSource;
     const resolver = REQUESTER_RESOLVERS['${identity.resolver}']({ principals: principalSource, workspaces, cache });
     return {
       resolve: (request) => resolver.resolve(request),

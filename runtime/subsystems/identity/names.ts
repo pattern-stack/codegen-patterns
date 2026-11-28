@@ -33,6 +33,28 @@ export const REQUESTER_LISTENER_HEARTBEAT = { everyMs: 10_000, timeoutMs: 5_000 
 export const ROLES = ['owner', 'admin', 'member'] as const;
 export type Role = (typeof ROLES)[number];
 
+/**
+ * Where each workspace command is routed (ID-1b): its verb, where its path sits (the app's root, or under the workspace
+ * source's `routePrefix`), its path there, and what the path and the body carry. Each path starts with a plural of
+ * identity's own entities (`workspaces`, `memberships`; both `api: false`). A generated route starts with its entity's
+ * plural, and no second entity can take one of those (the class graph refuses it, naming both), so no generated route
+ * can sit on these.
+ */
+export const WORKSPACE_ROUTES = {
+  'workspace create': { verb: 'POST', under: 'root', path: '/workspaces', pathFields: [], body: true },
+  'workspace list-mine': { verb: 'GET', under: 'root', path: '/workspaces/mine', pathFields: [], body: false },
+  'membership add': { verb: 'POST', under: 'workspace', path: '/memberships', pathFields: [], body: true },
+  'membership change-role': { verb: 'PATCH', under: 'workspace', path: '/memberships/:userId', pathFields: ['userId'], body: true },
+  'membership remove': { verb: 'DELETE', under: 'workspace', path: '/memberships/:userId', pathFields: ['userId'], body: false },
+} as const;
+export type WorkspaceCommandName = keyof typeof WORKSPACE_ROUTES;
+
+/** The workspace's field limits the `workspace create` input checks: the project's `workspace.yaml` `max_length`s. */
+export interface WorkspaceFieldLimits {
+  readonly name: number;
+  readonly slug: number;
+}
+
 /** The config defaults: an `X-Workspace` header, checked on every request through the Postgres-invalidated cache. */
 export const IDENTITY_DEFAULTS = {
   workspace_from: 'header',

@@ -13,6 +13,7 @@
  * in the package's `files`.
  */
 
+import { NEST_SUCCESS_STATUS } from '../../../runtime/commands.js';
 import { entityModuleNaming } from '../../config/module-tree.js';
 import { junctionName } from '../../config/junction-naming.js';
 import { baseOnlyKinds, INHERITS_PATH, inheritsOf, naturalKeyIndexOf, type InheritanceBase, type InheritanceChild } from '../../schema/inheritance.js';
@@ -1129,12 +1130,6 @@ export function deriveCommands(
 	return commands;
 }
 
-/**
- * A routed command's success status: the one Nest sends for its verb, since the generated controllers set no
- * `@HttpCode` (Nest's `RouterResponseController.getStatusByMethod`: POST 201, every other verb 200). So a delete
- * answers 200 with an empty body, as the Nest target does.
- */
-const NEST_SUCCESS_STATUS: Readonly<Record<Route['verb'], 200 | 201>> = { GET: 200, POST: 201, PATCH: 200, DELETE: 200 };
 
 /**
  * Each use case kind's command: its summary, effect and input; the `api.includes` key its include resolves against;

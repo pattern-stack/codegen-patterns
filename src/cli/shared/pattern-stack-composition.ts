@@ -274,8 +274,13 @@ function compositionInput(ctx: Context): CompositionInput {
 }
 
 /** The emitter's options that follow from the runtime mode alone: every composition, `project init`'s empty one too. */
-function emitterOptions(mode: RuntimeMode): Pick<CompositionInput, 'drizzleTypeImport' | 'openApiImport' | 'banner'> {
-	return { drizzleTypeImport: runtimeImport(mode, 'types/drizzle'), openApiImport: openApiImport(mode), banner: CODEGEN_BANNER };
+function emitterOptions(mode: RuntimeMode): Pick<CompositionInput, 'drizzleTypeImport' | 'openApiImport' | 'commandsImport' | 'banner'> {
+	return {
+		drizzleTypeImport: runtimeImport(mode, 'types/drizzle'),
+		openApiImport: openApiImport(mode),
+		commandsImport: runtimeImport(mode, 'commands'),
+		banner: CODEGEN_BANNER,
+	};
 }
 
 /** The pattern-stack composition for this project, planned (a dry run). Throws its refusals (a cycle, a name). */

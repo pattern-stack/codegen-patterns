@@ -11,5 +11,6 @@ export { PostgresRequesterCache, IDENTITY_REQUESTER_CHANNEL, type CacheListener,
 export { REQUESTER_CACHES } from './requester-caches';
 export * from './requester-resolver';
 export * from './workspace-service';
+export * from './workspace-commands';
 export type { PrincipalSource, RequestFacts, RequesterOutcome, RequesterPort, RequesterRefusal } from '../../requester';
 export { requestFacts } from '../../requester';

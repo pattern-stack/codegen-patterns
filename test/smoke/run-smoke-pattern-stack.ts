@@ -320,7 +320,7 @@ async function main(): Promise<number> {
 				execSync('bunx drizzle-kit push --force', { cwd: tmpDir, stdio: 'inherit', env: { ...process.env, DATABASE_URL: dbUrl } });
 				log('schema pushed');
 				run(`bun src/crud-check.ts '${dbUrl}'`, tmpDir);
-				log('CRUD through the composed use cases OK (create, findById, list, query, update, delete, NotFoundError); an integration run on the integration system; OAuth state, a stored grant and a refresh on the auth and connections systems; workspaces, membership and the requester, evicted across apps and cleared on reconnect');
+				log('CRUD through the composed use cases OK (create, findById, list, query, update, delete, NotFoundError); an integration run on the integration system; OAuth state, a stored grant and a refresh on the auth and connections systems; workspaces, membership and the requester, evicted across apps and cleared on reconnect; the workspace commands, each with its refusals');
 				// J-1: an event starts a job and its step completes; then a process killed mid-step, and a restart that resumes it.
 				run(`bun src/jobs-check.ts bridge '${dbUrl}'`, tmpDir);
 				await killAndResume(tmpDir, dbUrl);
