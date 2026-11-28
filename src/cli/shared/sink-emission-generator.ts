@@ -82,7 +82,7 @@
  * the decorator is dead under a `useFactory`. Omitted to keep the generated base lean.
  */
 
-import { subsystemCoreImport, subsystemsImport, type RuntimeMode } from "./runtime-import";
+import { integrationImportFor, subsystemCoreImport, subsystemsImport, type RuntimeMode } from "./runtime-import";
 import type { TargetWiring as Wiring } from "../../targets/apps.js";
 import { emittedStem } from '../../config/file-naming.js';
 
@@ -369,7 +369,7 @@ export function generateSinkBase(input: SinkEmitInput): string {
     `//   The bare passthrough preserves null (diff-soundness); coerce only on canonical widen.`;
 
   return `${banner}
-import type { IIntegrationSink } from '${input.wiring === "pattern-stack" ? subsystemCoreImport(input.mode ?? "package", "integration") : subsystemsImport(input.mode ?? "package", "integration")}';
+import type { IIntegrationSink } from '${integrationImportFor(input.wiring ?? "nest", input.mode ?? "package")}';
 import {
   ${n.repoClass},
   type ${n.projectionType},

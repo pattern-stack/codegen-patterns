@@ -90,6 +90,7 @@ import {
 	writePatternStackComposition,
 } from '../shared/pattern-stack-composition.js';
 import { eventsGeneratedDir } from '../shared/pattern-stack-subsystems.js';
+import { integrationsRoot } from '../../config/integration-layout.js';
 import { patternStackRelationshipYamlsRefusal } from '../shared/storage-only.js';
 
 // ---------------------------------------------------------------------------
@@ -782,7 +783,7 @@ export class EntityNewCommand extends Command {
 			// `integrations` module and lists the systems.
 			let integrationsResult: ReturnType<typeof writePatternStackIntegrations> = null;
 			try {
-				integrationsResult = generating(path.join(layout.backendSrc, 'integrations'), () =>
+				integrationsResult = generating(integrationsRoot(layout), () =>
 					writePatternStackIntegrations(ctx, { entitiesDir, generatedDir, aliases: tsAliases?.aliases ?? {} }),
 				);
 			} catch (err: unknown) {
@@ -811,7 +812,7 @@ export class EntityNewCommand extends Command {
 					for (const s of plan.skippedSurfaces) printWarning(`integrations: ${s.reason} (provider ${s.provider})`);
 					for (const s of plan.skippedAssemblies) printWarning(`integrations: ${s.reason}`);
 				}
-				for (const f of otherWiringScaffolds('pattern-stack', path.join(layout.backendSrc, 'integrations'))) {
+				for (const f of otherWiringScaffolds('pattern-stack', integrationsRoot(layout))) {
 					printWarning(
 						`integrations: ${path.relative(ctx.cwd, f)} is a Nest adapter scaffold (author-owned, so not rewritten): ` +
 							`port it to a plain class, or delete it to have the pattern-stack one written`,
@@ -840,7 +841,7 @@ export class EntityNewCommand extends Command {
 								scaffoldsSkipped: integrationsResult.scaffoldsSkipped,
 								skippedSurfaces: integrationsResult.plan.skippedSurfaces,
 								skippedAssemblies: integrationsResult.plan.skippedAssemblies,
-								otherWiringScaffolds: otherWiringScaffolds('pattern-stack', path.join(layout.backendSrc, 'integrations')),
+								otherWiringScaffolds: otherWiringScaffolds('pattern-stack', integrationsRoot(layout)),
 							}
 						: null,
 					removed: patternStackResult.removed,
@@ -855,11 +856,11 @@ export class EntityNewCommand extends Command {
 			wiring: 'nest',
 			modulesDir: projectLayout(ctx.cwd, ctx.config).modules,
 			generatedDir,
-			integrationsDir: path.join(layout.backendSrc, 'integrations'),
+			integrationsDir: integrationsRoot(layout),
 		})) {
 			if (!isJsonMode()) printInfo(`removed (wiring: pattern-stack output): ${path.relative(ctx.cwd, f)}`);
 		}
-		for (const f of otherWiringScaffolds('nest', path.join(layout.backendSrc, 'integrations'))) {
+		for (const f of otherWiringScaffolds('nest', integrationsRoot(layout))) {
 			printWarning(
 				`integrations: ${path.relative(ctx.cwd, f)} is a pattern-stack scaffold (author-owned, so not rewritten): ` +
 					`port it to Nest, or delete it to have the Nest one written`,
@@ -1050,7 +1051,7 @@ export class EntityNewCommand extends Command {
 		// scaffolds are never overwritten; @generated files re-emit each run. A
 		// provider surface with no surface package (Track C) is skipped with a
 		// reason, not an error.
-		const adapterOutputRoot = path.join(layout.backendSrc, 'integrations');
+		const adapterOutputRoot = integrationsRoot(layout);
 		if (!providerSet.skipped) {
 			let adapterResult: ReturnType<typeof emitAdapters>;
 			try {

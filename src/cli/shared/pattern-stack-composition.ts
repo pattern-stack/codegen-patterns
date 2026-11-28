@@ -6,6 +6,7 @@
 import path from 'node:path';
 
 import { CODEGEN_BANNER } from '../../utils/generated-file.js';
+import { integrationsRoot } from '../../config/integration-layout.js';
 import { TenancyConfigSchema } from '../../schema/codegen-config.schema.js';
 import type { Context } from './context.js';
 import { projectLayout } from './project-layout.js';
@@ -102,7 +103,7 @@ function integrationsSource(ctx: Context, entitiesDir: string): PatternStackInte
 	return {
 		providers: providers.loaded,
 		entities: entities as PatternStackIntegrationsInput['entities'],
-		outputRoot: path.join(layout.backendSrc, 'integrations'),
+		outputRoot: integrationsRoot(layout),
 		backendSrcAbs: layout.backendSrc,
 		modulesAbs: layout.modules,
 		mode: resolveRuntimeMode(ctx.config),
@@ -194,8 +195,9 @@ export function writePatternStackComposition(ctx: Context): PatternStackComposit
 		wiring: 'pattern-stack',
 		modulesDir: input.modulesDir,
 		generatedDir: input.generatedDir,
-		integrationsDir: path.join(projectLayout(ctx.cwd, ctx.config).backendSrc, 'integrations'),
-		keep: new Set(files.map((f) => f.path)),
+		integrationsDir: integrationsRoot(projectLayout(ctx.cwd, ctx.config)),
+		// The composition's files and the integration systems this run writes (`emitPatternStackIntegrations`).
+		keep: new Set([...files.map((f) => f.path), ...(input.integrations?.systems ?? []).map((s) => s.file)]),
 	});
 	const behind = wiringFilesBehind(input);
 	return { files, removed, behind };

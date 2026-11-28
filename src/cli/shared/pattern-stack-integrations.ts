@@ -17,60 +17,76 @@
  * `wiring: 'pattern-stack'`; their Nest text is unchanged.
  */
 
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
-import { dirname, join, relative, sep } from 'node:path';
+import { existsSync } from 'node:fs';
 
-import { generating } from '../../utils/generated-file';
-import { emittedStem } from '../../config/file-naming.js';
+import { SCAFFOLD_SENTINEL, writeGeneratedFile, writeGeneratedFileIfChanged } from '../../utils/generated-file';
+import { relativeImport } from '../../utils/import-path.js';
 import { parseImportRef, type ActiveProviderDefinition } from '../../schema/provider-definition.schema';
 import type { LoadedProvider } from '../../parser/validate-providers';
 import type { DetectionConfig } from '../../../runtime/subsystems/integration';
+import type { CompositionIntegrationsInput } from '../../emitters/composition/emit-composition.js';
 import {
+	adapterClassName,
+	adapterDetection,
 	adapterTakesClient,
 	buildSinkInput,
 	entitySourcesFold,
 	generateAdapterScaffold,
+	generatedBanner,
 	generateTypedView,
 	integrationSurfaces,
 	isClientlessProvider,
 	notIntegratedReason,
+	providerApiType,
 	type EmitAdaptersEntity,
 } from './adapter-emission-generator';
-import { resolveEntityModuleImports, toImportSpecifier } from './assembly-emission-generator';
+import {
+	adapterScaffoldFile,
+	adaptersSystemFile,
+	integrationsModuleFile,
+	providerFactoryFile,
+	providerSystemFile,
+	sinkFiles,
+	typedViewFile,
+} from '../../config/integration-layout.js';
+import { resolveEntityModuleImports, toImportSpecifier, type EntityModuleLocation } from './assembly-emission-generator';
 import { changeEmitterClass, generateChangeEmitter } from './change-emitter-emission-generator';
 import { providerPascalCase } from './provider-module-generator';
 import { generateSinkBase, generateSinkSubclass } from './sink-emission-generator';
 import { subsystemCoreImport, type RuntimeMode } from './runtime-import';
 
-/** A system the composition lists in `SYSTEMS` and `SystemApis`. */
-export interface PatternStackIntegrationSystem {
-	/** Its name in `SystemApis` (`salesforceProvider`, `crmAdapters`). */
-	name: string;
-	/** The manifest's export (`salesforceProviderSystem`). */
-	exportName: string;
-	/** Absolute: the file that exports it. */
-	file: string;
-	/** Its API type, exported from the same file. */
-	apiType: string;
+/** A system the composition lists in `SYSTEMS` and `SystemApis`: the composition's own type. */
+export type PatternStackIntegrationSystem = CompositionIntegrationsInput['systems'][number];
+
+/** One `IntegrationRunner` the `integrations` module builds: the composition's own type. */
+export type PatternStackIntegrationRun = CompositionIntegrationsInput['runs'][number];
+
+/** A provider the plan emits: its author-owned factory and its system. */
+export interface PatternStackProviderPlan {
+	slug: string;
+	def: ActiveProviderDefinition;
+	factoryFile: string;
+	systemFile: string;
 }
 
-/** One `IntegrationRunner` the `integrations` module builds. */
-export interface PatternStackIntegrationRun {
-	surface: string;
+/** An Integrated entity's sink on a surface: where its files go, and where its module is. */
+export interface PatternStackSinkPlan {
 	entity: string;
-	provider: string;
-	/** The adapters system it reads its change source from (`crmAdapters`). */
-	adaptersSystem: string;
-	/** The adapter's key in that system's `adapters` (the provider slug, as a property name). */
-	adapterKey: string;
-	/** Absolute: the emit-once sink subclass, and its class. */
-	sinkFile: string;
-	sinkClass: string;
-	/** Absolute: the entity's repository, and its projection type (the runner's record type). */
-	repositoryFile: string;
-	projectionType: string;
-	/** For an `integration.sink.emit_changes` entity: its change emitter (needs the events system). */
-	emitter?: { file: string; className: string };
+	def: EmitAdaptersEntity;
+	files: ReturnType<typeof sinkFiles>;
+	location: EntityModuleLocation;
+	emitChanges: boolean;
+}
+
+/** A surface the plan emits: each provider's adapter scaffold, the adapters system, the typed view, the sinks. */
+export interface PatternStackSurfacePlan {
+	surface: string;
+	slugs: string[];
+	entities: string[];
+	systemFile: string;
+	typedViewFile: string;
+	adapters: Array<{ slug: string; file: string; detection: Map<string, DetectionConfig> }>;
+	sinks: PatternStackSinkPlan[];
 }
 
 export interface PatternStackIntegrationsPlan {
@@ -83,6 +99,9 @@ export interface PatternStackIntegrationsPlan {
 	/** The providers' systems, then the surfaces' adapters systems. */
 	systems: PatternStackIntegrationSystem[];
 	runs: PatternStackIntegrationRun[];
+	/** What the emit writes: the plan owns every file's place, and the emit walks it. */
+	providers: PatternStackProviderPlan[];
+	surfaces: PatternStackSurfacePlan[];
 	skippedSurfaces: Array<{ provider: string; surface: string; reason: string }>;
 	skippedAssemblies: Array<{ surface: string; entity: string; reason: string }>;
 }
@@ -96,6 +115,8 @@ export interface PatternStackIntegrationsInput {
 	backendSrcAbs: string;
 	modulesAbs: string;
 	mode: RuntimeMode;
+	/** tsconfig path aliases, for the sinks' repository import (as under Nest). */
+	aliases?: Record<string, string>;
 }
 
 const camel = (s: string): string => {
@@ -109,7 +130,7 @@ export function providerSystemNames(slug: string): { name: string; exportName: s
 	return {
 		name: `${camel(slug)}Provider`,
 		exportName: `${camel(slug)}ProviderSystem`,
-		apiType: `${pascal}Provider`,
+		apiType: providerApiType(slug),
 		factory: `create${pascal}Provider`,
 	};
 }
@@ -129,36 +150,50 @@ export function planPatternStackIntegrations(input: PatternStackIntegrationsInpu
 		input.providers,
 		input.entities,
 	);
+	const root = input.outputRoot;
 	const systems: PatternStackIntegrationSystem[] = [];
+	const providers: PatternStackProviderPlan[] = [];
 	for (const slug of servingProviders(bySurface)) {
 		const n = providerSystemNames(slug);
-		systems.push({ name: n.name, exportName: n.exportName, apiType: n.apiType, file: providerSystemFile(input.outputRoot, slug) });
+		const systemFile = providerSystemFile(root, slug);
+		systems.push({ name: n.name, exportName: n.exportName, apiType: n.apiType, file: systemFile });
+		providers.push({ slug, def: defBySlug.get(slug)!, factoryFile: providerFactoryFile(root, slug), systemFile });
 	}
 	const runs: PatternStackIntegrationRun[] = [];
+	const surfaces: PatternStackSurfacePlan[] = [];
 	const skippedAssemblies: PatternStackIntegrationsPlan['skippedAssemblies'] = [];
 	for (const surface of [...bySurface.keys()].sort()) {
 		const a = adaptersSystemNames(surface);
-		systems.push({ name: a.name, exportName: a.exportName, apiType: a.apiType, file: adaptersSystemFile(input.outputRoot, surface) });
+		const systemFile = adaptersSystemFile(root, surface);
+		systems.push({ name: a.name, exportName: a.exportName, apiType: a.apiType, file: systemFile });
 		const slugs = [...bySurface.get(surface)!].sort();
-		for (const entityName of entitiesBySurface.get(surface) ?? []) {
+		const entities = entitiesBySurface.get(surface) ?? [];
+		const sinks: PatternStackSinkPlan[] = [];
+		for (const entityName of entities) {
 			const def = entityByName.get(entityName);
 			const notIntegrated = notIntegratedReason(def, surface, entityName);
-			if (notIntegrated) {
-				skippedAssemblies.push({ surface, entity: entityName, reason: notIntegrated });
+			if (notIntegrated || !def) {
+				skippedAssemblies.push({ surface, entity: entityName, reason: notIntegrated ?? 'no entity YAML' });
 				continue;
 			}
-			const loc = resolveEntityModuleImports({
+			const location = resolveEntityModuleImports({
 				entityName,
-				entityPlural: def?.entity.plural ?? `${entityName}s`,
-				context: def?.entity.context ?? null,
+				entityPlural: def.entity.plural ?? `${entityName}s`,
+				context: def.entity.context ?? null,
 				surface,
 				provider: slugs[0]!,
 				backendSrcAbs: input.backendSrcAbs,
 				modulesAbs: input.modulesAbs,
-				aliases: {},
+				aliases: input.aliases ?? {},
 			});
-			const sinksDir = join(input.outputRoot, surface, 'sinks');
-			const emitChanges = def?.integration?.sink?.emit_changes === true;
+			const sink: PatternStackSinkPlan = {
+				entity: entityName,
+				def,
+				files: sinkFiles(root, surface, entityName),
+				location,
+				emitChanges: def.integration?.sink?.emit_changes === true,
+			};
+			sinks.push(sink);
 			for (const slug of slugs) {
 				runs.push({
 					surface,
@@ -166,28 +201,38 @@ export function planPatternStackIntegrations(input: PatternStackIntegrationsInpu
 					provider: slug,
 					adaptersSystem: a.name,
 					adapterKey: camel(slug),
-					sinkFile: join(sinksDir, `${emittedStem(entityName)}.sink.ts`),
-					sinkClass: `${loc.entityClass}Sink`,
-					repositoryFile: loc.repoFileAbs,
-					projectionType: `${loc.entityClass}IntegrationProjection`,
-					...(emitChanges
-						? {
-								emitter: {
-									file: join(sinksDir, `${emittedStem(entityName)}.change-emitter.ts`),
-									className: changeEmitterClass(loc.entityClass),
-								},
-							}
+					sinkFile: sink.files.sink,
+					sinkClass: `${location.entityClass}Sink`,
+					repositoryFile: location.repoFileAbs,
+					projectionType: `${location.entityClass}IntegrationProjection`,
+					...(sink.emitChanges
+						? { emitter: { file: sink.files.emitter, className: changeEmitterClass(location.entityClass) } }
 						: {}),
 				});
 			}
 		}
+		surfaces.push({
+			surface,
+			slugs,
+			entities,
+			systemFile,
+			typedViewFile: typedViewFile(root, surface),
+			adapters: bySurface.get(surface)!.map((slug) => ({
+				slug,
+				file: adapterScaffoldFile(root, surface, slug),
+				detection: adapterDetection(entityByName, entities, slug),
+			})),
+			sinks,
+		});
 	}
 	return {
-		root: input.outputRoot,
-		moduleFile: join(input.outputRoot, 'module.ts'),
+		root,
+		moduleFile: integrationsModuleFile(root),
 		coreImport: subsystemCoreImport(input.mode, 'integration'),
 		systems,
 		runs,
+		providers,
+		surfaces,
 		skippedSurfaces,
 		skippedAssemblies,
 	};
@@ -201,34 +246,13 @@ function servingProviders(bySurface: Map<string, string[]>): string[] {
 	return [...new Set([...bySurface.values()].flat())].sort();
 }
 
-function providerSystemFile(root: string, slug: string): string {
-	return join(root, 'providers', slug, `${slug}.provider.ts`);
-}
-
-function adaptersSystemFile(root: string, surface: string): string {
-	return join(root, surface, `${surface}-adapters.system.ts`);
-}
-
-/** A relative import specifier from one file to another, without the extension. */
-function importFrom(fromFile: string, toFile: string): string {
-	const rel = relative(dirname(fromFile), toFile.replace(/\.ts$/, '')).split(sep).join('/');
-	return rel.startsWith('.') ? rel : `./${rel}`;
-}
-
-function banner(sourceDesc: string): string {
-	return (
-		`// @generated by @pattern-stack/codegen from ${sourceDesc} — DO NOT EDIT.\n` +
-		`// Hand edits are overwritten on re-emit. Regenerate with \`bun run codegen\`.`
-	);
-}
-
 /** `<slug>.provider.factory.ts`: emit-once, author-owned — where the provider's auth strategy and client are built. */
 export function generateProviderFactory(def: ActiveProviderDefinition): string {
 	const n = providerSystemNames(def.slug);
 	const strategy = parseImportRef(def.auth.strategy);
 	const clientless = isClientlessProvider(def.surfaces);
 	const client = clientless ? null : parseImportRef(def.client.class);
-	return `// <CODEGEN-SCAFFOLD-V1>
+	return `${SCAFFOLD_SENTINEL}
 // Scaffolded once by @pattern-stack/codegen, then author-owned. Re-running
 // codegen detects the sentinel above and SKIPS this file — your edits are safe.
 // Source: definitions/providers/${def.slug}.yaml.
@@ -254,13 +278,13 @@ ${client ? `    client: new ${client.exportName}(),\n` : ''}  };
 /** `<slug>.provider.ts`: the provider as a system, built by the author's factory. */
 export function generateProviderSystem(def: ActiveProviderDefinition, file: string, wiringFile: string): string {
 	const n = providerSystemNames(def.slug);
-	return `${banner(`definitions/providers/${def.slug}.yaml`)}
+	return `${generatedBanner(`definitions/providers/${def.slug}.yaml`)}
 /**
  * The \`${def.slug}\` provider (surfaces: ${def.surfaces.join(', ')}) as a \`@pattern-stack/wiring\` system: its parts
  * come from \`${n.factory}\` (\`${def.slug}.provider.factory.ts\`, yours).
  */
-import { ${n.factory}, type ${n.apiType} } from './${def.slug}.provider.factory';
-import { defineSystem } from '${importFrom(file, wiringFile)}';
+import { ${n.factory}, type ${n.apiType} } from '${relativeImport(providerSystemFile('/', def.slug), providerFactoryFile('/', def.slug))}';
+import { defineSystem } from '${relativeImport(file, wiringFile)}';
 
 export type { ${n.apiType} };
 
@@ -280,16 +304,17 @@ export function generateAdaptersSystem(
 	file: string,
 	wiringFile: string,
 	coreImport: string,
-	entities: readonly string[],
+	root: string,
 ): string {
 	const a = adaptersSystemNames(surface);
 	const sorted = [...slugs].sort();
-	const adapter = (slug: string) => `${providerPascalCase(slug)}${providerPascalCase(surface)}Adapter`;
+	const adapter = (slug: string) => adapterClassName(slug, surface);
+	// The client whenever the provider has one: the scaffold's constructor (emit-once) takes the same, whatever the entities.
 	const args = (slug: string) => {
 		const p = providerSystemNames(slug).name;
-		return adapterTakesClient(defBySlug.get(slug)!, surface, entities) ? `${p}.auth, ${p}.client` : `${p}.auth`;
+		return adapterTakesClient(defBySlug.get(slug)!) ? `${p}.auth, ${p}.client` : `${p}.auth`;
 	};
-	return `${banner(`surface: ${surface}`)}
+	return `${generatedBanner(`surface: ${surface}`)}
 /**
  * The \`${surface}\` surface's adapters as a \`@pattern-stack/wiring\` system: each provider's adapter, built from that
  * provider's system. \`sources()\` folds their change sources into one entity-keyed registry when called (two
@@ -300,8 +325,8 @@ import {
   type IChangeSource,
   type IEntityChangeSourceRegistry,
 } from '${coreImport}';
-import { defineSystem } from '${importFrom(file, wiringFile)}';
-${sorted.map((slug) => `import { ${adapter(slug)} } from './adapters/${slug}/${slug}-${surface}.adapter';`).join('\n')}
+import { defineSystem } from '${relativeImport(file, wiringFile)}';
+${sorted.map((slug) => `import { ${adapter(slug)} } from '${relativeImport(file, adapterScaffoldFile(root, surface, slug))}';`).join('\n')}
 
 /** One provider-adapter's contribution to the registry. */
 interface AdapterContribution {
@@ -341,8 +366,6 @@ ${sorted.map((slug) => `          { provider: '${slug}', sources: adapters.${cam
 export interface EmitPatternStackIntegrationsOptions extends PatternStackIntegrationsInput {
 	/** Absolute `<generated>/wiring.ts`, which every manifest imports `defineSystem` from. */
 	wiringFile: string;
-	/** tsconfig path aliases, for the sinks' repository import (as under Nest). */
-	aliases?: Record<string, string>;
 	tenancyColumn: string;
 	dryRun?: boolean;
 }
@@ -359,10 +382,9 @@ export interface EmitPatternStackIntegrationsResult {
 /** Write the pattern-stack integration files. The `integrations` module is the composition's. */
 export function emitPatternStackIntegrations(opts: EmitPatternStackIntegrationsOptions): EmitPatternStackIntegrationsResult {
 	const plan = planPatternStackIntegrations(opts);
-	const { entitiesBySurface, entityByName, bySurface, defBySlug } = integrationSurfaces(opts.providers, opts.entities);
 	const result: EmitPatternStackIntegrationsResult = { plan, written: [], scaffoldsWritten: [], scaffoldsSkipped: [] };
 	const generated = (file: string, content: string) => {
-		if (!opts.dryRun) writeIfChanged(file, content);
+		if (!opts.dryRun) writeGeneratedFileIfChanged(file, content);
 		result.written.push(file);
 	};
 	const scaffold = (file: string, content: () => string) => {
@@ -370,70 +392,45 @@ export function emitPatternStackIntegrations(opts: EmitPatternStackIntegrationsO
 			result.scaffoldsSkipped.push(file);
 			return;
 		}
-		if (!opts.dryRun) write(file, content());
+		if (!opts.dryRun) writeGeneratedFile(file, content());
 		result.scaffoldsWritten.push(file);
 	};
-	const root = opts.outputRoot;
+	const defBySlug = new Map(plan.providers.map((p) => [p.slug, p.def]));
 
-	for (const slug of servingProviders(bySurface)) {
-		const def = defBySlug.get(slug)!;
-		scaffold(join(root, 'providers', slug, `${slug}.provider.factory.ts`), () => generateProviderFactory(def));
-		const file = providerSystemFile(root, slug);
-		generated(file, generateProviderSystem(def, file, opts.wiringFile));
+	for (const p of plan.providers) {
+		scaffold(p.factoryFile, () => generateProviderFactory(p.def));
+		generated(p.systemFile, generateProviderSystem(p.def, p.systemFile, opts.wiringFile));
 	}
 
-	for (const surface of [...bySurface.keys()].sort()) {
-		const slugs = bySurface.get(surface)!;
-		const surfaceEntities = entitiesBySurface.get(surface) ?? [];
-		for (const slug of slugs) {
-			const entityDetection = new Map<string, DetectionConfig>();
-			for (const name of surfaceEntities) {
-				const det = entityByName.get(name)?.entity.detection?.[slug];
-				if (det) entityDetection.set(name, det);
-			}
-			scaffold(join(root, surface, 'adapters', slug, `${slug}-${surface}.adapter.ts`), () =>
-				generateAdapterScaffold(defBySlug.get(slug)!, surface, surfaceEntities, entityDetection, opts.mode, 'pattern-stack'),
-			);
+	for (const s of plan.surfaces) {
+		for (const a of s.adapters) {
+			scaffold(a.file, () => generateAdapterScaffold(defBySlug.get(a.slug)!, s.surface, s.entities, a.detection, opts.mode, 'pattern-stack'));
 		}
-		const systemFile = adaptersSystemFile(root, surface);
 		generated(
-			systemFile,
-			generateAdaptersSystem(surface, slugs, defBySlug, systemFile, opts.wiringFile, plan.coreImport, surfaceEntities),
+			s.systemFile,
+			generateAdaptersSystem(s.surface, s.slugs, defBySlug, s.systemFile, opts.wiringFile, plan.coreImport, plan.root),
 		);
-		generated(join(root, surface, 'types.generated.ts'), generateTypedView(surface, slugs, surfaceEntities));
+		generated(s.typedViewFile, generateTypedView(s.surface, s.slugs, s.entities));
 
-		const sinksDir = join(root, surface, 'sinks');
-		for (const entityName of surfaceEntities) {
-			const def = entityByName.get(entityName);
-			if (!def || notIntegratedReason(def, surface, entityName)) continue;
-			const loc = resolveEntityModuleImports({
-				entityName,
-				entityPlural: def.entity.plural ?? `${entityName}s`,
-				context: def.entity.context ?? null,
-				surface,
-				provider: slugs[0]!,
-				backendSrcAbs: opts.backendSrcAbs,
-				modulesAbs: opts.modulesAbs,
-				aliases: opts.aliases ?? {},
-			});
+		for (const k of s.sinks) {
 			const sinkInput = buildSinkInput(
-				def,
-				surface,
-				slugs[0]!,
-				toImportSpecifier(loc.repoFileAbs, sinksDir, opts.aliases ?? {}),
+				k.def,
+				s.surface,
+				s.slugs[0]!,
+				toImportSpecifier(k.location.repoFileAbs, k.files.dir, opts.aliases ?? {}),
 				opts.tenancyColumn,
 			);
 			const sink = { ...sinkInput, mode: opts.mode, wiring: 'pattern-stack' as const };
-			generated(join(sinksDir, `${emittedStem(entityName)}.sink.generated.ts`), generateSinkBase(sink));
-			scaffold(join(sinksDir, `${emittedStem(entityName)}.sink.ts`), () => generateSinkSubclass(sink));
-			if (def.integration?.sink?.emit_changes === true) {
+			generated(k.files.base, generateSinkBase(sink));
+			scaffold(k.files.sink, () => generateSinkSubclass(sink));
+			if (k.emitChanges) {
 				generated(
-					join(sinksDir, `${emittedStem(entityName)}.change-emitter.ts`),
+					k.files.emitter,
 					generateChangeEmitter({
-						entityName,
-						entityClass: loc.entityClass,
-						surface,
-						sourceDesc: `definitions entity '${entityName}' (integration.sink.emit_changes)`,
+						entityName: k.entity,
+						entityClass: k.location.entityClass,
+						surface: s.surface,
+						sourceDesc: `definitions entity '${k.entity}' (integration.sink.emit_changes)`,
 						mode: opts.mode,
 						wiring: 'pattern-stack',
 					}),
@@ -442,14 +439,4 @@ export function emitPatternStackIntegrations(opts: EmitPatternStackIntegrationsO
 		}
 	}
 	return result;
-}
-
-function write(file: string, content: string): void {
-	mkdirSync(dirname(file), { recursive: true });
-	generating(file, () => writeFileSync(file, content));
-}
-
-function writeIfChanged(file: string, content: string): void {
-	if (existsSync(file) && readFileSync(file, 'utf8') === content) return;
-	write(file, content);
 }

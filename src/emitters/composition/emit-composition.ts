@@ -480,7 +480,7 @@ ${systems.map((s) => `import type { ${s.apiType} } from '${relativeImport(regist
 ${integrationsModule ? `import type { IntegrationsModule } from '${relativeImport(registryFile, integrationsModule.file)}';\n` : ''}
 export interface ModuleApis {
 ${names.map((n) => `  ${n}: ${pascalCase(n)}Module;`).join('\n')}
-${integrationsModule ? '  integrations: IntegrationsModule;\n' : ''}}
+${integrationsModule ? `  ${INTEGRATIONS_MODULE}: IntegrationsModule;\n` : ''}}
 
 export interface SystemApis {
   ${DATABASE_SYSTEM}: { db: DrizzleClient<Relations> };
@@ -679,7 +679,7 @@ ${body}
 export type IntegrationsModule = ReturnType<typeof composeIntegrations>;
 
 export const integrationsModule = defineModule({
-  name: 'integrations',
+  name: '${INTEGRATIONS_MODULE}',
   kind: 'derived',
   dependsOn: [${dependsOn.map((m) => `'${m}'`).join(', ')}],
   uses: [${uses.map((u) => `'${u}'`).join(', ')}],

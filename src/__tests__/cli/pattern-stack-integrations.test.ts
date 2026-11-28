@@ -128,7 +128,7 @@ describe('the adapters', () => {
 	it("the adapters system builds each provider's adapter from its system, and folds the sources on demand", () => {
 		const file = `${ROOT}/integrations/crm/crm-adapters.system.ts`;
 		const defs = new Map([['salesforce', def('salesforce')]]);
-		const system = generateAdaptersSystem('crm', ['salesforce'], defs, file, `${ROOT}/generated/wiring.ts`, '@x/integration/core', ['contact']);
+		const system = generateAdaptersSystem('crm', ['salesforce'], defs, file, `${ROOT}/generated/wiring.ts`, '@x/integration/core', `${ROOT}/integrations`);
 		expect(system).toContain("uses: ['salesforceProvider'],");
 		expect(system).toContain('salesforce: new SalesforceCrmAdapter(salesforceProvider.auth, salesforceProvider.client),');
 		expect(system).toContain('sources: () =>\n        foldCrmEntitySources([');
@@ -136,7 +136,7 @@ describe('the adapters', () => {
 		expect(system).toContain('const merged = new globalThis.Map<');
 		expect(system).not.toMatch(NEST);
 		// A per-connection provider's adapter takes its auth only.
-		const cal = generateAdaptersSystem('calendar', ['google'], new Map([['google', def('google')]]), file, `${ROOT}/generated/wiring.ts`, '@x', ['meeting']);
+		const cal = generateAdaptersSystem('calendar', ['google'], new Map([['google', def('google')]]), file, `${ROOT}/generated/wiring.ts`, '@x', `${ROOT}/integrations`);
 		expect(cal).toContain('google: new GoogleCalendarAdapter(googleProvider.auth),');
 	});
 
@@ -174,16 +174,18 @@ describe('an adapter takes a client exactly when the system passes one', () => {
 	const file = `${ROOT}/integrations/x/x-adapters.system.ts`;
 	const wiring = `${ROOT}/generated/wiring.ts`;
 
-	it('a provider serving crm and calendar: its calendar adapter (a read primitive with entities) takes auth only', () => {
-		const scaffold = generateAdapterScaffold(mixed, 'calendar', ['meeting'], undefined, 'package', 'pattern-stack');
-		expect(scaffold).toContain("  constructor(readonly auth: AcmeProvider['auth']) {");
-		const system = generateAdaptersSystem('calendar', ['acme'], new Map([['acme', mixed]]), file, wiring, '@x', ['meeting']);
-		expect(system).toContain('acme: new AcmeCalendarAdapter(acmeProvider.auth),');
+	it('a provider with a client: every adapter takes it, a read primitive too, whatever its entities (the scaffold is emit-once)', () => {
+		for (const entities of [['meeting'], []]) {
+			const scaffold = generateAdapterScaffold(mixed, 'calendar', entities, undefined, 'package', 'pattern-stack');
+			expect(scaffold).toMatch(/readonly auth: AcmeProvider\['auth'\],\n {4}(private )?readonly client: AcmeProvider\['client'\],/);
+		}
+		const system = generateAdaptersSystem('calendar', ['acme'], new Map([['acme', mixed]]), file, wiring, '@x', `${ROOT}/integrations`);
+		expect(system).toContain('acme: new AcmeCalendarAdapter(acmeProvider.auth, acmeProvider.client),');
 		// Its crm adapter takes the client.
 		expect(generateAdapterScaffold(mixed, 'crm', ['contact'], undefined, 'package', 'pattern-stack')).toContain(
 			"private readonly client: AcmeProvider['client'],",
 		);
-		expect(generateAdaptersSystem('crm', ['acme'], new Map([['acme', mixed]]), file, wiring, '@x', ['contact'])).toContain(
+		expect(generateAdaptersSystem('crm', ['acme'], new Map([['acme', mixed]]), file, wiring, '@x', `${ROOT}/integrations`)).toContain(
 			'acme: new AcmeCrmAdapter(acmeProvider.auth, acmeProvider.client),',
 		);
 	});
@@ -192,7 +194,7 @@ describe('an adapter takes a client exactly when the system passes one', () => {
 		const scaffold = generateAdapterScaffold(def('google'), 'calendar', [], undefined, 'package', 'pattern-stack');
 		expect(scaffold).not.toContain("['client']");
 		expect(scaffold).toContain("  constructor(readonly auth: GoogleProvider['auth']) {}");
-		const system = generateAdaptersSystem('calendar', ['google'], new Map([['google', def('google')]]), file, wiring, '@x', []);
+		const system = generateAdaptersSystem('calendar', ['google'], new Map([['google', def('google')]]), file, wiring, '@x', `${ROOT}/integrations`);
 		expect(system).toContain('google: new GoogleCalendarAdapter(googleProvider.auth),');
 	});
 

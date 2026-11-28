@@ -41,7 +41,7 @@
  * triad via mergeEvents' top-level-wins policy).
  */
 
-import { subsystemCoreImport, subsystemsImport, type RuntimeMode } from "./runtime-import";
+import { integrationImportFor, subsystemCoreImport, subsystemsImport, type RuntimeMode } from "./runtime-import";
 import type { TargetWiring as Wiring } from "../../targets/apps.js";
 
 // ============================================================================
@@ -100,7 +100,7 @@ export function generateChangeEmitter(input: ChangeEmitterEmitInput): string {
   const cls = changeEmitterClass(input.entityClass);
   const patternStack = input.wiring === "pattern-stack";
   const eventsImport = subsystemsImport(mode, "events");
-  const integrationImport = patternStack ? subsystemCoreImport(mode, "integration") : subsystemsImport(mode, "integration");
+  const integrationImport = integrationImportFor(input.wiring ?? "nest", mode);
 
   const createdType = `${input.entityName}_created`;
   const editedType = `${input.entityName}_edited`;

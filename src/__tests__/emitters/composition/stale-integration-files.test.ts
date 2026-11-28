@@ -75,4 +75,32 @@ describe('switching wiring with integrations', () => {
 			'src/integrations/providers/acme/acme.provider.factory.ts',
 		]);
 	});
+
+	it('under pattern-stack, removes its own systems and module this run no longer writes (a provider whose YAML went)', () => {
+		const root = project(PS_TREE);
+		const kept = path.join(root, 'src/integrations/crm/crm-adapters.system.ts');
+		const removed = removeOtherWiringFiles({
+			wiring: 'pattern-stack',
+			modulesDir: path.join(root, 'src/modules'),
+			generatedDir: path.join(root, 'src/generated'),
+			integrationsDir: path.join(root, 'src/integrations'),
+			keep: new Set([kept]),
+		}).map((f) => path.relative(root, f)).sort();
+		expect(removed).toEqual(['src/integrations/module.ts', 'src/integrations/providers/acme/acme.provider.ts']);
+		expect(fs.existsSync(kept)).toBe(true);
+		// The author's factory and adapter scaffold stay.
+		expect(fs.existsSync(path.join(root, 'src/integrations/providers/acme/acme.provider.factory.ts'))).toBe(true);
+	});
+
+	it('names a double-quoted Nest scaffold, and never a hand-written adapter', () => {
+		const root = project({
+			'src/integrations/crm/adapters/acme/acme-crm.adapter.ts': '// <CODEGEN-SCAFFOLD-V1>\nimport { Injectable } from "@nestjs/common";\n',
+			'src/integrations/crm/adapters/mine/mine-crm.adapter.ts': 'export class MineCrmAdapter {}\n',
+		});
+		const dir = path.join(root, 'src/integrations');
+		const rel = (fs_: string[]) => fs_.map((f) => path.relative(root, f));
+		expect(rel(otherWiringScaffolds('pattern-stack', dir))).toEqual(['src/integrations/crm/adapters/acme/acme-crm.adapter.ts']);
+		// Under nest the double-quoted Nest scaffold is Nest's own, and the hand-written adapter is no scaffold.
+		expect(rel(otherWiringScaffolds('nest', dir))).toEqual([]);
+	});
 });
