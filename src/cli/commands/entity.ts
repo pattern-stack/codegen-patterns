@@ -16,7 +16,7 @@ import { loadEntityFromYaml, loadEntitiesFromYaml } from '../../utils/yaml-loade
 import { analyzeDomain } from '../../index.js';
 import { relationshipsDirFor } from '../../config/junctions-dir.js';
 import { preflightEntityTargets, renderEntityTargets } from '../shared/entity-render.js';
-import { removeOtherWiringFiles } from '../../emitters/composition/stale-files.js';
+import { otherWiringScaffolds, removeOtherWiringFiles } from '../../emitters/composition/stale-files.js';
 import { isPatternStackWiring } from '../../targets/apps.js';
 import { listEntityYamls } from '../../utils/find-yaml-files.js';
 import { invalidDefinitionError } from '../../utils/definition-invariant.js';
@@ -85,10 +85,12 @@ import {
 	eventsInstalled,
 	integrationInstalled,
 	planPatternStackComposition,
+	writePatternStackIntegrations,
 	printPatternStackComposition,
 	writePatternStackComposition,
 } from '../shared/pattern-stack-composition.js';
 import { eventsGeneratedDir } from '../shared/pattern-stack-subsystems.js';
+import { integrationsRoot } from '../../config/integration-layout.js';
 import { patternStackRelationshipYamlsRefusal } from '../shared/storage-only.js';
 
 // ---------------------------------------------------------------------------
@@ -455,8 +457,12 @@ export class EntityNewCommand extends Command {
 			let compositionFiles: string[];
 			// S-1: with events installed, the real run also writes the event set and the subsystem schema barrel.
 			let eventFiles: string[] = [];
+			// S-3: the integration files (systems, factories, adapters, sinks) the real run writes.
+			let integrationFiles: string[] = [];
 			try {
 				compositionFiles = planPatternStackComposition(ctx).map((f) => f.path);
+				const plannedIntegrations = writePatternStackIntegrations(ctx, { entitiesDir, generatedDir, dryRun: true });
+				integrationFiles = plannedIntegrations ? [...plannedIntegrations.written, ...plannedIntegrations.scaffoldsWritten] : [];
 				if (eventsInstalled(ctx)) {
 					const plannedEvents = await runEventCodegen({ wiring: 'pattern-stack', dryRun: true });
 					eventFiles = [
@@ -476,10 +482,12 @@ export class EntityNewCommand extends Command {
 					barrels: { modules: null, schema: barrelPlan.schemaBarrel, entityCount: barrelPlan.entityCount },
 					composition: compositionFiles,
 					events: eventFiles,
+					integrations: integrationFiles,
 				});
 			} else {
 				for (const f of compositionFiles) printInfo(`[dry run] composition: ${path.relative(ctx.cwd, f)}`);
 				for (const f of eventFiles) printInfo(`[dry run] events: ${path.relative(ctx.cwd, f)}`);
+				for (const f of integrationFiles) printInfo(`[dry run] integrations: ${path.relative(ctx.cwd, f)}`);
 			}
 			return invalid.length === 0 ? 0 : 1;
 		}
@@ -771,6 +779,16 @@ export class EntityNewCommand extends Command {
 					return reportRegenerationFailure('entity new', err);
 				}
 			}
+			// S-3: the providers' and surfaces' systems, the adapters, the sinks; the composition then writes the
+			// `integrations` module and lists the systems.
+			let integrationsResult: ReturnType<typeof writePatternStackIntegrations> = null;
+			try {
+				integrationsResult = generating(integrationsRoot(layout), () =>
+					writePatternStackIntegrations(ctx, { entitiesDir, generatedDir, aliases: tsAliases?.aliases ?? {} }),
+				);
+			} catch (err: unknown) {
+				return reportRegenerationFailure('entity new', err);
+			}
 			let patternStackResult: ReturnType<typeof writePatternStackComposition>;
 			try {
 				patternStackResult = writePatternStackComposition(ctx);
@@ -783,10 +801,26 @@ export class EntityNewCommand extends Command {
 				console.log('');
 				printPatternStackComposition(ctx, patternStackResult);
 				if (withEvents) printInfo(`events: ${path.relative(ctx.cwd, eventCodegenOutputDir)} (the typed bus, the registry), the events system`);
+				if (integrationsResult) {
+					const { plan } = integrationsResult;
+					printInfo(
+						`integrations: ${plan.systems.length} system(s) (${plan.systems.map((s) => s.name).join(', ')}), ` +
+							`${plan.runs.length} run(s) in the integrations module, ${integrationsResult.written.length} @generated + ` +
+							`${integrationsResult.scaffoldsWritten.length} scaffold(s) → ${path.relative(ctx.cwd, plan.root)}`,
+					);
+					for (const f of integrationsResult.scaffoldsSkipped) printInfo(`skipped scaffold ${path.relative(ctx.cwd, f)} (author-owned)`);
+					for (const s of plan.skippedSurfaces) printWarning(`integrations: ${s.reason} (provider ${s.provider})`);
+					for (const s of plan.skippedAssemblies) printWarning(`integrations: ${s.reason}`);
+				}
+				for (const f of otherWiringScaffolds('pattern-stack', integrationsRoot(layout))) {
+					printWarning(
+						`integrations: ${path.relative(ctx.cwd, f)} is a Nest adapter scaffold (author-owned, so not rewritten): ` +
+							`port it to a plain class, or delete it to have the pattern-stack one written`,
+					);
+				}
 				printInfo(
 					'wiring: pattern-stack — skipped the post-steps that write Nest code or need a Nest app: the subsystem ' +
-						'barrel, the ScopeEntityType union, bridge, jobs, orchestration, the semantic model, frontend, ' +
-						'integrations (S-2, S-3, H-1).',
+						'barrel, the ScopeEntityType union, bridge, jobs, orchestration, the semantic model, frontend (S-2, H-1, J-1).',
 				);
 				if (failed.length === 0) printSuccess(`${total} entities · ${succeeded.length} succeeded`);
 				else printWarning(`${total} entities · ${succeeded.length} succeeded · ${failed.length} failed`);
@@ -798,6 +832,18 @@ export class EntityNewCommand extends Command {
 					succeeded,
 					failed,
 					composition: composition.map((f) => f.path),
+					integrations: integrationsResult
+						? {
+								systems: integrationsResult.plan.systems.map((s) => s.name),
+								runs: integrationsResult.plan.runs.map((r) => `${r.surface}.${r.entity}.${r.provider}`),
+								written: integrationsResult.written,
+								scaffoldsWritten: integrationsResult.scaffoldsWritten,
+								scaffoldsSkipped: integrationsResult.scaffoldsSkipped,
+								skippedSurfaces: integrationsResult.plan.skippedSurfaces,
+								skippedAssemblies: integrationsResult.plan.skippedAssemblies,
+								otherWiringScaffolds: otherWiringScaffolds('pattern-stack', integrationsRoot(layout)),
+							}
+						: null,
 					removed: patternStackResult.removed,
 					behind: patternStackResult.behind,
 				});
@@ -806,8 +852,19 @@ export class EntityNewCommand extends Command {
 		}
 
 		// PW-3a: the pattern-stack wiring files an earlier `wiring: pattern-stack` run left behind (they import @pattern-stack/wiring).
-		for (const f of removeOtherWiringFiles({ wiring: 'nest', modulesDir: projectLayout(ctx.cwd, ctx.config).modules, generatedDir })) {
+		for (const f of removeOtherWiringFiles({
+			wiring: 'nest',
+			modulesDir: projectLayout(ctx.cwd, ctx.config).modules,
+			generatedDir,
+			integrationsDir: integrationsRoot(layout),
+		})) {
 			if (!isJsonMode()) printInfo(`removed (wiring: pattern-stack output): ${path.relative(ctx.cwd, f)}`);
+		}
+		for (const f of otherWiringScaffolds('nest', integrationsRoot(layout))) {
+			printWarning(
+				`integrations: ${path.relative(ctx.cwd, f)} is a pattern-stack scaffold (author-owned, so not rewritten): ` +
+					`port it to Nest, or delete it to have the Nest one written`,
+			);
 		}
 
 		// Regenerate the subsystem composition barrel (<generated>/subsystems.ts).
@@ -994,7 +1051,7 @@ export class EntityNewCommand extends Command {
 		// scaffolds are never overwritten; @generated files re-emit each run. A
 		// provider surface with no surface package (Track C) is skipped with a
 		// reason, not an error.
-		const adapterOutputRoot = path.join(layout.backendSrc, 'integrations');
+		const adapterOutputRoot = integrationsRoot(layout);
 		if (!providerSet.skipped) {
 			let adapterResult: ReturnType<typeof emitAdapters>;
 			try {

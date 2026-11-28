@@ -40,11 +40,35 @@ const INTEGRATION: IntegrationInput = {
 	runtimeImport: (relpath: string) => `@shared/${relpath}`,
 };
 
+type IntegrationsInput = NonNullable<Parameters<typeof planComposition>[0]['integrations']>;
+const INTEGRATIONS: IntegrationsInput = {
+	moduleFile: `${ROOT}/integrations/module.ts`,
+	coreImport: '@shared/subsystems/integration/core',
+	systems: [
+		{ name: 'acmeProvider', exportName: 'acmeProviderSystem', file: `${ROOT}/integrations/providers/acme/acme.provider.ts`, apiType: 'AcmeProvider' },
+		{ name: 'crmAdapters', exportName: 'crmAdaptersSystem', file: `${ROOT}/integrations/crm/crm-adapters.system.ts`, apiType: 'CrmAdaptersApi' },
+	],
+	runs: [
+		{
+			surface: 'crm',
+			entity: 'account',
+			provider: 'acme',
+			adaptersSystem: 'crmAdapters',
+			adapterKey: 'acme',
+			sinkFile: `${ROOT}/integrations/crm/sinks/account.sink.ts`,
+			sinkClass: 'AccountSink',
+			repositoryFile: `${ROOT}/modules/crm/accounts/account.repository.ts`,
+			projectionType: 'AccountIntegrationProjection',
+		},
+	],
+};
+
 function plan(
 	entitiesDir = FIXTURES,
 	junctionsDir = JUNCTIONS,
 	events: typeof EVENTS | null = EVENTS,
 	integration: IntegrationInput | null = null,
+	integrations: IntegrationsInput | null = null,
 ) {
 	const files = planComposition({
 		relations: relationsOf(entitiesDir, junctionsDir),
@@ -55,6 +79,7 @@ function plan(
 		banner: '// @generated',
 		events,
 		integration,
+		integrations,
 		dryRun: true,
 	});
 	return (suffix: string) => {
@@ -294,7 +319,7 @@ describe('the integration system in the composition (S-3)', () => {
 		expect(system).toContain("uses: ['database'],");
 		expect(system).toContain('cursors: new PostgresCursorStore(database.db, false),');
 		expect(system).toContain('recorder: new DrizzleIntegrationRunRecorder(database.db, false),');
-		expect(system).toContain('differ: new DeepEqualDiffer(),');
+		expect(system).toContain('differ: new DeepEqualDiffer<object>(),');
 		expect(get('/generated/composition.ts')).toContain('export const SYSTEMS = [eventsSystem, integrationSystem] as const;');
 		expect(get('/generated/wiring.ts')).toContain('  integration: IntegrationApi;');
 	});
@@ -309,7 +334,7 @@ describe('the integration system in the composition (S-3)', () => {
 		expect(system).toContain('uses: [],');
 		expect(system).toContain('cursors: new MemoryCursorStore(),');
 		expect(system).toContain('recorder: new MemoryRunRecorder(),');
-		expect(system).toContain('differ: new DeepEqualDiffer({"unignore":["deletedAt"]}),');
+		expect(system).toContain('differ: new DeepEqualDiffer<object>({"unignore":["deletedAt"]}),');
 		expect(system).toContain('multiTenant: true,');
 		expect(system).not.toContain('drizzle-backend');
 	});
@@ -318,5 +343,54 @@ describe('the integration system in the composition (S-3)', () => {
 		const get = plan();
 		expect(() => get('/generated/integration-system.ts')).toThrow(/no file ending/);
 		expect(get('/generated/composition.ts')).toContain('export const SYSTEMS = [eventsSystem] as const;');
+	});
+});
+
+describe('the integrations in the composition (S-3)', () => {
+	it("lists the providers' and surfaces' systems, and writes the integrations module over the entity's module", () => {
+		const get = plan(FIXTURES, JUNCTIONS, EVENTS, INTEGRATION, INTEGRATIONS);
+		expect(get('/generated/composition.ts')).toContain(
+			'export const SYSTEMS = [eventsSystem, integrationSystem, acmeProviderSystem, crmAdaptersSystem] as const;',
+		);
+		expect(get('/generated/composition.ts')).toMatch(/export const MODULES = \[.*integrationsModule\] as const;/);
+		const wiring = get('/generated/wiring.ts');
+		expect(wiring).toContain("import type { CrmAdaptersApi } from '../integrations/crm/crm-adapters.system';");
+		expect(wiring).toContain('  crmAdapters: CrmAdaptersApi;');
+		expect(wiring).toContain('  integrations: IntegrationsModule;');
+		const module = get('/integrations/module.ts');
+		expect(module).toContain("dependsOn: ['crm'],");
+		expect(module).toContain("uses: ['integration', 'crmAdapters'],");
+		expect(module).toContain(
+			'        acme: new IntegrationRunner<AccountIntegrationProjection>({\n' +
+				'          ...deps.integration,\n' +
+				'          source: deps.crmAdapters.adapters.acme.changeSources.account as IChangeSource<AccountIntegrationProjection>,\n' +
+				"          sink: new AccountSink(deps.crm.repositories.account, 'acme'),\n" +
+				'        }),',
+		);
+		expect(module).toContain("import type { AccountIntegrationProjection } from '../modules/crm/accounts/account.repository';");
+	});
+
+	it('an emit_changes run takes its change emitter over the events system, which it then uses', () => {
+		const emitting = {
+			...INTEGRATIONS,
+			runs: INTEGRATIONS.runs.map((r) => ({ ...r, emitter: { file: `${ROOT}/integrations/crm/sinks/account.change-emitter.ts`, className: 'AccountChangeEmitter' } })),
+		};
+		const module = plan(FIXTURES, JUNCTIONS, EVENTS, INTEGRATION, emitting)('/integrations/module.ts');
+		expect(module).toContain("uses: ['integration', 'crmAdapters', 'events'],");
+		expect(module).toContain('          emitter: new AccountChangeEmitter(deps.events.typed),');
+		expect(() => plan(FIXTURES, JUNCTIONS, null, INTEGRATION, emitting)).toThrow(/run `codegen subsystem install events`/);
+	});
+
+	it('refuses runs without the integration subsystem, and a system named like a module', () => {
+		expect(() => plan(FIXTURES, JUNCTIONS, EVENTS, null, INTEGRATIONS)).toThrow(/run `codegen subsystem install integration`/);
+		const clash = { ...INTEGRATIONS, systems: [...INTEGRATIONS.systems, { ...INTEGRATIONS.systems[0]!, name: 'crm' }] };
+		expect(() => plan(FIXTURES, JUNCTIONS, EVENTS, INTEGRATION, clash)).toThrow(/integration system 'crm' would share its name/);
+	});
+
+	it('with no run, the systems are composed and there is no integrations module', () => {
+		const get = plan(FIXTURES, JUNCTIONS, EVENTS, null, { ...INTEGRATIONS, runs: [] });
+		expect(get('/generated/composition.ts')).toContain('acmeProviderSystem, crmAdaptersSystem] as const;');
+		expect(() => get('/integrations/module.ts')).toThrow(/no file ending/);
+		expect(get('/generated/wiring.ts')).not.toContain('IntegrationsModule');
 	});
 });

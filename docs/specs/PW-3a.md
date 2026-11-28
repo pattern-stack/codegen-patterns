@@ -48,7 +48,7 @@ CLI, hook and MCP apps.
 - **Refused by name, each with the step that lifts it:**
   - `emits:` (the typed bus was decorated; lifted by S-1, `docs/specs/S-1.md`);
   - EAV (lifted by PW-EAV, `docs/specs/PW-EAV.md`);
-  - an integration `surface:` (S-3);
+  - an integration `surface:` (S-3; lifted 2026-11-27, docs/specs/S-3.md);
   - `relationship new` (`patternStackWiringRefusal`, `src/cli/shared/storage-only.ts`: #679; junctions came with PW-3c);
   - `entity new` in a project that has relationship YAMLs, rather than generating with their tables silently missing
     from the schema barrel.

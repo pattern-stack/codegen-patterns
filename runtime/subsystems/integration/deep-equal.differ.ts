@@ -100,7 +100,7 @@ export interface DeepEqualDifferOptions {
   readonly unignore?: readonly string[];
 }
 
-export class DeepEqualDiffer<T extends Record<string, unknown>>
+export class DeepEqualDiffer<T extends object>
   implements IFieldDiffer<T>
 {
   private readonly ignore: ReadonlySet<string>;

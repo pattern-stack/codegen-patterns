@@ -13,7 +13,7 @@ import ejs from 'ejs';
 import promptModule from '../../../templates/relationship/new/prompt.js';
 import { buildBackendLocals } from '../../../templates/entity/new/backend/entity-locals.js';
 import { emittedNameViolations, libGlobalTypeNames } from '../../../test/_emitted-name-hygiene';
-import { emitFixture } from '../../../test/integration-emit/_emit';
+import { emitFixture, emitFixturePatternStack } from '../../../test/integration-emit/_emit';
 import { withEntities } from '../backend/_entity-lookup';
 import { deriveRoleRelationships } from '../../roles/derive.js';
 
@@ -122,8 +122,11 @@ describe('committed trees obey the rule', () => {
 
 // Every other place the backend's output is committed or snapshotted is held to the same value-position rule.
 describe('the other emitted-backend snapshots obey the value-position rule', () => {
-	it('the integration-emit tree (package mode)', () => {
-		const root = emitFixture('package').integrationsRoot;
+	it.each([
+		['wiring: nest', () => emitFixture('package').integrationsRoot],
+		['wiring: pattern-stack', () => emitFixturePatternStack('package').integrationsRoot],
+	])('the integration-emit tree (package mode, %s)', (_wiring, emit) => {
+		const root = emit();
 		const files = walk(root, /\.ts$/).map((f) => ({ path: f.path.replace(/^.*src\/integrations\//, 'integrations/'), text: f.text }));
 		expect(files.length).toBeGreaterThan(5);
 		expect(fmt(emittedNameViolations(files, { values: true }))).toEqual([]);

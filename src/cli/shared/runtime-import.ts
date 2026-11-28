@@ -23,6 +23,8 @@
  * routed: `openApiImport`.)
  */
 
+import type { TargetWiring } from '../../targets/apps.js';
+
 export type RuntimeMode = 'package' | 'vendored';
 
 /** The npm package the runtime is published under. */
@@ -100,4 +102,18 @@ export function runtimeImport(mode: RuntimeMode, relpath: string): string {
   return mode === 'vendored'
     ? `@shared/${clean}`
     : `${PACKAGE}/runtime/${clean}`;
+}
+
+/**
+ * The integration subsystem's entry, by `target.wiring` (S-3): the subsystems barrel under nest, the Nest-free
+ * `…/integration/core` under pattern-stack (the barrel re-exports the Nest module). The sinks, the change emitter and
+ * the adapter scaffold all import it from here.
+ */
+const INTEGRATION_ENTRY: Readonly<Record<TargetWiring, (mode: RuntimeMode) => string>> = {
+  nest: (mode) => subsystemsImport(mode, 'integration'),
+  'pattern-stack': (mode) => subsystemCoreImport(mode, 'integration'),
+};
+
+export function integrationImportFor(wiring: TargetWiring, mode: RuntimeMode): string {
+  return INTEGRATION_ENTRY[wiring](mode);
 }

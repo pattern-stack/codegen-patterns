@@ -41,7 +41,8 @@
  * triad via mergeEvents' top-level-wins policy).
  */
 
-import { subsystemsImport, type RuntimeMode } from "./runtime-import";
+import { integrationImportFor, subsystemCoreImport, subsystemsImport, type RuntimeMode } from "./runtime-import";
+import type { TargetWiring as Wiring } from "../../targets/apps.js";
 
 // ============================================================================
 // Banner
@@ -71,6 +72,9 @@ export interface ChangeEmitterEmitInput {
   /** Runtime mode (ADR-037) — selects the events + integration subsystem import
    *  specifiers. Defaults to `package` when omitted. */
   mode?: RuntimeMode;
+  /** `target.wiring` (S-3). Under pattern-stack the emitter takes the bus as a plain constructor argument (the
+   *  `events` system's typed bus) and imports the integration types from the Nest-free entry. Defaults to nest. */
+  wiring?: Wiring;
 }
 
 // ============================================================================
@@ -94,17 +98,25 @@ export function changeEmitterClass(entityClass: string): string {
 export function generateChangeEmitter(input: ChangeEmitterEmitInput): string {
   const mode = input.mode ?? "package";
   const cls = changeEmitterClass(input.entityClass);
+  const patternStack = input.wiring === "pattern-stack";
   const eventsImport = subsystemsImport(mode, "events");
-  const integrationImport = subsystemsImport(mode, "integration");
+  const integrationImport = integrationImportFor(input.wiring ?? "nest", mode);
 
   const createdType = `${input.entityName}_created`;
   const editedType = `${input.entityName}_edited`;
   const deletedType = `${input.entityName}_deleted`;
 
+  const nestImports = patternStack
+    ? ""
+    : `import { Inject, Injectable } from '@nestjs/common';\nimport { TYPED_EVENT_BUS } from '${eventsImport}';\n`;
+  const busSource = patternStack
+    ? "The `integrations` module passes the `events` system's typed bus (the consumer's generated\n * one), which validates the payload against the generated event schema."
+    : "The TYPED_EVENT_BUS token resolves to the consumer's generated bus at runtime\n * (bound by EventsModule.forRoot()), which validates the payload against the\n * generated event schema.";
+  const boundTo = patternStack
+    ? `Given to the ${input.entityName} runners by the \`integrations\` module`
+    : `Bound to INTEGRATION_CHANGE_EMITTER in the ${input.entityName} integration\n * assembly`;
   return `${generatedBanner(input.sourceDesc)}
-import { Inject, Injectable } from '@nestjs/common';
-import { TYPED_EVENT_BUS } from '${eventsImport}';
-import type {
+${nestImports}import type {
   IIntegrationChangeEmitter,
   IntegrationChangeNotification,
 } from '${integrationImport}';
@@ -116,9 +128,7 @@ import type {
  * events). The \`${createdType}\` / \`${editedType}\` / \`${deletedType}\` events
  * THIS class publishes live in the CONSUMER's registry; the structural \`publish\`
  * here accepts the string types without depending on either compile-time union.
- * The TYPED_EVENT_BUS token resolves to the consumer's generated bus at runtime
- * (bound by EventsModule.forRoot()), which validates the payload against the
- * generated event schema.
+ * ${busSource}
  */
 interface ChangeEventPublisher {
   publish(
@@ -134,15 +144,13 @@ interface ChangeEventPublisher {
  * (\`${createdType}\` / \`${editedType}\` / \`${deletedType}\`) after the
  * integration orchestrator's sink write/soft-delete (EMIT-CHANGES seam).
  *
- * Bound to INTEGRATION_CHANGE_EMITTER in the ${input.entityName} integration
- * assembly; the orchestrator calls \`emitChange\` once per real change. The
+ * ${boundTo}; the orchestrator calls \`emitChange\` once per real change. The
  * payload carries \`source: 'integration'\` so a write-back action can detect an
  * integration-originated change and decline to echo it back to the vendor.
  */
-@Injectable()
-export class ${cls} implements IIntegrationChangeEmitter {
+${patternStack ? "" : "@Injectable()\n"}export class ${cls} implements IIntegrationChangeEmitter {
   constructor(
-    @Inject(TYPED_EVENT_BUS) private readonly bus: ChangeEventPublisher,
+    ${patternStack ? "" : "@Inject(TYPED_EVENT_BUS) "}private readonly bus: ChangeEventPublisher,
   ) {}
 
   async emitChange(notification: IntegrationChangeNotification): Promise<void> {
