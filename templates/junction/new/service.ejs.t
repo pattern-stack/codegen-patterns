@@ -100,20 +100,17 @@ export class <%= classNames.service %> extends WithAnalytics(
   }
 
   /**
-   * Remove the junction row linking `<%= leftEntityCamel %>Id` and
-   * `<%= rightEntityCamel %>Id`. No-op if no row exists.
+   * Remove the link between `<%= leftEntityCamel %>Id` and `<%= rightEntityCamel %>Id`:
+   * every row of the pair (every role, when the junction has one). No-op if the
+   * pair isn't linked. Addressed by the pair, since a junction table has no `id`
+   * column; the 'deleted' event's id is `<left>:<right>`.
    */
   async detach(
     <%= leftEntityCamel %>Id: string,
     <%= rightEntityCamel %>Id: string,
   ): Promise<void> {
-    const links = await this.repository.findBy<%= leftEntityPascal %>Id(<%= leftEntityCamel %>Id);
-    const match = links.find(
-      (l) => (l as any).<%= rightColumnCamel %> === <%= rightEntityCamel %>Id,
-    );
-    if (match) {
-      await this.delete((match as any).id ?? `${<%= leftEntityCamel %>Id}:${<%= rightEntityCamel %>Id}`);
-    }
+    const removed = await this.repository.deleteLink(<%= leftEntityCamel %>Id, <%= rightEntityCamel %>Id);
+    if (removed > 0) this.emitKeyedLifecycle('deleted', `${<%= leftEntityCamel %>Id}:${<%= rightEntityCamel %>Id}`);
   }
 
   /**
@@ -151,23 +148,22 @@ export class <%= classNames.service %> extends WithAnalytics(
 <%_ if (isPrimary) { _%>
 
   /**
-   * Mark the (`<%= leftEntityCamel %>Id`, `<%= rightEntityCamel %>Id`) row
-   * as `is_primary: true`. Demoting other rows on the same side is the
-   * caller's concern in v1; future leaves may add transactional demotion.
+   * Mark the (`<%= leftEntityCamel %>Id`, `<%= rightEntityCamel %>Id`) link
+   * as `is_primary: true`: every row of the pair (every role, when the junction
+   * has one), since being primary is the pair's. Demoting other rows on the same
+   * side is the caller's concern in v1; future leaves may add transactional demotion.
    */
   async setPrimary(
     <%= leftEntityCamel %>Id: string,
     <%= rightEntityCamel %>Id: string,
   ): Promise<void> {
-    const links = await this.repository.findBy<%= leftEntityPascal %>Id(<%= leftEntityCamel %>Id);
-    const match = links.find(
-      (l) => (l as any).<%= rightColumnCamel %> === <%= rightEntityCamel %>Id,
+    const rows = await this.repository.updateLink(
+      <%= leftEntityCamel %>Id,
+      <%= rightEntityCamel %>Id,
+      { isPrimary: true } as unknown as globalThis.Partial<<%= classNames.entity %>>,
     );
-    if (match) {
-      await this.update(
-        (match as any).id ?? `${<%= leftEntityCamel %>Id}:${<%= rightEntityCamel %>Id}`,
-        { isPrimary: true } as unknown as globalThis.Partial<<%= classNames.entity %>>,
-      );
+    for (const row of rows) {
+      this.emitKeyedLifecycle('updated', `${<%= leftEntityCamel %>Id}:${<%= rightEntityCamel %>Id}`, row);
     }
   }
 <%_ } _%>

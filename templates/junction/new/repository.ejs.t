@@ -4,9 +4,9 @@ force: true
 ---
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Injectable, Inject } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
-import type { DrizzleClient } from '<%= drizzleTypeImport %>';
+import type { DrizzleClient, DrizzleTx } from '<%= drizzleTypeImport %>';
 import { JunctionIntegrationRepository } from '<%= junctionIntegrationRepositoryImport %>';
 import type { JunctionIntegrationConfig } from '<%= junctionIntegrationRepositoryImport %>';
 // REL-2 (#587): the generated relation graph binds the repository's third type
@@ -107,6 +107,42 @@ export class <%= classNames.repository %> extends JunctionIntegrationRepository<
   ): Promise<<%= classNames.entity %>[]> {
     const rows = await this.baseQuery(eq(this.table.<%= rightColumnCamel %>, <%= rightColumnCamel %>))
       .limit(opts?.limit ?? 100);
+    return rows as <%= classNames.entity %>[];
+  }
+
+  /**
+   * Delete every row linking this <%= leftColumn %> and <%= rightColumn %> (every role, when the junction has one).
+   * A junction's key is the pair, not an `id`, so `delete(id)` can't address its rows. Returns how many it deleted.
+   */
+  async deleteLink(<%= leftColumnCamel %>: string, <%= rightColumnCamel %>: string, tx?: DrizzleTx): Promise<number> {
+    this.assertTenantWritable('delete');
+    const rows = await this.runner(tx)
+      .delete(this.table)
+      .where(this.scopeAnd(and(eq(this.table.<%= leftColumnCamel %>, <%= leftColumnCamel %>), eq(this.table.<%= rightColumnCamel %>, <%= rightColumnCamel %>))!))
+      .returning();
+    return rows.length;
+  }
+
+  /**
+   * Update every row linking this <%= leftColumn %> and <%= rightColumn %>, with the same timestamps `update` stamps.
+   * Returns the updated rows; none when the pair isn't linked.
+   */
+  async updateLink(
+    <%= leftColumnCamel %>: string,
+    <%= rightColumnCamel %>: string,
+    input: globalThis.Partial<<%= classNames.entity %>>,
+    tx?: DrizzleTx,
+  ): Promise<<%= classNames.entity %>[]> {
+    this.assertTenantWritable('update');
+    const data = this.deriveColumns(
+      this.guardTenantOnUpdate(this.withTimestamps(input as globalThis.Record<string, unknown>, 'update')),
+      'update',
+    );
+    const rows = await this.runner(tx)
+      .update(this.table)
+      .set(data)
+      .where(this.scopeAnd(and(eq(this.table.<%= leftColumnCamel %>, <%= leftColumnCamel %>), eq(this.table.<%= rightColumnCamel %>, <%= rightColumnCamel %>))!))
+      .returning();
     return rows as <%= classNames.entity %>[];
   }
 
