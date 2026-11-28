@@ -48,6 +48,13 @@ upgrade; `docs/specs/JOBS-3.md` the design and the full renamed-names table.
   nothing.
 - On a junction with a role, both act on every row of the pair: being linked and being primary belong to the pair.
   Regenerate junctions with `junction new --all`.
+- **An EAV entity whose `user_id` the generated code can't read is refused by name, not a `tsc` error** (#977). EAV
+  stamps each custom-field value with its owner's `user_id`. `entity new` now checks exactly what it emits:
+  - `eav: true` with a create use case needs `user_id` required on create (NOT NULL, no default);
+  - with an update use case, it needs `user_id` NOT NULL;
+  - `eav_value_table: true` needs the column.
+  Each used to generate code that failed to compile, far from the cause. The message names the entity, the flag and
+  the field to declare.
 
 ## [0.35.0] — 2026-11-27
 

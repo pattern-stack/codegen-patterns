@@ -197,7 +197,12 @@ const MATRIX: [string, Record<string, unknown>, Record<string, unknown>][] = [
 	['an entity with plural options', { ...base, entity: { ...base.entity, plural: 'options' } }, {}],
 	[
 		'an eav entity',
-		{ ...base, entity: { ...base.entity, name: 'opportunity', plural: 'opportunities', pattern: 'Integrated' }, eav: true },
+		{
+			...base,
+			entity: { ...base.entity, name: 'opportunity', plural: 'opportunities', pattern: 'Integrated' },
+			fields: { ...base.fields, user_id: { type: 'uuid', required: true } },
+			eav: true,
+		},
 		{},
 	],
 	[
