@@ -406,6 +406,10 @@
 				}
 			],
 			"commandsConst": "auditEntryCommands",
+			"notFoundMessage": {
+				"before": "AuditEntry ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": false,
 				"routes": [],
@@ -885,6 +889,10 @@
 				}
 			],
 			"commandsConst": "syncCursorCommands",
+			"notFoundMessage": {
+				"before": "SyncCursor ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": false,
 				"routes": [],

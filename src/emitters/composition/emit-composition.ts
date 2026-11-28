@@ -605,7 +605,7 @@ export const MODULES = [${[...names.map((n) => `${n}Module`), ...(integrationsMo
 	});
 	// H-1: every entity's commands, each re-targeted onto the composed app: the one table HTTP, MCP and a CLI read.
 	const commandsFile = path.join(generatedDir, COMPOSITION_GENERATED_FILES.commands);
-	const commandsOf = (e: string) => wiringFile(e).replace(/\.wiring\.ts$/, '.commands.ts');
+	const commandsOf = (e: string) => entityModuleNaming(blockOf.get(e)!, modulesDir).commandsFile;
 	const allEntities = [...plans.values()].flatMap((p) => p.entities.map((e) => ({ entity: e, module: p.name }))).sort((a, b) => (a.entity < b.entity ? -1 : a.entity > b.entity ? 1 : 0));
 	files.push({
 		path: commandsFile,
@@ -1307,13 +1307,12 @@ export function wiringFilesBehind(input: Pick<CompositionInput, 'relations' | 'm
 	const behind: string[] = [];
 	for (const d of input.relations.definitions.values()) {
 		const e = d.entity.name;
-		const file = entityModuleNaming(d.entity, input.modulesDir).wiringFile;
+		const naming = entityModuleNaming(d.entity, input.modulesDir);
+		const file = naming.wiringFile;
 		const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
 		const { module, openApi } = wiringImports(e);
 		const exports = [...module, ...openApi].map((name) => name.replace(/^type /, ''));
-		const commandsText = fs.existsSync(file.replace(/\.wiring\.ts$/, '.commands.ts'))
-			? fs.readFileSync(file.replace(/\.wiring\.ts$/, '.commands.ts'), 'utf8')
-			: '';
+		const commandsText = fs.existsSync(naming.commandsFile) ? fs.readFileSync(naming.commandsFile, 'utf8') : '';
 		if (
 			!exports.every((name) => new RegExp(`export (function|type) ${name}\\b`).test(text)) ||
 			// H-1: the commands table imports each entity's commands.

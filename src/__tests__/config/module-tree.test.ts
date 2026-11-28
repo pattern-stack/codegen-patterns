@@ -29,6 +29,7 @@ describe('entityModuleNaming (src/config/module-tree.ts)', () => {
 			moduleFile: `${MODULES_DIR}/accounts/accounts.module.ts`,
 			repositoryFile: `${MODULES_DIR}/accounts/account.repository.ts`,
 			wiringFile: `${MODULES_DIR}/accounts/account.wiring.ts`,
+			commandsFile: `${MODULES_DIR}/accounts/account.commands.ts`,
 		});
 	});
 

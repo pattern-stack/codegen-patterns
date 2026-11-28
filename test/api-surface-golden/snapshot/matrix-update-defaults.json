@@ -456,7 +456,7 @@
 							"query": [],
 							"body": false
 						},
-						"success": 204
+						"success": 200
 					},
 					"origin": {
 						"from": "base"
@@ -464,6 +464,10 @@
 				}
 			],
 			"commandsConst": "shelfCommands",
+			"notFoundMessage": {
+				"before": "Shelf ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": true,
 				"routes": [
@@ -1305,7 +1309,7 @@
 							"query": [],
 							"body": false
 						},
-						"success": 204
+						"success": 200
 					},
 					"origin": {
 						"from": "base"
@@ -1313,6 +1317,10 @@
 				}
 			],
 			"commandsConst": "toteCommands",
+			"notFoundMessage": {
+				"before": "Tote ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": true,
 				"routes": [
@@ -2194,7 +2202,7 @@
 							"query": [],
 							"body": false
 						},
-						"success": 204
+						"success": 200
 					},
 					"origin": {
 						"from": "base"
@@ -2202,6 +2210,10 @@
 				}
 			],
 			"commandsConst": "binCommands",
+			"notFoundMessage": {
+				"before": "Bin ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": true,
 				"routes": [

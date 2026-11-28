@@ -5,6 +5,13 @@
  * all variables required by the backend template set.
  */
 
+import { rowFor } from '../../../../src/utils/keyed-row.js';
+
+/** The files each `target.wiring` writes beside an entity's module, beyond the shared ones (PW-3, H-1a). */
+const WIRING_ENTITY_FILES = {
+  nest: () => ({ wiring: null, commands: null }),
+  'pattern-stack': (naming) => ({ wiring: naming.wiringFile, commands: naming.commandsFile }),
+};
 import fs from 'node:fs';
 import path from 'node:path';
 import pluralizePkg from 'pluralize';
@@ -70,6 +77,7 @@ import {
   pascalCase,
   relationMethodName,
   routePath,
+  useCaseKey,
 } from '../../../../src/derived/api/names.js';
 import {
   createExample,
@@ -1201,16 +1209,19 @@ function processSearchQueries(queriesBlock, processedFields, belongsTo, entityNa
 
   // The filters schema's fields, one line each: the Nest search controller and the pattern-stack search command (H-1)
   // both print the schema from these lines, so they can't drift.
-  const filterChain = (f) =>
-    f.isUuid
-      ? 'z.guid()'
-      : f.hasChoices
-        ? `z.enum([${f.choices.map((c) => `'${c}'`).join(', ')}])`
-        : f.isBoolean
-          ? 'z.coerce.boolean()'
-          : f.isNumber
-            ? 'z.coerce.number()'
-            : 'z.string()';
+  // One row per filter kind (a querystring carries strings: numbers and booleans are coerced). An id is any uuid; an
+  // enum its choices; otherwise the field's TypeScript type picks the row, and a type with none is refused by name.
+  const FILTER_CHAINS = {
+    uuid: () => 'z.guid()',
+    enum: (f) => `z.enum([${f.choices.map((c) => `'${c}'`).join(', ')}])`,
+    boolean: () => 'z.coerce.boolean()',
+    number: () => 'z.coerce.number()',
+    string: () => 'z.string()',
+    // A date filter arrives as an ISO string.
+    Date: () => 'z.string()',
+  };
+  const filterKind = (f) => (f.isUuid ? 'uuid' : f.hasChoices ? 'enum' : f.tsType);
+  const filterChain = (f) => rowFor(`'${entityName}' search filter '${f.camelName}': type`, FILTER_CHAINS, filterKind(f))(f);
   const filtersSchemaFields = [
     ...resolvedFilters.map((f) => `  ${f.camelName}: ${filterChain(f)}.optional(),`),
     ...(searchField ? ['  search: z.string().optional(),'] : []),
@@ -2579,10 +2590,9 @@ export function buildBackendLocals(definition, baseLocals) {
     // TGT-2b: a SQLite pair's table module and its `.sql`; null on Postgres.
     sqliteEntity: null,
     sqliteDdl: null,
-    // PW-3: the entity's pattern-stack wiring factories (`<entity>.wiring.ts`); null under wiring: nest.
-    wiring: patternStackWiring ? ownNaming.wiringFile : null,
-    // H-1: its commands (`<entity>.commands.ts`), one per use case but a declarative query; pattern-stack only.
-    commands: patternStackWiring ? `${moduleDir}/${emittedStem(entityName)}.commands.ts` : null,
+    // PW-3 / H-1a: the files each wiring writes beside the module, one row per `target.wiring` value: pattern-stack's
+    // wiring factories and commands (the naming record's), none under nest.
+    ...rowFor('target.wiring', WIRING_ENTITY_FILES, baseLocals.target?.wiring ?? 'nest')(ownNaming),
   };
 
   // PW-3: pattern-stack wiring (`target: { wiring: pattern-stack, http: none }`) emits the same table, DTOs, repository, service and use
@@ -2677,7 +2687,8 @@ export function buildBackendLocals(definition, baseLocals) {
           return {
             className: u.className,
             kind: u.kind,
-            key: u.kind === 'query' ? u.calls.method : camelCase(u.kind),
+            // One key rule for the wiring and the commands (H-1a): a declarative query's is its finder.
+            key: u.kind === 'query' ? u.calls.method : useCaseKey(u.kind),
             importPath: fromModuleDir(file),
             args: useCaseArgs(u.className),
           };

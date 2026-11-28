@@ -549,7 +549,7 @@
 							"query": [],
 							"body": false
 						},
-						"success": 204
+						"success": 200
 					},
 					"origin": {
 						"from": "base"
@@ -557,6 +557,10 @@
 				}
 			],
 			"commandsConst": "projectCommands",
+			"notFoundMessage": {
+				"before": "Project ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": true,
 				"routes": [

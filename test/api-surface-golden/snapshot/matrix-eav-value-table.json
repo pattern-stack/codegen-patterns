@@ -623,7 +623,7 @@
 							"query": [],
 							"body": false
 						},
-						"success": 204
+						"success": 200
 					},
 					"origin": {
 						"from": "base"
@@ -631,6 +631,10 @@
 				}
 			],
 			"commandsConst": "fieldValueCommands",
+			"notFoundMessage": {
+				"before": "FieldValue ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": true,
 				"routes": [

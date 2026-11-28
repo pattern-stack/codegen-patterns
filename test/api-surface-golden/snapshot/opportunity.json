@@ -629,7 +629,7 @@
 					"query": [],
 					"body": false
 				},
-				"success": 204
+				"success": 200
 			},
 			"origin": {
 				"from": "base"
@@ -637,6 +637,10 @@
 		}
 	],
 	"commandsConst": "opportunityCommands",
+	"notFoundMessage": {
+		"before": "Opportunity ",
+		"after": " not found"
+	},
 	"http": {
 		"enabled": true,
 		"routes": [

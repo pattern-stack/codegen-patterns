@@ -587,7 +587,7 @@
 							"query": [],
 							"body": false
 						},
-						"success": 204
+						"success": 200
 					},
 					"origin": {
 						"from": "base"
@@ -595,6 +595,10 @@
 				}
 			],
 			"commandsConst": "memberCommands",
+			"notFoundMessage": {
+				"before": "Member ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": true,
 				"routes": [
@@ -1243,7 +1247,7 @@
 							"query": [],
 							"body": false
 						},
-						"success": 204
+						"success": 200
 					},
 					"origin": {
 						"from": "base"
@@ -1251,6 +1255,10 @@
 				}
 			],
 			"commandsConst": "skillCommands",
+			"notFoundMessage": {
+				"before": "Skill ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": true,
 				"routes": [
@@ -1867,7 +1875,7 @@
 							"query": [],
 							"body": false
 						},
-						"success": 204
+						"success": 200
 					},
 					"origin": {
 						"from": "base"
@@ -1875,6 +1883,10 @@
 				}
 			],
 			"commandsConst": "workspaceCommands",
+			"notFoundMessage": {
+				"before": "Workspace ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": true,
 				"routes": [

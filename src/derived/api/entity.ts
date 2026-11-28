@@ -41,6 +41,7 @@ import {
 	useCaseKey,
 	commandName,
 	commandsConstName,
+	notFoundMessage,
 	type JunctionSide,
 	publishedWriteEvent,
 } from './names.js';
@@ -1047,6 +1048,7 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 		useCases,
 		commands,
 		commandsConst: commandsConstName(entityName),
+		notFoundMessage: notFoundMessage(entityName),
 		http,
 		// Recorded only when writes are off, so an entity that emits them carries no new key.
 		...(writesOff ? { writesDisabledBy: ref(writesOff) } : {}),
@@ -1080,30 +1082,17 @@ export function deriveCommands(
 		const kind = u.kind;
 		const route = routes.find((r) => r.useCase === u.className);
 		const shape = COMMAND_SHAPES[kind];
-		const summary = shape.summary(entityName, plural);
-		const included = kind === 'list' ? includeRoute('list') : kind === 'find_by_id' ? includeRoute('find_by_id') : {};
 		commands.push({
 			name: commandName(kind, entityName),
-			summary,
+			summary: shape.summary(entityName, plural),
 			useCase: u.className,
 			kind,
 			useCaseKey: useCaseKey(kind),
 			effect: shape.effect,
 			input: shape.input,
-			...included,
+			...(shape.includeKey ? includeRoute(shape.includeKey) : {}),
 			...(route
-				? {
-						http: {
-							verb: route.verb,
-							path: route.path,
-							binding: {
-								path: shape.input.id ? ['id'] : [],
-								query: shape.input.query ? 'all' : shape.input.include ? ['include'] : [],
-								body: shape.input.dto !== undefined,
-							},
-							success: shape.success,
-						},
-					}
+				? { http: { verb: route.verb, path: route.path, binding: shape.binding, success: NEST_SUCCESS_STATUS[route.verb] } }
 				: {}),
 			origin: u.origin,
 		});
@@ -1111,7 +1100,18 @@ export function deriveCommands(
 	return commands;
 }
 
-/** Each use case kind's command: its summary, effect and input. */
+/**
+ * A routed command's success status: the one Nest sends for its verb, since the generated controllers set no
+ * `@HttpCode` (Nest's `RouterResponseController.getStatusByMethod`: POST 201, every other verb 200). So a delete
+ * answers 200 with an empty body, as the Nest target does.
+ */
+const NEST_SUCCESS_STATUS: Readonly<Record<Route['verb'], 200 | 201>> = { GET: 200, POST: 201, PATCH: 200, DELETE: 200 };
+
+/**
+ * Each use case kind's command: its summary, effect and input; the `api.includes` key its include resolves against;
+ * and how an HTTP request carries the input (the path, the query — `'all'` for a list or search — and the body).
+ * The Nest controller prints its `@ApiOperation` summaries from the same rows.
+ */
 const COMMAND_SHAPES: Readonly<
 	Record<
 		EntityCommand['kind'],
@@ -1119,19 +1119,61 @@ const COMMAND_SHAPES: Readonly<
 			summary: (entityName: string, plural: string) => string;
 			effect: EntityCommand['effect'];
 			input: EntityCommand['input'];
-			/** A result's HTTP status, when routed. */
-			success: 200 | 201 | 204;
+			includeKey?: 'list' | 'find_by_id';
+			binding: NonNullable<EntityCommand['http']>['binding'];
 		}
 	>
 > = {
-	list: { summary: (_e, p) => `List ${p}`, effect: 'read', input: { id: false, include: true, query: 'list' }, success: 200 },
-	find_by_id: { summary: (e) => `Find ${e} by id`, effect: 'read', input: { id: true, include: true }, success: 200 },
-	list_with_fields: { summary: (_e, p) => `List ${p} with EAV fields`, effect: 'read', input: { id: false, include: false }, success: 200 },
-	find_by_id_with_fields: { summary: (e) => `Find ${e} with EAV fields`, effect: 'read', input: { id: true, include: false }, success: 200 },
-	search: { summary: (_e, p) => `Search ${p}`, effect: 'read', input: { id: false, include: false, query: 'search' }, success: 200 },
-	create: { summary: (e) => `Create ${e}`, effect: 'side-effect', input: { id: false, include: false, dto: 'create' }, success: 201 },
-	update: { summary: (e) => `Update ${e}`, effect: 'idempotent', input: { id: true, include: false, dto: 'update' }, success: 200 },
-	delete: { summary: (e) => `Delete ${e}`, effect: 'side-effect', input: { id: true, include: false }, success: 204 },
+	list: {
+		summary: (_e, p) => `List ${p}`,
+		effect: 'read',
+		input: { id: false, include: true, query: 'list' },
+		includeKey: 'list',
+		binding: { path: [], query: 'all', body: false },
+	},
+	find_by_id: {
+		summary: (e) => `Find ${e} by id`,
+		effect: 'read',
+		input: { id: true, include: true },
+		includeKey: 'find_by_id',
+		binding: { path: ['id'], query: ['include'], body: false },
+	},
+	list_with_fields: {
+		summary: (_e, p) => `List ${p} with EAV fields`,
+		effect: 'read',
+		input: { id: false, include: false },
+		binding: { path: [], query: [], body: false },
+	},
+	find_by_id_with_fields: {
+		summary: (e) => `Find ${e} with EAV fields`,
+		effect: 'read',
+		input: { id: true, include: false },
+		binding: { path: ['id'], query: [], body: false },
+	},
+	search: {
+		summary: (_e, p) => `Search ${p}`,
+		effect: 'read',
+		input: { id: false, include: false, query: 'search' },
+		binding: { path: [], query: 'all', body: false },
+	},
+	create: {
+		summary: (e) => `Create ${e}`,
+		effect: 'side-effect',
+		input: { id: false, include: false, dto: 'create' },
+		binding: { path: [], query: [], body: true },
+	},
+	update: {
+		summary: (e) => `Update ${e}`,
+		effect: 'idempotent',
+		input: { id: true, include: false, dto: 'update' },
+		binding: { path: ['id'], query: [], body: true },
+	},
+	delete: {
+		summary: (e) => `Delete ${e}`,
+		effect: 'side-effect',
+		input: { id: true, include: false },
+		binding: { path: ['id'], query: [], body: false },
+	},
 };
 
 function inherited(name: string, origin: Origin): RepositoryMethod {

@@ -1055,7 +1055,7 @@
 					"query": [],
 					"body": false
 				},
-				"success": 204
+				"success": 200
 			},
 			"origin": {
 				"from": "base"
@@ -1099,6 +1099,10 @@
 		}
 	],
 	"commandsConst": "dealCommands",
+	"notFoundMessage": {
+		"before": "Deal ",
+		"after": " not found"
+	},
 	"http": {
 		"enabled": true,
 		"routes": [

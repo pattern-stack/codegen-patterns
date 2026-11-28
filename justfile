@@ -237,13 +237,9 @@ test-listen-notify-leak-integration:
 # Typecheck the generator itself (`tsc --noEmit -p tsconfig.build.json`).
 # In `test-all` because that is what CI runs: this gate was red on main for
 # an unknown span precisely because nothing in CI executed it (GATE-1, #599).
-# @pattern-stack/jobs first: the runtime reads its built declarations (JOBS-3).
-typecheck: build-jobs
+# @pattern-stack/jobs and @pattern-stack/wiring first: the runtime reads their built declarations (JOBS-3, H-1a).
+typecheck: build-jobs build-wiring
     bun run typecheck
-
-# Builds packages/jobs' dist (its declarations are what codegen's runtime and the generated apps type-check against).
-build-jobs:
-    cd "{{justfile_directory()}}/packages/jobs" && rm -rf dist && "{{justfile_directory()}}/node_modules/.bin/tsc" -p tsconfig.json
 
 # Pattern-stack wiring smoke (PW-3): a `target: { wiring: pattern-stack, http: none }` project generates and compiles with no
 # @nestjs package installed and decorators off.
@@ -255,6 +251,14 @@ test-smoke-pattern-stack:
 test-wiring:
     bun test "{{justfile_directory()}}/packages/wiring/src/__tests__/"
     cd "{{justfile_directory()}}/packages/wiring" && bunx tsc --noEmit -p tsconfig.json
+
+# Builds packages/jobs' dist (its declarations are what codegen's runtime and the generated apps type-check against).
+build-jobs:
+    cd "{{justfile_directory()}}/packages/jobs" && rm -rf dist && "{{justfile_directory()}}/node_modules/.bin/tsc" -p tsconfig.json
+
+# Builds packages/wiring's dist: `runtime/commands.ts` type-checks against its `/commands` declarations (H-1a).
+build-wiring:
+    cd "{{justfile_directory()}}/packages/wiring" && bun run build
 
 # Studio UI gate — `tsc` over `tools/studio` first, then its unit tests (the
 # graph → xyflow adapter, the Zod-issue → editor-line mapping, the API-surface

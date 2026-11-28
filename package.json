@@ -109,6 +109,7 @@
     "src/behaviors/*.ts",
     "src/patterns/implied-behaviors.ts",
     "src/utils/find-yaml-files.ts",
+    "src/utils/keyed-row.ts",
     "src/patterns/library/*.ts",
     "CHANGELOG.md",
     "README.md",
@@ -116,7 +117,6 @@
   ],
   "scripts": {
     "build": "NODE_OPTIONS=--max-old-space-size=8192 tsup",
-    "prepare": "cd packages/wiring && bun run build",
     "prepublishOnly": "bun run build",
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
     "cdp": "bun src/cli/index.ts",

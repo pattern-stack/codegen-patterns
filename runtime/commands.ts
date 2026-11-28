@@ -16,7 +16,7 @@
  */
 import type { Command, CommandContext, Outcome, Refusal } from '@pattern-stack/wiring/commands';
 import { constraintViolationBody, constraintViolationOf, type ConstraintViolationCode } from './db-constraint-errors';
-import { AppError, BadRequestError, errorBody, NotFoundError } from './errors';
+import { AppError, BadRequestError, errorBody, NotFoundError, type AppErrorStatus } from './errors';
 import { IncludeNotAllowedError } from './http/includes';
 import { validationErrorBody, type ValidationIssueInput } from './validation-error';
 
@@ -39,6 +39,12 @@ const CONSTRAINT_REASONS: Readonly<Record<ConstraintViolationCode, RefusalReason
   still_referenced: 'still-referenced',
 };
 
+/** Each application error's reason, by its status: a status `runtime/errors.ts` adds doesn't compile until it's here. */
+const APP_ERROR_REASONS: Readonly<Record<AppErrorStatus, RefusalReason>> = {
+  400: 'bad-request',
+  404: 'not-found',
+};
+
 /** `data` is a response body: an interface (no index signature), so it is taken as an object and carried as one. */
 function refusal(reason: RefusalReason, detail: string, data: object): Refusal {
   return { reason, detail, instead: REFUSALS[reason], data: data as Readonly<Record<string, unknown>> };
@@ -51,9 +57,7 @@ export function refusalOf(err: unknown): Refusal | null {
     const asBadRequest = new BadRequestError(err.message, { code: err.code, details: { path: err.path } });
     return refusal('include-not-allowed', err.message, errorBody(asBadRequest));
   }
-  if (err instanceof AppError) {
-    return refusal(err instanceof NotFoundError ? 'not-found' : 'bad-request', err.message, errorBody(err));
-  }
+  if (err instanceof AppError) return refusal(APP_ERROR_REASONS[err.status], err.message, errorBody(err));
   const violation = constraintViolationOf(err);
   if (violation) return refusal(CONSTRAINT_REASONS[violation.code], violation.message, constraintViolationBody(violation));
   return null;

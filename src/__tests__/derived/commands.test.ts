@@ -3,7 +3,15 @@
  * effect, input and, when routed, how a request carries the input.
  */
 import { describe, expect, it } from 'bun:test';
-import { baselineSet, deriveSet } from './_inputs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { RequestMethod } from '@nestjs/common';
+import { RouterResponseController } from '@nestjs/core/router/router-response-controller';
+import { baselineSet, deriveSet, REPO_ROOT } from './_inputs';
+
+/** The status Nest sends for a handler with no `@HttpCode`: Nest's own rule, read from Nest. */
+const nestStatus = (verb: 'GET' | 'POST' | 'PATCH' | 'DELETE'): number =>
+	RouterResponseController.prototype.getStatusByMethod.call(null, RequestMethod[verb]);
 
 const surfaces = deriveSet(baselineSet());
 
@@ -26,6 +34,12 @@ describe('apiSurface.commands', () => {
 		expect(contact.commandsConst).toBe('contactCommands');
 	});
 
+	it("the Nest controllers set no @HttpCode, so Nest's default status is the one it sends", () => {
+		for (const t of ['controller.ejs.t', 'search-controller.ejs.t']) {
+			expect(fs.readFileSync(path.join(REPO_ROOT, 'templates/entity/new/backend', t), 'utf8')).not.toContain('HttpCode');
+		}
+	});
+
 	it("a routed command's binding and status follow its route", () => {
 		for (const s of surfaces.values()) {
 			for (const c of s.commands) {
@@ -35,7 +49,8 @@ describe('apiSurface.commands', () => {
 					continue;
 				}
 				expect(c.http).toMatchObject({ verb: route.verb, path: route.path });
-				expect(c.http!.success).toBe(c.kind === 'create' ? 201 : c.kind === 'delete' ? 204 : 200);
+				// The status the Nest target sends for the same route (H-1c compares them).
+				expect(c.http!.success).toBe(nestStatus(c.http!.verb));
 				expect(c.http!.binding.path).toEqual(c.input.id ? ['id'] : []);
 				expect(c.http!.binding.body).toBe(c.input.dto !== undefined);
 				// The include resolves against the route's own allowlist key.

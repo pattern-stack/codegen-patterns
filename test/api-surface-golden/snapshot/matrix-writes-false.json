@@ -548,6 +548,10 @@
 				}
 			],
 			"commandsConst": "taskCommands",
+			"notFoundMessage": {
+				"before": "Task ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": true,
 				"routes": [

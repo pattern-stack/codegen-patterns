@@ -15,6 +15,20 @@ const _allow = (c) => (c.includeRoute ? `${apiSurface.http.includesConst}.${c.in
 const _create = _of('create');
 const _update = _of('update');
 const _search = _of('search');
+// The input schema, printed from the derived `input` (never decided here): a base schema chosen by the DTO or the
+// query it carries, plus the `id` and `include` the flags name.
+const _BASE_SCHEMAS = {
+  create: classNames.createSchema,
+  update: classNames.updateSchema,
+  list: classNames.listQuerySchema,
+  search: searchQuery ? searchQuery.filtersSchemaName : undefined,
+};
+const _input = (c) => {
+  const base = _BASE_SCHEMAS[c.input.dto ?? c.input.query];
+  const fields = [...(c.input.id ? ['id: z.guid()'] : []), ...(c.input.include ? ['include: z.string().optional()'] : [])];
+  if (!base) return `z.object({${fields.length > 0 ? ` ${fields.join(', ')} ` : ''}})`;
+  return fields.length > 0 ? `${base}.extend({ ${fields.join(', ')} })` : base;
+};
 _%>
 /**
  * <%= classNames.entity %>'s commands (H-1): each of its use cases as every way in calls it (HTTP, MCP tools, a CLI),
@@ -59,8 +73,8 @@ export const <%= apiSurface.commandsConst %> = [
     name: '<%= c.name %>',
     summary: '<%= c.summary %>',
     effect: '<%= c.effect %>',
+    input: <%- _input(c) %>,
 <%_ if (c.kind === 'list') { _%>
-    input: <%= classNames.listQuerySchema %>.extend({ include: z.string().optional() }),
 <%_ if (_typedInclude) { _%>
     run: (useCases: UseCases, query) =>
       attempt(() => useCases.<%= c.useCaseKey %>.execute(query, { include: resolveAllowedInclude(query.include, <%- _allow(c) %>) })),
@@ -73,7 +87,6 @@ export const <%= apiSurface.commandsConst %> = [
       }),
 <%_ } _%>
 <%_ } else if (c.kind === 'find_by_id') { _%>
-    input: z.object({ id: z.guid(), include: z.string().optional() }),
 <%_ if (_typedInclude) { _%>
     run: (useCases: UseCases, { id, include }) =>
       attempt(() => useCases.<%= c.useCaseKey %>.execute(id, resolveAllowedInclude(include, <%- _allow(c) %>))),
@@ -85,24 +98,18 @@ export const <%= apiSurface.commandsConst %> = [
       }),
 <%_ } _%>
 <%_ } else if (c.kind === 'list_with_fields') { _%>
-    input: z.object({}),
     run: (useCases: UseCases) => attempt(() => useCases.<%= c.useCaseKey %>.execute()),
 <%_ } else if (c.kind === 'find_by_id_with_fields') { _%>
-    input: z.object({ id: z.guid() }),
     run: (useCases: UseCases, { id }) =>
-      attempt(async () => orNotFound(await useCases.<%= c.useCaseKey %>.execute(id), `<%= classNames.entity %> ${id} not found`)),
+      attempt(async () => orNotFound(await useCases.<%= c.useCaseKey %>.execute(id), `<%= apiSurface.notFoundMessage.before %>${id}<%= apiSurface.notFoundMessage.after %>`)),
 <%_ } else if (c.kind === 'search') { _%>
-    input: <%= searchQuery.filtersSchemaName %>,
     run: (useCases: UseCases, query) => attempt(() => useCases.<%= c.useCaseKey %>.execute(query)),
 <%_ } else if (c.kind === 'create') { _%>
-    input: <%= classNames.createSchema %>,
     run: (useCases: UseCases, dto) => attempt(() => useCases.<%= c.useCaseKey %>.execute(dto)),
 <%_ } else if (c.kind === 'update') { _%>
-    input: <%= classNames.updateSchema %>.extend({ id: z.guid() }),
     run: (useCases: UseCases, { id, ...dto }) =>
-      attempt(async () => orNotFound(await useCases.<%= c.useCaseKey %>.execute(id, dto), `<%= classNames.entity %> ${id} not found`)),
+      attempt(async () => orNotFound(await useCases.<%= c.useCaseKey %>.execute(id, dto), `<%= apiSurface.notFoundMessage.before %>${id}<%= apiSurface.notFoundMessage.after %>`)),
 <%_ } else if (c.kind === 'delete') { _%>
-    input: z.object({ id: z.guid() }),
     run: (useCases: UseCases, { id }) => attempt(() => useCases.<%= c.useCaseKey %>.execute(id)),
 <%_ } _%>
   }),

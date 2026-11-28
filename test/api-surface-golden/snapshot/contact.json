@@ -1131,7 +1131,7 @@
 					"query": [],
 					"body": false
 				},
-				"success": 204
+				"success": 200
 			},
 			"origin": {
 				"from": "base"
@@ -1139,6 +1139,10 @@
 		}
 	],
 	"commandsConst": "contactCommands",
+	"notFoundMessage": {
+		"before": "Contact ",
+		"after": " not found"
+	},
 	"http": {
 		"enabled": true,
 		"routes": [

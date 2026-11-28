@@ -7,6 +7,7 @@
  * Deliberately NOT here (ADR-046 §4): TypeScript type strings, import paths, file paths, method bodies, SQL,
  * decorator text, DTO fields. Names, kinds, provenance, parameter names and result shape only.
  */
+import type { Effect } from '@pattern-stack/wiring/commands';
 
 /** A path into a YAML document: `['relationships', 'account']`, `['queries', 1]`. */
 export type YamlPath = (string | number)[];
@@ -212,7 +213,7 @@ export interface EntityCommand {
 	/** The use case's key in the entity's `useCases`: `findById`. */
 	useCaseKey: string;
 	/** Whether running it twice is safe: find / list / search read; update is idempotent; create / delete are not. */
-	effect: 'read' | 'idempotent' | 'side-effect';
+	effect: Effect;
 	/**
 	 * What the input holds: the row's `id`; an `include` (checked against `includeRoute`'s allowlist, or refused when
 	 * there's none); the create or update DTO's fields; the list query's (paging, sort), or the search's filters too.
@@ -230,7 +231,7 @@ export interface EntityCommand {
 		verb: Route['verb'];
 		path: string;
 		binding: { path: string[]; query: 'all' | string[]; body: boolean };
-		success: 200 | 201 | 204;
+		success: 200 | 201;
 	};
 	origin: Origin;
 }
@@ -246,6 +247,8 @@ export interface EntityApiSurface {
 	commands: EntityCommand[];
 	/** The export in `<entity>.commands.ts` that lists them. */
 	commandsConst: string;
+	/** A missing row's message, around its id: `${before}${id}${after}` (the Nest controller's and the commands'). */
+	notFoundMessage: { before: string; after: string };
 	/**
 	 * The declaration that turned the write side off: no `create` / `update` / `delete` use case, route or
 	 * provider — `generate.writes: false`. Absent when the entity emits writes.

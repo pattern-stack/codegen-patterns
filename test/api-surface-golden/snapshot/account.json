@@ -452,7 +452,7 @@
 					"query": [],
 					"body": false
 				},
-				"success": 204
+				"success": 200
 			},
 			"origin": {
 				"from": "base"
@@ -460,6 +460,10 @@
 		}
 	],
 	"commandsConst": "accountCommands",
+	"notFoundMessage": {
+		"before": "Account ",
+		"after": " not found"
+	},
 	"http": {
 		"enabled": true,
 		"routes": [

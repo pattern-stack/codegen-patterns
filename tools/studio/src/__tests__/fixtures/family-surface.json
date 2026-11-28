@@ -937,7 +937,7 @@
         "query": [],
         "body": false
        },
-       "success": 204
+       "success": 200
       },
       "origin": {
        "from": "base"
@@ -945,6 +945,10 @@
      }
     ],
     "commandsConst": "communicationCommands",
+    "notFoundMessage": {
+     "before": "Communication ",
+     "after": " not found"
+    },
     "http": {
      "enabled": true,
      "routes": [
@@ -1587,7 +1591,7 @@
         "query": [],
         "body": false
        },
-       "success": 204
+       "success": 200
       },
       "origin": {
        "from": "base"
@@ -1595,6 +1599,10 @@
      }
     ],
     "commandsConst": "communicationNoteCommands",
+    "notFoundMessage": {
+     "before": "CommunicationNote ",
+     "after": " not found"
+    },
     "http": {
      "enabled": true,
      "routes": [
@@ -2523,7 +2531,7 @@
         "query": [],
         "body": false
        },
-       "success": 204
+       "success": 200
       },
       "origin": {
        "from": "base"
@@ -2531,6 +2539,10 @@
      }
     ],
     "commandsConst": "communicationPartCommands",
+    "notFoundMessage": {
+     "before": "CommunicationPart ",
+     "after": " not found"
+    },
     "http": {
      "enabled": true,
      "routes": [
@@ -3231,7 +3243,7 @@
         "query": [],
         "body": false
        },
-       "success": 204
+       "success": 200
       },
       "origin": {
        "from": "base"
@@ -3239,6 +3251,10 @@
      }
     ],
     "commandsConst": "communicationParticipantCommands",
+    "notFoundMessage": {
+     "before": "CommunicationParticipant ",
+     "after": " not found"
+    },
     "http": {
      "enabled": true,
      "routes": [
@@ -3763,7 +3779,7 @@
         "query": [],
         "body": false
        },
-       "success": 204
+       "success": 200
       },
       "origin": {
        "from": "base"
@@ -3771,6 +3787,10 @@
      }
     ],
     "commandsConst": "communicationParticipantRoleCommands",
+    "notFoundMessage": {
+     "before": "CommunicationParticipantRole ",
+     "after": " not found"
+    },
     "http": {
      "enabled": true,
      "routes": [
@@ -4762,7 +4782,7 @@
         "query": [],
         "body": false
        },
-       "success": 204
+       "success": 200
       },
       "origin": {
        "from": "base"
@@ -4770,6 +4790,10 @@
      }
     ],
     "commandsConst": "emailCommands",
+    "notFoundMessage": {
+     "before": "Email ",
+     "after": " not found"
+    },
     "http": {
      "enabled": true,
      "routes": [
@@ -5761,7 +5785,7 @@
         "query": [],
         "body": false
        },
-       "success": 204
+       "success": 200
       },
       "origin": {
        "from": "base"
@@ -5769,6 +5793,10 @@
      }
     ],
     "commandsConst": "emailCommunicationPartCommands",
+    "notFoundMessage": {
+     "before": "EmailCommunicationPart ",
+     "after": " not found"
+    },
     "http": {
      "enabled": true,
      "routes": [
@@ -6293,7 +6321,7 @@
         "query": [],
         "body": false
        },
-       "success": 204
+       "success": 200
       },
       "origin": {
        "from": "base"
@@ -6301,6 +6329,10 @@
      }
     ],
     "commandsConst": "emailThreadCommands",
+    "notFoundMessage": {
+     "before": "EmailThread ",
+     "after": " not found"
+    },
     "http": {
      "enabled": true,
      "routes": [
@@ -7288,7 +7320,7 @@
         "query": [],
         "body": false
        },
-       "success": 204
+       "success": 200
       },
       "origin": {
        "from": "base"
@@ -7332,6 +7364,10 @@
      }
     ],
     "commandsConst": "meetingCommands",
+    "notFoundMessage": {
+     "before": "Meeting ",
+     "after": " not found"
+    },
     "http": {
      "enabled": true,
      "routes": [
@@ -7950,7 +7986,7 @@
         "query": [],
         "body": false
        },
-       "success": 204
+       "success": 200
       },
       "origin": {
        "from": "base"
@@ -7958,6 +7994,10 @@
      }
     ],
     "commandsConst": "meetingTranscriptCommands",
+    "notFoundMessage": {
+     "before": "MeetingTranscript ",
+     "after": " not found"
+    },
     "http": {
      "enabled": true,
      "routes": [
@@ -8890,7 +8930,7 @@
         "query": [],
         "body": false
        },
-       "success": 204
+       "success": 200
       },
       "origin": {
        "from": "base"
@@ -8898,6 +8938,10 @@
      }
     ],
     "commandsConst": "messageCommunicationPartCommands",
+    "notFoundMessage": {
+     "before": "MessageCommunicationPart ",
+     "after": " not found"
+    },
     "http": {
      "enabled": true,
      "routes": [
@@ -9422,7 +9466,7 @@
         "query": [],
         "body": false
        },
-       "success": 204
+       "success": 200
       },
       "origin": {
        "from": "base"
@@ -9430,6 +9474,10 @@
      }
     ],
     "commandsConst": "partyCommands",
+    "notFoundMessage": {
+     "before": "Party ",
+     "after": " not found"
+    },
     "http": {
      "enabled": true,
      "routes": [
@@ -10480,7 +10528,7 @@
         "query": [],
         "body": false
        },
-       "success": 204
+       "success": 200
       },
       "origin": {
        "from": "base"
@@ -10488,6 +10536,10 @@
      }
     ],
     "commandsConst": "transcriptCommunicationPartCommands",
+    "notFoundMessage": {
+     "before": "TranscriptCommunicationPart ",
+     "after": " not found"
+    },
     "http": {
      "enabled": true,
      "routes": [

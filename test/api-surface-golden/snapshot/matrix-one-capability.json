@@ -671,7 +671,7 @@
 							"query": [],
 							"body": false
 						},
-						"success": 204
+						"success": 200
 					},
 					"origin": {
 						"from": "base"
@@ -679,6 +679,10 @@
 				}
 			],
 			"commandsConst": "meetingCommands",
+			"notFoundMessage": {
+				"before": "Meeting ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": true,
 				"routes": [

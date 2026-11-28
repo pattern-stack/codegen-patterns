@@ -742,7 +742,7 @@
 							"query": [],
 							"body": false
 						},
-						"success": 204
+						"success": 200
 					},
 					"origin": {
 						"from": "base"
@@ -750,6 +750,10 @@
 				}
 			],
 			"commandsConst": "shipmentCommands",
+			"notFoundMessage": {
+				"before": "Shipment ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": true,
 				"routes": [
@@ -1630,7 +1634,7 @@
 							"query": [],
 							"body": false
 						},
-						"success": 204
+						"success": 200
 					},
 					"origin": {
 						"from": "base"
@@ -1638,6 +1642,10 @@
 				}
 			],
 			"commandsConst": "airFreightCommands",
+			"notFoundMessage": {
+				"before": "AirFreight ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": true,
 				"routes": [

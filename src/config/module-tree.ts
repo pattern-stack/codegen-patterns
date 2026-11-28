@@ -53,6 +53,8 @@ export interface EntityModuleNaming {
 	repositoryFile: string;
 	/** `<moduleDir>/<name>.wiring.ts`: the entity's pattern-stack factories (PW-3). */
 	wiringFile: string;
+	/** `<moduleDir>/<name>.commands.ts`: its commands (H-1a). */
+	commandsFile: string;
 }
 
 /**
@@ -72,5 +74,6 @@ export function entityModuleNaming(entity: ModuleTreeEntity, modulesDir: string)
 		moduleFile: `${moduleDir}/${emittedStem(plural)}.module.ts`,
 		repositoryFile: `${moduleDir}/${emittedStem(entity.name)}.repository.ts`,
 		wiringFile: `${moduleDir}/${emittedStem(entity.name)}.wiring.ts`,
+		commandsFile: `${moduleDir}/${emittedStem(entity.name)}.commands.ts`,
 	};
 }

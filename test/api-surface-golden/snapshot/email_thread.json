@@ -452,7 +452,7 @@
 					"query": [],
 					"body": false
 				},
-				"success": 204
+				"success": 200
 			},
 			"origin": {
 				"from": "base"
@@ -460,6 +460,10 @@
 		}
 	],
 	"commandsConst": "emailThreadCommands",
+	"notFoundMessage": {
+		"before": "EmailThread ",
+		"after": " not found"
+	},
 	"http": {
 		"enabled": true,
 		"routes": [

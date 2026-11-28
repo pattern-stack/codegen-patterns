@@ -874,7 +874,7 @@
 							"query": [],
 							"body": false
 						},
-						"success": 204
+						"success": 200
 					},
 					"origin": {
 						"from": "base"
@@ -882,6 +882,10 @@
 				}
 			],
 			"commandsConst": "ticketCommands",
+			"notFoundMessage": {
+				"before": "Ticket ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": true,
 				"routes": [
