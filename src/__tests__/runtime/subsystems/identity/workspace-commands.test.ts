@@ -3,25 +3,16 @@
  * service refuses coming back as a refusal (never a throw), with the reason and the Nest body. The smoke's Postgres
  * leg runs them through `<generated>/commands.ts` against a real database.
  */
-import fs from 'node:fs';
-import path from 'node:path';
 import { describe, expect, it } from 'bun:test';
-import yaml from 'yaml';
 
 import {
-  WORKSPACE_FIELD_MAX,
   WORKSPACE_SOURCES,
   WORKSPACE_SOURCE_NAMES,
-  membershipAddCommand,
-  membershipChangeRoleCommand,
-  membershipRemoveCommand,
-  workspaceCreateCommand,
-  workspaceCommandsUnder,
-  workspaceListMineCommand,
+  workspaceCommandsFor,
   type WorkspaceCommandApis,
 } from '../../../../../runtime/subsystems/identity/core';
 import { withRequester } from '../../../../../runtime/base-classes/tenant-context';
-import { invokeCommand } from '../../../../../runtime/commands';
+import { NEST_SUCCESS_STATUS, invokeCommand } from '../../../../../runtime/commands';
 import { allOnApis, type Command } from '@pattern-stack/wiring/commands';
 
 import { A, B, W, fakeWorkspaces } from './fake-workspaces';
@@ -30,6 +21,16 @@ const C = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 /** Any workspace command, its input and result loosely typed (as `<generated>/commands.ts` holds them). */
 type AnyCommand = Command<WorkspaceCommandApis>;
+
+/** A project's own limits (its `workspace.yaml`'s), smaller than the shipped ones, so the test sees them used. */
+const LIMITS = { name: 40, slug: 12 };
+const COMMANDS = workspaceCommandsFor({ source: WORKSPACE_SOURCES.header(), limits: LIMITS });
+const named = (name: string): AnyCommand => COMMANDS.find((c) => c.name === name)!;
+const workspaceCreateCommand = named('workspace create');
+const workspaceListMineCommand = named('workspace list-mine');
+const membershipAddCommand = named('membership add');
+const membershipChangeRoleCommand = named('membership change-role');
+const membershipRemoveCommand = named('membership remove');
 
 /** A fake workspaces module with A owning W; `as(who, role)` runs a command as that member of W. */
 const setup = async () => {
@@ -43,7 +44,7 @@ const setup = async () => {
 
 describe('the workspace commands', () => {
   it('five, each named, with an effect a caller can trust', () => {
-    expect(workspaceCommandsUnder(WORKSPACE_SOURCES.header()).map((c) => [c.name, c.effect])).toEqual([
+    expect(COMMANDS.map((c) => [c.name, c.effect])).toEqual([
       ['workspace create', 'side-effect'],
       ['workspace list-mine', 'read'],
       ['membership add', 'side-effect'],
@@ -54,30 +55,34 @@ describe('the workspace commands', () => {
 
   it("each is routed: the workspace at the root, a membership change under the source's prefix", () => {
     const routes = (prefix: string) =>
-      workspaceCommandsUnder({ routePrefix: prefix }).map((c) => `${c.http.verb} ${c.http.path} ${c.http.success}`);
+      workspaceCommandsFor({ source: { routePrefix: prefix }, limits: LIMITS }).map((c) => `${c.http.verb} ${c.http.path} ${c.http.success}`);
     expect(routes(WORKSPACE_SOURCES.header().routePrefix)).toEqual([
       'POST /workspaces 201',
       'GET /workspaces/mine 200',
-      'POST /members 201',
-      'PATCH /members/:userId 200',
-      'DELETE /members/:userId 200',
+      'POST /memberships 201',
+      'PATCH /memberships/:userId 200',
+      'DELETE /memberships/:userId 200',
     ]);
     expect(routes(WORKSPACE_SOURCES.path().routePrefix).slice(2)).toEqual([
-      'POST /w/:workspaceId/members 201',
-      'PATCH /w/:workspaceId/members/:userId 200',
-      'DELETE /w/:workspaceId/members/:userId 200',
+      'POST /w/:workspaceId/memberships 201',
+      'PATCH /w/:workspaceId/memberships/:userId 200',
+      'DELETE /w/:workspaceId/memberships/:userId 200',
     ]);
   });
 
-  it("every source's routes bind only the input's fields, each path field a :param of its path; POST is 201", () => {
+  it("every source's routes: under identity's own segments, binding only input fields, the status Nest's", () => {
     for (const name of WORKSPACE_SOURCE_NAMES) {
-      for (const c of workspaceCommandsUnder(WORKSPACE_SOURCES[name]())) {
+      const source = WORKSPACE_SOURCES[name]();
+      for (const c of workspaceCommandsFor({ source, limits: LIMITS })) {
+        const own = c.http.path.startsWith(source.routePrefix) ? c.http.path.slice(source.routePrefix.length) : c.http.path;
+        // Identity's own plurals, which no other entity can take.
+        expect(['workspaces', 'memberships']).toContain(own.split('/')[1]!);
         const fields = Object.keys((c.input as unknown as { shape: Record<string, unknown> }).shape);
         for (const p of c.http.binding.path) {
           expect(fields).toContain(p);
           expect(c.http.path).toContain(`/:${p}`);
         }
-        expect(c.http.success).toBe(c.http.verb === 'POST' ? 201 : 200);
+        expect(c.http.success).toBe(NEST_SUCCESS_STATUS[c.http.verb]);
         // A command with input fields takes them from the body or the path, never neither.
         const bound = new Set([...c.http.binding.path, ...(c.http.binding.body ? fields : [])]);
         expect(fields.every((f) => bound.has(f))).toBe(true);
@@ -85,15 +90,23 @@ describe('the workspace commands', () => {
     }
   });
 
-  it("re-targeted onto a larger app (as the commands table does), each keeps its binding", () => {
-    const outer = allOnApis(workspaceCommandsUnder(WORKSPACE_SOURCES.header()), (app: { workspaces: WorkspaceCommandApis }) => app.workspaces);
+  it('re-targeted onto a larger app (as the commands table does), each keeps its binding', () => {
+    const outer = allOnApis(COMMANDS, (app: { workspaces: WorkspaceCommandApis }) => app.workspaces);
     expect(outer.map((c) => (c as { http?: { path: string } }).http?.path)).toEqual([
       '/workspaces',
       '/workspaces/mine',
-      '/members',
-      '/members/:userId',
-      '/members/:userId',
+      '/memberships',
+      '/memberships/:userId',
+      '/memberships/:userId',
     ]);
+  });
+
+  it("workspace create checks the project's limits, as given: one over is invalid-input, at the limit is accepted", async () => {
+    const t = await setup();
+    const create = (slug: string) => withRequester({ userId: A }, () => invokeCommand(workspaceCreateCommand, t.apis, { name: 'N', slug }, {}));
+    const over = await create('s'.repeat(LIMITS.slug + 1));
+    expect(over.ok ? null : over.refusal.reason).toBe('invalid-input');
+    expect((await create('s'.repeat(LIMITS.slug))).ok).toBe(true);
   });
 
   it('create, list, add, change and remove, through invokeCommand', async () => {
@@ -116,7 +129,7 @@ describe('the workspace commands', () => {
     const t = await setup();
     const cases: Array<[AnyCommand, unknown, string]> = [
       [workspaceCreateCommand, { name: '', slug: 'x' }, 'name'],
-      [workspaceCreateCommand, { name: 'x', slug: 's'.repeat(WORKSPACE_FIELD_MAX.slug + 1) }, 'slug'],
+      [workspaceCreateCommand, { name: 'x', slug: 's'.repeat(LIMITS.slug + 1) }, 'slug'],
       [membershipAddCommand, { userId: 'not-a-uuid', role: 'member' }, 'userId'],
       [membershipAddCommand, { userId: B, role: 'boss' }, 'role'],
       [membershipChangeRoleCommand, { userId: B }, 'role'],
@@ -176,11 +189,5 @@ describe('the workspace commands', () => {
     const t = await setup();
     t.failWith(new Error('the database went away'));
     await expect(t.as(A, 'owner')(membershipAddCommand, { userId: B, role: 'member' })).rejects.toThrow('the database went away');
-  });
-
-  it("the input limits are the shipped workspace.yaml's", () => {
-    const file = path.join(import.meta.dir, '../../../../../examples/identity/definitions/entities/identity/workspace.yaml');
-    const fields = yaml.parse(fs.readFileSync(file, 'utf8')).fields;
-    expect({ name: fields.name.max_length, slug: fields.slug.max_length }).toEqual(WORKSPACE_FIELD_MAX);
   });
 });

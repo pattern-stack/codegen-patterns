@@ -123,6 +123,7 @@ function compose(opts: { entitiesDir: string; auth?: boolean; connections?: bool
 		modulesDir: `${ROOT}/modules`,
 		generatedDir: `${ROOT}/generated`,
 		drizzleTypeImport: '@shared/types/drizzle',
+		commandsImport: '@shared/commands',
 		openApiImport: '@shared/openapi',
 		banner: '// @generated',
 		// The fixtures' invoice emits an event, so the smoke's events install (S-1) comes too.

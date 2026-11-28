@@ -22,9 +22,8 @@ import { validationErrorBody, type ValidationIssueInput } from './validation-err
 
 /**
  * How a command is reached over HTTP: its verb and path, which input fields the path, the query and the body carry, and
- * a result's status (Nest's rule: POST 201, else 200). The derived commands' `EntityCommand['http']`, structurally (a
- * check beside the commands table's emitter holds the two together). A hand-written command declares one to be routed;
- * one without isn't.
+ * a result's status. The one shape: a derived command's `EntityCommand['http']` is this type, and a hand-written
+ * command declares one to be routed (one without isn't).
  */
 export interface CommandHttp {
   readonly verb: 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -32,6 +31,18 @@ export interface CommandHttp {
   readonly binding: { readonly path: string[]; readonly query: 'all' | string[]; readonly body: boolean };
   readonly success: 200 | 201;
 }
+
+/**
+ * A routed command's success status, by verb: the one Nest sends, since the generated controllers set no `@HttpCode`
+ * (Nest's `RouterResponseController.getStatusByMethod`: POST 201, every other verb 200). So a delete answers 200 with an
+ * empty body, as the Nest target does. Every routed command's `success`, derived or hand-written.
+ */
+export const NEST_SUCCESS_STATUS: Readonly<Record<CommandHttp['verb'], CommandHttp['success']>> = {
+  GET: 200,
+  POST: 201,
+  PATCH: 200,
+  DELETE: 200,
+};
 
 /** Every reason a generated command refuses with, and what the caller can do instead. */
 export const REFUSALS = {

@@ -127,6 +127,7 @@ function compose(entitiesDir: string, principalSourceFile = path.join(REPO, 'tes
 		modulesDir: `${ROOT}/modules`,
 		generatedDir: `${ROOT}/generated`,
 		drizzleTypeImport: '@shared/types/drizzle',
+		commandsImport: '@shared/commands',
 		openApiImport: '@shared/openapi',
 		banner: '// @generated',
 		events: {
@@ -143,13 +144,36 @@ function compose(entitiesDir: string, principalSourceFile = path.join(REPO, 'tes
 	return (suffix: string) => files.find((f) => f.path.endsWith(suffix))?.content ?? null;
 }
 
+describe("the workspace commands' routes can't collide with an entity's", () => {
+	/** The fixtures plus one routed entity of the given plural, at the entities root. */
+	const withEntity = (plural: string) => {
+		const dir = entities();
+		fs.writeFileSync(
+			path.join(dir, 'club.yaml'),
+			`entity:\n  name: club_membership\n  plural: ${plural}\n\nfields:\n  label:\n    type: string\n    required: true\n`,
+		);
+		return dir;
+	};
+
+	it("a project's own `members` entity composes beside them (identity's are under /memberships)", () => {
+		expect(() => compose(withEntity('members'))).not.toThrow();
+	});
+
+	it("an entity taking one of identity's plurals is refused by name, before any route is mounted", () => {
+		expect(() => compose(withEntity('memberships'))).toThrow(/emitted by both entity club_membership and entity membership/);
+		expect(() => compose(withEntity('workspaces'))).toThrow(/emitted by both entity club_membership and entity workspace/);
+	});
+});
+
 describe('the requester system and the workspaces module', () => {
 	const file = compose(entities());
 
 	it('requester: each port is its registry row for the config value; it builds its own membership repository', () => {
 		const r = file('/generated/requester-system.ts')!;
 		expect(r).toContain("REQUESTER_CACHES['memory']({");
-		expect(r).toContain("WORKSPACE_SOURCES['path']()");
+		// The source is built once, exported: the requester resolves through it, the commands table routes under it.
+		expect(r).toContain("export const workspaceSource: WorkspaceSource = WORKSPACE_SOURCES['path']();");
+		expect(r).toContain('const workspaces = workspaceSource;');
 		expect(r).toContain("REQUESTER_RESOLVERS['lookup']({ principals: principalSource, workspaces, cache })");
 		expect(r).toContain("import { createMembershipRepository } from '../modules/identity/memberships/membership.wiring';");
 		expect(r).toMatch(/name: 'requester',\n  uses: \['database'\],/);
@@ -178,10 +202,22 @@ describe('the requester system and the workspaces module', () => {
 
 	it('the workspace operations are in the commands table, hand-written, on the workspaces module (ID-1b)', () => {
 		const commands = file('/generated/commands.ts')!;
-		expect(commands).toMatch(/import \{ WORKSPACE_SOURCES, workspaceCommandsUnder \} from '[^']+';/);
+		expect(commands).toContain("import { workspaceCommandsFor } from '@shared/subsystems/identity/core';");
+		expect(commands).toContain("import { workspaceSource } from './requester-system';");
+		// The limits are the project's workspace.yaml's; the source is the requester system's.
 		expect(commands).toContain(
-			"  ...allOnApis(workspaceCommandsUnder(WORKSPACE_SOURCES['path']()), (app: App) => app.module('workspaces')),\n];",
+			"  ...allOnApis(workspaceCommandsFor({ source: workspaceSource, limits: { name: 255, slug: 64 } }), (app: App) => app.module('workspaces')),\n];",
 		);
+		// The table is typed with each command's HTTP binding, so a reader needn't cast.
+		expect(commands).toContain("import type { CommandHttp } from '@shared/commands';");
+		expect(commands).toContain('export type AppCommand = Command<App> & { readonly http?: CommandHttp };');
+		expect(commands).toContain('export const COMMANDS: readonly AppCommand[] = [');
+		expect(commands).toContain('export function commandNamed(name: string): AppCommand | undefined {');
+	});
+
+	it("the limits follow the project's own workspace.yaml: an edited max_length is the one checked", () => {
+		const edited = compose(entities((n, y) => (n === 'workspace' ? y.replace('max_length: 64', 'max_length: 32') : y)));
+		expect(edited('/generated/commands.ts')).toContain('limits: { name: 255, slug: 32 }');
 	});
 
 	it('both are registered: SystemApis, ModuleApis, SYSTEMS, MODULES', () => {
@@ -200,5 +236,9 @@ describe('the requester system and the workspaces module', () => {
 			compose(entities((n, y) => (n === 'membership' ? y.replace('[owner, admin, member]', '[owner, guest]') : y))),
 		).toThrow(/role choices \(owner, guest\) must be identity's roles/);
 		expect(() => compose(entities(), '/nonexistent/principal-source.ts')).toThrow(/re-run `codegen subsystem install identity`/);
+		// A workspace field with no max_length: `workspace create` couldn't check what its column holds.
+		expect(() => compose(entities((n, y) => (n === 'workspace' ? y.replace('    max_length: 64\n', '') : y)))).toThrow(
+			/workspace.yaml's 'slug' needs a max_length/,
+		);
 	});
 });

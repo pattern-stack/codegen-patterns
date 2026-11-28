@@ -437,9 +437,12 @@ async function workspaceCommandsCheck(app: App): Promise<void> {
     );
   };
 
-  // The table keeps each one's HTTP binding through its re-targeting (an HTTP layer mounts it from there).
-  const http = (commandNamed('membership change-role') as { http?: { verb: string; path: string } } | undefined)?.http;
-  assert(http?.verb === 'PATCH' && http.path === '/members/:userId', `the table keeps the HTTP binding: ${JSON.stringify(http)}`);
+  // The table keeps each one's HTTP binding through its re-targeting, typed (an HTTP layer mounts it from there).
+  const http = commandNamed('membership change-role')?.http;
+  assert(http?.verb === 'PATCH' && http.path === '/memberships/:userId', `the table keeps the HTTP binding: ${JSON.stringify(http)}`);
+  // The project's own limits: the fixture's workspace.yaml (slug max_length 64).
+  const tooLong = await as(d!.id, undefined, 'workspace create', { name: 'Long', slug: 's'.repeat(65) });
+  assert(!tooLong.ok && tooLong.refusal.reason === 'invalid-input', `a slug over workspace.yaml's limit is invalid-input: ${JSON.stringify(tooLong)}`);
 
   const slug = `cmd-${stamp}`;
   const created = await as(d!.id, undefined, 'workspace create', { name: 'Commands', slug });

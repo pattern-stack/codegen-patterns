@@ -7,6 +7,7 @@
  * Deliberately NOT here (ADR-046 §4): TypeScript type strings, import paths, file paths, method bodies, SQL,
  * decorator text, DTO fields. Names, kinds, provenance, parameter names and result shape only.
  */
+import type { CommandHttp } from '../../../runtime/commands.js';
 import type { Effect } from '@pattern-stack/wiring/commands';
 
 /** A path into a YAML document: `['relationships', 'account']`, `['queries', 1]`. */
@@ -227,12 +228,7 @@ export interface EntityCommand {
 	/** The `api.includes` key the include resolves against; absent ⇒ every include is refused. */
 	includeRoute?: 'list' | 'find_by_id';
 	/** How the input arrives over HTTP: which fields the path, the query and the body carry, and a result's status. */
-	http?: {
-		verb: Route['verb'];
-		path: string;
-		binding: { path: string[]; query: 'all' | string[]; body: boolean };
-		success: 200 | 201;
-	};
+	http?: CommandHttp;
 	origin: Origin;
 }
 
