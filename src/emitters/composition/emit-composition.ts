@@ -51,7 +51,7 @@ import { camelCase, emittedDir } from '../../config/file-naming.js';
 import { entityModuleNaming } from '../../config/module-tree.js';
 import { generating } from '../../utils/generated-file.js';
 import { relativeImport } from '../../utils/import-path.js';
-import type { ProjectSetting } from '../../derived/settings/index.js';
+import { JOBS_WORKER_ENV, type ProjectSetting } from '../../derived/settings/index.js';
 import { SETTINGS_FILE, settingsContent } from '../settings/emit-settings.js';
 
 /** The module name of the entities that declare no `context:`. */
@@ -649,7 +649,7 @@ function generatedSystems(
 			: []),
 		// J-1: the jobs engine; the events system's drain starts runs through it, so it comes first.
 		...(input.jobs
-			? [{ key: 'jobs', apiType: 'JobsApi', apiTypeFile: jobsFile, exportName: 'jobsSystem', file: jobsFile, content: jobsSystemContent(input.jobs, Boolean(input.settings), input.banner) }]
+			? [{ key: 'jobs', apiType: 'JobsApi', apiTypeFile: jobsFile, exportName: 'jobsSystem', file: jobsFile, content: jobsSystemContent(input.jobs, input.settings, input.banner) }]
 			: []),
 		...(input.events
 			? [{ key: 'events', apiType: 'EventsApi', apiTypeFile: eventsSystemFile, exportName: 'eventsSystem', file: eventsSystemFile, content: eventsSystemContent(input.events, eventsSystemFile, input.banner, input.jobs?.bridge ?? null) }]
@@ -1099,7 +1099,24 @@ ${bus.construct(drain !== null).join('\n')}
 }
 
 /** \`<generated>/jobs-system.ts\` (J-1): the jobs engine as a \`@pattern-stack/wiring\` system. */
-function jobsSystemContent(jobs: CompositionJobsInput, withSettings: boolean, banner: string): string {
+/**
+ * The jobs system reads its worker flag from the settings system: the `JOBS_WORKER` row the settings declare
+ * (`SUBSYSTEM_SETTINGS_BY_WIRING`), rendered as `settings.<group>.<key>`. Jobs with no settings system, or settings
+ * without that row, is refused by name (the generated file would not compile).
+ */
+function workerSettingOf(settings: CompositionInput['settings']): string {
+	const row = settings?.settings.find((s) => s.env === JOBS_WORKER_ENV);
+	if (!row) {
+		throw new Error(
+			`[codegen] wiring: pattern-stack: the jobs system reads its worker flag (${JOBS_WORKER_ENV}) from the settings system, ` +
+				`but ${settings ? 'the settings declare no such row' : 'this composition has no settings system'}`,
+		);
+	}
+	return `settings.${row.group}.${row.key}`;
+}
+
+function jobsSystemContent(jobs: CompositionJobsInput, settings: CompositionInput['settings'], banner: string): string {
+	const worker = workerSettingOf(settings);
 	return `${banner}
 /**
  * The \`jobs\` system (J-1): \`@pattern-stack/jobs\` on the app's Postgres, run in process. \`create\` builds the engine
@@ -1117,12 +1134,12 @@ export type JobsApi = JobsEngine;
 
 export const jobsSystem = defineSystem({
   name: 'jobs',
-  uses: [${withSettings ? "'database', 'settings'" : "'database'"}],
-  create: (${withSettings ? '{ database, settings }' : '{ database }'}): JobsApi =>
+  uses: ['database', 'settings'],
+  create: ({ database, settings }): JobsApi =>
     createJobsEngine({
       db: database.db,
       definitions: jobDefinitions,
-      worker: ${withSettings ? "settings.jobs.worker === 'true'" : 'true'},
+      worker: ${worker} === 'true',
       limiters: jobLimiters,
       inProcess: jobsInProcessOptions,
     }),

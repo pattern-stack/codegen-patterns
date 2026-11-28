@@ -232,3 +232,21 @@ describe('which events backend the bridge can drain is the event bus row (review
 		expect(() => eventBusDrainsOutbox('kafka')).toThrow(/events backend 'kafka' has no row/);
 	});
 });
+
+describe("the jobs system's worker flag is the declared JOBS_WORKER setting (review #985)", () => {
+	it('renders the row the settings declare, and refuses jobs without it, naming the setting', () => {
+		expect(plan(jobsInput()).get('/generated/jobs-system.ts')).toContain("worker: settings.jobs.worker === 'true',");
+		const withoutSettings = () =>
+			planComposition({
+				relations: { entities: [], definitions: new Map(), junctions: [], tenancyColumn: 'tenant_id' },
+				modulesDir: `${ROOT}/modules`,
+				generatedDir: `${ROOT}/generated`,
+				drizzleTypeImport: '@shared/types/drizzle',
+				openApiImport: '@shared/openapi',
+				banner: '// @generated',
+				jobs: jobsInput({ factories: [] }),
+				dryRun: true,
+			} as never);
+		expect(withoutSettings).toThrow(/worker flag \(JOBS_WORKER\) from the settings system, but this composition has no settings system/);
+	});
+});
