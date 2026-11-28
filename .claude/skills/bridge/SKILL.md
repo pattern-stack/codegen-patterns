@@ -146,3 +146,10 @@ src/cli/commands/events/consumers.ts      # `codegen events consumers <type>` fa
 - `docs/adrs/ADR-039-declarative-time-based-scheduling.md` — **time as an event source.** A scheduled event (`schedule:` on its YAML) is materialised into the outbox by the `EventScheduler` and activates jobs through THIS bridge unchanged. Provenance: a bridge run from a scheduled tick reads `trigger_source='event'` (it came through an event); the clock origin lives on `domain_events.metadata.triggerSource='schedule'`, joinable via `trigger_ref → domain_events.id`. The bridge needs no scheduling awareness — a scheduled event is just an event.
 - `docs/adrs/ADR-026-job-observability.md` (not yet written) — selective job lifecycle events; flows back through this bridge.
 - `.claude/skills/openapi/SKILL.md` — OpenAPI/Swagger surface (shipped 2026-04-22 via OPENAPI-1..4). ADR-026's `/ops/*` controllers will consume the registry + decorators this skill documents.
+
+## Under `target.wiring: pattern-stack` (J-1)
+
+`BridgeOutboxDrainer` (`runtime/subsystems/bridge/bridge-outbox-drainer.ts`) is the drain with no framework;
+`BridgeOutboxDrainHook` is its Nest subclass (the trigger check at bootstrap). The pattern-stack `events` system builds
+the drainer over the `jobs` system's starter, checks it, and passes it to `DrizzleEventBus` (`EVENT_BUSES` in
+`emit-composition.ts`). The install needs events on drizzle and jobs. Spec: `docs/specs/J-1.md`.

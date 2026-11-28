@@ -45,6 +45,7 @@ import {
 	servicesFactoryName,
 } from '../../derived/api/names.js';
 import { junctionIdentity } from '../../emitters/relations/build-graph.js';
+import { rowFor } from '../../utils/keyed-row.js';
 import { junctionWiringFile } from '../../config/junction-naming.js';
 import { camelCase, emittedDir } from '../../config/file-naming.js';
 import { entityModuleNaming } from '../../config/module-tree.js';
@@ -61,7 +62,7 @@ export const ROOT_MODULE = 'entities';
 export const DATABASE_SYSTEM = 'database';
 
 /** The names of the systems codegen generates (and the app's `database`): a module may not take one. */
-export const GENERATED_SYSTEM_NAMES = [DATABASE_SYSTEM, 'settings', 'events', 'integration', 'auth', 'connections'] as const;
+export const GENERATED_SYSTEM_NAMES = [DATABASE_SYSTEM, 'settings', 'jobs', 'events', 'integration', 'auth', 'connections', 'jobDeps'] as const;
 
 const RESERVED_MODULE_NAMES = new Set<string>([ROOT_MODULE, ...GENERATED_SYSTEM_NAMES]);
 
@@ -145,8 +146,43 @@ export interface CompositionInput {
 	 * `SystemApis`. Null ⇒ no settings system.
 	 */
 	settings?: { settings: readonly ProjectSetting[]; runtimeImport: string } | null;
+	/**
+	 * The `jobs` system (J-1), when the jobs subsystem is installed: written to `<generated>/jobs-system.ts`, listed in
+	 * `SYSTEMS` and `SystemApis`; and, when a job factory names a composition part, the `jobDeps` module that provides
+	 * them (`<generated>/job-deps.ts`).
+	 */
+	jobs?: CompositionJobsInput | null;
 	dryRun?: boolean;
 }
+
+/** The jobs subsystem's composition (J-1): the engine's entry, the job factories' dependencies, and the bridge. */
+export interface CompositionJobsInput {
+	/** The Nest-free jobs entry (`subsystemCoreImport(mode, 'jobs')`). */
+	coreImport: string;
+	/**
+	 * Every `jobFactory` export under the jobs directory (the registry scan) and its dependencies: each one's name and
+	 * the composition part it names (`injected<T>('<part>')`), or no part when it is written otherwise.
+	 */
+	factories: ReadonlyArray<{
+		exportName: string;
+		file: string;
+		deps: ReadonlyArray<{ name: string; part?: string; unreadable?: string }>;
+	}>;
+	/** The bridge, when installed: the `events` system passes its drain to the bus. */
+	bridge: { coreImport: string; registryFile: string } | null;
+	/**
+	 * The job registry (`<generated>/jobs.ts`, `jobDefinitions`), built from the same scan as `factories`: the
+	 * composition writes it beside `job-deps.ts`, so every command that writes one writes the other, and a factory the
+	 * `jobDeps` module provides is always one the registry lists (review #985).
+	 */
+	registry: CompositionFile;
+}
+
+/** The modules that hold the `jobs` system and the `jobDeps` module, beside `wiring.ts` (J-1). */
+export const JOBS_SYSTEM_FILE = 'jobs-system.ts';
+export const JOB_DEPS_FILE = 'job-deps.ts';
+/** The module that provides the job factories' dependencies (J-1). */
+export const JOB_DEPS_MODULE = 'jobDeps';
 
 /** The integrations' systems and runs (S-3, `planPatternStackIntegrations`). */
 export interface CompositionIntegrationsInput {
@@ -220,11 +256,12 @@ export interface CompositionConnectionsInput {
 /** The module that holds the `connections` system, beside `wiring.ts`. */
 export const CONNECTIONS_SYSTEM_FILE = 'connections-system.ts';
 
+
 /** The entity the connection store reads and writes: the starter's `connection.yaml`. */
 export const CONNECTION_ENTITY = 'connection';
 
 /** Every generated system's file beside `wiring.ts`; stale-files removes each when its subsystem goes, or on a switch. */
-export const GENERATED_SYSTEM_FILES = [SETTINGS_FILE, EVENTS_SYSTEM_FILE, INTEGRATION_SYSTEM_FILE, AUTH_SYSTEM_FILE, CONNECTIONS_SYSTEM_FILE] as const;
+export const GENERATED_SYSTEM_FILES = [SETTINGS_FILE, JOBS_SYSTEM_FILE, JOB_DEPS_FILE, EVENTS_SYSTEM_FILE, INTEGRATION_SYSTEM_FILE, AUTH_SYSTEM_FILE, CONNECTIONS_SYSTEM_FILE] as const;
 
 export interface CompositionFile {
 	path: string;
@@ -511,6 +548,15 @@ export const ${plan.name}Module = defineModule({
 	// The systems codegen generates, in order: each is imported by the registry (its API type, its `SystemApis` key)
 	// and by composition.ts (its manifest, in `SYSTEMS`), and its file is written. One list, so a new system is a row.
 	const systems = generatedSystems(input, eventsSystemFile, connectionsPlan);
+	// J-1: the job factories' dependencies, each a composition part (a module, or a system from the same list as
+	// `SystemApis` and `SYSTEMS`); the module that provides them, when any is named.
+	const jobDeps = input.jobs
+		? jobDepsModuleFile(input, {
+				modules: [...names, ...(integrationsModule ? [INTEGRATIONS_MODULE] : [])],
+				systems: [DATABASE_SYSTEM, ...systems.map((sys) => sys.key)],
+				registryFile,
+			})
+		: null;
 	files.push({
 		path: registryFile,
 		content: `${input.banner}
@@ -521,11 +567,11 @@ export const ${plan.name}Module = defineModule({
 import { createWiring } from '@pattern-stack/wiring';
 import type { DrizzleClient } from '${input.drizzleTypeImport}';
 import type { Relations } from './relations';
-${systems.map((s) => `import type { ${s.apiType} } from '${relativeImport(registryFile, s.apiTypeFile)}';\n`).join('')}${names.map((n) => `import type { ${pascalCase(n)}Module } from '${relativeImport(registryFile, plans.get(n)!.file)}';`).join('\n')}
+${systems.map((s) => `import type { ${s.apiType} } from '${relativeImport(registryFile, s.apiTypeFile)}';\n`).join('')}${jobDeps ? `import type { JobDepsModule } from './${JOB_DEPS_FILE.replace(/\.ts$/, '')}';\n` : ''}${names.map((n) => `import type { ${pascalCase(n)}Module } from '${relativeImport(registryFile, plans.get(n)!.file)}';`).join('\n')}
 ${integrationsModule ? `import type { IntegrationsModule } from '${relativeImport(registryFile, integrationsModule.file)}';\n` : ''}
 export interface ModuleApis {
 ${names.map((n) => `  ${n}: ${pascalCase(n)}Module;`).join('\n')}
-${integrationsModule ? `  ${INTEGRATIONS_MODULE}: IntegrationsModule;\n` : ''}}
+${integrationsModule ? `  ${INTEGRATIONS_MODULE}: IntegrationsModule;\n` : ''}${jobDeps ? `  ${JOB_DEPS_MODULE}: JobDepsModule;\n` : ''}}
 
 export interface SystemApis {
   ${DATABASE_SYSTEM}: { db: DrizzleClient<Relations> };
@@ -543,11 +589,11 @@ export const { defineModule, defineSystem, compose } = createWiring<ModuleApis, 
  * \`integration\`, \`auth\`, \`connections\` and the integrations' when installed), for the app's \`compose.ts\`:
  * \`compose({ systems: [databaseSystem(), ...SYSTEMS], modules: MODULES })\`.
  */
-${systems.map((s) => `import { ${s.exportName} } from '${relativeImport(compositionFile, s.file)}';\n`).join('')}${integrationsModule ? `import { integrationsModule } from '${relativeImport(compositionFile, integrationsModule.file)}';\n` : ''}${names.map((n) => `import { ${n}Module } from '${relativeImport(compositionFile, plans.get(n)!.file)}';`).join('\n')}
+${systems.map((s) => `import { ${s.exportName} } from '${relativeImport(compositionFile, s.file)}';\n`).join('')}${jobDeps ? `import { jobDepsModule } from './${JOB_DEPS_FILE.replace(/\.ts$/, '')}';\n` : ''}${integrationsModule ? `import { integrationsModule } from '${relativeImport(compositionFile, integrationsModule.file)}';\n` : ''}${names.map((n) => `import { ${n}Module } from '${relativeImport(compositionFile, plans.get(n)!.file)}';`).join('\n')}
 
 export const SYSTEMS = [${systems.map((s) => s.exportName).join(', ')}] as const;
 
-export const MODULES = [${[...names.map((n) => `${n}Module`), ...(integrationsModule ? ['integrationsModule'] : [])].join(', ')}] as const;
+export const MODULES = [${[...names.map((n) => `${n}Module`), ...(integrationsModule ? ['integrationsModule'] : []), ...(jobDeps ? ['jobDepsModule'] : [])].join(', ')}] as const;
 `,
 	});
 	const openApiFile = path.join(generatedDir, COMPOSITION_GENERATED_FILES.openApi);
@@ -568,6 +614,8 @@ ${entities.map((e) => `  ${registerSchemasName(e)}(openApi);`).join('\n')}
 `,
 	});
 	for (const s of systems) if (s.content !== null) files.push({ path: s.file, content: s.content });
+	if (jobDeps) files.push({ path: jobDeps.file, content: jobDeps.content });
+	if (input.jobs) files.push(input.jobs.registry);
 	return files;
 }
 
@@ -593,13 +641,18 @@ function generatedSystems(
 	const authFile = path.join(input.generatedDir, AUTH_SYSTEM_FILE);
 	const connectionsFile = path.join(input.generatedDir, CONNECTIONS_SYSTEM_FILE);
 	const settingsFile = path.join(input.generatedDir, SETTINGS_FILE);
+	const jobsFile = path.join(input.generatedDir, JOBS_SYSTEM_FILE);
 	return [
 		// SET-1: the settings, checked before the build; every other system may read them.
 		...(input.settings
 			? [{ key: 'settings', apiType: 'Settings', apiTypeFile: settingsFile, exportName: 'settingsSystem', file: settingsFile, content: settingsContent(input.settings.settings, input.settings.runtimeImport, input.banner) }]
 			: []),
+		// J-1: the jobs engine; the events system's drain starts runs through it, so it comes first.
+		...(input.jobs
+			? [{ key: 'jobs', apiType: 'JobsApi', apiTypeFile: jobsFile, exportName: 'jobsSystem', file: jobsFile, content: jobsSystemContent(input.jobs, Boolean(input.settings), input.banner) }]
+			: []),
 		...(input.events
-			? [{ key: 'events', apiType: 'EventsApi', apiTypeFile: eventsSystemFile, exportName: 'eventsSystem', file: eventsSystemFile, content: eventsSystemContent(input.events, eventsSystemFile, input.banner) }]
+			? [{ key: 'events', apiType: 'EventsApi', apiTypeFile: eventsSystemFile, exportName: 'eventsSystem', file: eventsSystemFile, content: eventsSystemContent(input.events, eventsSystemFile, input.banner, input.jobs?.bridge ?? null) }]
 			: []),
 		...(input.integration
 			? [{ key: 'integration', apiType: 'IntegrationApi', apiTypeFile: integrationFile, exportName: 'integrationSystem', file: integrationFile, content: integrationSystemContent(input.integration, input.banner) }]
@@ -921,9 +974,72 @@ export const integrationSystem = defineSystem({
 }
 
 /** \`<generated>/events-system.ts\` (S-1): the event bus as a \`@pattern-stack/wiring\` system. */
-function eventsSystemContent(events: CompositionEventsInput, file: string, banner: string): string {
-	const busClass = events.backend === 'drizzle' ? 'DrizzleEventBus' : 'MemoryEventBus';
-	const drizzle = events.backend === 'drizzle';
+/**
+ * The event bus each \`events.backend\` builds (S-1), one row per backend: its class, what the system uses, and its
+ * construction. A backend that drains an outbox (\`bridged\`) takes the bridge's drainer when the bridge is installed
+ * (J-1): the drain then starts each trigger's run in the event's own transaction, over the \`jobs\` system's starter.
+ */
+interface EventBusRow {
+	busClass: string;
+	bridged: boolean;
+	uses(drained: boolean): string[];
+	params(drained: boolean): string;
+	construct(drained: boolean): string[];
+}
+
+/**
+ * Whether an events backend's bus drains an outbox, so the bridge can start runs from it (its row's `bridged`): the one
+ * answer the bridge's install prerequisite and the events system both read. An unknown backend is refused by its rows.
+ */
+export function eventBusDrainsOutbox(backend: string): boolean {
+	return rowFor('events backend', EVENT_BUSES, backend).bridged;
+}
+
+/** The events backends whose bus drains an outbox, for a refusal to name. */
+export function outboxEventBackends(): string[] {
+	return Object.entries(EVENT_BUSES)
+		.filter(([, row]) => row.bridged)
+		.map(([name]) => name);
+}
+
+const EVENT_BUSES: Readonly<Record<CompositionEventsInput['backend'], EventBusRow>> = {
+	drizzle: {
+		busClass: 'DrizzleEventBus',
+		bridged: true,
+		uses: (drained) => ['database', ...(drained ? ['jobs'] : [])],
+		params: (drained) => (drained ? '{ database, jobs }' : '{ database }'),
+		construct: (drained) =>
+			drained
+				? [
+						"    // The bridge (J-1): the drain starts each trigger's run in the event's own transaction, over the jobs starter.",
+						'    // Its ledger is the Drizzle delivery repo, the one writer, which checks the tenant. A trigger naming a job this',
+						'    // app does not register stops the compose, naming it.',
+						'    const deliveries = new DrizzleBridgeDeliveries(database.db, options.multiTenant ?? false);',
+						'    const drainer = new BridgeOutboxDrainer(jobs.starter, deliveries, bridgeRegistry);',
+						'    drainer.assertTriggersRegistered();',
+						'    const bus = new DrizzleEventBus(database.db, options, drainer);',
+					]
+				: ['    const bus = new DrizzleEventBus(database.db, options);'],
+	},
+	memory: {
+		busClass: 'MemoryEventBus',
+		bridged: false,
+		uses: () => [],
+		params: () => '',
+		construct: () => ['    const bus = new MemoryEventBus(options);'],
+	},
+};
+
+function eventsSystemContent(
+	events: CompositionEventsInput,
+	file: string,
+	banner: string,
+	bridge: CompositionJobsInput['bridge'],
+): string {
+	const bus = rowFor('events backend', EVENT_BUSES, events.backend);
+	const busClass = bus.busClass;
+	// J-1: with the bridge installed, a backend that drains an outbox drains each event through the bridge's drainer.
+	const drain = bus.bridged && bridge ? bridge : null;
 	return `${banner}
 /**
  * The \`events\` system (S-1): the event bus the generated use cases publish through, as a \`@pattern-stack/wiring\`
@@ -934,7 +1050,7 @@ function eventsSystemContent(events: CompositionEventsInput, file: string, banne
 import { ${busClass} } from '${events.backendImport}';
 import { EventScheduler, scheduledEventsFromRegistry, type EventsModuleOptions } from '${events.coreImport}';
 import { TypedEventBus, eventRegistry } from '${relativeImport(file, events.generatedEventsDir)}';
-import { defineSystem } from './wiring';
+${drain ? `import { BridgeOutboxDrainer, DrizzleBridgeDeliveries } from '${drain.coreImport}';\nimport { bridgeRegistry } from '${relativeImport(file, drain.registryFile)}';\n` : ''}import { defineSystem } from './wiring';
 
 /** From codegen.config.yaml's \`events:\` block. */
 const options: EventsModuleOptions = {
@@ -954,9 +1070,9 @@ export interface EventsApi {
 
 export const eventsSystem = defineSystem({
   name: 'events',
-  uses: [${drizzle ? `'${DATABASE_SYSTEM}'` : ''}],
-  create: (${drizzle ? '{ database }' : ''}): EventsApi => {
-    const bus = new ${busClass}(${drizzle ? 'database.db, ' : ''}options);
+  uses: [${bus.uses(drain !== null).map((u) => `'${u}'`).join(', ')}],
+  create: (${bus.params(drain !== null)}): EventsApi => {
+${bus.construct(drain !== null).join('\n')}
     const schedules = scheduledEventsFromRegistry(eventRegistry);
     return {
       bus,
@@ -980,6 +1096,121 @@ export const eventsSystem = defineSystem({
   },
 });
 `;
+}
+
+/** \`<generated>/jobs-system.ts\` (J-1): the jobs engine as a \`@pattern-stack/wiring\` system. */
+function jobsSystemContent(jobs: CompositionJobsInput, withSettings: boolean, banner: string): string {
+	return `${banner}
+/**
+ * The \`jobs\` system (J-1): \`@pattern-stack/jobs\` on the app's Postgres, run in process. \`create\` builds the engine
+ * over every job the app defines (\`./jobs\`) and the pools and knobs from codegen.config.yaml's \`jobs:\` block
+ * (\`./app-config\`); \`starter.start(key, input)\` starts a run, and the bridge starts one per trigger. \`start\` checks
+ * every job factory got its dependencies, then runs the executor's loop when this process is a worker
+ * (\`JOBS_WORKER\`, default true; \`codegen project settings\` lists it). \`stop\` stops the loop, in-flight work settling.
+ */
+import { createJobsEngine, type JobsEngine } from '${jobs.coreImport}';
+import { jobLimiters, jobsInProcessOptions } from './app-config';
+import { jobDefinitions } from './jobs';
+import { defineSystem } from './wiring';
+
+export type JobsApi = JobsEngine;
+
+export const jobsSystem = defineSystem({
+  name: 'jobs',
+  uses: [${withSettings ? "'database', 'settings'" : "'database'"}],
+  create: (${withSettings ? '{ database, settings }' : '{ database }'}): JobsApi =>
+    createJobsEngine({
+      db: database.db,
+      definitions: jobDefinitions,
+      worker: ${withSettings ? "settings.jobs.worker === 'true'" : 'true'},
+      limiters: jobLimiters,
+      inProcess: jobsInProcessOptions,
+    }),
+  start: (jobs) => jobs.start(),
+  stop: (jobs) => jobs.stop(),
+});
+`;
+}
+
+/**
+ * \`<generated>/job-deps.ts\` (J-1): the \`jobDeps\` module, which hands each job factory the composition parts its
+ * dependencies name (\`injected<T>('<part>')\`), typed by the factory. Null when no factory names one. A dependency that
+ * names no part, or a part this composition doesn't have, is refused, naming the job and the dependency.
+ */
+function jobDepsModuleFile(
+	input: CompositionInput,
+	parts: { modules: readonly string[]; systems: readonly string[]; registryFile: string },
+): { file: string; content: string } | null {
+	const jobs = input.jobs!;
+	const modules = new Set(parts.modules);
+	const systems = new Set(parts.systems);
+	for (const [name, what] of [
+		['jobs', 'the jobs system'],
+		[JOB_DEPS_MODULE, "the module that provides the job factories' dependencies"],
+	] as const) {
+		if (modules.has(name)) {
+			throw new Error(`[codegen] wiring: pattern-stack: a context's module is named '${name}', which is ${what}; rename the context`);
+		}
+	}
+	const factories = jobs.factories.filter((f) => f.deps.length > 0);
+	for (const f of factories) {
+		for (const d of f.deps) {
+			const where = `job factory '${f.exportName}' (${path.relative(input.generatedDir, f.file)}): its dependency '${d.name}'`;
+			if (d.unreadable !== undefined) {
+				throw new Error(
+					`[codegen] wiring: pattern-stack: ${where} is ${d.unreadable}, which codegen cannot read: write each one ` +
+						`\`<name>: injected<T>('<module or system>')\` in the factory's \`deps\` object`,
+				);
+			}
+			if (d.part === undefined) {
+				throw new Error(
+					`[codegen] wiring: pattern-stack: ${where} must name a composition part, \`injected<T>('<module or system>')\` ` +
+						`(there is no container to resolve a class by): ${[...modules, ...systems].join(', ')}`,
+				);
+			}
+			if (!modules.has(d.part) && !systems.has(d.part)) {
+				throw new Error(
+					`[codegen] wiring: pattern-stack: ${where} names '${d.part}', which this composition has no module or system ` +
+						`of: ${[...modules, ...systems].join(', ')}`,
+				);
+			}
+		}
+	}
+	if (factories.length === 0) return null;
+	const named = [...new Set(factories.flatMap((f) => f.deps.map((d) => d.part!)))].sort();
+	const dependsOn = named.filter((p) => modules.has(p));
+	const uses = ['jobs', ...named.filter((p) => systems.has(p) && p !== 'jobs')];
+	const file = path.join(input.generatedDir, JOB_DEPS_FILE);
+	const byFile = new Map<string, string[]>();
+	for (const f of factories) byFile.set(f.file, [...(byFile.get(f.file) ?? []), f.exportName]);
+	const content = `${input.banner}
+/**
+ * The \`jobDeps\` module (J-1): hands each job factory the composition parts its dependencies name, typed by the
+ * factory, so a wrong part does not compile. Composed last, it is stopped first, and its \`stop\` stops the jobs
+ * engine, so no step keeps running against a module that has already stopped.
+ */
+import { defineModule } from '${relativeImport(file, parts.registryFile)}';
+import type { JobsApi } from './${JOBS_SYSTEM_FILE.replace(/\.ts$/, '')}';
+${[...byFile.entries()].map(([from, names]) => `import { ${names.join(', ')} } from '${relativeImport(file, from)}';`).join('\n')}
+
+export interface JobDepsModule {
+  /** The jobs engine, which this module's \`stop\` stops. */
+  readonly jobs: JobsApi;
+}
+
+export const jobDepsModule = defineModule({
+  name: '${JOB_DEPS_MODULE}',
+  kind: 'derived',
+  dependsOn: [${dependsOn.map((m) => `'${m}'`).join(', ')}],
+  uses: [${uses.map((u) => `'${u}'`).join(', ')}],
+  create: (deps): JobDepsModule => {
+${factories.map((f) => `    deps.jobs.provide(${f.exportName}, { ${f.deps.map((d) => `${d.name}: deps.${d.part}`).join(', ')} });`).join('\n')}
+    return { jobs: deps.jobs };
+  },
+  stop: ({ jobs }) => jobs.stop(),
+});
+`;
+	return { file, content };
 }
 
 /**

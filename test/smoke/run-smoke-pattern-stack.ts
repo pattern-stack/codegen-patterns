@@ -22,11 +22,12 @@
  * (`test/scaffold/`, Docker), not this Docker-free gate.
  */
 
-import { execSync, spawnSync } from 'node:child_process';
+import { execSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { tscGateErrors } from './_consumer-errors';
+import { addJobsPackage } from './_package-runtime';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI = `bun ${path.join(REPO_ROOT, 'src', 'cli', 'index.ts')}`;
@@ -34,6 +35,9 @@ const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures-pattern-stack');
 /** PW-3c: the junctions, a sibling folder so the entity loaders never read them as entities. */
 const JUNCTIONS_DIR = path.join(import.meta.dirname, 'fixtures-pattern-stack-junctions');
 const USAGE_FILE = path.join(import.meta.dirname, 'fixtures-pattern-stack-usage', 'crud-check.ts');
+/** J-1: the jobs check (the bridge, the kill and restart) and the jobs it runs, copied into `src/` and `src/jobs/`. */
+const JOBS_USAGE_FILE = path.join(import.meta.dirname, 'fixtures-pattern-stack-usage', 'jobs-check.ts');
+const JOBS_FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures-pattern-stack-jobs');
 // `--postgres <url>` (the integration job): after the compile gate, push the schema into a fresh database on that
 // server and run CRUD through the composed use cases (`fixtures-pattern-stack-usage/crud-check.ts`).
 const POSTGRES_URL = (() => {
@@ -74,6 +78,30 @@ function sourceFiles(tmpDir: string): string[] {
 	);
 }
 
+/**
+ * J-1's restart proof: a process starts `smoke.slow` and is killed (SIGKILL, no stop) inside its second step; a new
+ * process composes, sweeps the run once its lease lapses, and completes it without running the first step again.
+ */
+async function killAndResume(tmpDir: string, dbUrl: string): Promise<void> {
+	const marker = path.join(tmpDir, 'slow-run');
+	const child = spawn('bun', ['src/jobs-check.ts', 'start-slow', dbUrl, marker], { cwd: tmpDir, stdio: ['ignore', 'pipe', 'inherit'] });
+	let out = '';
+	child.stdout.on('data', (b: Buffer) => (out += b.toString()));
+	const deadline = Date.now() + 30_000;
+	while (!(/run (\S+)/.test(out) && fs.existsSync(`${marker}.attempts`))) {
+		if (Date.now() > deadline || child.exitCode !== null) {
+			child.kill('SIGKILL');
+			fail(`the slow run never reached its second step (exit ${child.exitCode}): ${out}`);
+		}
+		await new Promise((r) => setTimeout(r, 100));
+	}
+	const runId = /run (\S+)/.exec(out)![1]!;
+	child.kill('SIGKILL');
+	await new Promise((r) => child.once('exit', r));
+	log(`killed the process running ${runId} inside its second step`);
+	run(`bun src/jobs-check.ts resume '${dbUrl}' '${marker}' ${runId}`, tmpDir);
+}
+
 async function main(): Promise<number> {
 	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegen-smoke-pattern-stack-'));
 	log(`tmp dir: ${tmpDir}`);
@@ -84,6 +112,8 @@ async function main(): Promise<number> {
 		run('bun init -y', tmpDir);
 		run(`bun add ${RUNTIME_DEPS.join(' ')}`, tmpDir);
 		run(`bun add -D ${DEV_DEPS.join(' ')}`, tmpDir);
+		// J-1: @pattern-stack/jobs as a consumer gets it (packed from this checkout); its Nest peers are optional.
+		addJobsPackage(tmpDir, run);
 
 		// 2. Init for pattern-stack wiring (PW-4): nothing to delete, nothing to rewrite.
 		run(`${CLI} project init --yes --with-tsconfig --runtime vendored --wiring pattern-stack`, tmpDir);
@@ -135,6 +165,25 @@ async function main(): Promise<number> {
 			}
 		}
 		log('integration installed: the Nest-free closure, no Nest module, barrel or use case');
+		// 3d. Jobs and the bridge (J-1): vendored Nest-free; no worker.ts, no main.ts hook.
+		run(`${CLI} subsystem install jobs --yes`, tmpDir);
+		run(`${CLI} subsystem install bridge --yes`, tmpDir);
+		for (const f of ['jobs/core.ts', 'jobs/jobs-engine.ts', 'jobs/job-run-starter.ts', 'bridge/core.ts', 'bridge/bridge-outbox-drainer.ts', 'bridge/generated/registry.ts']) {
+			if (!fs.existsSync(path.join(tmpDir, 'src/shared/subsystems', f))) fail(`subsystem install jobs / bridge should vendor ${f}`);
+		}
+		for (const f of ['shared/subsystems/jobs/jobs-engine.module.ts', 'shared/subsystems/jobs/job-starter.ts', 'shared/subsystems/jobs/index.ts', 'shared/subsystems/bridge/bridge.module.ts', 'shared/subsystems/bridge/index.ts', 'worker.ts']) {
+			if (fs.existsSync(path.join(tmpDir, 'src', f))) fail(`subsystem install jobs / bridge should not write src/${f} under pattern-stack wiring`);
+		}
+		if (!fs.existsSync(path.join(tmpDir, 'src/generated/jobs.ts'))) fail('subsystem install jobs should write the job registry');
+		// A short lease and a quick sweep, so the Postgres leg's restarted process resumes the killed run in seconds.
+		const configPath = path.join(tmpDir, 'codegen.config.yaml');
+		const withJobs = fs.readFileSync(configPath, 'utf8').replace(/^(  worker_mode: .*)$/m, '$1\n  poll_interval_ms: 100\n  open_sweep_every: 5\n  lease_ttl_ms: 2000');
+		if (!/lease_ttl_ms: 2000/.test(withJobs)) fail('the jobs config block should have a worker_mode line to extend');
+		fs.writeFileSync(configPath, withJobs);
+		const jobsDir = path.join(tmpDir, 'src', 'jobs');
+		fs.mkdirSync(jobsDir, { recursive: true });
+		for (const f of fs.readdirSync(JOBS_FIXTURES_DIR).filter((n) => n.endsWith('.ts'))) fs.copyFileSync(path.join(JOBS_FIXTURES_DIR, f), path.join(jobsDir, f));
+		log('jobs and bridge installed: the Nest-free closure, no Nest module, barrel or worker.ts; the smoke jobs in src/jobs/');
 
 		// 3d. Auth (S-2): drizzle, vendored Nest-free (no module, barrel, controller, guard or middleware), then the
 		// connections starter without its Nest module. The key lands in .env.config, which the settings system reads.
@@ -176,6 +225,7 @@ async function main(): Promise<number> {
 		run(`${CLI} junction new --all --force`, tmpDir);
 		// The consumer's usage, compiled with the project: every key it reads is the composition's real API.
 		fs.copyFileSync(USAGE_FILE, path.join(tmpDir, 'src', 'crud-check.ts'));
+		fs.copyFileSync(JOBS_USAGE_FILE, path.join(tmpDir, 'src', 'jobs-check.ts'));
 		fs.copyFileSync(path.join(import.meta.dirname, '_openapi-refs.ts'), path.join(tmpDir, 'src', 'openapi-refs.ts'));
 
 		// 5a. Nest-free: no import of it anywhere, and none installed.
@@ -191,7 +241,17 @@ async function main(): Promise<number> {
 		const expectOne = (suffix: string) => {
 			if (!generated.some((f) => f.endsWith(suffix))) fail(`expected a generated file ending ${suffix}`);
 		};
-		for (const s of ['/crm/module.ts', '/billing/module.ts', 'modules/module.ts', '/wiring.ts', '/composition.ts', 'generated/openapi.ts', 'generated/events-system.ts', 'generated/integration-system.ts', 'generated/auth-system.ts', 'generated/connections-system.ts', 'events/generated/bus.ts']) expectOne(s);
+		for (const s of ['/crm/module.ts', '/billing/module.ts', 'modules/module.ts', '/wiring.ts', '/composition.ts', 'generated/openapi.ts', 'generated/events-system.ts', 'generated/integration-system.ts', 'generated/auth-system.ts', 'generated/connections-system.ts', 'events/generated/bus.ts', 'generated/jobs-system.ts', 'generated/job-deps.ts', 'generated/jobs.ts']) expectOne(s);
+		// J-1: the jobDeps module provides the factory's two modules, typed; the events system drains through the bridge.
+		const jobDeps = fs.readFileSync(path.join(tmpDir, 'src/generated/job-deps.ts'), 'utf8');
+		if (!/dependsOn: \['billing', 'crm'\]/.test(jobDeps)) fail(`jobDeps should dependsOn the modules the factory names:\n${jobDeps}`);
+		if (!jobDeps.includes('deps.jobs.provide(invoiceFollowUp, { billing: deps.billing, crm: deps.crm });')) fail(`jobDeps should provide invoiceFollowUp:\n${jobDeps}`);
+		const eventsSystem = fs.readFileSync(path.join(tmpDir, 'src/generated/events-system.ts'), 'utf8');
+		if (!/uses: \['database', 'jobs'\]/.test(eventsSystem) || !eventsSystem.includes('new BridgeOutboxDrainer(jobs.starter, deliveries, bridgeRegistry)')) {
+			fail(`the events system should pass the bridge's drain to its bus:\n${eventsSystem}`);
+		}
+		const bridgeRegistry = fs.readFileSync(path.join(tmpDir, 'src/shared/subsystems/bridge/generated/registry.ts'), 'utf8');
+		if (!/invoice_created/.test(bridgeRegistry) || !/invoice\.follow_up/.test(bridgeRegistry)) fail(`the bridge registry should carry the trigger:\n${bridgeRegistry}`);
 		for (const s of ['/account.wiring.ts', '/contact.wiring.ts', '/invoice.wiring.ts', '/note.wiring.ts', '/person.wiring.ts']) expectOne(s);
 		const billing = fs.readFileSync(path.join(tmpDir, generated.find((f) => f.endsWith('/billing/module.ts'))!), 'utf8');
 		if (!/dependsOn: \['crm'\]/.test(billing)) fail("billing's module should dependsOn ['crm'] (invoice belongs_to account)");
@@ -213,9 +273,10 @@ async function main(): Promise<number> {
 		log('tsc OK: the pattern-stack project compiles with no @nestjs and decorators off');
 
 		// 5c'. main.ts composes, starts, runs and stops (no database needed: the pool connects on first use).
-		const main = spawnSync('bun', ['src/main.ts'], { cwd: tmpDir, encoding: 'utf8' });
+		// No database here, so this process runs no executor loop (JOBS_WORKER=false): it composes, starts and stops.
+		const main = spawnSync('bun', ['src/main.ts'], { cwd: tmpDir, encoding: 'utf8', env: { ...process.env, JOBS_WORKER: 'false' } });
 		if (main.status !== 0) fail(`bun src/main.ts exited ${main.status}:\n${main.stdout}${main.stderr}`);
-		if (!/composed: settings, database, events, integration, auth, connections, .*crm.*billing/.test(main.stdout)) fail(`main.ts should print the composed order: ${main.stdout}`);
+		if (!/composed: settings, database, jobs, events, integration, auth, connections, .*crm.*billing.*jobDeps/.test(main.stdout)) fail(`main.ts should print the composed order: ${main.stdout}`);
 		log(`main.ts: ${main.stdout.trim()}`);
 
 		// 5d. The OpenAPI document needs no database: every schema registers, every $ref resolves, every prefill parses.
@@ -234,6 +295,10 @@ async function main(): Promise<number> {
 				log('schema pushed');
 				run(`bun src/crud-check.ts '${dbUrl}'`, tmpDir);
 				log('CRUD through the composed use cases OK (create, findById, list, query, update, delete, NotFoundError); an integration run on the integration system; OAuth state, a stored grant and a refresh on the auth and connections systems');
+				// J-1: an event starts a job and its step completes; then a process killed mid-step, and a restart that resumes it.
+				run(`bun src/jobs-check.ts bridge '${dbUrl}'`, tmpDir);
+				await killAndResume(tmpDir, dbUrl);
+				log('jobs: invoice_created started invoice.follow_up through the bridge, and it completed; a run killed mid-step resumed in a new process');
 			} finally {
 				admin(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
 			}

@@ -61,3 +61,17 @@ covers the app side codegen generates.
 - Do not create a table per job. A job's values live in the job tables; domain data goes to its domain's tables,
   written by a step.
 - Do not reach for a job when the caller waits synchronously on the result — that is a use case.
+
+## Under `target.wiring: pattern-stack` (no Nest)
+
+- `codegen subsystem install jobs` vendors the Nest-free entry (`@shared/subsystems/jobs/core`) and writes no
+  `worker.ts`; `codegen entity new` writes the `jobs` system (`<generated>/jobs-system.ts`). Start a run with
+  `app.system('jobs').starter.start('<key>', input, opts, tx?)`; read runs through `app.system('jobs').store`.
+- The executor runs in every process whose `JOBS_WORKER` is `true` (the default; `codegen project settings` lists it).
+  An HTTP or CLI process that only starts runs sets it `false`, and a worker's open-run sweep takes them.
+  `jobs.worker_mode` is not read.
+- A job factory's dependencies are composition parts: `injected<CrmModule>('crm')`, `injected<IntegrationsModule>('integrations')`,
+  `injected<EventsApi>('events')`. The generated `jobDeps` module provides them, typed by the factory (a wrong part does
+  not compile). A class token is refused: there is no container to resolve it by.
+- `jobs.lease_ttl_ms` is how long a crashed process's run waits before another process resumes it (default 60 s).
+- Spec: `docs/specs/J-1.md` in the codegen repo.

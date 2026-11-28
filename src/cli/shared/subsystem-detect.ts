@@ -39,6 +39,16 @@ export type SubsystemName =
 	| 'observability'
 	| 'auth'
 	| 'auth-integrations';
+/**
+ * The file that marks a vendored subsystem as installed, per `target.wiring`. Nest: its module. Pattern-stack: events
+ * (S-1), integration (S-3), auth (S-2), jobs and bridge (J-1) vendor no Nest module, so their Nest-free entry marks them.
+ */
+const PATTERN_STACK_ENTRY_MARKED: ReadonlySet<string> = new Set(['events', 'integration', 'auth', 'jobs', 'bridge']);
+const INSTALL_MARKERS: Readonly<Record<TargetWiring, (name: SubsystemName) => string | null>> = {
+	nest: (name) => subsystemModuleFile(name),
+	'pattern-stack': (name) => (PATTERN_STACK_ENTRY_MARKED.has(name) ? 'core.ts' : subsystemModuleFile(name)),
+};
+
 export type SubsystemBackend =
 	| 'drizzle'
 	| 'memory'

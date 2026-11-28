@@ -385,13 +385,21 @@ All use `DynamicModule.forRoot({ backend })` with `global: true`, except jobs: `
 (`runtime/subsystems/jobs/`), the Nest host for the `packages/jobs` workspace package (spec `docs/specs/JOBS-3.md`,
 app upgrade `docs/MIGRATION-jobs-engine.md`). Jobs are `defineJob` exports under `<backend_src>/jobs`, listed in the
 generated `<generated>/jobs.ts`; the bridge's triggers are `jobTriggers('<key>', [...])` beside them, and the outbox
-drain starts each trigger's run in the event's own transaction.
+drain starts each trigger's run in the event's own transaction. Under `target.wiring: pattern-stack` (J-1,
+`docs/specs/J-1.md`) the same engine is the composition's `jobs` system (`createJobsEngine`, `JobRunStarter`; the
+executor runs where `JOBS_WORKER` is true), a job factory's dependencies are composition parts that the generated
+`jobDeps` module provides typed, and the events system's bus drains through `BridgeOutboxDrainer`.
+
+**A choice made from a config value is a table** (Doug's rule): a `Record` keyed by the value with one typed row per
+option, read through `rowFor` (`src/utils/keyed-row.ts`), which refuses a value with no row by naming the rows, as
+`TARGET_PAIRS` / `TARGET_RENDERERS` are. Never an if/else, switch or ternary on the value. J-1's tables are listed in its
+spec.
 
 **The Nest-free runtime (PW-0, `docs/specs/PW-0.md`).** Pattern-stack wiring output imports only entries that load no
 `@nestjs/*` package, type imports included: `runtime/logger.ts` (the logger port; runtime code logs through
 `createLogger`, and the Nest modules bind Nest's `Logger` via `runtime/nest-logger.ts`), `runtime/errors.ts`
 (`NotFoundError` / `BadRequestError`, whose `errorBody` is Nest's body byte for byte), the base classes, and
-`runtime/subsystems/<name>/core.ts` for events, auth and integration (reached by `subsystemCoreImport`; each
+`runtime/subsystems/<name>/core.ts` for events, auth, integration, jobs and bridge (reached by `subsystemCoreImport`; each
 `index.ts` is `export * from './core'` plus its Nest half). `src/__tests__/runtime/nest-free.test.ts` holds the list.
 Never add a Nest import, even `import type`, under one of those entries.
 

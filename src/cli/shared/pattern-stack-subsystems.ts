@@ -14,15 +14,19 @@ import path from 'node:path';
 import { rowFor } from '../../utils/keyed-row.js';
 import { generating } from '../../utils/generated-file.js';
 import type { Context } from './context.js';
+import { bridgeRegistryTypeImport, buildBridgeRegistryContent } from './bridge-registry-generator.js';
 import { buildEventCodegenContents } from './event-codegen-generator.js';
+import { generateJobRegistry, JOB_REGISTRY_FILE } from './job-registry-generator.js';
 import { projectLayout } from './project-layout.js';
-import { resolveRuntimeMode } from './runtime-import.js';
+import { resolveRuntimeMode, type RuntimeMode } from './runtime-import.js';
 import type { SubsystemBackend, SubsystemName } from './subsystem-detect.js';
 import * as detectModule from './subsystem-detect.js';
+import * as compositionModule from '../../emitters/composition/emit-composition.js';
 import { configOrDefaults } from '../../config/project-config.js';
 
-/** The detection, read lazily (it imports this file: the cycle resolves before any call). */
+/** The detection and the event bus table, read lazily (each reaches this file back: the cycle resolves before any call). */
 const detect = () => detectModule;
+const composition = () => compositionModule;
 
 /** A subsystem pattern-stack installs. */
 export interface PatternStackSubsystem {
@@ -60,6 +64,34 @@ function writeEmptyPatternStackEvents(ctx: Context, generatedDir: string): void 
 		const file = path.join(dir, name);
 		generating(file, () => fs.writeFileSync(file, content));
 	}
+}
+
+/** Where the bridge registry goes, per runtime mode (ADR-037): beside the other generated barrels, or the vendored runtime. */
+const BRIDGE_REGISTRY_FILES: Readonly<Record<RuntimeMode, (ctx: Context, generatedDir: string) => string>> = {
+	package: (_ctx, generatedDir) => path.resolve(generatedDir, 'bridge-registry.ts'),
+	vendored: (ctx) => path.resolve(projectLayout(ctx.cwd, ctx.config).subsystems, 'bridge/generated/registry.ts'),
+};
+
+/** Where `entity new` writes the bridge registry the events system's drain imports. */
+export function bridgeRegistryFile(ctx: Context, generatedDir: string): string {
+	return rowFor('runtime mode', BRIDGE_REGISTRY_FILES, resolveRuntimeMode(ctx.config))(ctx, generatedDir);
+}
+
+/** J-1: the job registry the `jobs` system imports, over the jobs directory, before the first `entity new`. */
+function writeJobRegistry(ctx: Context, generatedDir: string): void {
+	generating(path.resolve(generatedDir, JOB_REGISTRY_FILE), () =>
+		generateJobRegistry({ jobsDir: projectLayout(ctx.cwd, ctx.config).jobHandlers, outputDir: generatedDir, wiring: 'pattern-stack' }),
+	);
+}
+
+/** J-1: the empty bridge registry the events system's drain imports, iff none was generated yet. */
+function writeEmptyBridgeRegistry(ctx: Context, generatedDir: string): void {
+	const registry = bridgeRegistryFile(ctx, generatedDir);
+	if (fs.existsSync(registry)) return;
+	generating(registry, () => {
+		fs.mkdirSync(path.dirname(registry), { recursive: true });
+		fs.writeFileSync(registry, buildBridgeRegistryContent([], bridgeRegistryTypeImport(resolveRuntimeMode(ctx.config), 'pattern-stack')));
+	});
 }
 
 /** The auth-integrations starter's store (`createConnectionStore`), which marks a pattern-stack install of it. */
@@ -122,6 +154,7 @@ export const PATTERN_STACK_SUBSYSTEMS: Readonly<Record<SubsystemName, PatternSta
 		backends: ['drizzle'],
 		skipped: new Set(['jobs-engine.module.ts', 'job-starter.ts', 'index.ts']),
 		entryFile: 'core.ts',
+		afterInstall: writeJobRegistry,
 		nextStep:
 			'Next: `codegen entity new --all` writes the job registry (`<generated>/jobs.ts`, every `defineJob` / `jobFactory` ' +
 			'export under the jobs directory) and the `jobs` system (`<generated>/jobs-system.ts`), listed in `SYSTEMS`. Its ' +
@@ -143,6 +176,7 @@ export const PATTERN_STACK_SUBSYSTEMS: Readonly<Record<SubsystemName, PatternSta
 			'index.ts',
 		]),
 		entryFile: 'core.ts',
+		afterInstall: writeEmptyBridgeRegistry,
 		nextStep:
 			'Next: declare `jobTriggers(...)` beside a job, then `codegen entity new --all` writes the bridge registry and ' +
 			"passes the drain to the `events` system, which starts each trigger's run in the event's transaction. " +
@@ -151,18 +185,6 @@ export const PATTERN_STACK_SUBSYSTEMS: Readonly<Record<SubsystemName, PatternSta
 	cache: { comesWith: null },
 	storage: { comesWith: null },
 	observability: { comesWith: null },
-};
-
-/** Whether an events backend's bus drains an outbox, so the bridge can start runs from it (J-1). */
-const EVENTS_DRAIN_OUTBOX: Readonly<Record<SubsystemBackend, boolean>> = {
-	drizzle: true,
-	memory: false,
-	redis: false,
-	bullmq: false,
-	local: false,
-	'config-only': false,
-	combiner: false,
-	unknown: false,
 };
 
 /**
@@ -174,9 +196,11 @@ export function bridgePrerequisite(ctx: Context): string | null {
 	if (missing.length > 0) {
 		return `the bridge combines events and jobs: install ${missing.map((m) => `\`codegen subsystem install ${m}\``).join(' and ')} first.`;
 	}
-	const events = (configOrDefaults(ctx.config).events?.backend ?? 'drizzle') as SubsystemBackend;
-	if (rowFor('events backend', EVENTS_DRAIN_OUTBOX, events)) return null;
-	return `the bridge needs the events subsystem on a bus that drains its outbox (drizzle); this project's events backend is ${events}.`;
+	// Read as the events system reads it, and answered by the event bus's own row (review #985): the drain is the outbox's.
+	const events = configOrDefaults(ctx.config).events?.backend ?? 'drizzle';
+	const buses = composition();
+	if (buses.eventBusDrainsOutbox(events)) return null;
+	return `the bridge needs the events subsystem on ${buses.outboxEventBackends().join(' or ')} (its drain is the outbox's); this project's events backend is ${events}.`;
 }
 
 /** The row of a subsystem pattern-stack installs, or null when it isn't supported yet. */

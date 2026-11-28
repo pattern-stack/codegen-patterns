@@ -16,6 +16,7 @@
  * scan never double-registers them.
  */
 
+import type { TargetWiring } from '../../targets/apps.js';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { generating } from "../../utils/generated-file";
@@ -39,6 +40,8 @@ export interface EmitJobsOptions {
 	mode?: RuntimeMode;
 	/** If true, compute paths but don't write. */
 	dryRun?: boolean;
+	/** `target.wiring` (J-1): the pattern-stack base types against the Nest-free integration entry. Default nest. */
+	wiring?: TargetWiring;
 	/**
 	 * The generated dir whose job registry (`<generated>/jobs.ts`) lists these jobs. Given (the jobs subsystem is
 	 * installed), the registry is regenerated once the job files are written: `entity new` writes it with the barrel,
@@ -152,14 +155,14 @@ export function emitJobHandlers(opts: EmitJobsOptions): EmitJobsResult {
 		const subPath = join(opts.jobsHandlersDir, `${job.type}.job.ts`);
 
 		// @generated base — always reflow.
-		if (!opts.dryRun) writeIfChanged(basePath, generateJobHandlerBase({ job, mode }));
+		if (!opts.dryRun) writeIfChanged(basePath, generateJobHandlerBase({ job, mode, wiring: opts.wiring }));
 		result.basesWritten.push(basePath);
 
 		// Emit-once subclass — write only when absent.
 		if (existsSync(subPath)) {
 			result.scaffoldsSkipped.push(subPath);
 		} else {
-			if (!opts.dryRun) writeFresh(subPath, generateJobHandlerSubclass({ job, mode }));
+			if (!opts.dryRun) writeFresh(subPath, generateJobHandlerSubclass({ job, mode, wiring: opts.wiring }));
 			result.scaffoldsWritten.push(subPath);
 		}
 	}
@@ -167,7 +170,7 @@ export function emitJobHandlers(opts: EmitJobsOptions): EmitJobsResult {
 	if (opts.registryDir && !opts.dryRun) {
 		const registryDir = opts.registryDir;
 		generating(join(registryDir, JOB_REGISTRY_FILE), () =>
-			generateJobRegistry({ jobsDir: opts.jobsHandlersDir, outputDir: registryDir }),
+			generateJobRegistry({ jobsDir: opts.jobsHandlersDir, outputDir: registryDir, wiring: opts.wiring }),
 		);
 	}
 

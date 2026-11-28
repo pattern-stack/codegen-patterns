@@ -508,6 +508,11 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "lease_ttl_ms": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
         "backend": {
           "not": {}
         },
