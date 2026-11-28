@@ -58,9 +58,8 @@ export class DrizzleBridgeDeliveryRepo implements IJobBridge {
     row: BridgeDeliveryInsert,
     tx?: DrizzleTransaction,
   ): Promise<void> {
-    // Multi-tenancy gate — last-line defense. Even if callers skipped
-    // sites (a) `EventFlowService.publishAndStart` and (b)
-    // `BridgeDeliveryHandler.run`, a direct repo call still fails fast
+    // Multi-tenancy gate — last-line defense. Even if a caller skipped
+    // site (a) `EventFlowService.publishAndStart`, a direct repo call still fails fast
     // BEFORE any SQL is issued.
     assertTenantId(
       'DrizzleBridgeDeliveryRepo.insertDelivery',
@@ -69,17 +68,28 @@ export class DrizzleBridgeDeliveryRepo implements IJobBridge {
     );
     const client = (tx ?? this.db) as DrizzleClient;
     // ON CONFLICT DO NOTHING — surfaces dedup as silent no-op so the
-    // per-event tx stays atomic across sibling triggers. RETURNING is
-    // omitted here: the public IJobBridge contract is `Promise<void>`,
-    // and the drain hook (BRIDGE-4) uses its own
-    // `tx.insert(...).onConflictDoNothing().returning({id})` pattern
-    // when it needs the rowcount discriminator. See class-level JSDoc.
+    // per-event tx stays atomic across sibling triggers. The drain hook
+    // claims its rows through `claimDelivery`, which returns the id.
     await client
       .insert(bridgeDelivery)
       .values(row)
       .onConflictDoNothing({
         target: [bridgeDelivery.eventId, bridgeDelivery.triggerId],
       });
+  }
+
+  async claimDelivery(
+    row: Pick<BridgeDeliveryInsert, 'eventId' | 'triggerId' | 'tenantId'>,
+    tx?: DrizzleTransaction,
+  ): Promise<string | null> {
+    assertTenantId('DrizzleBridgeDeliveryRepo.claimDelivery', this.multiTenant, row.tenantId);
+    const client = (tx ?? this.db) as DrizzleClient;
+    const [claimed] = await client
+      .insert(bridgeDelivery)
+      .values({ ...row, status: 'pending' })
+      .onConflictDoNothing({ target: [bridgeDelivery.eventId, bridgeDelivery.triggerId] })
+      .returning({ id: bridgeDelivery.id });
+    return claimed?.id ?? null;
   }
 
   async findDelivery(

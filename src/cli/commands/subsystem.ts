@@ -218,19 +218,7 @@ export function backendFileFilter(
 	subsystemName: SubsystemName,
 ): (file: string) => boolean {
 	return (file: string) => {
-		// JOB-6 (Q1 2026-04-19): the Hygen template
-		// `templates/subsystem/jobs/job-orchestration.schema.ejs.t` is the sole
-		// emitter for the jobs schema in consumer projects — it gates the
-		// `tenantId` column on `jobs.multi_tenant`. Skipping here ensures
-		// `copyRuntime` never writes the always-tenant runtime source file.
-		if (
-			subsystemName === 'jobs' &&
-			file === 'job-orchestration.schema.ts'
-		) {
-			return false;
-		}
-
-		// EVT-8: same pattern for events — the Hygen template
+		// EVT-8: the Hygen template
 		// `templates/subsystem/events/domain-events.schema.ejs.t` is the sole
 		// emitter for the events outbox schema, gating the `tenantId` column
 		// on `events.multi_tenant`. Skip here so `copyRuntime` never writes
@@ -276,13 +264,6 @@ export function backendFileFilter(
 		//   - `*.redis-backend.ts`  — only vendor when backend === 'redis'
 		//   - `*.bullmq-backend.ts` — only vendor when backend === 'bullmq'
 		//
-		// `bullmq.config.ts` (tokens + helpers) is intentionally NOT pruned
-		// — `jobs-domain.module.ts` and `job-worker.module.ts` static-import
-		// from it, and it carries no `bullmq` peer-dep type surface (its
-		// `BullMqConnectionOptions` is a local structural alias — see
-		// runtime/subsystems/jobs/bullmq.config.ts). Pruning it broke the
-		// module files' static imports → `TS2307` on every drizzle install.
-		//
 		// Memory backend gets the same pruning PLUS its existing skip of
 		// `.drizzle-backend.ts` + `.schema.ts`. Drizzle / local / unknown
 		// vendor everything EXCEPT the alternate-backend implementation
@@ -307,7 +288,7 @@ export class SubsystemInstallCommand extends Command {
 		description: 'Install a runtime subsystem into the project',
 		examples: [
 			['Install the events subsystem', 'codegen subsystem install events'],
-			['Install jobs with memory backend', 'codegen subsystem install jobs --backend memory'],
+			['Install cache with the memory backend', 'codegen subsystem install cache --backend memory'],
 			['Preview without writing', 'codegen subsystem install cache --dry-run'],
 			['Reinstall and regenerate the config block', 'codegen subsystem install jobs --force --force-config'],
 		],
@@ -1325,7 +1306,7 @@ function jobsStaleWorker(cwd: string, locals: JobsScaffoldLocals): string | unde
 	if (!locals.workerExists) return undefined;
 	const content = fs.readFileSync(locals.workerPath, 'utf-8');
 	return (
-		staleWorkerNotice(content, path.relative(cwd, locals.workerPath), locals.appConfigImport) ?? undefined
+		staleWorkerNotice(content, path.relative(cwd, locals.workerPath)) ?? undefined
 	);
 }
 

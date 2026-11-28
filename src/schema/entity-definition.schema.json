@@ -65,7 +65,7 @@
           "additionalProperties": {}
         },
         "scopeable": {
-          "type": "boolean"
+          "not": {}
         },
         "surface": {
           "type": "string"

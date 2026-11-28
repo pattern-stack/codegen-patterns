@@ -4,27 +4,18 @@
  * project (path passed as argv[2]).
  *
  * Boots the consumer's AppModule with `NestFactory.create` + `app.init()`,
- * which fires every module's `onModuleInit`. The interesting hook is
- * `BridgeModule.onModuleInit` — it inspects `JobWorkerModule`'s active
- * pools and throws `BridgeReservedPoolsNotPolledError` when any of the
- * reserved `events_*` pools aren't being drained. With a default install
- * (which only emits `JobWorkerModule.forRoot({ mode: 'embedded' })`, no
- * explicit `pools` + no `allPools`), the guard is expected to fire — and
- * THAT is the invariant this verifier locks in: the bridge module loads,
- * Nest's DI resolves it AND `JobWorkerModule` together, and the fail-fast
- * guard executes.
- *
- * Accepted outcomes:
- *   - `app.init()` resolves cleanly (pools were wired — e.g. a future PR
- *     adds `allPools: true` to the barrel default).
- *   - `app.init()` rejects with `BridgeReservedPoolsNotPolledError`.
- *
- * Any other outcome (DI resolution failure, unrelated boot error,
- * unexpected throw) fails the verifier and the smoke.
+ * which fires every module's `onModuleInit`, and asserts the events ↔ jobs ↔
+ * bridge graph resolved (JOBS-3): `JobsEngineModule`'s `JOBS_EXECUTOR` and
+ * `JOBS_REGISTRY` are bound, the bridge's `EVENT_FLOW` resolved (it injects
+ * `JobStarter`), and the registry holds the jobs the generated
+ * `<generated>/jobs.ts` lists. ADR-022's reserved-pool guard is gone, so the
+ * one accepted outcome is a clean boot; any error is a regression.
  *
  * Mirrors `verify-openapi.ts` for the import + bootstrap pattern (stub
  * DATABASE_URL, resolve nest from the tmp project's node_modules, chdir
  * so tsconfig path aliases resolve).
+ *
+ * Usage: verify-subsystems-boot.ts <tmpDir> [<job key>…]  — each key must be registered.
  */
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -60,67 +51,37 @@ async function main(): Promise<void> {
 	).href;
 	const { AppModule } = (await import(appModuleUrl)) as { AppModule: unknown };
 
-	// Also resolve the bridge module so we can identify its error class by
-	// name (instanceof across realms is fragile; constructor.name is stable).
-	// Path is canonical per the install layout: <subsystemsRoot>/bridge/.
-	const bridgeErrorsUrl = pathToFileURL(
-		path.join(tmpDir, 'src', 'shared', 'subsystems', 'bridge', 'bridge-errors.ts'),
-	).href;
-	let expectedErrorName = 'BridgeReservedPoolsNotPolledError';
+	const expectedJobKeys = process.argv.slice(3);
+	let app: { init: () => Promise<unknown>; close: () => Promise<void>; get: (t: unknown, o?: unknown) => unknown };
 	try {
-		const errors = (await import(bridgeErrorsUrl)) as Record<string, unknown>;
-		const ctor = errors['BridgeReservedPoolsNotPolledError'];
-		if (typeof ctor === 'function') expectedErrorName = (ctor as { name: string }).name;
-	} catch {
-		// Fall back to the literal name if the module path drifts.
-	}
-
-	let app: { init: () => Promise<unknown>; close: () => Promise<void> } | null = null;
-	let initError: unknown = null;
-	try {
-		app = (await NestFactory.create(AppModule as never, {
-			logger: false,
-			abortOnError: false,
-		})) as { init: () => Promise<unknown>; close: () => Promise<void> };
+		app = (await NestFactory.create(AppModule as never, { logger: false, abortOnError: false })) as never;
 		await app.init();
 	} catch (err) {
-		initError = err;
+		const e = err as { constructor?: { name?: string }; message?: string };
+		fail(`AppModule boot failed: ${e?.constructor?.name ?? '(no ctor)'}: ${e?.message ?? String(err)}`);
 	}
-
-	// Branch on the outcome.
-	if (initError === null) {
-		// Boot succeeded — pools must be wired, OR allPools was true. Either
-		// way: dependency graph resolves, bridge.onModuleInit passed. Accept.
-		console.log(
-			'[subsystems-boot-verify] OK — AppModule boot succeeded (bridge guard passed; pools wired or allPools)',
-		);
-		if (app) {
-			try {
-				await app.close();
-			} catch {
-				// Ignore — close errors are not part of the invariant.
-			}
+	try {
+		const executor = app.get(Symbol.for('@pattern-stack/jobs.JOBS_EXECUTOR'), { strict: false });
+		if (!executor) fail('JOBS_EXECUTOR is not bound — JobsEngineModule did not compose');
+		const registry = app.get(Symbol.for('@pattern-stack/jobs.JOBS_REGISTRY'), { strict: false }) as
+			| { has(key: string): boolean }
+			| undefined;
+		if (!registry) fail('JOBS_REGISTRY is not bound');
+		for (const key of expectedJobKeys) {
+			if (!registry.has(key)) fail(`job '${key}' is not registered — the generated jobs.ts did not reach JobsEngineModule`);
 		}
-		process.exit(0);
+		if (!app.get('EVENT_FLOW', { strict: false })) fail('EVENT_FLOW is not bound — BridgeModule did not compose');
+	} finally {
+		try {
+			await app.close();
+		} catch {
+			// Close errors are not part of the invariant.
+		}
 	}
-
-	// Boot failed — only acceptable failure is the bridge reserved-pools guard.
-	const errAsObj = initError as { constructor?: { name?: string }; name?: string; message?: string };
-	const ctorName = errAsObj?.constructor?.name ?? errAsObj?.name ?? '';
-	const message = errAsObj?.message ?? String(initError);
-
-	if (ctorName === expectedErrorName || message.includes('reserved') && message.includes('pool')) {
-		console.log(
-			`[subsystems-boot-verify] OK — AppModule booted up to bridge guard which fired the expected ${expectedErrorName} (reserved pools not polled in default install)`,
-		);
-		process.exit(0);
-	}
-
-	fail(
-		`AppModule boot failed with an unexpected error: ${ctorName || '(no ctor)'}: ${message}\n` +
-			`Acceptable outcomes: (a) clean boot, or (b) throw of ${expectedErrorName}. ` +
-			`Any other error indicates a regression in the events/jobs/bridge dependency graph.`,
+	console.log(
+		`[subsystems-boot-verify] OK — AppModule booted; JOBS_EXECUTOR, JOBS_REGISTRY (${expectedJobKeys.join(', ') || 'no jobs'}) and EVENT_FLOW resolve`,
 	);
+	process.exit(0);
 }
 
 main().catch((err: unknown) => {

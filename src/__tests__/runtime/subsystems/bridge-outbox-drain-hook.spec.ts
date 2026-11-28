@@ -1,101 +1,95 @@
 /**
- * Unit tests for `BridgeOutboxDrainHook` (BRIDGE-4, ADR-023 Phase 2).
+ * Unit tests for `BridgeOutboxDrainHook` (ADR-023, JOBS-3).
  *
- * Mocks the per-event tx via a fluent stub that captures `.insert(...)`
- * call sequences. No Postgres, no Docker. Pins:
- *   - registry miss → no inserts, returns zeros
- *   - null direction → no inserts, returns zeros, warns once
- *   - happy path → bridge_delivery + wrapper job_run insert per matched
- *     trigger; per-direction wrapper pool routing
- *   - Case B / replay collision (rowcount=0) → wrapper insert skipped for
- *     that trigger; sibling triggers still fire
- *   - tenant_id propagation
+ * The per-event transaction is a fluent stub that records the `bridge_delivery` writes; `JobStarter` is a fake that
+ * records each start. No Postgres. Pins:
+ *   - registry miss → no writes, zeros
+ *   - happy path → per trigger, in the event's transaction: the delivery row, `start(jobKey, map(event),
+ *     { tenantId, trigger: 'event' }, tx)`, then the delivery marked `delivered` with the run's id
+ *   - replay / Case B (the delivery insert hits ON CONFLICT) → no start for that trigger; siblings still start
+ *   - a trigger whose job this process doesn't register → `skipped` / `trigger_unregistered`, no start
+ *   - `when` false → `skipped` / `predicate_false`, no start
+ *   - tenant propagation; a trigger that cannot start fails alone (its delivery `failed`, its siblings started)
+ *   - a trigger's `dedupeKey` reaches the start
+ *   - the boot check: a trigger naming a job this app doesn't register stops the boot
+ *   - the audit-tier guard
  */
 import { beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { Logger } from '@nestjs/common';
+import { RunPlanningError } from '@pattern-stack/jobs';
 
 import {
   BridgeOutboxDrainHook,
   type BridgeRegistry,
+  type IJobBridge,
+  MemoryBridgeDeliveryRepo,
+  MissingTenantIdError,
 } from '../../../../runtime/subsystems/bridge';
 import type { DomainEvent } from '../../../../runtime/subsystems/events/event-bus.protocol';
+import type { JobStarter } from '../../../../runtime/subsystems/jobs/job-starter';
 
-// ─── Fluent insert mock ─────────────────────────────────────────────────────
+// ─── Fakes ──────────────────────────────────────────────────────────────────
 
 type InsertCall = { table: string; values: Record<string, unknown> };
-type DeleteCall = { table: string };
+type UpdateCall = { table: string; set: Record<string, unknown> };
 
-function tableName(table: unknown): string {
-  // Drizzle's `pgTable` exposes the table name via the
-  // `Symbol(drizzle:Name)` Symbol-keyed property. Look it up
-  // generically rather than relying on the public surface.
-  const sym = Object.getOwnPropertySymbols(table as object).find(
-    (s) => String(s) === 'Symbol(drizzle:Name)',
-  );
-  return sym ? ((table as Record<symbol, unknown>)[sym] as string) : 'unknown';
-}
-
+/**
+ * The event's transaction, as a stub that holds the ledger writes the delivery repo makes on it.
+ * `insertedIdResults[i]` is what the i-th claim gets: `[id]` claimed, `[]` already there (ON CONFLICT).
+ */
 function makeTx(insertedIdResults: Array<string[]>) {
-  // `insertedIdResults[i]` controls what the i-th INSERT-with-RETURNING
-  // returns (`[id]` for "row inserted", `[]` for "ON CONFLICT skipped").
-  // INSERTs without `.returning` are wrapper job_run inserts; they
-  // don't consume a slot from this list.
-  //
-  // FK-order note (0.15.2): the hook now inserts the wrapper `job_run`
-  // FIRST, then the `bridge_delivery` (so the non-deferrable
-  // `wrapper_run_id → job_run` FK is satisfied), and on an ON-CONFLICT
-  // delivery it DELETEs the speculative wrapper run. `calls` records inserts
-  // in fire order; `deletes` records orphan-wrapper cleanups.
   const calls: InsertCall[] = [];
-  const deletes: DeleteCall[] = [];
-  let returningCallIdx = 0;
-
+  const updates: UpdateCall[] = [];
+  let idx = 0;
   const tx = {
-    insert(table: unknown) {
-      const name = tableName(table);
-      const builder = {
-        values(v: Record<string, unknown>) {
-          calls.push({ table: name, values: v });
-          // Return both shapes: with onConflictDoNothing for the
-          // delivery insert, and a plain promise for the wrapper insert.
-          // The bridge hook consistently chains:
-          //   .insert(jobRuns).values(...)            ← awaited as Promise
-          //   .insert(bridgeDelivery).values(...).onConflictDoNothing(...).returning(...)
-          const chain = {
-            onConflictDoNothing(_opts: unknown) {
-              return {
-                returning(_cols: unknown) {
-                  const idx = returningCallIdx++;
-                  const ids = insertedIdResults[idx] ?? [];
-                  return Promise.resolve(ids.map((id) => ({ id })));
-                },
-              };
-            },
-            // For wrapper inserts (no ON CONFLICT) — the hook awaits
-            // the values() chain directly. Make it thenable.
-            then(
-              resolve: (v: unknown[]) => void,
-              _reject?: (err: unknown) => void,
-            ) {
-              resolve([]);
-            },
-          };
-          return chain;
-        },
-      };
-      return builder;
+    // A trigger's savepoint: the fake runs it on the same stub (a throw inside rolls nothing back here; the hook's
+    // handling of it is what is under test).
+    transaction<T>(fn: (sp: unknown) => Promise<T>): Promise<T> {
+      return fn(tx);
     },
-    delete(table: unknown) {
-      const name = tableName(table);
-      return {
-        where(_cond: unknown) {
-          deletes.push({ table: name });
-          return Promise.resolve([]);
-        },
-      };
+    claim(values: Record<string, unknown>): string | null {
+      calls.push({ table: 'bridge_delivery', values: { ...values, status: 'pending' } });
+      return (insertedIdResults[idx++] ?? [])[0] ?? null;
+    },
+    mark(set: Record<string, unknown>) {
+      updates.push({ table: 'bridge_delivery', set });
     },
   };
-  return { tx, calls, deletes };
+  return { tx, calls, updates };
+}
+
+type FakeTx = ReturnType<typeof makeTx>['tx'];
+
+/** The delivery repo, writing on whichever transaction it is handed (the hook's one ledger writer). */
+const ledger = {
+  async claimDelivery(row: Record<string, unknown>, tx: FakeTx) {
+    return tx.claim(row);
+  },
+  async markSkipped(_id: string, skipReason: string, tx: FakeTx) {
+    tx.mark({ status: 'skipped', skipReason });
+  },
+  async markFailed(_id: string, error: Record<string, unknown>, tx: FakeTx) {
+    tx.mark({ status: 'failed', error });
+  },
+  async markDelivered(_id: string, userRunId: string, tx: FakeTx) {
+    tx.mark({ status: 'delivered', userRunId });
+  },
+} as unknown as IJobBridge;
+
+type StartCall = { jobKey: string; input: unknown; options: Record<string, unknown>; tx: unknown };
+
+/** A `JobStarter` that registers `registered` (default: every key) and records each start. */
+function fakeStarter(opts: { registered?: string[]; fail?: Error } = {}) {
+  const starts: StartCall[] = [];
+  const starter = {
+    has: (key: string) => opts.registered?.includes(key) ?? true,
+    async start(jobKey: string, input: unknown, options: Record<string, unknown> = {}, tx?: unknown) {
+      if (opts.fail) throw opts.fail;
+      starts.push({ jobKey, input, options, tx });
+      return { run: { id: `run-${starts.length}` }, created: true };
+    },
+  } as unknown as JobStarter;
+  return { starter, starts };
 }
 
 function event(overrides: Partial<DomainEvent> = {}): DomainEvent {
@@ -113,207 +107,200 @@ function event(overrides: Partial<DomainEvent> = {}): DomainEvent {
 
 const REGISTRY_TWO_TRIGGERS: BridgeRegistry = {
   contact_created: [
-    {
-      triggerId: 'send_welcome_email#0',
-      jobType: 'send_welcome_email',
-      map: () => ({}),
-    },
-    {
-      triggerId: 'integration_contact_to_hubspot#0',
-      jobType: 'integration_contact_to_hubspot',
-      map: () => ({}),
-    },
+    { triggerId: 'send_welcome_email#0', jobKey: 'send_welcome_email', map: (e: DomainEvent) => ({ id: e.aggregateId }) },
+    { triggerId: 'integration_contact_to_hubspot#0', jobKey: 'integration_contact_to_hubspot', map: () => ({}) },
   ],
 } as unknown as BridgeRegistry;
+
+const ZERO = { delivered: 0, dedupSkips: 0, triggerCount: 0, auditBlocked: 0 };
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe('BridgeOutboxDrainHook — registry lookup', () => {
-  it('returns zeros without inserting when the registry has no entry', async () => {
-    const hook = new BridgeOutboxDrainHook({} as BridgeRegistry);
+  it('returns zeros without writing or starting when the registry has no entry', async () => {
+    const { starter, starts } = fakeStarter();
+    const hook = new BridgeOutboxDrainHook(starter, ledger, {} as BridgeRegistry);
     const { tx, calls } = makeTx([]);
-    const result = await hook.processEvent(event(), tx as never);
-    expect(result).toEqual({
-      delivered: 0,
-      dedupSkips: 0,
-      triggerCount: 0,
-      auditBlocked: 0,
-    });
+    expect(await hook.processEvent(event(), tx as never)).toEqual(ZERO);
     expect(calls).toHaveLength(0);
-  });
-});
-
-describe('BridgeOutboxDrainHook — null direction tolerance', () => {
-  it('returns zeros (with triggerCount), warns once, does not write rows', async () => {
-    const hook = new BridgeOutboxDrainHook(REGISTRY_TWO_TRIGGERS);
-    const { tx, calls } = makeTx([]);
-    const result = await hook.processEvent(
-      event({ metadata: { /* no direction */ } }),
-      tx as never,
-    );
-    expect(result).toEqual({
-      delivered: 0,
-      dedupSkips: 0,
-      triggerCount: 2, // matched but un-routable
-      auditBlocked: 0,
-    });
-    expect(calls).toHaveLength(0);
+    expect(starts).toHaveLength(0);
   });
 });
 
 describe('BridgeOutboxDrainHook — happy path', () => {
-  it('writes bridge_delivery + wrapper job_run for each matched trigger', async () => {
-    const hook = new BridgeOutboxDrainHook(REGISTRY_TWO_TRIGGERS);
-    // Both delivery inserts succeed (each returns one id).
+  it('per trigger, in the event transaction: the delivery row, the run started, the delivery marked delivered', async () => {
+    const { starter, starts } = fakeStarter();
+    const hook = new BridgeOutboxDrainHook(starter, ledger, REGISTRY_TWO_TRIGGERS);
+    const { tx, calls, updates } = makeTx([['del-1'], ['del-2']]);
+
+    const result = await hook.processEvent(event(), tx as never);
+
+    expect(result).toEqual({ delivered: 2, dedupSkips: 0, triggerCount: 2, auditBlocked: 0 });
+    expect(calls.map((c) => [c.table, c.values.triggerId, c.values.status])).toEqual([
+      ['bridge_delivery', 'send_welcome_email#0', 'pending'],
+      ['bridge_delivery', 'integration_contact_to_hubspot#0', 'pending'],
+    ]);
+    expect(calls[0]!.values.eventId).toBe('evt-1');
+    // The user's run, started inside the event's transaction (a savepoint of it), trigger 'event'.
+    expect(starts.map((s) => s.jobKey)).toEqual(['send_welcome_email', 'integration_contact_to_hubspot']);
+    expect(starts[0]!.input).toEqual({ id: 'agg-1' });
+    expect(starts[0]!.options).toEqual({ tenantId: null, trigger: 'event' });
+    expect(starts.every((s) => s.tx === tx)).toBe(true);
+    // No dedupe key unless the trigger declares one; never a window on the bridge path.
+    expect(starts.some((s) => 'dedupeKey' in s.options || 'dedupeWindowMs' in s.options)).toBe(false);
+    expect(updates.map((u) => [u.set.status, u.set.userRunId])).toEqual([
+      ['delivered', 'run-1'],
+      ['delivered', 'run-2'],
+    ]);
+  });
+});
+
+describe('BridgeOutboxDrainHook — replay / Case B dedup', () => {
+  it('a delivery that hits ON CONFLICT starts nothing for that trigger; its sibling still starts', async () => {
+    const { starter, starts } = fakeStarter();
+    const hook = new BridgeOutboxDrainHook(starter, ledger, REGISTRY_TWO_TRIGGERS);
+    const { tx, updates } = makeTx([[], ['del-2']]);
+
+    const result = await hook.processEvent(event(), tx as never);
+
+    expect(result).toEqual({ delivered: 1, dedupSkips: 1, triggerCount: 2, auditBlocked: 0 });
+    expect(starts.map((s) => s.jobKey)).toEqual(['integration_contact_to_hubspot']);
+    expect(updates).toHaveLength(1);
+  });
+
+  it('every delivery ON CONFLICT (an outbox replay) → no run started', async () => {
+    const { starter, starts } = fakeStarter();
+    const hook = new BridgeOutboxDrainHook(starter, ledger, REGISTRY_TWO_TRIGGERS);
+    const result = await hook.processEvent(event(), makeTx([[], []]).tx as never);
+    expect(result).toEqual({ delivered: 0, dedupSkips: 2, triggerCount: 2, auditBlocked: 0 });
+    expect(starts).toHaveLength(0);
+  });
+});
+
+describe('BridgeOutboxDrainHook — skips', () => {
+  it("a trigger whose job this process doesn't register is skipped (trigger_unregistered), not started", async () => {
+    const { starter, starts } = fakeStarter({ registered: ['integration_contact_to_hubspot'] });
+    const hook = new BridgeOutboxDrainHook(starter, ledger, REGISTRY_TWO_TRIGGERS);
+    const { tx, updates } = makeTx([['del-1'], ['del-2']]);
+
+    const result = await hook.processEvent(event(), tx as never);
+
+    expect(result.delivered).toBe(1);
+    expect(starts.map((s) => s.jobKey)).toEqual(['integration_contact_to_hubspot']);
+    expect(updates[0]!.set).toEqual({ status: 'skipped', skipReason: 'trigger_unregistered' });
+  });
+
+  it('a trigger whose `when` is false is skipped (predicate_false), not started', async () => {
+    const { starter, starts } = fakeStarter();
+    const hook = new BridgeOutboxDrainHook(starter, ledger, {
+      contact_created: [{ triggerId: 'x#0', jobKey: 'x', map: () => ({}), when: () => false }],
+    } as unknown as BridgeRegistry);
+    const { tx, updates } = makeTx([['del-1']]);
+
+    expect((await hook.processEvent(event(), tx as never)).delivered).toBe(0);
+    expect(starts).toHaveLength(0);
+    expect(updates[0]!.set).toEqual({ status: 'skipped', skipReason: 'predicate_false' });
+  });
+});
+
+describe('BridgeOutboxDrainHook — tenant propagation and failure', () => {
+  it('passes event.metadata.tenantId to the delivery row and the start', async () => {
+    const { starter, starts } = fakeStarter();
+    const hook = new BridgeOutboxDrainHook(starter, ledger, REGISTRY_TWO_TRIGGERS);
     const { tx, calls } = makeTx([['del-1'], ['del-2']]);
+    await hook.processEvent(event({ metadata: { direction: 'change', tenantId: 'tenant-a' } }), tx as never);
+    expect(calls.every((c) => c.values.tenantId === 'tenant-a')).toBe(true);
+    expect(starts.every((s) => s.options.tenantId === 'tenant-a')).toBe(true);
+  });
+
+  it('an event with no tenant reaches the repo as none (its check), and the start as null (SYSTEM_TENANT)', async () => {
+    const { starter, starts } = fakeStarter();
+    const hook = new BridgeOutboxDrainHook(starter, ledger, REGISTRY_TWO_TRIGGERS);
+    const { tx, calls } = makeTx([['del-1'], ['del-2']]);
+    await hook.processEvent(event({ metadata: {} }), tx as never);
+    expect(calls.every((c) => c.values.tenantId === undefined)).toBe(true);
+    expect(starts.every((s) => s.options.tenantId === null)).toBe(true);
+  });
+
+  it('a multi-tenant bridge refuses an event with no tenant before any row or run (review #969)', async () => {
+    const { starter, starts } = fakeStarter();
+    const repo = new MemoryBridgeDeliveryRepo(true);
+    const hook = new BridgeOutboxDrainHook(starter, repo, REGISTRY_TWO_TRIGGERS);
+    const tx = { transaction: <T>(fn: (sp: unknown) => Promise<T>) => fn(tx) };
+    await expect(hook.processEvent(event({ metadata: {} }), tx as never)).rejects.toBeInstanceOf(MissingTenantIdError);
+    expect(starts).toHaveLength(0);
+    expect(repo.getDeliveriesForEvent('evt-1')).toHaveLength(0);
+    // An explicit null tenant is cross-tenant work, and passes.
+    expect((await hook.processEvent(event({ metadata: { tenantId: null } }), tx as never)).delivered).toBe(2);
+  });
+
+  it('a `when` that throws fails that trigger alone; its sibling still delivers (review #969)', async () => {
+    const { starter, starts } = fakeStarter();
+    const hook = new BridgeOutboxDrainHook(starter, ledger, {
+      contact_created: [
+        { triggerId: 'bad#0', jobKey: 'bad', map: () => ({}), when: () => { throw new TypeError('no field v2'); } },
+        { triggerId: 'good#0', jobKey: 'good', map: () => ({}) },
+      ],
+    } as unknown as BridgeRegistry);
+    const { tx, updates } = makeTx([['del-1'], ['del-2']]);
+    const result = await hook.processEvent(event(), tx as never);
+    expect(result.delivered).toBe(1);
+    expect(starts.map((s) => s.jobKey)).toEqual(['good']);
+    expect(updates[0]!.set).toEqual({ status: 'failed', error: { type: 'TypeError', message: 'no field v2' } });
+  });
+
+  it('an error that is no fault of the trigger (a deadlock) is thrown, so the event rolls back and retries (review #969)', async () => {
+    const deadlock = Object.assign(new Error('deadlock detected'), { code: '40P01' });
+    const { starter } = fakeStarter({ fail: deadlock });
+    const hook = new BridgeOutboxDrainHook(starter, ledger, REGISTRY_TWO_TRIGGERS);
+    const { tx, updates } = makeTx([['del-1'], ['del-2']]);
+    await expect(hook.processEvent(event(), tx as never)).rejects.toBe(deadlock);
+    expect(updates.some((u) => u.set.status === 'failed')).toBe(false);
+  });
+
+  it('a trigger that cannot start fails alone: its delivery failed with the error, its sibling started, no throw', async () => {
+    const starts: StartCall[] = [];
+    const starter = {
+      has: () => true,
+      async start(jobKey: string, input: unknown, options: Record<string, unknown> = {}, tx?: unknown) {
+        if (jobKey === 'send_welcome_email') throw new RunPlanningError('input refused');
+        starts.push({ jobKey, input, options, tx });
+        return { run: { id: 'run-ok' }, created: true };
+      },
+    } as unknown as JobStarter;
+    const hook = new BridgeOutboxDrainHook(starter, ledger, REGISTRY_TWO_TRIGGERS);
+    const { tx, updates } = makeTx([['del-1'], ['del-2']]);
 
     const result = await hook.processEvent(event(), tx as never);
 
-    expect(result).toEqual({
-      delivered: 2,
-      dedupSkips: 0,
-      triggerCount: 2,
-      auditBlocked: 0,
-    });
-
-    // Expect 4 inserts: per trigger the wrapper job_run FIRST, then the
-    // bridge_delivery (FK order). No orphan deletes on the happy path.
-    expect(calls).toHaveLength(4);
-    expect(calls[0]!.table).toBe('job_run');
-    expect(calls[1]!.table).toBe('bridge_delivery');
-    expect(calls[2]!.table).toBe('job_run');
-    expect(calls[3]!.table).toBe('bridge_delivery');
-
-    // Wrappers route into events_change (matches event direction).
-    expect(calls[0]!.values['pool']).toBe('events_change');
-    expect(calls[2]!.values['pool']).toBe('events_change');
-    expect(calls[0]!.values['jobType']).toBe('@framework/bridge_delivery');
-    expect(calls[0]!.values['triggerSource']).toBe('event');
-    expect(calls[0]!.values['triggerRef']).toBe('evt-1');
-
-    // bridge_delivery rows carry trigger_id from the registry entry.
-    expect(calls[1]!.values['triggerId']).toBe('send_welcome_email#0');
-    expect(calls[3]!.values['triggerId']).toBe('integration_contact_to_hubspot#0');
+    expect(result).toEqual({ delivered: 1, dedupSkips: 0, triggerCount: 2, auditBlocked: 0 });
+    expect(starts.map((s) => s.jobKey)).toEqual(['integration_contact_to_hubspot']);
+    expect(updates[0]!.set).toEqual({ status: 'failed', error: { type: 'RunPlanningError', message: 'input refused' } });
+    expect(updates[1]!.set).toMatchObject({ status: 'delivered', userRunId: 'run-ok' });
   });
 
-  it('routes wrapper pool by event direction (inbound/change/outbound)', async () => {
-    const cases: Array<[string, string]> = [
-      ['inbound', 'events_inbound'],
-      ['change', 'events_change'],
-      ['outbound', 'events_outbound'],
-    ];
-    for (const [direction, expectedPool] of cases) {
-      const hook = new BridgeOutboxDrainHook({
-        contact_created: [
-          {
-            triggerId: 'send_welcome_email#0',
-            jobType: 'send_welcome_email',
-            map: () => ({}),
-          },
-        ],
-      } as unknown as BridgeRegistry);
-      const { tx, calls } = makeTx([['del-1']]);
-      await hook.processEvent(
-        event({ metadata: { direction } }),
-        tx as never,
-      );
-      const wrapper = calls.find((c) => c.table === 'job_run')!;
-      expect(wrapper.values['pool']).toBe(expectedPool);
-    }
+  it("a trigger's dedupeKey reaches the start (the job's collision then applies)", async () => {
+    const { starter, starts } = fakeStarter();
+    const hook = new BridgeOutboxDrainHook(starter, ledger, {
+      contact_created: [{ triggerId: 'sync#0', jobKey: 'sync', map: () => ({}), dedupeKey: (e: DomainEvent) => `sync:${e.aggregateId}` }],
+    } as unknown as BridgeRegistry);
+    await hook.processEvent(event(), makeTx([['del-1']]).tx as never);
+    expect(starts[0]!.options).toEqual({ tenantId: null, trigger: 'event', dedupeKey: 'sync:agg-1' });
   });
 });
 
-describe('BridgeOutboxDrainHook — Case B / replay dedup', () => {
-  it('rolls back the speculative wrapper for the trigger whose delivery hit ON CONFLICT', async () => {
-    const hook = new BridgeOutboxDrainHook(REGISTRY_TWO_TRIGGERS);
-    // First delivery insert returns empty (ON CONFLICT — facade pre-write
-    // or replay); second succeeds.
-    const { tx, calls, deletes } = makeTx([[], ['del-2']]);
-
-    const result = await hook.processEvent(event(), tx as never);
-
-    expect(result).toEqual({
-      delivered: 1,
-      dedupSkips: 1,
-      triggerCount: 2,
-      auditBlocked: 0,
-    });
-
-    // FK order: each trigger inserts wrapper job_run THEN delivery. The first
-    // trigger's delivery conflicts → its speculative wrapper is DELETEd; the
-    // second trigger delivers normally (no delete).
-    expect(calls).toHaveLength(4);
-    expect(calls[0]!.table).toBe('job_run'); // trigger 1 wrapper (rolled back)
-    expect(calls[1]!.table).toBe('bridge_delivery'); // trigger 1 delivery (skipped)
-    expect(calls[2]!.table).toBe('job_run'); // trigger 2 wrapper (kept)
-    expect(calls[3]!.table).toBe('bridge_delivery'); // trigger 2 delivery (succeeded)
-    expect(calls[2]!.values['pool']).toBe('events_change');
-    expect(calls[3]!.values['triggerId']).toBe('integration_contact_to_hubspot#0');
-
-    // Exactly one orphan wrapper run cleaned up (the skipped trigger's).
-    expect(deletes).toHaveLength(1);
-    expect(deletes[0]!.table).toBe('job_run');
-  });
-
-  it('all triggers ON CONFLICT → every speculative wrapper rolled back; net zero job_run rows', async () => {
-    const hook = new BridgeOutboxDrainHook(REGISTRY_TWO_TRIGGERS);
-    const { tx, calls, deletes } = makeTx([[], []]);
-    const result = await hook.processEvent(event(), tx as never);
-    expect(result).toEqual({
-      delivered: 0,
-      dedupSkips: 2,
-      triggerCount: 2,
-      auditBlocked: 0,
-    });
-    // Both wrappers were speculatively inserted then deleted → net zero.
-    expect(calls.filter((c) => c.table === 'job_run')).toHaveLength(2);
-    expect(deletes.filter((d) => d.table === 'job_run')).toHaveLength(2);
-  });
-});
-
-describe('BridgeOutboxDrainHook — tenant propagation', () => {
-  it('passes event.metadata.tenantId to both delivery and wrapper rows', async () => {
-    const hook = new BridgeOutboxDrainHook({
-      contact_created: [
-        {
-          triggerId: 'send_welcome_email#0',
-          jobType: 'send_welcome_email',
-          map: () => ({}),
-        },
-      ],
-    } as unknown as BridgeRegistry);
-    const { tx, calls } = makeTx([['del-1']]);
-    await hook.processEvent(
-      event({
-        metadata: { direction: 'change', tenantId: 'tenant-7' },
-      }),
-      tx as never,
+describe('BridgeOutboxDrainHook — boot check', () => {
+  it("stops the boot when a trigger names a job this app doesn't register", () => {
+    const { starter } = fakeStarter({ registered: ['send_welcome_email'] });
+    const hook = new BridgeOutboxDrainHook(starter, ledger, REGISTRY_TWO_TRIGGERS);
+    expect(() => hook.onApplicationBootstrap()).toThrow(
+      /bridge triggers name jobs this app does not register: 'integration_contact_to_hubspot#0' → 'integration_contact_to_hubspot'/,
     );
-    const delivery = calls.find((c) => c.table === 'bridge_delivery')!;
-    const wrapper = calls.find((c) => c.table === 'job_run')!;
-    expect(delivery.values['tenantId']).toBe('tenant-7');
-    expect(wrapper.values['tenantId']).toBe('tenant-7');
   });
 
-  it('defaults tenantId to null when metadata is absent', async () => {
-    const hook = new BridgeOutboxDrainHook({
-      contact_created: [
-        {
-          triggerId: 'send_welcome_email#0',
-          jobType: 'send_welcome_email',
-          map: () => ({}),
-        },
-      ],
-    } as unknown as BridgeRegistry);
-    const { tx, calls } = makeTx([['del-1']]);
-    await hook.processEvent(
-      event({ metadata: { direction: 'change' } }),
-      tx as never,
-    );
-    const delivery = calls.find((c) => c.table === 'bridge_delivery')!;
-    const wrapper = calls.find((c) => c.table === 'job_run')!;
-    expect(delivery.values['tenantId']).toBeNull();
-    expect(wrapper.values['tenantId']).toBeNull();
+  it('passes when every trigger names a registered job', () => {
+    const { starter } = fakeStarter();
+    expect(() => new BridgeOutboxDrainHook(starter, ledger, REGISTRY_TWO_TRIGGERS).onApplicationBootstrap()).not.toThrow();
   });
 });
 
@@ -345,10 +332,10 @@ describe('BridgeOutboxDrainHook — audit-tier guard', () => {
   // out-of-band / version-skew drift the runtime guard is defense-in-depth for.
   const DRIFT_REGISTRY: BridgeRegistry = {
     crm_sync_started: [
-      { triggerId: 'side_effect_job#0', jobType: 'side_effect_job', map: () => ({}) },
+      { triggerId: 'side_effect_job#0', jobKey: 'side_effect_job', map: () => ({}) },
     ],
     crm_sync_completed: [
-      { triggerId: 'other_side_effect#0', jobType: 'other_side_effect', map: () => ({}) },
+      { triggerId: 'other_side_effect#0', jobKey: 'other_side_effect', map: () => ({}) },
     ],
   } as unknown as BridgeRegistry;
 
@@ -356,11 +343,11 @@ describe('BridgeOutboxDrainHook — audit-tier guard', () => {
     // Out-of-band: registry has a trigger registered for an audit event
     // type (codegen-side AUDIT-2 should have prevented this — simulating
     // registry/runtime drift).
-    const hook = new BridgeOutboxDrainHook({
+    const hook = new BridgeOutboxDrainHook(fakeStarter().starter, ledger, {
       crm_sync_started: [
         {
           triggerId: 'side_effect_job#0',
-          jobType: 'side_effect_job',
+          jobKey: 'side_effect_job',
           map: () => ({}),
         },
       ],
@@ -391,7 +378,7 @@ describe('BridgeOutboxDrainHook — audit-tier guard', () => {
     // The common case: an audit-tier lifecycle event (e.g. connection.created)
     // sharing the outbox with domain events. No trigger → no drift → no WARN.
     // This is the regression guard for the false-positive class.
-    const hook = new BridgeOutboxDrainHook({} as BridgeRegistry);
+    const hook = new BridgeOutboxDrainHook(fakeStarter().starter, ledger, {} as BridgeRegistry);
     const { tx, calls } = makeTx([]);
 
     const result = await hook.processEvent(auditEvent(), tx as never);
@@ -407,7 +394,7 @@ describe('BridgeOutboxDrainHook — audit-tier guard', () => {
   });
 
   it('dedups WARN per event type within a single process', async () => {
-    const hook = new BridgeOutboxDrainHook(DRIFT_REGISTRY);
+    const hook = new BridgeOutboxDrainHook(fakeStarter().starter, ledger, DRIFT_REGISTRY);
 
     const a = await hook.processEvent(auditEvent(), makeTx([]).tx as never);
     const b = await hook.processEvent(
@@ -422,7 +409,7 @@ describe('BridgeOutboxDrainHook — audit-tier guard', () => {
   });
 
   it('emits a fresh WARN when a different audit event type is seen', async () => {
-    const hook = new BridgeOutboxDrainHook(DRIFT_REGISTRY);
+    const hook = new BridgeOutboxDrainHook(fakeStarter().starter, ledger, DRIFT_REGISTRY);
 
     await hook.processEvent(auditEvent(), makeTx([]).tx as never);
     await hook.processEvent(
@@ -441,7 +428,7 @@ describe('BridgeOutboxDrainHook — audit-tier guard', () => {
   });
 
   it('does not fire on domain events with valid triggers', async () => {
-    const hook = new BridgeOutboxDrainHook(REGISTRY_TWO_TRIGGERS);
+    const hook = new BridgeOutboxDrainHook(fakeStarter().starter, ledger, REGISTRY_TWO_TRIGGERS);
     const { tx } = makeTx([['del-1'], ['del-2']]);
     const result = await hook.processEvent(event(), tx as never);
     expect(result.auditBlocked).toBe(0);
@@ -449,7 +436,7 @@ describe('BridgeOutboxDrainHook — audit-tier guard', () => {
   });
 
   it('does not fire on domain events with no triggers', async () => {
-    const hook = new BridgeOutboxDrainHook({} as BridgeRegistry);
+    const hook = new BridgeOutboxDrainHook(fakeStarter().starter, ledger, {} as BridgeRegistry);
     const { tx } = makeTx([]);
     const result = await hook.processEvent(event(), tx as never);
     expect(result).toEqual({

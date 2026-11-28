@@ -168,7 +168,6 @@ describe('subsystem install --json (vendored) regenerates the barrel', () => {
 });
 
 describe('subsystem install regenerates from the config block it just wrote (JOBS-1, #661)', () => {
-	const drizzleExt = '{ drizzle: { pollIntervalMs: 1000 } }';
 	for (const runtime of ['vendored', 'package'] as const) {
 		test(`${runtime}: jobs — subsystems.ts and app-config.ts carry the injected jobs: block`, async () => {
 			const root = mkProject(`runtime: ${runtime}\npaths:\n  backend_src: src\n`);
@@ -176,14 +175,15 @@ describe('subsystem install regenerates from the config block it just wrote (JOB
 			expect(code).toBe(0);
 			expect(fs.readFileSync(path.join(root, 'codegen.config.yaml'), 'utf-8')).toContain('worker_mode: embedded');
 			const barrel = fs.readFileSync(path.join(root, 'src/generated/subsystems.ts'), 'utf-8');
-			expect(barrel).toContain(`JobsDomainModule.forRoot({ backend: 'drizzle', extensions: ${drizzleExt}, pools: jobPools })`);
 			expect(barrel).toContain(
-				`JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModuleExtensions: ${drizzleExt}, domainModulePools: jobPools })`,
+				'JobsEngineModule.forRoot({ definitions: jobDefinitions, worker: true, limiters: jobLimiters, inProcess: jobsInProcessOptions }),',
+			);
+			// The barrel's job registry is written beside it (no jobs yet: an empty list).
+			expect(fs.readFileSync(path.join(root, 'src/generated/jobs.ts'), 'utf-8')).toContain(
+				'export const jobDefinitions: readonly JobEntry[] = [];',
 			);
 			const appConfig = fs.readFileSync(path.join(root, 'src/generated/app-config.ts'), 'utf-8');
-			expect(appConfig).toMatch(
-				/export const jobWorkerOptions = \{[^}]*"backend": "drizzle",\s*"domainModuleExtensions": \{\s*"drizzle": \{\s*"pollIntervalMs": 1000\s*\}/,
-			);
+			expect(appConfig).toMatch(/export const jobLimiters = \{\s*"interactive": \{\s*"inFlight": 20\s*\},\s*"batch": \{\s*"inFlight": 5\s*\}/);
 		}, 60_000);
 	}
 });
@@ -199,14 +199,6 @@ describe('entity new fails when a post-step cannot regenerate a file the app imp
 		return root;
 	};
 
-	test('scope-entity-type.ts — names the file, exit 1', async () => {
-		const root = project();
-		const file = block(root, 'src/generated/scope-entity-type.ts');
-		const { code, out } = await run(['entity', 'new', '--all', '--force', '--cwd', root]);
-		expect(code).toBe(1);
-		expect(out).toContain(`could not regenerate ${file}: EISDIR`);
-		expect(out).not.toContain('scope-entity-type generation failed');
-	});
 
 	test('event codegen — a blocked file, JSON mode', async () => {
 		const root = project();
@@ -235,14 +227,11 @@ describe('entity new fails when a post-step cannot regenerate a file the app imp
 		fs.writeFileSync(
 			path.join(root, 'src/jobs/welcome.handler.ts'),
 			[
-				"import { JobHandler } from '@pattern-stack/codegen/runtime/subsystems/jobs/index';",
-				"@JobHandler<{}>('send_welcome', {",
-				'  triggers: [',
-				"    { event: 'contact_created', map: (e) => ({ id: e.aggregateId }) },",
-				"    { event: 'contact_created', map: (e) => ({ id: e.aggregateId }) },",
-				'  ],',
-				'})',
-				'export class SendWelcomeHandler { async run() {} }',
+				"import { jobTriggers } from '@pattern-stack/codegen/runtime/subsystems/bridge/index';",
+				"export const sendWelcomeTriggers = jobTriggers('send_welcome', [",
+				"  { event: 'contact_created', map: (e) => ({ id: e.aggregateId }) },",
+				"  { event: 'contact_created', map: (e) => ({ id: e.aggregateId }) },",
+				']);',
 				'',
 			].join('\n'),
 		);

@@ -1,7 +1,8 @@
 /**
  * Jobs emission write-orchestration (RFC-0005, breakdown #7b).
  *
- * Wraps the pure `generateJobHandler{Base,Subclass}` emitters with the file
+ * Wraps the pure `generateJobHandler{Base,Subclass}` emitters (names kept from
+ * ADR-022; they emit a `defineJob` now, JOBS-3) with the file
  * layout + emit-once write logic — exactly as `emitAdapters` wraps the pure sink
  * generators. Per job, into `<backend_src>/jobs/`:
  *   - `<type>.job.generated.ts` — `@generated`, written via `writeIfChanged`
@@ -11,7 +12,7 @@
  *
  * The flat `<backend_src>/jobs/` layout is load-bearing: it is the same dir the
  * bridge-registry generator scans. Job triggers reach the bridge DECLARATIVELY
- * (RFC-0005 fork 1), so the emitted `@JobHandler` carries no `triggers` and the
+ * (RFC-0005 fork 1), so the emitted job carries no `jobTriggers(...)` and the
  * scan never double-registers them.
  */
 
@@ -22,6 +23,7 @@ import type { AnalysisIssue } from "../../analyzer/types";
 import type { RuntimeMode } from "./runtime-import";
 import type { JobArm, JobDefinition } from "../../schema/job-definition.schema";
 import type { SubsystemName } from "./subsystem-detect";
+import { generateJobRegistry, JOB_REGISTRY_FILE } from "./job-registry-generator";
 import { issueRejections } from "./run-rejections";
 import {
 	generateJobHandlerBase,
@@ -37,6 +39,12 @@ export interface EmitJobsOptions {
 	mode?: RuntimeMode;
 	/** If true, compute paths but don't write. */
 	dryRun?: boolean;
+	/**
+	 * The generated dir whose job registry (`<generated>/jobs.ts`) lists these jobs. Given (the jobs subsystem is
+	 * installed), the registry is regenerated once the job files are written: `entity new` writes it with the barrel,
+	 * before these files exist, so without this a new YAML job is missing from it until a second run.
+	 */
+	registryDir?: string;
 }
 
 export interface EmitJobsResult {
@@ -154,6 +162,13 @@ export function emitJobHandlers(opts: EmitJobsOptions): EmitJobsResult {
 			if (!opts.dryRun) writeFresh(subPath, generateJobHandlerSubclass({ job, mode }));
 			result.scaffoldsWritten.push(subPath);
 		}
+	}
+
+	if (opts.registryDir && !opts.dryRun) {
+		const registryDir = opts.registryDir;
+		generating(join(registryDir, JOB_REGISTRY_FILE), () =>
+			generateJobRegistry({ jobsDir: opts.jobsHandlersDir, outputDir: registryDir }),
+		);
 	}
 
 	return result;

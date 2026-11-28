@@ -12,8 +12,8 @@ bridge:
   backend: drizzle
 
   # ── Multi-tenancy (BRIDGE-8 / ADR-023) ──
-  # When true, the three enforcement sites
-  # (EventFlowService.publishAndStart, BridgeDeliveryHandler.run,
+  # When true, the enforcement sites
+  # (EventFlowService.publishAndStart,
   # DrizzleBridgeDeliveryRepo.insertDelivery) throw MissingTenantIdError
   # when `tenantId === undefined`. Explicit `null` always passes
   # (cross-tenant work). Pair with `BridgeModule.forRoot({ multiTenant: true })`.

@@ -20,13 +20,6 @@
  */
 
 import type {
-  JobRunFailure,
-  JobRunPage,
-  JobRunSummary,
-  ListJobRunsQuery,
-  PoolStatusCount,
-} from '../jobs/job-run-service.protocol';
-import type {
   EventPage,
   EventSummary,
   ListEventsQuery,
@@ -36,13 +29,10 @@ import type { IntegrationRunSummary } from '../integration/integration-run-recor
 import type { CursorSnapshot } from '../integration/integration-cursor-store.protocol';
 
 /**
- * One chronological entry in a correlation timeline (OBS-LIST-1). Either a
- * `job_run` or a `domain_event` sharing the same `rootRunId`, tagged with a
- * `kind` discriminator and a single `at` timestamp used for ordering.
+ * One chronological entry in a correlation timeline (OBS-LIST-1): a `domain_event` sharing the `rootRunId`. Job runs
+ * left the timeline with ADR-022 (JOBS-3): a run's tree is `@pattern-stack/jobs`' own (`JobsService`'s operator view).
  */
-export type CorrelationTimelineEntry =
-  | { kind: 'job_run'; at: Date; run: JobRunSummary }
-  | { kind: 'event'; at: Date; event: EventSummary };
+export type CorrelationTimelineEntry = { kind: 'event'; at: Date; event: EventSummary };
 
 /**
  * Stitched view of everything correlated to a single `rootRunId`
@@ -52,10 +42,9 @@ export type CorrelationTimelineEntry =
  */
 export interface CorrelationTimeline {
   rootRunId: string;
-  /** Ascending by `at`. Job runs ordered by `createdAt`; events by `occurredAt`. */
+  /** Ascending by `at` (an event's `occurredAt`). */
   entries: CorrelationTimelineEntry[];
   summary: {
-    runCount: number;
     eventCount: number;
     /** Earliest `at` across all entries, or `null` when empty. */
     startedAt: Date | null;
@@ -65,25 +54,6 @@ export interface CorrelationTimeline {
 }
 
 export interface IObservability {
-  /**
-   * Live `(pool, status)` counts across `job_run`. Delegates to
-   * `IJobRunService.countByPoolAndStatus`.
-   *
-   * Empty array when the jobs subsystem is not installed.
-   */
-  getPoolDepths(tenantId?: string | null): Promise<PoolStatusCount[]>;
-
-  /**
-   * Most-recent `failed` job runs, newest first. Delegates to
-   * `IJobRunService.listRecentFailed`.
-   *
-   * Empty array when the jobs subsystem is not installed.
-   */
-  getRecentFailedJobs(
-    limit: number,
-    tenantId?: string | null,
-  ): Promise<JobRunFailure[]>;
-
   /**
    * Bridge-delivery status counts over a trailing window. Delegates to
    * `IJobBridge.getStatusHistogram`.
@@ -118,15 +88,6 @@ export interface IObservability {
   getCursors(tenantId?: string | null): Promise<CursorSnapshot[]>;
 
   /**
-   * Paginated, filterable `job_run` list (OBS-LIST-1). Delegates to
-   * `IJobRunService.listJobRuns`. Keyset pagination on `created_at`.
-   *
-   * Returns an empty page (`{ items: [], nextCursor: null }`) when the jobs
-   * subsystem is not installed.
-   */
-  listJobRuns(query?: ListJobRunsQuery): Promise<JobRunPage>;
-
-  /**
    * Paginated, filterable `domain_events` list (OBS-LIST-1). Delegates to
    * `IEventReadPort.listEvents`. Keyset pagination on `occurred_at`.
    *
@@ -137,13 +98,8 @@ export interface IObservability {
   listEvents(query?: ListEventsQuery): Promise<EventPage>;
 
   /**
-   * Stitch the job runs and domain events sharing a `rootRunId` into a
-   * single ascending timeline + summary (OBS-LIST-1). Composes
-   * `IJobRunService.listJobRuns` (filtered by the run tree) and
-   * `IEventReadPort.listEvents({ rootRunId })`.
-   *
-   * Returns an empty timeline (zero counts, null bounds) when neither the
-   * jobs subsystem nor the events read port is installed.
+   * The domain events sharing a `rootRunId`, as one ascending timeline + summary (OBS-LIST-1), from
+   * `IEventReadPort.listEvents({ rootRunId })`. Empty (zero counts, null bounds) without the events read port.
    */
   getCorrelationTimeline(
     rootRunId: string,
@@ -154,11 +110,6 @@ export interface IObservability {
 // Re-export composed return types so consumers of IObservability can import
 // them from a single module without reaching into every sibling subsystem.
 export type {
-  PoolStatusCount,
-  JobRunFailure,
-  JobRunSummary,
-  JobRunPage,
-  ListJobRunsQuery,
   EventSummary,
   EventPage,
   ListEventsQuery,

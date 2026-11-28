@@ -29,7 +29,6 @@ import { checkGitSafety } from '../shared/git-safety.js';
 import {
 	regenerateBarrels,
 } from '../shared/barrel-generator.js';
-import { generateScopeEntityType } from '../shared/scope-entity-type-generator.js';
 import { regenerateSubsystemBarrel } from '../shared/subsystem-barrel-generator.js';
 import { regenerateSubsystemSchemaBarrel } from '../shared/subsystem-schema-generator.js';
 import { generateBridgeRegistry } from '../shared/bridge-registry-generator.js';
@@ -339,13 +338,6 @@ export class EntityNewCommand extends Command {
 		// the published `@pattern-stack/codegen` subpaths.
 		const runtimeMode = resolveRuntimeMode(ctx.config);
 
-		// Scope-entity-type union (jobs). Self-contained (zod-only), so package
-		// mode just relocates it to `src/generated/scope-entity-type.ts`.
-		const scopeEntityTypePath =
-			runtimeMode === 'package'
-				? path.resolve(generatedDir, 'scope-entity-type.ts')
-				: path.resolve(subsystemsRoot, 'jobs/generated/scope-entity-type.ts');
-
 		const eventsDir = projectLayout(ctx.cwd, ctx.config).eventsDir;
 		// Event codegen output. Package mode → `src/generated/events/` (the 5 files
 		// import the events runtime via the package subpath); also the dir the
@@ -464,13 +456,6 @@ export class EntityNewCommand extends Command {
 				relationsError = err instanceof Error ? err.message : String(err);
 			}
 
-			const scopePlan = await generateScopeEntityType({
-				entitiesDir,
-				nonEntityDirs,
-				outputPath: scopeEntityTypePath,
-				dryRun: true,
-			});
-
 			const eventCodegenPlan = await generateEventCodegen({
 				entitiesDir,
 				nonEntityDirs,
@@ -527,11 +512,6 @@ export class EntityNewCommand extends Command {
 						apiIncludesFile: relationsPlan?.includesFile ?? null,
 						warnings: relationsPlan?.warnings ?? [],
 						error: relationsError,
-					},
-					scopeEntityType: {
-						outputPath: scopePlan.outputPath,
-						scopeableNames: scopePlan.scopeableNames,
-						content: scopePlan.content,
 					},
 					eventCodegen: {
 						outputDir: eventCodegenPlan.outputDir,
@@ -605,9 +585,6 @@ export class EntityNewCommand extends Command {
 				} else {
 					printError(`relations manifest generation failed — ${relationsError}`);
 				}
-				printInfo(
-					`ScopeEntityType (${scopePlan.scopeableNames.length} scopeable): ${scopePlan.outputPath}`,
-				);
 				printInfo(
 					`event codegen (${eventCodegenPlan.eventCount} events) → ${eventCodegenPlan.outputDir}`,
 				);
@@ -702,37 +679,22 @@ export class EntityNewCommand extends Command {
 		// codegen.config.yaml every time. The app imports it, so a failed
 		// regeneration fails the command naming the file (JOBS-0, #655) — the
 		// warn-but-don't-fail this block used to do was the defect.
+		let barrel: Awaited<ReturnType<typeof regenerateSubsystemBarrel>>;
 		try {
-			await regenerateSubsystemBarrel({ ctx, generatedDir });
+			barrel = await regenerateSubsystemBarrel({ ctx, generatedDir });
 			await regenerateSubsystemSchemaBarrel({ ctx, generatedDir });
 		} catch (err: unknown) {
 			return reportRegenerationFailure('entity new', err);
 		}
 
-		// Every post-step below writes files the app imports — the ScopeEntityType
-		// union, the event codegen modules, the bridge registry, the orchestration
+		// Every post-step below writes files the app imports — the event codegen modules, the bridge registry, the orchestration
 		// modules, the frontend tree, the provider / adapter / assembly / job
 		// handler files. A failed step fails the command, naming the file (or the
 		// step's output root when it failed before writing): JOBS-1, #660. Declared
 		// skips (bridge not installed, no entities for the frontend, a surface with
 		// no package) are not failures and stay informational.
 
-		// Regenerate ScopeEntityType union after barrels (full directory rescan).
-		// Always runs for both single-file and --all modes (OQ-1: always rescan).
-		let scopeResult: Awaited<ReturnType<typeof generateScopeEntityType>>;
-		try {
-			scopeResult = await generating(scopeEntityTypePath, () =>
-				generateScopeEntityType({
-					entitiesDir,
-					nonEntityDirs,
-					outputPath: scopeEntityTypePath,
-				}),
-			);
-		} catch (err: unknown) {
-			return reportRegenerationFailure('entity new', err);
-		}
-
-		// Regenerate event codegen artifacts (EVT-3) after scope-entity-type. An
+		// Regenerate event codegen artifacts (EVT-3) after the barrels. An
 		// error-severity issue means nothing was written — the modules the app
 		// imports would stay stale — so it fails the command too.
 		let eventCodegenResult: Awaited<ReturnType<typeof generateEventCodegen>>;
@@ -984,6 +946,8 @@ export class EntityNewCommand extends Command {
 						jobs: jobLoad.jobs,
 						jobsHandlersDir: bridgeHandlersDir,
 						mode: runtimeMode,
+						// The registry was written with the barrel, before these files: list them in it now.
+						...(barrel.emitted.includes('jobs') ? { registryDir: generatedDir } : {}),
 					}),
 				);
 			} catch (err: unknown) {
@@ -1011,10 +975,6 @@ export class EntityNewCommand extends Command {
 					modules: barrelResult.modulesBarrel,
 					schema: barrelResult.schemaBarrel,
 					entityCount: barrelResult.entityCount,
-				},
-				scopeEntityType: {
-					outputPath: scopeResult.outputPath,
-					scopeableNames: scopeResult.scopeableNames,
 				},
 				eventCodegen: {
 					outputDir: eventCodegenResult.outputDir,
@@ -1075,9 +1035,6 @@ export class EntityNewCommand extends Command {
 			}
 			printInfo(
 				`barrels regenerated (${barrelResult.entityCount} entities) → ${path.relative(ctx.cwd, barrelResult.modulesBarrel)}, ${path.relative(ctx.cwd, barrelResult.schemaBarrel)}`
-			);
-			printInfo(
-				`scope-entity-type regenerated (${scopeResult.scopeableNames.length} scopeable) → ${path.relative(ctx.cwd, scopeResult.outputPath)}`
 			);
 			printInfo(
 				`event codegen regenerated (${eventCodegenResult.eventCount} events) → ${path.relative(ctx.cwd, eventCodegenResult.outputDir)}`

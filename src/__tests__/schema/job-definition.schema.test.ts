@@ -3,8 +3,10 @@
  *
  * Covers: fixture round-trip for the three RFC-0005 §3 cases (poll / reconcile /
  * realtime), defaults (triggers, cursorWithheld, detection filters), the arm
- * kind↔mode cross-field invariant, the 8 JobHandlerMeta fields, and `.strict()`
- * rejection of stray keys (incl. the renamed `differ` vs `dedupe` distinction).
+ * kind↔mode cross-field invariant, the job-level fields (JOBS-3: pool, retry,
+ * collision, dedupe window, triggers), and `.strict()` rejection of stray keys
+ * (incl. the renamed `differ` vs `dedupe` distinction, and ADR-022's removed
+ * `scope` / `concurrency` / `timeoutMs` / `replayFrom`).
  */
 
 import { describe, it, expect } from 'bun:test';
@@ -16,7 +18,6 @@ import {
 	safeValidateJobDefinition,
 	ARM_KINDS,
 	COLLISION_MODES,
-	REPLAY_FROM,
 } from '../../schema/job-definition.schema';
 
 const FIXTURE_DIR = resolve(__dirname, '../../../test/fixtures/jobs');
@@ -235,8 +236,8 @@ describe('JobDefinitionSchema — structural rejections', () => {
 	});
 
 	it('rejects the brief\'s `dedupe.unignore` shape — that knob is now `differ`', () => {
-		// `dedupe` is the runtime DedupePolicy { key, windowMs }; `{ unignore }` is
-		// the differ knob and belongs under `differ`.
+		// `dedupe` is the dedupe window { windowMs }; `{ unignore }` is the differ
+		// knob and belongs under `differ`.
 		const result = JobDefinitionSchema.safeParse({
 			type: 'wrong_dedupe',
 			dedupe: { unignore: ['deletedAt'] },
@@ -245,14 +246,27 @@ describe('JobDefinitionSchema — structural rejections', () => {
 		expect(result.success).toBe(false);
 	});
 
-	it('accepts the runtime DedupePolicy shape under `dedupe`', () => {
-		const result = JobDefinitionSchema.safeParse({
-			type: 'windowed_dedupe',
+	it('accepts the dedupe window under `dedupe`; a key template is refused (the key is the start\'s, JOBS-3)', () => {
+		const ok = JobDefinitionSchema.safeParse({ type: 'windowed_dedupe', dedupe: { windowMs: 60000 }, arms: [goodArm] });
+		expect(ok.success).toBe(true);
+		const keyed = JobDefinitionSchema.safeParse({
+			type: 'keyed_dedupe',
 			dedupe: { key: '{{external_id}}', windowMs: 60000 },
 			arms: [goodArm],
 		});
-		expect(result.success).toBe(true);
+		expect(keyed.success).toBe(false);
 	});
+
+	for (const [key, value] of [
+		['scope', { entity: 'account', from: '{{accountId}}' }],
+		['concurrency', { key: '{{accountId}}', collisionMode: 'queue' }],
+		['timeoutMs', 60000],
+		['replayFrom', 'last_checkpoint'],
+	] as const) {
+		it(`rejects ADR-022's \`${key}\` (removed by JOBS-3)`, () => {
+			expect(JobDefinitionSchema.safeParse({ type: 'old_meta', [key]: value, arms: [goodArm] }).success).toBe(false);
+		});
+	}
 
 	it('rejects a bad schedule-arm duration string', () => {
 		const result = JobDefinitionSchema.safeParse({
@@ -378,17 +392,14 @@ describe('JobDefinitionSchema — arm structural rejections', () => {
 // JobHandlerMeta surface — the 8 fields are all expressible
 // ----------------------------------------------------------------------------
 
-describe('JobDefinitionSchema — JobHandlerMeta surface (8 fields)', () => {
-	it('accepts all eight handler-meta fields in their YAML form', () => {
+describe('JobDefinitionSchema — the job-level fields (JOBS-3)', () => {
+	it('accepts pool, retry, collision, dedupe and triggers in their YAML form', () => {
 		const result = JobDefinitionSchema.safeParse({
 			type: 'full_meta',
 			pool: 'integration',
-			scope: { entity: 'account', from: '{{accountId}}' },
 			retry: { attempts: 3, backoff: 'exponential', baseMs: 1000 },
-			concurrency: { key: '{{accountId}}', collisionMode: 'queue' },
-			dedupe: { key: '{{external_id}}', windowMs: 30000 },
-			timeoutMs: 60000,
-			replayFrom: 'last_checkpoint',
+			collision: 'queue',
+			dedupe: { windowMs: 30000 },
 			triggers: [{ schedule: { every: '1h', align: true } }],
 			arms: [
 				{
@@ -405,12 +416,9 @@ describe('JobDefinitionSchema — JobHandlerMeta surface (8 fields)', () => {
 		expect(result.success).toBe(true);
 		if (!result.success) return;
 		expect(result.data.pool).toBe('integration');
-		expect(result.data.scope?.entity).toBe('account');
 		expect(result.data.retry?.backoff).toBe('exponential');
-		expect(result.data.concurrency?.collisionMode).toBe('queue');
+		expect(result.data.collision).toBe('queue');
 		expect(result.data.dedupe?.windowMs).toBe(30000);
-		expect(result.data.timeoutMs).toBe(60000);
-		expect(result.data.replayFrom).toBe('last_checkpoint');
 		const trig = result.data.triggers[0];
 		if (!('schedule' in trig)) throw new Error('expected a schedule arm');
 		expect(trig.schedule.every).toBe('1h');
@@ -418,7 +426,7 @@ describe('JobDefinitionSchema — JobHandlerMeta surface (8 fields)', () => {
 
 	it('exports the enum constants the emitter/validator consume', () => {
 		expect(ARM_KINDS).toEqual(['poll', 'reconcile', 'realtime']);
-		expect(COLLISION_MODES).toEqual(['queue', 'reject', 'replace']);
-		expect(REPLAY_FROM).toEqual(['scratch', 'last_step', 'last_checkpoint']);
+		// `@pattern-stack/jobs`' collision modes (codegen-targets d36): join is the default.
+		expect(COLLISION_MODES).toEqual(['join', 'queue', 'replace']);
 	});
 });

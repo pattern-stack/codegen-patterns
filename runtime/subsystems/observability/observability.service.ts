@@ -29,15 +29,6 @@
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
 
-import { JOB_RUN_SERVICE } from '../jobs/jobs-domain.tokens';
-import type {
-  IJobRunService,
-  JobRunFailure,
-  JobRunPage,
-  JobRunSummary,
-  ListJobRunsQuery,
-  PoolStatusCount,
-} from '../jobs/job-run-service.protocol';
 
 import { EVENT_READ_PORT } from '../events/events.tokens';
 import type {
@@ -89,19 +80,12 @@ export class ObservabilityService implements IObservability {
   };
 
   /** Empty page used when a sibling read port is absent. */
-  private static readonly EMPTY_JOB_RUN_PAGE: JobRunPage = {
-    items: [],
-    nextCursor: null,
-  };
   private static readonly EMPTY_EVENT_PAGE: EventPage = {
     items: [],
     nextCursor: null,
   };
 
   constructor(
-    @Optional()
-    @Inject(JOB_RUN_SERVICE)
-    private readonly jobRuns?: IJobRunService,
     @Optional()
     @Inject(BRIDGE_DELIVERY_REPO)
     private readonly bridge?: IJobBridge,
@@ -115,19 +99,6 @@ export class ObservabilityService implements IObservability {
     @Inject(EVENT_READ_PORT)
     private readonly events?: IEventReadPort | null,
   ) {}
-
-  async getPoolDepths(tenantId?: string | null): Promise<PoolStatusCount[]> {
-    if (!this.jobRuns) return [];
-    return this.jobRuns.countByPoolAndStatus(tenantId);
-  }
-
-  async getRecentFailedJobs(
-    limit: number,
-    tenantId?: string | null,
-  ): Promise<JobRunFailure[]> {
-    if (!this.jobRuns) return [];
-    return this.jobRuns.listRecentFailed(limit, tenantId);
-  }
 
   async getBridgeDeliveryHistogram(
     windowHours: number,
@@ -151,13 +122,6 @@ export class ObservabilityService implements IObservability {
     return this.cursors.listAll(tenantId);
   }
 
-  async listJobRuns(query?: ListJobRunsQuery): Promise<JobRunPage> {
-    if (!this.jobRuns) {
-      return { ...ObservabilityService.EMPTY_JOB_RUN_PAGE };
-    }
-    return this.jobRuns.listJobRuns(query);
-  }
-
   async listEvents(query?: ListEventsQuery): Promise<EventPage> {
     if (!this.events) {
       return { ...ObservabilityService.EMPTY_EVENT_PAGE };
@@ -169,34 +133,10 @@ export class ObservabilityService implements IObservability {
     rootRunId: string,
     tenantId?: string | null,
   ): Promise<CorrelationTimeline> {
-    const runs = await this.collectRuns(rootRunId, tenantId);
     const events = await this.collectEvents(rootRunId, tenantId);
-
-    const entries: CorrelationTimelineEntry[] = [
-      ...runs.map(
-        (run): CorrelationTimelineEntry => ({
-          kind: 'job_run',
-          at: run.createdAt,
-          run,
-        }),
-      ),
-      ...events.map(
-        (event): CorrelationTimelineEntry => ({
-          kind: 'event',
-          at: event.occurredAt,
-          event,
-        }),
-      ),
-    ];
-
-    // Ascending chronological order. Stable tie-break: job runs before
-    // events at the same instant (the run that emits an event precedes it).
-    entries.sort((a, b) => {
-      const dt = a.at.getTime() - b.at.getTime();
-      if (dt !== 0) return dt;
-      if (a.kind === b.kind) return 0;
-      return a.kind === 'job_run' ? -1 : 1;
-    });
+    const entries: CorrelationTimelineEntry[] = events
+      .map((event): CorrelationTimelineEntry => ({ kind: 'event', at: event.occurredAt, event }))
+      .sort((a, b) => a.at.getTime() - b.at.getTime());
 
     const startedAt = entries.length > 0 ? entries[0]!.at : null;
     const lastActivityAt =
@@ -206,36 +146,11 @@ export class ObservabilityService implements IObservability {
       rootRunId,
       entries,
       summary: {
-        runCount: runs.length,
         eventCount: events.length,
         startedAt,
         lastActivityAt,
       },
     };
-  }
-
-  /**
-   * Drain every `job_run` sharing `rootRunId` by walking the keyset cursor.
-   * Empty when the jobs subsystem is absent.
-   */
-  private async collectRuns(
-    rootRunId: string,
-    tenantId?: string | null,
-  ): Promise<JobRunSummary[]> {
-    if (!this.jobRuns) return [];
-    const out: JobRunSummary[] = [];
-    let cursor: string | undefined;
-    for (let page = 0; page < MAX_TIMELINE_PAGES; page += 1) {
-      const result = await this.jobRuns.listJobRuns({
-        rootRunId,
-        tenantId,
-        cursor,
-      });
-      out.push(...result.items);
-      if (!result.nextCursor) break;
-      cursor = result.nextCursor;
-    }
-    return out;
   }
 
   /**

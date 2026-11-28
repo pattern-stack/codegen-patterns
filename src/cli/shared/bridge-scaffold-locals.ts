@@ -22,8 +22,8 @@
  *
  * Mirrors `events-scaffold-locals.ts` minus the schema field; bridge has
  * no separate worker process — drain integration runs wherever
- * `EventsModule` is mounted; the wrapper handler runs wherever
- * `JobWorkerModule` polls a reserved bridge pool.
+ * `EventsModule` is mounted, and the runs it starts are advanced by the
+ * jobs executor (JOBS-3).
  */
 import path from 'node:path';
 

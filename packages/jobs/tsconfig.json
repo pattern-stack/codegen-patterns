@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // The build. Source carries explicit `.ts` extensions; tsc rewrites them to `.js` on emit so dist resolves under
+  // Node (the @pattern-stack/query-surface pairing). src/nest/ is decorated, hence the decorator flags in the base.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["src/**/__tests__/**"]
+}

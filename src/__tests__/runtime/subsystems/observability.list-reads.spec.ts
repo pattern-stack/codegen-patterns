@@ -1,16 +1,15 @@
 /**
  * OBS-LIST-1 — unit tests for the observability combiner's row-level reads:
- * `listJobRuns`, `listEvents`, and `getCorrelationTimeline`.
+ * `listEvents` and `getCorrelationTimeline`. (JOBS-3 dropped `listJobRuns`
+ * and the timeline's job runs: `JobsService` is the operator view of runs.)
  *
  * Three axes:
- *   1. Delegation — listJobRuns/listEvents forward the query verbatim to the
- *      owning port and return its page unchanged.
- *   2. Missing-port degradation — when JOB_RUN_SERVICE / EVENT_READ_PORT is
- *      absent, the read returns an empty page; the timeline degrades to zero
- *      counts (ADR-025 §61).
- *   3. getCorrelationTimeline — stitches runs + events into one ascending
- *      timeline, drains multi-page sibling results via the keyset cursor,
- *      and computes the summary.
+ *   1. Delegation — listEvents forwards the query verbatim to the events read
+ *      port and returns its page unchanged.
+ *   2. Missing-port degradation — when EVENT_READ_PORT is absent, the read
+ *      returns an empty page; the timeline degrades to zero counts (ADR-025 §61).
+ *   3. getCorrelationTimeline — the events sharing a rootRunId, ascending,
+ *      drained via the keyset cursor, with a summary.
  */
 import 'reflect-metadata';
 import { beforeEach, describe, expect, it } from 'bun:test';
@@ -20,18 +19,8 @@ import {
   OBSERVABILITY,
   type EventPage,
   type IObservability,
-  type JobRunPage,
 } from '../../../../runtime/subsystems/observability';
 import { ObservabilityService } from '../../../../runtime/subsystems/observability/observability.service';
-
-import { JOB_RUN_SERVICE } from '../../../../runtime/subsystems/jobs/jobs-domain.tokens';
-import type {
-  IJobRunService,
-  JobRunPage as JRP,
-  JobRunSummary,
-  ListJobRunsQuery,
-} from '../../../../runtime/subsystems/jobs/job-run-service.protocol';
-import type { JobRun } from '../../../../runtime/subsystems/jobs/job-orchestrator.protocol';
 
 import { EVENT_READ_PORT } from '../../../../runtime/subsystems/events/events.tokens';
 import type {
@@ -44,28 +33,6 @@ import type {
 // ─── Fakes ─────────────────────────────────────────────────────────────────
 
 type Call = { method: string; args: readonly unknown[] };
-
-function jobSummary(over: Partial<JobRunSummary> & Pick<JobRunSummary, 'runId' | 'createdAt'>): JobRunSummary {
-  return {
-    runId: over.runId,
-    rootRunId: over.rootRunId ?? 'root-1',
-    parentRunId: over.parentRunId ?? null,
-    triggerSource: over.triggerSource ?? 'manual',
-    triggerRef: over.triggerRef ?? null,
-    jobType: over.jobType ?? 'test.job',
-    pool: over.pool ?? 'p',
-    status: over.status ?? 'completed',
-    scopeEntityType: over.scopeEntityType ?? null,
-    scopeEntityId: over.scopeEntityId ?? null,
-    tenantId: over.tenantId ?? null,
-    attempts: over.attempts ?? 0,
-    errorMessage: over.errorMessage ?? null,
-    runAt: over.runAt ?? over.createdAt,
-    startedAt: over.startedAt ?? null,
-    finishedAt: over.finishedAt ?? null,
-    createdAt: over.createdAt,
-  };
-}
 
 function eventSummary(over: Partial<EventSummary> & Pick<EventSummary, 'id' | 'occurredAt'>): EventSummary {
   return {
@@ -84,27 +51,6 @@ function eventSummary(over: Partial<EventSummary> & Pick<EventSummary, 'id' | 'o
   };
 }
 
-class FakeJobRunService implements Partial<IJobRunService> {
-  calls: Call[] = [];
-  /** Each entry is one page returned in sequence. */
-  pages: JRP[] = [{ items: [], nextCursor: null }];
-  private idx = 0;
-
-  async listJobRuns(query?: ListJobRunsQuery): Promise<JRP> {
-    this.calls.push({ method: 'listJobRuns', args: [query] });
-    const page = this.pages[Math.min(this.idx, this.pages.length - 1)]!;
-    this.idx += 1;
-    return page;
-  }
-
-  // Unused protocol members — present so the cast to IJobRunService is honest.
-  listForScope(): Promise<JobRun[]> { throw new Error('not used'); }
-  cancelForScope(): Promise<void> { throw new Error('not used'); }
-  rescheduleForScope(): Promise<void> { throw new Error('not used'); }
-  countByPoolAndStatus(): Promise<never> { throw new Error('not used'); }
-  listRecentFailed(): Promise<never> { throw new Error('not used'); }
-}
-
 class FakeEventReadPort implements IEventReadPort {
   calls: Call[] = [];
   pages: EP[] = [{ items: [], nextCursor: null }];
@@ -118,41 +64,18 @@ class FakeEventReadPort implements IEventReadPort {
   }
 }
 
-async function buildModule(opts: { jobRuns?: FakeJobRunService; events?: FakeEventReadPort }) {
+async function buildModule(opts: { events?: FakeEventReadPort }) {
   const providers: import('@nestjs/common').Provider[] = [
     ObservabilityService,
     { provide: OBSERVABILITY, useExisting: ObservabilityService },
   ];
-  if (opts.jobRuns) providers.push({ provide: JOB_RUN_SERVICE, useValue: opts.jobRuns });
   if (opts.events) providers.push({ provide: EVENT_READ_PORT, useValue: opts.events });
   const moduleRef = await Test.createTestingModule({ providers }).compile();
   const obs = moduleRef.get(OBSERVABILITY) as IObservability;
   return { moduleRef, obs };
 }
 
-// ─── listJobRuns / listEvents delegation ─────────────────────────────────────
-
-describe('ObservabilityService.listJobRuns', () => {
-  it('forwards the query and returns the port page verbatim', async () => {
-    const jobRuns = new FakeJobRunService();
-    const expected: JobRunPage = {
-      items: [jobSummary({ runId: 'r1', createdAt: new Date('2026-01-01T00:00:00Z') })],
-      nextCursor: 'CUR',
-    };
-    jobRuns.pages = [expected];
-    const { obs } = await buildModule({ jobRuns });
-
-    const query = { poolId: 'batch', status: 'failed' as const, limit: 10 };
-    const result = await obs.listJobRuns(query);
-    expect(result).toEqual(expected);
-    expect(jobRuns.calls).toEqual([{ method: 'listJobRuns', args: [query] }]);
-  });
-
-  it('returns an empty page when JOB_RUN_SERVICE is absent', async () => {
-    const { obs } = await buildModule({});
-    expect(await obs.listJobRuns({ poolId: 'p' })).toEqual({ items: [], nextCursor: null });
-  });
-});
+// ─── listEvents delegation ─────────────────────────────────────
 
 describe('ObservabilityService.listEvents', () => {
   it('forwards the query and returns the port page verbatim', async () => {
@@ -193,93 +116,58 @@ describe('ObservabilityService.listEvents', () => {
 // ─── getCorrelationTimeline ──────────────────────────────────────────────────
 
 describe('ObservabilityService.getCorrelationTimeline', () => {
-  it('stitches runs + events into one ascending timeline with a summary', async () => {
-    const jobRuns = new FakeJobRunService();
-    jobRuns.pages = [
+  it('lists the events sharing the rootRunId, ascending, with a summary', async () => {
+    const events = new FakeEventReadPort();
+    events.pages = [
       {
         items: [
-          jobSummary({ runId: 'run-root', createdAt: new Date('2026-01-01T00:00:00Z') }),
-          jobSummary({ runId: 'run-child', createdAt: new Date('2026-01-01T00:00:05Z') }),
+          eventSummary({ id: 'evt-2', occurredAt: new Date('2026-01-01T00:00:05Z') }),
+          eventSummary({ id: 'evt-1', occurredAt: new Date('2026-01-01T00:00:03Z') }),
         ],
         nextCursor: null,
       },
     ];
-    const events = new FakeEventReadPort();
-    events.pages = [
-      {
-        items: [eventSummary({ id: 'evt-1', occurredAt: new Date('2026-01-01T00:00:03Z') })],
-        nextCursor: null,
-      },
-    ];
-    const { obs } = await buildModule({ jobRuns, events });
+    const { obs } = await buildModule({ events });
 
     const timeline = await obs.getCorrelationTimeline('root-1');
 
     expect(timeline.rootRunId).toBe('root-1');
-    // Ascending: run@00, event@03, run@05.
-    expect(timeline.entries.map((e) => (e.kind === 'job_run' ? e.run.runId : e.event.id))).toEqual([
-      'run-root',
-      'evt-1',
-      'run-child',
-    ]);
+    expect(timeline.entries.map((e) => e.event.id)).toEqual(['evt-1', 'evt-2']);
     expect(timeline.summary).toEqual({
-      runCount: 2,
-      eventCount: 1,
-      startedAt: new Date('2026-01-01T00:00:00Z'),
+      eventCount: 2,
+      startedAt: new Date('2026-01-01T00:00:03Z'),
       lastActivityAt: new Date('2026-01-01T00:00:05Z'),
     });
-
-    // The timeline filters both ports by rootRunId.
-    expect(jobRuns.calls[0]!.args[0]).toMatchObject({ rootRunId: 'root-1' });
     expect(events.calls[0]!.args[0]).toMatchObject({ rootRunId: 'root-1' });
   });
 
-  it('drains multi-page sibling results via the keyset cursor', async () => {
-    const jobRuns = new FakeJobRunService();
-    jobRuns.pages = [
-      { items: [jobSummary({ runId: 'r1', createdAt: new Date('2026-01-01T00:00:00Z') })], nextCursor: 'C1' },
-      { items: [jobSummary({ runId: 'r2', createdAt: new Date('2026-01-01T00:00:01Z') })], nextCursor: null },
+  it('drains multi-page results via the keyset cursor', async () => {
+    const events = new FakeEventReadPort();
+    events.pages = [
+      { items: [eventSummary({ id: 'e1', occurredAt: new Date('2026-01-01T00:00:00Z') })], nextCursor: 'C1' },
+      { items: [eventSummary({ id: 'e2', occurredAt: new Date('2026-01-01T00:00:01Z') })], nextCursor: null },
     ];
-    const { obs } = await buildModule({ jobRuns });
+    const { obs } = await buildModule({ events });
 
     const timeline = await obs.getCorrelationTimeline('root-1');
-    expect(timeline.summary.runCount).toBe(2);
-    // Second call carried the cursor from the first page.
-    expect(jobRuns.calls).toHaveLength(2);
-    expect((jobRuns.calls[1]!.args[0] as ListJobRunsQuery).cursor).toBe('C1');
+    expect(timeline.summary.eventCount).toBe(2);
+    expect(events.calls).toHaveLength(2);
+    expect((events.calls[1]!.args[0] as ListEventsQuery).cursor).toBe('C1');
   });
 
-  it('degrades to an empty timeline when neither sibling is installed', async () => {
+  it('degrades to an empty timeline when the events read port is absent', async () => {
     const { obs } = await buildModule({});
-    const timeline = await obs.getCorrelationTimeline('root-1');
-    expect(timeline).toEqual({
+    expect(await obs.getCorrelationTimeline('root-1')).toEqual({
       rootRunId: 'root-1',
       entries: [],
-      summary: { runCount: 0, eventCount: 0, startedAt: null, lastActivityAt: null },
+      summary: { eventCount: 0, startedAt: null, lastActivityAt: null },
     });
   });
 
-  it('works with only the jobs subsystem present (events absent)', async () => {
-    const jobRuns = new FakeJobRunService();
-    jobRuns.pages = [
-      { items: [jobSummary({ runId: 'r1', createdAt: new Date('2026-01-01T00:00:00Z') })], nextCursor: null },
-    ];
-    const { obs } = await buildModule({ jobRuns });
-    const timeline = await obs.getCorrelationTimeline('root-1');
-    expect(timeline.summary).toEqual({
-      runCount: 1,
-      eventCount: 0,
-      startedAt: new Date('2026-01-01T00:00:00Z'),
-      lastActivityAt: new Date('2026-01-01T00:00:00Z'),
-    });
-  });
-
-  it('passes tenantId through to both sibling ports', async () => {
-    const jobRuns = new FakeJobRunService();
+  it('passes tenantId through to the events read port', async () => {
     const events = new FakeEventReadPort();
-    const { obs } = await buildModule({ jobRuns, events });
+    const { obs } = await buildModule({ events });
     await obs.getCorrelationTimeline('root-1', 'tenant-x');
-    expect((jobRuns.calls[0]!.args[0] as ListJobRunsQuery).tenantId).toBe('tenant-x');
     expect((events.calls[0]!.args[0] as ListEventsQuery).tenantId).toBe('tenant-x');
   });
 });

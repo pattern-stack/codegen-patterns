@@ -7,14 +7,13 @@
  *   - `publish(event, tx?)` — thin delegate to `IEventBus.publish(event, tx)`.
  *     Subscribers + bridge triggers fire as normal. Caller owns transaction.
  *
- *   - `publishAndStart(event, jobType, input, opts?)` — the load-bearing
+ *   - `publishAndStart(event, jobKey, input, opts?)` — the load-bearing
  *     verb. Opens a transaction and performs THREE writes inside it:
  *       1. Outbox insert via `eventBus.publish(event, tx)`.
- *       2. Eager `orchestrator.start(jobType, input, opts, tx)`.
+ *       2. Eager `JobStarter.start(jobKey, input, opts, tx)` (JOBS-3).
  *       3. **Case B only** — for every `bridgeRegistry[event.type]` entry
- *          whose `jobType` matches the argument, pre-write a
- *          `bridge_delivery(status='delivered', wrapper_run_id=null,
- *          user_run_id=<eagerRunId>)` row via `bridgeRepo.insertDelivery(
+ *          whose `jobKey` matches the argument, pre-write a
+ *          `bridge_delivery(status='delivered', user_run_id=<eagerRunId>)` row via `bridgeRepo.insertDelivery(
  *          row, tx)`. The `UNIQUE (event_id, trigger_id)` constraint then
  *          dedups the drain's later attempt for that trigger; sibling
  *          triggers (different trigger_id) still spawn normally.
@@ -26,17 +25,17 @@
  *
  * **Pre-write ALL matching triggerIds** (lead decision 2026-04-22): the
  * facade uses `filter()` not `find()`. If a project has two triggers in
- * the registry for the same `(event, jobType)` pair (rare; codegen-time
+ * the registry for the same `(event, jobKey)` pair (rare; codegen-time
  * `DuplicateTriggerError` from BRIDGE-7's BRIDGE-6 follow-up patch
  * prevents new occurrences), each gets its own pre-write — otherwise
- * the un-pre-written sibling would spawn a wrapper that re-runs the user
- * job, producing a double-spawn.
+ * the drain would start the user job again for the un-pre-written sibling,
+ * a double-spawn.
  *
  * **Multi-tenancy gate** at `publishAndStart` entry: when
  * `BRIDGE_MULTI_TENANT=true` and `opts?.tenantId === undefined`, throw
  * `MissingTenantIdError('EventFlowService.publishAndStart')`. Site (a)
- * of the three ADR-023 §Multi-tenancy enforcement sites (BRIDGE-5
- * handler is (b); BRIDGE-4 drizzle repo is (c)).
+ * of the ADR-023 §Multi-tenancy enforcement sites (the drizzle repo's
+ * `insertDelivery` is the other; ADR-022's handler site is gone, JOBS-3).
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
 
@@ -54,8 +53,7 @@ import type {
   EventTypeName,
 } from '../events/event-registry';
 
-import { JOB_ORCHESTRATOR } from '../jobs/jobs-domain.tokens';
-import type { IJobOrchestrator } from '../jobs/job-orchestrator.protocol';
+import { JobStarter } from '../jobs/job-starter';
 
 import {
   BRIDGE_DELIVERY_REPO,
@@ -77,7 +75,7 @@ export class EventFlowService implements IEventFlow {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleClient,
     @Inject(EVENT_BUS) private readonly eventBus: IEventBus,
-    @Inject(JOB_ORCHESTRATOR) private readonly orchestrator: IJobOrchestrator,
+    private readonly jobs: JobStarter,
     @Inject(BRIDGE_DELIVERY_REPO) private readonly bridgeRepo: IJobBridge,
     @Optional()
     @Inject(BRIDGE_REGISTRY)
@@ -98,7 +96,7 @@ export class EventFlowService implements IEventFlow {
 
   async publishAndStart<T extends EventTypeName>(
     event: EventOfType<T>,
-    jobType: string,
+    jobKey: string,
     input: unknown,
     opts: PublishAndStartOptions = {},
   ): Promise<PublishAndStartResult> {
@@ -115,26 +113,20 @@ export class EventFlowService implements IEventFlow {
     // flows to both the eager start AND the bridge_delivery row.
     const tenantId: string | null = opts.tenantId ?? null;
 
-    // Identify Case B — every registry entry whose jobType matches.
+    // Identify Case B — every registry entry whose jobKey matches.
     // Lead decision 2026-04-22: pre-write ALL matches (filter, not find)
     // so duplicate triggers in the registry don't double-spawn.
-    const matchingTriggers = this.matchingTriggers(event.type as EventTypeName, jobType);
+    const matchingTriggers = this.matchingTriggers(event.type as EventTypeName, jobKey);
 
     return this.db.transaction(async (tx) => {
       // 1. Outbox insert.
       await this.eventBus.publish(event as DomainEvent, tx);
 
-      // 2. Eager start. Threads tx through (BRIDGE-7 protocol extension
-      //    on IJobOrchestrator.start, JOB-3 backend uses `tx ?? this.db`).
-      const run = await this.orchestrator.start(
-        jobType,
+      // 2. Eager start, over the same transaction (JobStarter builds a store on `tx`).
+      const { run } = await this.jobs.start(
+        jobKey,
         input,
-        {
-          parentRunId: opts.parentRunId,
-          tenantId,
-          triggerSource: 'event',
-          triggerRef: event.id,
-        },
+        { tenantId, trigger: 'event', dedupeKey: opts.dedupeKey },
         tx,
       );
 
@@ -145,7 +137,6 @@ export class EventFlowService implements IEventFlow {
           {
             eventId: event.id,
             triggerId: trigger.triggerId,
-            wrapperRunId: null, // facade never writes a wrapper
             userRunId: run.id,
             status: 'delivered',
             tenantId,
@@ -162,14 +153,14 @@ export class EventFlowService implements IEventFlow {
 
   /**
    * Linear scan of the per-event-type trigger list for entries whose
-   * `jobType` matches. Typical N is 1–5; the table is not big enough to
+   * `jobKey` matches. Typical N is 1–5; the table is not big enough to
    * warrant a secondary index. Returns an empty array for Case A.
    */
   private matchingTriggers(
     eventType: EventTypeName,
-    jobType: string,
+    jobKey: string,
   ): BridgeTriggerEntry[] {
     const triggers = this.registry[eventType] ?? [];
-    return triggers.filter((t) => t.jobType === jobType) as BridgeTriggerEntry[];
+    return triggers.filter((t) => t.jobKey === jobKey) as BridgeTriggerEntry[];
   }
 }

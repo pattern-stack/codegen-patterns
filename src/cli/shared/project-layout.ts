@@ -63,7 +63,7 @@ export interface ProjectLayout {
 	workerTs: string;
 	/** `<backend_src>/schema.ts` — the Drizzle schema root. */
 	rootSchema: string;
-	/** `<backend_src>/jobs` — scanned for `@JobHandler` bridge handlers. */
+	/** `<backend_src>/jobs` — scanned for `defineJob` exports (the job registry) and `jobTriggers(...)` (the bridge registry). */
 	jobHandlers: string;
 }
 

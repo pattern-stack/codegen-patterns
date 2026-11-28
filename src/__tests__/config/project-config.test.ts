@@ -78,42 +78,28 @@ describe('unknown and removed keys are errors naming the key and the file (issue
 	});
 
 	it('an unknown key inside an open map value — jobs.pools.<name>', () => {
-		const err = errorOf(() =>
-			parseCodegenConfig({ jobs: { pools: { reports: { queue: 'q', concurency: 2 } } } }, 'x.yaml'),
-		);
-		expect(err.issues[0]).toStartWith(
-			'jobs.pools.reports.concurency: unknown key (expected one of: queue, concurrency, reserved, description)',
+		const err = errorOf(() => parseCodegenConfig({ jobs: { pools: { reports: { concurency: 2 } } } }, 'x.yaml'));
+		expect(err.issues).toContainEqual(
+			expect.stringMatching(/^jobs\.pools\.reports\.concurency: unknown key \(expected one of: concurrency, description/),
 		);
 	});
 
-	it('the jobs pool rules, at generation — CFG-1', () => {
+	it('the jobs pool rules, at generation — JOBS-3', () => {
+		// A pool is a limiter: a positive concurrency; ADR-022's queue/reserved are named as removed.
 		const err = errorOf(() =>
 			parseCodegenConfig(
-				{
-					jobs: {
-						pools: {
-							events_inbound: { reserved: false },
-							batch: { queue: 'elsewhere', concurrency: 8 },
-							reports: { concurrency: 2 },
-							rogue: { queue: 'jobs-rogue', concurrency: 1, reserved: true },
-						},
-					},
-				},
+				{ jobs: { pools: { batch: { concurrency: 0 }, reports: { queue: 'jobs-reports', concurrency: 2, reserved: true } } } },
 				'x.yaml',
 			),
 		);
 		expect(err.issues).toEqual([
-			expect.stringMatching(/^jobs\.pools\.events_inbound\.reserved: 'events_inbound' is a framework pool/),
-			expect.stringMatching(/^jobs\.pools\.batch\.queue: 'batch' is a framework pool/),
-			expect.stringMatching(/^jobs\.pools\.reports\.queue: user-defined pool 'reports' must declare a non-empty 'queue'/),
-			expect.stringMatching(/^jobs\.pools\.rogue\.reserved: .*framework-only/),
+			expect.stringMatching(/^jobs\.pools\.batch\.concurrency: /),
+			expect.stringMatching(/^jobs\.pools\.reports\.queue: 'jobs\.pools\.<name>\.queue' was removed by JOBS-3/),
+			expect.stringMatching(/^jobs\.pools\.reports\.reserved: 'jobs\.pools\.<name>\.reserved' was removed by JOBS-3/),
 		]);
-		// A framework pool tuning concurrency, and a complete user pool, pass.
+		// A default pool re-capped, and a pool of the app's own, pass.
 		expect(() =>
-			parseCodegenConfig(
-				{ jobs: { pools: { batch: { concurrency: 8 }, reports: { queue: 'jobs-reports', concurrency: 2 } } } },
-				'x.yaml',
-			),
+			parseCodegenConfig({ jobs: { pools: { batch: { concurrency: 8 }, reports: { concurrency: 2 } } } }, 'x.yaml'),
 		).not.toThrow();
 	});
 
@@ -294,25 +280,26 @@ describe('the CLI and a direct hygen run both refuse an invalid config', () => {
 	}, 30_000);
 });
 
-describe('jobs.backend: memory cannot run a standalone worker (JOBS-0, #656)', () => {
-	const parse = (jobs: Record<string, unknown>) => () => parseCodegenConfig({ jobs }, 'x.yaml');
+describe('jobs: the ADR-022 keys are removed, by name (JOBS-3)', () => {
+	const issues = (jobs: Record<string, unknown>) => errorOf(() => parseCodegenConfig({ jobs }, 'x.yaml')).issues;
 
-	it('memory + worker_mode: standalone names both keys', () => {
-		expect(parse({ backend: 'memory', worker_mode: 'standalone' })).toThrow(
-			/jobs\.worker_mode.*`jobs\.backend: memory` cannot run a standalone worker \(`jobs\.worker_mode: standalone`\) — a separate process cannot share the in-memory job store/,
-		);
-	});
+	for (const [key, value] of [
+		['backend', 'drizzle'],
+		['extensions', { drizzle: { listen_notify: true } }],
+		['worker_pools', ['batch']],
+		['all_pools', true],
+		['multi_tenant', true],
+	] as const) {
+		it(`jobs.${key} names itself as removed and points at the migration note`, () => {
+			expect(issues({ [key]: value })).toEqual([
+				expect.stringMatching(new RegExp(`^jobs\\.${key}: 'jobs\\.${key}' was removed by JOBS-3 .*MIGRATION-jobs-engine\\.md`)),
+			]);
+		});
+	}
 
-	it('memory with worker_mode absent is the default embedded worker — parses (JOBS-1, #659)', () => {
-		expect(parse({ backend: 'memory' })).not.toThrow();
-		expect(parseCodegenConfig({ jobs: { backend: 'memory' } }, 'x.yaml').jobs?.worker_mode).toBe('embedded');
-	});
-
-	it('memory + embedded, and every other backend + standalone, parse', () => {
-		expect(parse({ backend: 'memory', worker_mode: 'embedded' })).not.toThrow();
-		expect(parse({ backend: 'drizzle', worker_mode: 'standalone' })).not.toThrow();
-		expect(parse({ backend: 'bullmq' })).not.toThrow();
-		expect(parse({})).not.toThrow();
+	it('worker_mode defaults to embedded; standalone parses', () => {
+		expect(parseCodegenConfig({ jobs: {} }, 'x.yaml').jobs?.worker_mode).toBe('embedded');
+		expect(() => parseCodegenConfig({ jobs: { worker_mode: 'standalone' } }, 'x.yaml')).not.toThrow();
 	});
 });
 

@@ -14,9 +14,10 @@
  *      enforcement point.
  *
  * Uses inline fake implementations of each sibling port. Wiring the real
- * memory backends would require threading module-level deps
- * (`JOB_ORCHESTRATOR`, `JOBS_MULTI_TENANT`, `MemoryJobStore`, etc.) that
- * are orthogonal to what these tests verify.
+ * memory backends would require threading module-level deps that are
+ * orthogonal to what these tests verify. (JOBS-3 dropped the job reads:
+ * `getPoolDepths` / `getRecentFailedJobs`; `JobsService` is the operator
+ * view of runs.)
  */
 import 'reflect-metadata';
 import { beforeEach, describe, expect, it } from 'bun:test';
@@ -26,20 +27,10 @@ import {
   OBSERVABILITY,
   type CursorSnapshot,
   type IObservability,
-  type JobRunFailure,
-  type PoolStatusCount,
   type StatusHistogram,
   type IntegrationRunSummary,
 } from '../../../../runtime/subsystems/observability';
 import { ObservabilityService } from '../../../../runtime/subsystems/observability/observability.service';
-
-import { JOB_RUN_SERVICE } from '../../../../runtime/subsystems/jobs/jobs-domain.tokens';
-import type {
-  IJobRunService,
-  JobRun,
-} from '../../../../runtime/subsystems/jobs/job-orchestrator.protocol';
-// Protocol imports needed for type casts below.
-import type { IJobRunService as _JobRunServiceAlias } from '../../../../runtime/subsystems/jobs/job-run-service.protocol';
 
 import { BRIDGE_DELIVERY_REPO } from '../../../../runtime/subsystems/bridge/bridge.tokens';
 import type { IJobBridge } from '../../../../runtime/subsystems/bridge/bridge.protocol';
@@ -60,40 +51,6 @@ type CallRecord = {
   method: string;
   args: readonly unknown[];
 };
-
-class FakeJobRunService implements _JobRunServiceAlias {
-  calls: CallRecord[] = [];
-  poolCounts: PoolStatusCount[] = [];
-  failures: JobRunFailure[] = [];
-
-  listForScope(): Promise<JobRun[]> {
-    throw new Error('not used');
-  }
-  cancelForScope(): Promise<void> {
-    throw new Error('not used');
-  }
-  rescheduleForScope(): Promise<void> {
-    throw new Error('not used');
-  }
-
-  async countByPoolAndStatus(
-    tenantId?: string | null,
-  ): Promise<PoolStatusCount[]> {
-    this.calls.push({ method: 'countByPoolAndStatus', args: [tenantId] });
-    return this.poolCounts;
-  }
-
-  async listRecentFailed(
-    limit: number,
-    tenantId?: string | null,
-  ): Promise<JobRunFailure[]> {
-    this.calls.push({
-      method: 'listRecentFailed',
-      args: [limit, tenantId],
-    });
-    return this.failures;
-  }
-}
 
 class FakeBridge implements IJobBridge {
   calls: CallRecord[] = [];
@@ -178,27 +135,6 @@ class FakeCursorStore implements ICursorStore {
 
 // Fixtures ---------------------------------------------------------------
 
-const POOL_COUNTS: PoolStatusCount[] = [
-  { pool: 'interactive', status: 'pending', count: 3 },
-  { pool: 'interactive', status: 'running', count: 1 },
-  { pool: 'batch', status: 'pending', count: 9 },
-];
-
-const FAILURES: JobRunFailure[] = [
-  {
-    runId: 'run-1',
-    jobType: 'send_email',
-    pool: 'interactive',
-    scopeEntityType: null,
-    scopeEntityId: null,
-    tenantId: null,
-    attempts: 3,
-    errorMessage: 'smtp timeout',
-    failedAt: new Date('2026-04-22T10:00:00Z'),
-    createdAt: new Date('2026-04-22T09:59:00Z'),
-  },
-];
-
 const HISTOGRAM: StatusHistogram = {
   pending: 2,
   delivered: 10,
@@ -236,14 +172,11 @@ const CURSOR_SNAPSHOTS: CursorSnapshot[] = [
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
 async function buildModule(opts: {
-  jobRuns?: FakeJobRunService;
   bridge?: FakeBridge;
   integrationRuns?: FakeRunRecorder;
   cursors?: FakeCursorStore;
 }) {
   const providers: import('@nestjs/common').Provider[] = [ObservabilityService];
-  if (opts.jobRuns)
-    providers.push({ provide: JOB_RUN_SERVICE, useValue: opts.jobRuns });
   if (opts.bridge)
     providers.push({ provide: BRIDGE_DELIVERY_REPO, useValue: opts.bridge });
   if (opts.integrationRuns)
@@ -259,17 +192,12 @@ async function buildModule(opts: {
 // ─── Tests ───────────────────────────────────────────────────────────────
 
 describe('ObservabilityService — delegation', () => {
-  let jobRuns: FakeJobRunService;
   let bridge: FakeBridge;
   let integrationRuns: FakeRunRecorder;
   let cursors: FakeCursorStore;
   let obs: IObservability;
 
   beforeEach(async () => {
-    jobRuns = new FakeJobRunService();
-    jobRuns.poolCounts = POOL_COUNTS;
-    jobRuns.failures = FAILURES;
-
     bridge = new FakeBridge();
     bridge.histogram = HISTOGRAM;
 
@@ -279,23 +207,7 @@ describe('ObservabilityService — delegation', () => {
     cursors = new FakeCursorStore();
     cursors.snapshots = CURSOR_SNAPSHOTS;
 
-    ({ obs } = await buildModule({ jobRuns, bridge, integrationRuns, cursors }));
-  });
-
-  it('getPoolDepths() returns IJobRunService.countByPoolAndStatus result verbatim', async () => {
-    const result = await obs.getPoolDepths();
-    expect(result).toEqual(POOL_COUNTS);
-    expect(jobRuns.calls).toEqual([
-      { method: 'countByPoolAndStatus', args: [undefined] },
-    ]);
-  });
-
-  it('getRecentFailedJobs(limit) delegates with the same limit', async () => {
-    const result = await obs.getRecentFailedJobs(5);
-    expect(result).toEqual(FAILURES);
-    expect(jobRuns.calls).toEqual([
-      { method: 'listRecentFailed', args: [5, undefined] },
-    ]);
+    ({ obs } = await buildModule({ bridge, integrationRuns, cursors }));
   });
 
   it('getBridgeDeliveryHistogram(windowHours) delegates to IJobBridge.getStatusHistogram', async () => {
@@ -330,16 +242,6 @@ describe('ObservabilityService — missing-port degradation', () => {
     await moduleRef.close();
   });
 
-  it('getPoolDepths() returns [] when JOB_RUN_SERVICE is absent', async () => {
-    const { obs } = await buildModule({});
-    expect(await obs.getPoolDepths()).toEqual([]);
-  });
-
-  it('getRecentFailedJobs() returns [] when JOB_RUN_SERVICE is absent', async () => {
-    const { obs } = await buildModule({});
-    expect(await obs.getRecentFailedJobs(10)).toEqual([]);
-  });
-
   it('getBridgeDeliveryHistogram() returns all-zero histogram when BRIDGE_DELIVERY_REPO is absent', async () => {
     const { obs } = await buildModule({});
     const result = await obs.getBridgeDeliveryHistogram(1);
@@ -359,18 +261,18 @@ describe('ObservabilityService — missing-port degradation', () => {
   });
 
   it('per-sibling absence is independent — present siblings still delegate', async () => {
-    const jobRuns = new FakeJobRunService();
-    jobRuns.poolCounts = POOL_COUNTS;
-    const { obs } = await buildModule({ jobRuns });
+    const cursors = new FakeCursorStore();
+    cursors.snapshots = CURSOR_SNAPSHOTS;
+    const { obs } = await buildModule({ cursors });
 
-    expect(await obs.getPoolDepths()).toEqual(POOL_COUNTS);
+    expect(await obs.getCursors()).toEqual(CURSOR_SNAPSHOTS);
     expect(await obs.getBridgeDeliveryHistogram(1)).toEqual({
       pending: 0,
       delivered: 0,
       skipped: 0,
       failed: 0,
     });
-    expect(await obs.getCursors()).toEqual([]);
+    expect(await obs.getRecentIntegrationRuns(5)).toEqual([]);
   });
 });
 
@@ -379,31 +281,23 @@ describe('ObservabilityService — tenant passthrough', () => {
   // coerce, or strip. This is the SKILL.md §3 invariant: observability
   // NEVER re-implements tenant filtering.
 
-  let jobRuns: FakeJobRunService;
   let bridge: FakeBridge;
   let integrationRuns: FakeRunRecorder;
   let cursors: FakeCursorStore;
   let obs: IObservability;
 
   beforeEach(async () => {
-    jobRuns = new FakeJobRunService();
     bridge = new FakeBridge();
     integrationRuns = new FakeRunRecorder();
     cursors = new FakeCursorStore();
-    ({ obs } = await buildModule({ jobRuns, bridge, integrationRuns, cursors }));
+    ({ obs } = await buildModule({ bridge, integrationRuns, cursors }));
   });
 
   it('forwards string tenantId verbatim on every method', async () => {
-    await obs.getPoolDepths('tenant-a');
-    await obs.getRecentFailedJobs(3, 'tenant-a');
     await obs.getBridgeDeliveryHistogram(12, 'tenant-a');
     await obs.getRecentIntegrationRuns(5, 'sub-1', 'tenant-a');
     await obs.getCursors('tenant-a');
 
-    expect(jobRuns.calls).toEqual([
-      { method: 'countByPoolAndStatus', args: ['tenant-a'] },
-      { method: 'listRecentFailed', args: [3, 'tenant-a'] },
-    ]);
     expect(bridge.calls).toEqual([
       { method: 'getStatusHistogram', args: [12, 'tenant-a'] },
     ]);
@@ -414,14 +308,9 @@ describe('ObservabilityService — tenant passthrough', () => {
   });
 
   it('forwards explicit null tenantId (cross-tenant semantics) verbatim', async () => {
-    await obs.getPoolDepths(null);
     await obs.getBridgeDeliveryHistogram(1, null);
     await obs.getCursors(null);
 
-    expect(jobRuns.calls[0]).toEqual({
-      method: 'countByPoolAndStatus',
-      args: [null],
-    });
     expect(bridge.calls[0]).toEqual({
       method: 'getStatusHistogram',
       args: [1, null],
@@ -430,13 +319,10 @@ describe('ObservabilityService — tenant passthrough', () => {
   });
 
   it('forwards undefined tenantId as undefined (sibling default)', async () => {
-    await obs.getPoolDepths();
     await obs.getRecentIntegrationRuns(10);
+    await obs.getCursors();
 
-    expect(jobRuns.calls[0]).toEqual({
-      method: 'countByPoolAndStatus',
-      args: [undefined],
-    });
+    expect(cursors.calls[0]).toEqual({ method: 'listAll', args: [undefined] });
     expect(integrationRuns.calls[0]).toEqual({
       method: 'listRecent',
       args: [10, undefined, undefined],

@@ -69,6 +69,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { tscGateErrors } from '../smoke/_consumer-errors';
+import { addJobsPackage } from '../smoke/_package-runtime';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
@@ -209,6 +210,8 @@ async function main(): Promise<number> {
 		run('bun init -y', tmpDir);
 		run(`bun add ${RUNTIME_DEPS.join(' ')}`, tmpDir);
 		run(`bun add -D ${DEV_DEPS.join(' ')}`, tmpDir);
+		// JOBS-3: the fixture's YAML jobs emit `@pattern-stack/jobs` code.
+		addJobsPackage(tmpDir, run);
 
 		// 2. Link the 4 surface workspace packages + codegen into the temp project
 		//    so bare `@pattern-stack/*` specifiers resolve at the node level. tsc
@@ -267,6 +270,10 @@ async function main(): Promise<number> {
 		// is a resolution fix for an artifact of THIS harness — a real consumer
 		// installs one copy, which `just test-post-publish` gates.
 		paths['@nestjs/*'] = [path.join(tmpDir, 'node_modules/@nestjs/*')];
+		// drizzle-orm likewise: the repo's install resolves the workspace's @opentelemetry/api (the jobs package's
+		// dependency, JOBS-3) as an optional peer, so it is a different peer variant from the project's.
+		paths['drizzle-orm'] = [path.join(tmpDir, 'node_modules/drizzle-orm')];
+		paths['drizzle-orm/*'] = [path.join(tmpDir, 'node_modules/drizzle-orm/*')];
 		// Surface packages are installed source-only (no built dist/).
 		for (const surface of SURFACE_PACKAGES) {
 			paths[`@pattern-stack/codegen-${surface}`] = [surfaceSrcEntry(surface)];

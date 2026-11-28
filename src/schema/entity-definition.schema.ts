@@ -788,10 +788,14 @@ const EntityConfigSchema = z
     // (src/patterns/validate-composition.ts — PATTERN-4).
     config: z.record(z.string(), z.unknown()).optional(),
 
-    // JOB-7: marks this entity as a valid scope target for job scoping.
-    // Drives the generated ScopeEntityType union in
-    // runtime/subsystems/jobs/generated/scope-entity-type.ts.
-    scopeable: z.boolean().optional(),
+    // Removed by JOBS-3: it drove ADR-022's ScopeEntityType union for job scoping, which
+    // `@pattern-stack/jobs` doesn't have. Declared so the error names the key.
+    scopeable: z
+      .never({
+        error:
+          "'entity.scopeable' was removed by JOBS-3 (@pattern-stack/jobs has no job scopes) — delete it; see docs/MIGRATION-jobs-engine.md",
+      })
+      .optional(),
 
     // RFC-0001 §1/§8: the integration *surface* this entity belongs to
     // (e.g. 'calendar', 'mail', 'crm'). Surfaces span provider contexts

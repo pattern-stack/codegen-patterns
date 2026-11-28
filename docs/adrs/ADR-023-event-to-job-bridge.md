@@ -7,6 +7,25 @@
 **Depends on:** ADR-024 Phase 1 (shipped via EVT-1..EVT-8) — typed event registry, `TypedEventBus`, direction-routed outbox
 **Unblocks:** ADR-026 (JobEvent Observability — selective job lifecycle → events broadcast)
 
+## 2026-11-26 Revision Note — the bridge on `@pattern-stack/jobs` (JOBS-3)
+
+The bridge's contract stands — `bridge_delivery (event_id, trigger_id)` is the exactly-once ledger, Case B
+pre-writes from `publishAndStart`, the audit-tier guard — but ADR-022 underneath it is gone, and so is the wrapper:
+
+- The outbox drain hook starts each trigger's user run itself, with `JobStarter.start(jobKey, map(event), { tenantId,
+  trigger: 'event' }, tx)` in the event's own transaction, and marks the delivery `delivered` with the run's id.
+  Exactly once comes from that transaction and the UNIQUE key, never from a dedupe key or window. The run is found
+  by the jobs executor's open-run sweep once the drain commits (about a second by default).
+- Removed: `BridgeDeliveryHandler` (the `@framework/bridge_delivery` wrapper job), the reserved `events_inbound` /
+  `events_change` / `events_outbound` job pools and `BridgeReservedPoolsNotPolledError`'s boot check,
+  `bridge_delivery.wrapper_run_id`, and the handler as a multi-tenancy enforcement site (two sites remain:
+  `publishAndStart` and the Drizzle repo).
+- Triggers are declared with `jobTriggers('<job key>', [{ event, map, when? }])` beside the job's `defineJob`, not in
+  `@JobHandler({ triggers })`; `BridgeTriggerEntry.jobType` is `jobKey`. A trigger whose job this process doesn't
+  register is marked `skipped` / `trigger_unregistered`; a false `when`, `skipped` / `predicate_false`, both in the
+  drain now (they were the handler's).
+- `publishAndStart(event, jobKey, input, { tenantId, dedupeKey })`: `parentRunId` is gone.
+
 ## 2026-04-26 Revision Note — Audit-tier guard (AUDIT-4)
 
 The bridge outbox drain hook (`runtime/subsystems/bridge/bridge-outbox-drain-hook.ts`) gains a top-of-`processEvent` guard for `tier:audit` events. This is a **defense-in-depth** addition; the codegen-side validator from AUDIT-2 (which hard-errors on a job declaring `triggers: [<audit_event>]`) remains the **primary** enforcement.

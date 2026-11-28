@@ -44,10 +44,11 @@ describe('buildSubsystemSchemaBarrel', () => {
 			"export { domainEvents } from '@pattern-stack/codegen/runtime/subsystems/events/index';",
 		);
 
-		// jobs: 3 tables + 8 pgEnums.
-		expect(out.content).toContain('jobs, jobRuns, jobSteps');
-		expect(out.content).toContain('jobRunStatusEnum');
-		expect(out.content).toContain('triggerSourceEnum');
+		// jobs: the seven @pattern-stack/jobs tables, no pgEnums (JOBS-3).
+		expect(out.content).toContain(
+			'jobRuns, jobRunSteps, jobRunItems, jobRunChunks, jobRunEvents, jobRunValues, jobItemResults',
+		);
+		expect(out.content).not.toContain('jobRunStatusEnum');
 		expect(out.content).toContain(
 			"from '@pattern-stack/codegen/runtime/subsystems/jobs/index';",
 		);
@@ -101,5 +102,15 @@ describe('buildSubsystemSchemaBarrel', () => {
 		);
 		expect(out.emitted).toEqual(['events']);
 		expect(out.content).not.toContain('bridgeDelivery');
+	});
+});
+
+// Review #969: the job tables are declared once, in the package. The schema barrel names exactly the tables
+// `@pattern-stack/jobs/schema` exports, so a table the package adds cannot be missed by migrations.
+describe('SCHEMA_SYMBOLS.jobs is the package\'s own table list', () => {
+	test('equal to every export of @pattern-stack/jobs/schema', async () => {
+		const { SCHEMA_SYMBOLS } = await import('../../cli/shared/subsystem-schema-generator.js');
+		const tables = await import('@pattern-stack/jobs/schema');
+		expect([...(SCHEMA_SYMBOLS.jobs ?? [])].sort()).toEqual(Object.keys(tables).sort());
 	});
 });

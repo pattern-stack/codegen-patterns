@@ -141,7 +141,7 @@ export type EventRetry = z.infer<typeof RetrySchema>;
  * Declarative time-based emission (ADR-039 — time as an event source). When an
  * event declares `schedule:`, the framework `EventScheduler` materialises one
  * `domain_events` row per (event type, slot) on this cadence; ADR-023's three
- * activation tiers (subscribe / `@JobHandler({ triggers })` / `publishAndStart`)
+ * activation tiers (subscribe / `jobTriggers(...)` / `publishAndStart`)
  * — unchanged — react. No new activation mechanism; time is just a third event
  * source peer to use-case publishes and webhook receivers.
  *

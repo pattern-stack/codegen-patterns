@@ -1,19 +1,17 @@
 /**
  * Typed errors for the bridge subsystem (ADR-023 Phase 2, BRIDGE-2).
  *
- * All thrown by the three enforcement sites named in ADR-023 §Multi-tenancy:
+ * All thrown by the enforcement sites named in ADR-023 §Multi-tenancy:
  *   - `EventFlowService.publishAndStart` entry (BRIDGE-7)
- *   - `BridgeDeliveryHandler.handle` entry (BRIDGE-5)
  *   - `DrizzleBridgeDeliveryRepo.insertDelivery` pre-write (BRIDGE-4)
  *
- * Same shape as `runtime/subsystems/jobs/jobs-errors.ts` and
- * `runtime/subsystems/events/events-errors.ts` so consumers can catch them
- * with the same exception-filter pattern across all three subsystems.
+ * Same shape as `runtime/subsystems/events/events-errors.ts` so consumers can
+ * catch them with the same exception-filter pattern.
  */
 
 /**
  * Thrown when `BridgeModule` was configured with `multiTenant: true` but
- * the caller did not pass a `tenantId` at one of the three enforcement
+ * the caller did not pass a `tenantId` at one of the enforcement
  * sites listed above.
  *
  * **Strict enforcement rationale (mirrors JOB-8 / SYNC-6 stance, locked
@@ -28,10 +26,9 @@
  *   work (e.g. a system housekeeping event with no owning tenant). The
  *   `bridge_delivery` row is persisted with `tenant_id = NULL`.
  *
- * The `callSite` constructor argument names which of the three enforcement
- * sites threw — review reports and ops dashboards rely on a stable site
- * name, so use the canonical strings: `'EventFlowService.publishAndStart'`,
- * `'BridgeDeliveryHandler.handle'`,
+ * The `callSite` constructor argument names which enforcement site threw —
+ * review reports and ops dashboards rely on a stable site name, so use the
+ * canonical strings: `'EventFlowService.publishAndStart'`,
  * `'DrizzleBridgeDeliveryRepo.insertDelivery'`.
  */
 export class MissingTenantIdError extends Error {
@@ -66,35 +63,6 @@ export class MissingTenantIdError extends Error {
  * backend can faithfully model the "duplicate raises" behaviour for tests
  * that want to assert the constraint actually fires.
  */
-/**
- * Thrown by `BridgeModule.onModuleInit` when `JobWorkerModule` is wired
- * alongside the bridge but its active `pools` list does not include one
- * or more of the three reserved bridge pools (`events_inbound`,
- * `events_change`, `events_outbound`).
- *
- * Without a worker polling those pools, the wrapper `job_run` rows the
- * outbox drain inserts (BRIDGE-4) sit `pending` forever — a silent
- * footgun where `eventFlow.publish(...)` returns success but no user
- * job ever spawns. The boot-time check converts that into a fail-fast.
- *
- * Operators can either (a) add `...BRIDGE_RESERVED_POOLS` to their
- * `JobWorkerModule.forRoot({ pools })` configuration so the same
- * process polls the reserved pools, or (b) run a separate worker
- * process per reserved pool for lane isolation (ADR-022 §Pool
- * isolation).
- */
-export class BridgeReservedPoolsNotPolledError extends Error {
-  override readonly name = 'BridgeReservedPoolsNotPolledError';
-  constructor(public readonly missingPools: readonly string[]) {
-    super(
-      `BridgeModule loaded but JobWorkerModule is not polling reserved ` +
-        `pool '${missingPools[0]}'. Add ...BRIDGE_RESERVED_POOLS to your ` +
-        `JobWorkerModule.forRoot({ pools }) configuration. Missing pools: ` +
-        `${missingPools.join(', ')}. (Bridge-fanout wrappers will sit ` +
-        `pending forever without these pollers.)`,
-    );
-  }
-}
 
 export class UniqueConstraintError extends Error {
   override readonly name = 'UniqueConstraintError';

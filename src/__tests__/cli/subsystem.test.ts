@@ -232,29 +232,6 @@ describe('subsystem — install backend pruning (#6)', () => {
 		expect(fs.existsSync(path.join(installDir, 'event-bus.redis-backend.ts'))).toBe(false);
 	});
 
-	test('drizzle jobs install does NOT vendor bullmq backend implementation files', async () => {
-		const root = mkTempProject();
-		tempDirs.push(root);
-		const cli = buildCli();
-		const { result } = await capture(() =>
-			cli.run(['subsystem', 'install', 'jobs', '--force', '--cwd', root]),
-		);
-		expect(result).toBe(0);
-		const installDir = path.join(root, 'src/shared/subsystems/jobs');
-		// Drizzle + memory backends ship.
-		expect(fs.existsSync(path.join(installDir, 'job-orchestrator.drizzle-backend.ts'))).toBe(true);
-		expect(fs.existsSync(path.join(installDir, 'job-orchestrator.memory-backend.ts'))).toBe(true);
-		// BullMQ IMPLEMENTATION files are filtered out.
-		expect(fs.existsSync(path.join(installDir, 'job-orchestrator.bullmq-backend.ts'))).toBe(false);
-		expect(fs.existsSync(path.join(installDir, 'job-worker.bullmq-backend.ts'))).toBe(false);
-		// bullmq.config.ts intentionally ALWAYS ships — jobs-domain.module.ts
-		// + job-worker.module.ts static-import its tokens/helpers, and the
-		// file carries no `bullmq` peer-dep type surface (uses a local
-		// structural `BullMqConnectionOptions`). Pruning it would re-introduce
-		// `TS2307` on every drizzle install (validator catch).
-		expect(fs.existsSync(path.join(installDir, 'bullmq.config.ts'))).toBe(true);
-	});
-
 	test('drizzle install leaves no `bullmq` / `ioredis` static-import lines in the vendored tree', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
@@ -296,29 +273,6 @@ describe('subsystem — install backend pruning (#6)', () => {
 		expect(offenders).toEqual([]);
 	});
 
-	test('memory install also prunes bullmq/redis implementation files (broader than the original memory rule)', async () => {
-		const root = mkTempProject();
-		tempDirs.push(root);
-		const cli = buildCli();
-		const { result } = await capture(() =>
-			cli.run([
-				'subsystem',
-				'install',
-				'jobs',
-				'--backend',
-				'memory',
-				'--force',
-				'--cwd',
-				root,
-			]),
-		);
-		expect(result).toBe(0);
-		const installDir = path.join(root, 'src/shared/subsystems/jobs');
-		expect(fs.existsSync(path.join(installDir, 'job-orchestrator.bullmq-backend.ts'))).toBe(false);
-		expect(fs.existsSync(path.join(installDir, 'job-worker.bullmq-backend.ts'))).toBe(false);
-		// bullmq.config.ts always ships (see above).
-		expect(fs.existsSync(path.join(installDir, 'bullmq.config.ts'))).toBe(true);
-	});
 });
 
 describe('subsystem — install (real)', () => {
@@ -709,7 +663,7 @@ describe('subsystem — remove (#5 + #7)', () => {
 		const jobsDir = path.join(root, 'src/shared/subsystems/jobs');
 		const barrelPath = path.join(root, 'src/generated/subsystems.ts');
 		expect(fs.existsSync(jobsDir)).toBe(true);
-		expect(fs.readFileSync(barrelPath, 'utf-8')).toContain('JobsDomainModule');
+		expect(fs.readFileSync(barrelPath, 'utf-8')).toContain('JobsEngineModule');
 
 		// --force here only bypasses the git-safety check (the temp project
 		// isn't a repo so it would pass anyway, but pass it for explicitness).
@@ -731,10 +685,10 @@ describe('subsystem — remove (#5 + #7)', () => {
 
 		// Dir is gone.
 		expect(fs.existsSync(jobsDir)).toBe(false);
-		// Barrel no longer imports JobsDomainModule, but still imports EventsModule.
+		// Barrel no longer imports JobsEngineModule, but still imports EventsModule.
 		const barrel = fs.readFileSync(barrelPath, 'utf-8');
-		expect(barrel).not.toContain('JobsDomainModule');
-		expect(barrel).not.toContain('jobs/jobs-domain.module');
+		expect(barrel).not.toContain('JobsEngineModule');
+		expect(barrel).not.toContain('jobs/jobs-engine.module');
 		expect(barrel).toContain('EventsModule');
 	});
 
@@ -1124,7 +1078,7 @@ describe('subsystem — install (runtime: package)', () => {
 		// Non-empty — the install set drives it (not vendored-file presence).
 		expect(barrel).not.toContain('SUBSYSTEM_MODULES: DynamicModule[] = [];');
 		expect(barrel).toContain('EventsModule.forRoot(');
-		expect(barrel).toContain('JobsDomainModule.forRoot(');
+		expect(barrel).toContain('JobsEngineModule.forRoot(');
 		expect(barrel).toContain('IntegrationModule.forRoot(');
 		// Package imports, not the vendored relative path.
 		expect(barrel).toContain("from '@pattern-stack/codegen/subsystems'");
@@ -1144,10 +1098,10 @@ describe('subsystem — install (runtime: package)', () => {
 			path.join(root, 'src/generated/subsystems-schema.ts'),
 			'utf-8',
 		);
-		// events table (no enum), jobs tables + enums.
+		// events table (no enum); the @pattern-stack/jobs tables (no enums, JOBS-3).
 		expect(schema).toContain('domainEvents');
-		expect(schema).toContain('jobs, jobRuns, jobSteps');
-		expect(schema).toContain('jobRunStatusEnum');
+		expect(schema).toContain('jobRuns, jobRunSteps, jobRunItems');
+		expect(schema).not.toContain('jobRunStatusEnum');
 		expect(schema).toContain(
 			"from '@pattern-stack/codegen/runtime/subsystems/jobs/index'",
 		);
@@ -1187,7 +1141,14 @@ describe('subsystem — install (runtime: package)', () => {
 	// in the package, re-exported via the schema barrel).
 	// -------------------------------------------------------------------------
 
-	test('jobs: package-mode install emits src/worker.ts with the package import (#517)', async () => {
+	test('jobs: package-mode install vendors nothing: the jobs runtime is the package', async () => {
+		const root = mkPackageProject();
+		const cli = buildCli();
+		expect((await capture(() => cli.run(['subsystem', 'install', 'jobs', '--cwd', root]))).result).toBe(0);
+		expect(fs.existsSync(path.join(root, 'src/shared/subsystems/jobs'))).toBe(false);
+	});
+
+	test('jobs: package-mode install emits src/worker.ts, which starts the @pattern-stack/jobs executor (#517)', async () => {
 		const root = mkPackageProject();
 		// main.ts must exist for the embedded-mode hook to inject after
 		// `NestFactory.create` (mirrors a `project init` consumer tree).
@@ -1206,14 +1167,12 @@ describe('subsystem — install (runtime: package)', () => {
 		const workerPath = path.join(root, 'src/worker.ts');
 		expect(fs.existsSync(workerPath)).toBe(true);
 		const worker = fs.readFileSync(workerPath, 'utf-8');
-		// Mode-aware import resolves to the published package (NOT @shared).
-		expect(worker).toContain(
-			"from '@pattern-stack/codegen/runtime/subsystems/jobs/index'",
-		);
+		// It boots the app's own AppModule and starts the executor; no second module, no mode-dependent import.
+		expect(worker).toContain("import { JOBS_EXECUTOR } from '@pattern-stack/jobs/nest';");
+		expect(worker).toContain("import { AppModule } from './app.module';");
+		expect(worker).toContain('(JOBS_EXECUTOR).start()');
 		expect(worker).not.toContain('@shared/subsystems');
-		// Standalone forRoot literal survived the base64 arg boundary intact.
-		expect(worker).toContain("mode: 'standalone'");
-		expect(worker).toContain('allPools: true');
+		expect(worker).not.toContain('JobWorkerModule');
 	});
 
 	test('jobs: package-mode install injects the main.ts embedded-mode hook (#517)', async () => {
@@ -1227,7 +1186,7 @@ describe('subsystem — install (runtime: package)', () => {
 		await capture(() => cli.run(['subsystem', 'install', 'jobs', '--cwd', root]));
 
 		const main = fs.readFileSync(path.join(root, 'src/main.ts'), 'utf-8');
-		expect(main).toContain('JOBS — Embedded worker mode (optional)');
+		expect(main).toContain('JOBS — the job executor (@pattern-stack/jobs, JOBS-3)');
 	});
 
 	test('jobs: package-mode install does NOT vendor the schema template (#517)', async () => {
@@ -1323,11 +1282,13 @@ describe('subsystem — install (runtime: package)', () => {
 	});
 });
 
-// GEN-0 (#652): an upgrading consumer re-runs `subsystem install jobs` and hits
-// the "already installed" early exit — in both runtime modes that exit names
-// the one-time edit for a pre-GEN-0 `worker.ts`, in text and in `--json`.
-describe('subsystem — install jobs: stale worker.ts notice on the already-installed exit (GEN-0)', () => {
-	const STALE_CALL = "JobWorkerModule.forRoot({ mode: 'standalone', allPools: true })";
+// JOBS-3: an upgrading consumer re-runs `subsystem install jobs` and hits the
+// "already installed" early exit — in both runtime modes that exit names the
+// one-time edit for a `worker.ts` that still boots ADR-022's JobWorkerModule,
+// in text and in `--json`.
+describe('subsystem — install jobs: stale worker.ts notice on the already-installed exit (JOBS-3)', () => {
+	const CURRENT_START = 'app.get<{ start(): Promise<void> }>(JOBS_EXECUTOR).start()';
+	const STALE_CALL = "WorkerAppModule; // JobWorkerModule.forRoot({ mode: 'standalone', allPools: true })";
 
 	function mkProject(runtime: 'vendored' | 'package'): string {
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), `subsystem-stale-${runtime}-`));
@@ -1347,26 +1308,26 @@ describe('subsystem — install jobs: stale worker.ts notice on the already-inst
 			await capture(() => cli.run(runtime === 'vendored' ? [...firstArgs, '--force'] : firstArgs));
 			const workerPath = path.join(root, 'src/worker.ts');
 			const current = fs.readFileSync(workerPath, 'utf-8');
-			expect(current).toContain('JobWorkerModule.forRoot(jobWorkerOptions)');
+			expect(current).toContain(CURRENT_START);
 
 			const rerun = ['subsystem', 'install', 'jobs', '--json', '--cwd', root];
 			const fresh = JSON.parse((await capture(() => cli.run(rerun))).out);
 			expect(fresh.status).toBe('already-installed');
 			expect(fresh.staleWorker).toBeUndefined();
 
-			fs.writeFileSync(workerPath, current.replaceAll('JobWorkerModule.forRoot(jobWorkerOptions)', STALE_CALL));
+			fs.writeFileSync(workerPath, current.replaceAll(CURRENT_START, STALE_CALL));
 
 			const { result, out } = await capture(() => cli.run(rerun));
 			expect(result).toBe(0);
 			const parsed = JSON.parse(out);
 			expect(parsed.status).toBe('already-installed');
-			expect(parsed.staleWorker).toContain('src/worker.ts predates GEN-0 (#652)');
-			expect(parsed.staleWorker).toContain("import { jobWorkerOptions } from './generated/app-config';");
+			expect(parsed.staleWorker).toContain('src/worker.ts predates JOBS-3');
+			expect(parsed.staleWorker).toContain("import { JOBS_EXECUTOR } from '@pattern-stack/jobs/nest';");
 
 			setJsonMode(false);
 			const text = await capture(() => cli.run(['subsystem', 'install', 'jobs', '--cwd', root]));
-			expect(text.out).toContain('predates GEN-0 (#652)');
-			expect(text.out).toContain('JobWorkerModule.forRoot(jobWorkerOptions),');
+			expect(text.out).toContain('predates JOBS-3');
+			expect(text.out).toContain('await app.get(JOBS_EXECUTOR).start();');
 		});
 	}
 });

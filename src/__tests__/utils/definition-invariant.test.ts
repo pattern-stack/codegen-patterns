@@ -10,7 +10,6 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { collectEntityEvents, collectMergedEvents } from '../../cli/shared/event-codegen-generator.js';
-import { collectScopeableNames } from '../../cli/shared/scope-entity-type-generator.js';
 import { regenerateBarrels } from '../../cli/shared/barrel-generator.js';
 import {
 	loadEntityDefinitions,
@@ -76,10 +75,6 @@ describe('whole-set loaders throw on an invalid definition (#915)', () => {
 		expect(() => collectMergedEvents({ entitiesDir, nonEntityDirs: [], eventsDir: path.join(root, 'events'), skipInvalid: true })).not.toThrow();
 	});
 
-	test('scope union: collectScopeableNames', () => {
-		const root = withBadEntity();
-		expectInvariant(() => collectScopeableNames(path.join(root, 'entities'), []), 'bad.yaml');
-	});
 
 	test('barrels: an entity, a junction and a relationship each throw, naming its own file', async () => {
 		const ctx = { cwd: '/', config: null } as never;
@@ -146,8 +141,6 @@ describe('whole-set loaders throw on an invalid definition (#915)', () => {
 		fs.mkdirSync(path.join(root, 'entities', 'providers'));
 		fs.writeFileSync(path.join(root, 'entities', 'providers', 'p.yaml'), 'slug: p\n');
 		const nonEntityDirs = [path.join(root, 'entities', 'providers')];
-		expect(collectScopeableNames(path.join(root, 'entities'), nonEntityDirs)).toEqual([]);
-		expect(() => collectScopeableNames(path.join(root, 'entities'), [])).toThrow('p.yaml');
 		expect(loadEntityDefinitions(path.join(root, 'entities'), nonEntityDirs).size).toBe(1);
 		expect(collectEntityEvents(path.join(root, 'entities'), { nonEntityDirs }).events).toEqual([]);
 	});

@@ -122,7 +122,6 @@ export function transformToEntity(result: LoadResult, tablePrefix: string): Pars
 		pattern: definition.entity.pattern,
 		patterns: definition.entity.patterns,
 		patternConfig: definition.entity.config,
-		scopeable: definition.entity.scopeable ?? false,
 		expose: definition.entity.expose ?? ['repository', 'rest', 'trpc'],
 		fields: new Map(),
 		relationships: new Map(),

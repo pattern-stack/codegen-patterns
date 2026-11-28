@@ -1,9 +1,9 @@
 /**
  * Bridge registry generator (BRIDGE-6, ADR-023 Phase 2).
  *
- * Walks the project's handler directory, parses each `.ts` file with the
- * TypeScript Compiler API, finds every class decorated with
- * `@JobHandler(type, { triggers: [...] })`, and emits
+ * Walks the project's jobs directory, parses each `.ts` file with the
+ * TypeScript Compiler API, finds every `jobTriggers('<job key>', [...])`
+ * declaration (JOBS-3; it was `@JobHandler(type, { triggers })`), and emits
  * `runtime/subsystems/bridge/generated/registry.ts` — a `Record<EventType,
  * BridgeTriggerEntry[]>` keyed by event type and ordered by declaration.
  *
@@ -100,7 +100,7 @@ export interface BridgeRegistryGeneratorOptions {
   /**
    * Synthetic triggers contributed DECLARATIVELY by other generators (RFC-0005 #7:
    * the jobs definition-kind emitter feeds job→event bridge mappings here rather
-   * than emitting `@JobHandler` source for the AST scan to re-parse). Concatenated
+   * than emitting `jobTriggers(...)` source for the AST scan to re-parse). Concatenated
    * with the scanned triggers BEFORE the validators run, so they get the same
    * unknown-event / duplicate / audit checking and flow into the registry unchanged.
    */
@@ -116,8 +116,8 @@ export interface BridgeRegistryGeneratorOptions {
  */
 export interface ScannedTrigger {
   /** The decorated handler's first decorator argument: the job type string. */
-  jobType: string;
-  /** `<jobType>#<index>` — stable across codegens. */
+  jobKey: string;
+  /** `<jobKey>#<index>` — stable across codegens. */
   triggerId: string;
   /** Event type literal (`triggers[i].event`). */
   event: string;
@@ -125,6 +125,8 @@ export interface ScannedTrigger {
   mapSource: string;
   /** Optional source text of `triggers[i].when` arrow function. */
   whenSource?: string;
+  /** Optional source text of `triggers[i].dedupeKey` arrow function: the start's dedupe key, for the job's collision. */
+  dedupeKeySource?: string;
   /** File path the trigger was found in (for error messages). */
   sourceFile: string;
   /** 1-based line number of the trigger entry (for error messages). */
@@ -167,17 +169,17 @@ const HEADER =
 // ---------------------------------------------------------------------------
 
 /**
- * Thrown when a `@JobHandler` trigger references an event type that does
+ * Thrown when a `jobTriggers(...)` trigger references an event type that does
  * not exist in the generated `eventRegistry`. ADR-023 §Decision 5
  * (build-time validation against `eventRegistry`).
  */
 /**
  * Thrown when the registry would emit two triggers with the same
- * `(event, jobType)` pair. ADR-023 §`publishAndStart` + existing
+ * `(event, jobKey)` pair. ADR-023 §`publishAndStart` + existing
  * `triggers:` collision: exactly one execution per `(event, trigger)`
- * pair. Two triggers with the same `(event, jobType)` would produce
+ * pair. Two triggers with the same `(event, jobKey)` would produce
  * two wrappers + two user-job spawns — the bridge ledger UNIQUE only
- * dedups by `triggerId`, which is `<jobType>#<index>` and therefore
+ * dedups by `triggerId`, which is `<jobKey>#<index>` and therefore
  * differs between the two entries.
  *
  * The facade's Case B pre-write loop pre-writes one delivery per
@@ -187,14 +189,14 @@ const HEADER =
  * mistake immediately rather than debugging double-spawned jobs.
  *
  * To resolve: either rename the second trigger's job type, or remove
- * one of the two `@JobHandler.triggers[]` entries pointing at the same
+ * one of the two `jobTriggers(...)[]` entries pointing at the same
  * (event, job) pair.
  */
 export class DuplicateTriggerError extends Error {
   override readonly name = 'DuplicateTriggerError';
   constructor(
     public readonly event: string,
-    public readonly jobType: string,
+    public readonly jobKey: string,
     public readonly occurrences: ReadonlyArray<{
       sourceFile: string;
       sourceLine: number;
@@ -202,8 +204,8 @@ export class DuplicateTriggerError extends Error {
     }>,
   ) {
     super(
-      `DuplicateTriggerError: ${occurrences.length} @JobHandler.triggers ` +
-        `entries declare event '${event}' → jobType '${jobType}'. ADR-023 ` +
+      `DuplicateTriggerError: ${occurrences.length} jobTriggers(...) ` +
+        `entries declare event '${event}' → jobKey '${jobKey}'. ADR-023 ` +
         `requires exactly one execution per (event, trigger) pair; ` +
         `duplicates would double-spawn the user job. Occurrences:\n` +
         occurrences
@@ -219,7 +221,7 @@ export class DuplicateTriggerError extends Error {
 }
 
 /**
- * Thrown when a `@JobHandler` trigger references an event whose registry
+ * Thrown when a `jobTriggers(...)` trigger references an event whose registry
  * entry has `tier: 'audit'`. Audit events are observational and not
  * bridge-eligible by design (AUDIT-2). See
  * `ai-docs/specs/issue-242/plan.md` §AUDIT-2.
@@ -228,13 +230,13 @@ export class AuditEventTriggerError extends Error {
   override readonly name = 'AuditEventTriggerError';
   constructor(
     public readonly event: string,
-    public readonly jobType: string,
+    public readonly jobKey: string,
     public readonly triggerId: string,
     public readonly sourceFile: string,
     public readonly sourceLine: number,
   ) {
     super(
-      `AuditEventTriggerError: @JobHandler('${jobType}') trigger '${triggerId}' ` +
+      `AuditEventTriggerError: jobTriggers('${jobKey}') trigger '${triggerId}' ` +
         `references audit-tier event '${event}'. Audit events are not ` +
         `bridge-eligible. Use a domain event, or remove the trigger. ` +
         `Source: ${sourceFile}:${sourceLine}. See ai-docs/specs/issue-242/plan.md §AUDIT-2.`,
@@ -246,13 +248,13 @@ export class UnknownTriggerEventError extends Error {
   override readonly name = 'UnknownTriggerEventError';
   constructor(
     public readonly event: string,
-    public readonly jobType: string,
+    public readonly jobKey: string,
     public readonly sourceFile: string,
     public readonly sourceLine: number,
     public readonly knownEventTypes: string[],
   ) {
     super(
-      `UnknownTriggerEventError: @JobHandler('${jobType}') trigger references ` +
+      `UnknownTriggerEventError: jobTriggers('${jobKey}') trigger references ` +
         `event '${event}' which does not exist in the generated eventRegistry. ` +
         `Source: ${sourceFile}:${sourceLine}. ` +
         `Known event types (${knownEventTypes.length}): ` +
@@ -280,11 +282,17 @@ export function findHandlerFiles(dir: string): string[] {
   const out: string[] = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.name.startsWith('.')) continue;
-    if (entry.name === 'node_modules' || entry.name === 'generated') continue;
+    // Tests are not the app's jobs or triggers: a fixture exported from a co-located test would be registered (JOBS-3).
+    if (entry.name === 'node_modules' || entry.name === 'generated' || entry.name === '__tests__') continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       out.push(...findHandlerFiles(full));
-    } else if (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.d.ts')) {
+    } else if (
+      entry.isFile() &&
+      entry.name.endsWith('.ts') &&
+      !entry.name.endsWith('.d.ts') &&
+      !/\.(test|spec)\.ts$/.test(entry.name)
+    ) {
       out.push(full);
     }
   }
@@ -296,8 +304,8 @@ export function findHandlerFiles(dir: string): string[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Walk a parsed source file and extract every `@JobHandler(type, {
- * triggers: [...] })` decorator. Returns a (possibly empty) flat list of
+ * Walk a parsed source file and extract every `jobTriggers('<job key>', [...])`
+ * call. Returns a (possibly empty) flat list of
  * triggers, preserving declaration order both within a class and across
  * classes within the file.
  */
@@ -308,60 +316,36 @@ export function extractTriggersFromSourceFile(
   const triggers: ScannedTrigger[] = [];
 
   function visit(node: ts.Node): void {
-    if (ts.isClassDeclaration(node)) {
-      const modifiers = ts.canHaveDecorators(node)
-        ? ts.getDecorators(node) ?? []
-        : [];
-      for (const decorator of modifiers) {
-        const call = decorator.expression;
-        if (!ts.isCallExpression(call)) continue;
-        if (!ts.isIdentifier(call.expression)) continue;
-        if (call.expression.text !== 'JobHandler') continue;
-        const [typeArg, metaArg] = call.arguments;
-        if (!typeArg || !ts.isStringLiteralLike(typeArg)) continue;
-        if (!metaArg || !ts.isObjectLiteralExpression(metaArg)) continue;
-
-        const jobType = typeArg.text;
-        const triggersProp = metaArg.properties.find(
-          (p): p is ts.PropertyAssignment =>
-            ts.isPropertyAssignment(p) &&
-            ts.isIdentifier(p.name) &&
-            p.name.text === 'triggers',
-        );
-        if (!triggersProp) continue;
-        if (!ts.isArrayLiteralExpression(triggersProp.initializer)) continue;
-
-        triggersProp.initializer.elements.forEach((el, index) => {
+    // JOBS-3: `jobTriggers('<job key>', [ { event, map, when? }, … ])`, beside the job's `defineJob`.
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'jobTriggers'
+    ) {
+      const [keyArg, listArg] = node.arguments;
+      if (keyArg && ts.isStringLiteralLike(keyArg) && listArg && ts.isArrayLiteralExpression(listArg)) {
+        const jobKey = keyArg.text;
+        listArg.elements.forEach((el, index) => {
           if (!ts.isObjectLiteralExpression(el)) return;
-          const eventProp = el.properties.find(
-            (p): p is ts.PropertyAssignment =>
-              ts.isPropertyAssignment(p) &&
-              ts.isIdentifier(p.name) &&
-              p.name.text === 'event',
-          );
-          const mapProp = el.properties.find(
-            (p): p is ts.PropertyAssignment =>
-              ts.isPropertyAssignment(p) &&
-              ts.isIdentifier(p.name) &&
-              p.name.text === 'map',
-          );
-          const whenProp = el.properties.find(
-            (p): p is ts.PropertyAssignment =>
-              ts.isPropertyAssignment(p) &&
-              ts.isIdentifier(p.name) &&
-              p.name.text === 'when',
-          );
+          const prop = (name: string) =>
+            el.properties.find(
+              (p): p is ts.PropertyAssignment =>
+                ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && p.name.text === name,
+            );
+          const eventProp = prop('event');
+          const mapProp = prop('map');
+          const whenProp = prop('when');
+          const dedupeKeyProp = prop('dedupeKey');
           if (!eventProp || !ts.isStringLiteralLike(eventProp.initializer)) return;
           if (!mapProp) return;
-
           const { line } = sourceFile.getLineAndCharacterOfPosition(el.getStart(sourceFile));
-
           triggers.push({
-            jobType,
-            triggerId: `${jobType}#${index}`,
+            jobKey,
+            triggerId: `${jobKey}#${index}`,
             event: eventProp.initializer.text,
             mapSource: mapProp.initializer.getText(sourceFile),
             whenSource: whenProp?.initializer.getText(sourceFile),
+            dedupeKeySource: dedupeKeyProp?.initializer.getText(sourceFile),
             sourceFile: filePath,
             sourceLine: line + 1,
           });
@@ -474,7 +458,7 @@ export function validateNoAuditTriggers(
     if (eventTiers.get(t.event) === 'audit') {
       throw new AuditEventTriggerError(
         t.event,
-        t.jobType,
+        t.jobKey,
         t.triggerId,
         t.sourceFile,
         t.sourceLine,
@@ -489,21 +473,21 @@ export function validateNoAuditTriggers(
  * validate against).
  */
 /**
- * Throws `DuplicateTriggerError` on the first `(event, jobType)` pair
+ * Throws `DuplicateTriggerError` on the first `(event, jobKey)` pair
  * that appears in two or more scanned triggers. Codegen-time guard for
  * the facade's same-tx invariant (BRIDGE-7).
  */
 export function validateNoDuplicateTriggers(
   triggers: ScannedTrigger[],
 ): void {
-  // Group by `${event}\u0000${jobType}` (NUL separator avoids any
+  // Group by `${event}\u0000${jobKey}` (NUL separator avoids any
   // collision with string contents).
   const grouped = new Map<
     string,
     Array<{ sourceFile: string; sourceLine: number; triggerId: string }>
   >();
   for (const t of triggers) {
-    const key = `${t.event}\u0000${t.jobType}`;
+    const key = `${t.event}\u0000${t.jobKey}`;
     const list = grouped.get(key) ?? [];
     list.push({
       sourceFile: t.sourceFile,
@@ -514,8 +498,8 @@ export function validateNoDuplicateTriggers(
   }
   for (const [key, occurrences] of grouped) {
     if (occurrences.length < 2) continue;
-    const [event, jobType] = key.split('\u0000');
-    throw new DuplicateTriggerError(event!, jobType!, occurrences);
+    const [event, jobKey] = key.split('\u0000');
+    throw new DuplicateTriggerError(event!, jobKey!, occurrences);
   }
 }
 
@@ -529,7 +513,7 @@ export function validateAgainstEventRegistry(
     if (!known.has(t.event)) {
       throw new UnknownTriggerEventError(
         t.event,
-        t.jobType,
+        t.jobKey,
         t.sourceFile,
         t.sourceLine,
         knownEventTypes,
@@ -585,10 +569,13 @@ export function buildBridgeRegistryContent(
     for (const t of grouped.get(eventType)!) {
       chunks.push(`\t\t{`);
       chunks.push(`\t\t\ttriggerId: '${t.triggerId}',`);
-      chunks.push(`\t\t\tjobType: '${t.jobType}',`);
+      chunks.push(`\t\t\tjobKey: '${t.jobKey}',`);
       chunks.push(`\t\t\tmap: ${t.mapSource},`);
       if (t.whenSource) {
         chunks.push(`\t\t\twhen: ${t.whenSource},`);
+      }
+      if (t.dedupeKeySource) {
+        chunks.push(`\t\t\tdedupeKey: ${t.dedupeKeySource},`);
       }
       chunks.push(`\t\t},`);
     }
@@ -650,13 +637,13 @@ export async function generateBridgeRegistry(
   // 1. Scan handler files, then fold in any declaratively-contributed triggers
   //    (RFC-0005 #7 jobs emitter). They join BEFORE the validators so a job trigger
   //    referencing an unknown/audit event or colliding with a hand-authored
-  //    (event, jobType) pair is caught the same way.
+  //    (event, jobKey) pair is caught the same way.
   const triggers = [
     ...scanHandlerFiles(handlersDir),
     ...(opts.extraTriggers ?? []),
   ];
 
-  // 2a. Reject duplicate (event, jobType) pairs (BRIDGE-7 follow-up to
+  // 2a. Reject duplicate (event, jobKey) pairs (BRIDGE-7 follow-up to
   //     BRIDGE-6: facade's same-tx invariant requires one trigger per
   //     such pair; without this guard, duplicates double-spawn).
   validateNoDuplicateTriggers(triggers);

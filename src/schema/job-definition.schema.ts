@@ -1,3 +1,4 @@
+import type { Collision } from "@pattern-stack/jobs";
 import { z } from "./zod";
 import { DetectionConfigSchema as RuntimeDetectionConfigSchema } from "../../runtime/subsystems/integration";
 import { ScheduleSchema } from "./event-definition.schema";
@@ -11,7 +12,8 @@ const DetectionConfigSchema = RuntimeDetectionConfigSchema.describe(
  * Job Definition Schema — the codegen "jobs" definition kind (RFC-0005).
  *
  * Describes a single `definitions/jobs/*.yaml` file: a declarative sync-job
- * profile that the codegen jobs emitter compiles into a `@JobHandler` skeleton.
+ * profile that the codegen jobs emitter compiles into a `@pattern-stack/jobs` job
+ * (`define<Type>Job(arms)`, JOBS-3).
  * The load-bearing A→B contract (swe-brain ADR-0018): a per-adapter sync-profile
  * object IS a `JobDefinition`. swe-brain authors the YAML; codegen compiles it.
  *
@@ -23,17 +25,15 @@ const DetectionConfigSchema = RuntimeDetectionConfigSchema.describe(
  *
  * Codegen-side resolutions of the brief's §3 (recorded in RFC-0005):
  *   - The differ knob is named `differ.unignore` — NOT `dedupe.unignore` — so it
- *     does not collide with the runtime `JobHandlerMeta.dedupe` (DedupePolicy
- *     `{ key, windowMs }`), one of the eight handler-meta fields this schema
- *     surfaces. `differ.unignore` maps to `integration.differ.unignore`.
- *   - No `lane` field: it is not a `JobHandlerMeta` field (grep finds it only in
- *     JOB-FN-KEY comments about the concurrency *key*). The execution lane is
- *     `pool`.
- *   - Function-valued `JobHandlerMeta` fields (`scope.from`, `concurrency.key`,
- *     `dedupe.key`, `triggers[].map/when`) are NOT authorable in YAML. The schema
- *     models the DECLARATIVE surface only: `key`/`from` are `{{field}}` template
- *     strings; a trigger declares its `schedule`/`event` and the emitter generates
- *     `map`/`when`.
+ *     does not collide with `dedupe` (the job's dedupe window, `{ windowMs }`).
+ *     `differ.unignore` maps to `integration.differ.unignore`.
+ *   - No `lane` field: the execution lane is `pool` (a `@pattern-stack/jobs`
+ *     limiter, JOBS-3).
+ *   - JOBS-3 dropped ADR-022's `scope`, `concurrency`, `timeoutMs`, `replayFrom`
+ *     and the `dedupe.key` template: the dedupe key is the start's
+ *     (`JobStarter.start({ dedupeKey })`), and a collision on it follows
+ *     `collision`. A trigger declares its `schedule`/`event` and the emitter
+ *     generates `map`/`when`.
  *   - No provider/adapter identity field (RFC-0005 OQ-4, decided (b)). Arms carry
  *     only `domain`; provider→use-case resolution stays swe-brain-side (the D5
  *     throwaway `(provider,domain)` registry), revisited when codegen #458 lands.
@@ -65,17 +65,21 @@ const DetectionConfigSchema = RuntimeDetectionConfigSchema.describe(
 // Enums and constants
 // ============================================================================
 
-/** Mirrors `RetryPolicy.backoff` in `runtime/subsystems/jobs/job-handler.base.ts`. */
+/** A retry backoff: `fixed` (each delay `baseMs`) or `exponential` (doubling from `baseMs`). JOBS-3 maps it onto
+ *  `@pattern-stack/jobs`' `RetryPolicy` (`backoffCoefficient` 1 or 2). */
 export const JOB_BACKOFF_STRATEGIES = ["fixed", "exponential"] as const;
 export type JobBackoffStrategy = (typeof JOB_BACKOFF_STRATEGIES)[number];
 
-/** Mirrors `ConcurrencyPolicy.collisionMode`. */
-export const COLLISION_MODES = ["queue", "reject", "replace"] as const;
-export type CollisionMode = (typeof COLLISION_MODES)[number];
+/** Each backoff's `RetryPolicy.backoffCoefficient`: a table, so a new strategy is a compile error until it has one. */
+export const BACKOFF_COEFFICIENT = { fixed: 1, exponential: 2 } as const satisfies Record<JobBackoffStrategy, number>;
 
-/** Mirrors `JobHandlerMeta.replayFrom`. */
-export const REPLAY_FROM = ["scratch", "last_step", "last_checkpoint"] as const;
-export type ReplayFrom = (typeof REPLAY_FROM)[number];
+/**
+ * What a start whose dedupe key already has an open run does: the package's own `Collision`, tied both ways, so a
+ * mode the package adds or renames fails to compile here.
+ */
+export const COLLISION_MODES = ["join", "queue", "replace"] as const satisfies readonly Collision[];
+export type CollisionMode = (typeof COLLISION_MODES)[number];
+true satisfies [Exclude<Collision, CollisionMode>] extends [never] ? true : never;
 
 /** Source-usage shapes (ADR-0018). Discriminant of the `arms[]` union. */
 export const ARM_KINDS = ["poll", "reconcile", "realtime"] as const;
@@ -85,7 +89,7 @@ const SNAKE_CASE_RE = /^[a-z][a-z0-9_]*$/;
 
 // ============================================================================
 // Policy sub-schemas — the declarative (YAML-authorable) projection of the
-// corresponding `JobHandlerMeta` policy types.
+// corresponding `@pattern-stack/jobs` job options (JOBS-3).
 // ============================================================================
 
 /**
@@ -104,26 +108,12 @@ const RetryPolicySchema = z
 export type JobRetryPolicy = z.infer<typeof RetryPolicySchema>;
 
 /**
- * `ConcurrencyPolicy`. `key` is the `{{field}}` template string form only — the
- * `(input) => string` function form is code-authored (persisted as the
- * `FN_KEY_SENTINEL`) and cannot be expressed in YAML.
- */
-const ConcurrencyPolicySchema = z
-	.object({
-		key: z.string().min(1),
-		collisionMode: z.enum(COLLISION_MODES),
-	})
-	.strict();
-
-export type JobConcurrencyPolicy = z.infer<typeof ConcurrencyPolicySchema>;
-
-/**
- * `DedupePolicy` — the runtime job-level dedupe WINDOW (`{ key, windowMs }`).
- * Distinct from `differ.unignore` (below). `key` is the template string form.
+ * `dedupe` — the job's dedupe WINDOW (`@pattern-stack/jobs` `dedupeWindowMs`, JOBS-3): a start within it after a
+ * run on the same dedupe key ended returns that run. The key is the start's (`JobStarter.start({ dedupeKey })`).
+ * Distinct from `differ.unignore` (below).
  */
 const DedupePolicySchema = z
 	.object({
-		key: z.string().min(1),
 		windowMs: z.number().int().positive(),
 	})
 	.strict();
@@ -131,18 +121,22 @@ const DedupePolicySchema = z
 export type JobDedupePolicy = z.infer<typeof DedupePolicySchema>;
 
 /**
- * `ScopeRef` (job-handler.base.ts). `from` is the `{{field}}` template / field
- * path the emitter compiles into `(input) => string`; the function form is not
- * YAML-authorable.
+ * `limits` — the most one run may use (`@pattern-stack/jobs` `JobLimits`, JOBS-3). A bridge or schedule start names
+ * no budget, so a job is started within these. Each field is optional; an omitted one takes `DEFAULT_JOB_LIMITS`.
  */
-const ScopeRefSchema = z
+const JobLimitsSchema = z
 	.object({
-		entity: z.string().regex(SNAKE_CASE_RE, "scope.entity must be snake_case"),
-		from: z.string().min(1),
+		maxItems: z.number().int().positive().optional(),
+		maxUsd: z.number().positive().optional(),
+		maxCalls: z.number().int().positive().optional(),
+		maxDurationMs: z.number().int().positive().optional(),
 	})
 	.strict();
 
-export type JobScopeRef = z.infer<typeof ScopeRefSchema>;
+/** A YAML job's limits when it names none (JOBS-3, a default taken): generous for a sync job, whose plain steps record
+ * no spend or calls of their own; an hour bounds a run that hangs. */
+export const DEFAULT_JOB_LIMITS = { maxItems: 1000, maxUsd: 10, maxCalls: 1000, maxDurationMs: 3_600_000 } as const;
+
 
 /**
  * Per-job differ override (ADR-0018 D2). Adds field names back into the
@@ -272,14 +266,12 @@ const JobDefinitionSchemaCore = z
 		type: z
 			.string()
 			.regex(SNAKE_CASE_RE, "Job type must be snake_case starting with a letter"),
-		// ── JobHandlerMeta surface (8 fields) ──────────────────────────────────
+		// ── job-level options (JOBS-3): the step limiter, retry, collision, dedupe window ──
 		pool: z.string().min(1).optional(),
-		scope: ScopeRefSchema.optional(),
 		retry: RetryPolicySchema.optional(),
-		concurrency: ConcurrencyPolicySchema.optional(),
+		collision: z.enum(COLLISION_MODES).optional(),
 		dedupe: DedupePolicySchema.optional(),
-		timeoutMs: z.number().int().positive().optional(),
-		replayFrom: z.enum(REPLAY_FROM).optional(),
+		limits: JobLimitsSchema.optional(),
 		// `triggers` is the 8th meta field, reshaped to the declarative surface.
 		triggers: z.array(TriggerSchema).default([]),
 		// ── job-definition additions ───────────────────────────────────────────

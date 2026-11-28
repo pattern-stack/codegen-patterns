@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import YAML from 'yaml';
-import { aliasPackageRuntime } from '../smoke/_package-runtime';
+import { addJobsPackage, aliasPackageRuntime } from '../smoke/_package-runtime';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 export const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
@@ -69,30 +69,32 @@ export const LAYOUT_PATHS: Record<Layout, LayoutPaths> = {
 export const CUSTOM_LAYOUT_BOOT_CONFIG = {
   openapi: { enabled: true, path: '/reference', title: 'Junction Smoke API', version: '9.9.9' },
   auth: { devAllowAnonymous: true },
+  // JOBS-3: a pool is a limiter; `concurrency` is its in-flight cap. `batch` re-caps a default pool, `reports` adds one.
   jobsPools: {
     batch: { concurrency: 7 },
-    reports: { queue: 'jobs-reports', concurrency: 3 },
+    reports: { concurrency: 3 },
   },
   // GEN-0 (#652): set AFTER `subsystem install jobs` emitted the (emit-once)
-  // worker.ts, then regenerated — both workers must carry it.
-  jobsDrizzle: { listen_notify: true, poll_interval_ms: 4321 },
+  // worker.ts, then regenerated — the worker boots AppModule, so it runs what the regenerated app-config says.
+  jobsExecutor: { poll_interval_ms: 4321 },
 } as const;
 
 /**
  * Append the CFG-1 boot keys to the config the installs wrote, and spread
  * `SUBSYSTEM_MODULES` into AppModule (the manual step `subsystem install`
- * leaves to the consumer) so the booted app carries the jobs pool map. The
- * worker runs `standalone` — the embedded one would query the (stub) database
- * at init; `JobsDomainModule` alone binds `JOB_POOL_CONFIG`.
+ * leaves to the consumer) so the booted app carries the jobs limiters. The
+ * worker runs `standalone` — the embedded executor would poll the (stub)
+ * database from bootstrap; `JobsEngineModule` binds `JOBS_LIMITER_CONFIG`
+ * either way.
  */
 function writeBootConfig(tmpDir: string, paths: LayoutPaths): void {
   const configPath = path.join(tmpDir, 'codegen.config.yaml');
   const doc = YAML.parseDocument(fs.readFileSync(configPath, 'utf8'));
-  const { openapi, auth, jobsPools, jobsDrizzle } = CUSTOM_LAYOUT_BOOT_CONFIG;
+  const { openapi, auth, jobsPools, jobsExecutor } = CUSTOM_LAYOUT_BOOT_CONFIG;
   doc.setIn(['openapi'], doc.createNode(openapi));
   doc.setIn(['auth', 'devAllowAnonymous'], auth.devAllowAnonymous);
   doc.setIn(['jobs', 'pools'], doc.createNode(jobsPools));
-  doc.setIn(['jobs', 'extensions', 'drizzle'], doc.createNode(jobsDrizzle));
+  doc.setIn(['jobs', 'poll_interval_ms'], jobsExecutor.poll_interval_ms);
   doc.setIn(['jobs', 'worker_mode'], 'standalone');
   fs.writeFileSync(configPath, doc.toString());
 
@@ -331,6 +333,8 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
   // 2. install pinned deps
   run(`bun add ${RUNTIME_DEPS.join(' ')}`);
   run(`bun add -D ${DEV_DEPS.join(' ')}`);
+  // JOBS-3: the custom layout installs jobs, whose runtime imports @pattern-stack/jobs.
+  if (layout === 'custom') addJobsPackage(tmpDir, (cmd, cwd) => execSync(cmd, { cwd, stdio: 'inherit' }));
 
   // 3. codegen project init — `--runtime <mode>` (ADR-037). Package mode
   //    vendors nothing; alias the package specifiers to the in-repo runtime.
@@ -355,7 +359,7 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
     run(`bun ${CLI_PATH} subsystem install events`);
     run(`bun ${CLI_PATH} subsystem install jobs`);
     writeBootConfig(tmpDir, paths);
-    log(`wrote non-default openapi / auth / jobs.pools (CFG-1) / jobs.extensions.drizzle (GEN-0): ${JSON.stringify(CUSTOM_LAYOUT_BOOT_CONFIG)}`);
+    log(`wrote non-default openapi / auth / jobs.pools (CFG-1) / jobs.poll_interval_ms (GEN-0): ${JSON.stringify(CUSTOM_LAYOUT_BOOT_CONFIG)}`);
     authorAppPattern(tmpDir, runtime, paths);
     log(`authored app pattern Audited under ${paths.backendSrc}/patterns (mixin under ${paths.modules})`);
   }

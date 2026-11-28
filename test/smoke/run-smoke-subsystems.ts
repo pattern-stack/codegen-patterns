@@ -18,10 +18,11 @@
  *      0.9.x must be able to drop the exclude).
  *   3. No static `from 'bullmq'` / `from 'ioredis'` line survives in the
  *      vendored subsystem tree (the lazy-load + filter contract from #6).
- *   4. Programmatic `NestFactory.create(AppModule)` + `app.init()` either
- *      resolves cleanly OR throws `BridgeReservedPoolsNotPolledError`.
- *      Any other failure mode is a regression in the bridge ↔ jobs ↔
- *      events dependency graph. See `verify-subsystems-boot.ts`.
+ *   4. Programmatic `NestFactory.create(AppModule)` + `app.init()` resolves
+ *      cleanly, with `JobsEngineModule`'s executor and registry bound (the
+ *      smoke's own `defineJob` registered) and the bridge's `EVENT_FLOW`
+ *      resolved. Any failure is a regression in the bridge ↔ jobs ↔ events
+ *      dependency graph (JOBS-3). See `verify-subsystems-boot.ts`.
  *
  * A regression here means a future PR re-introduced the static-import
  * leak that forced swe-brain to exclude `src/shared/subsystems` in 0.9.x,
@@ -34,6 +35,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { composeSubsystemModules } from './_compose-subsystems';
 import { tscGateErrors } from './_consumer-errors';
+import { addJobsPackage } from './_package-runtime';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
@@ -135,6 +137,7 @@ async function vendoredLeg(): Promise<number> {
 		run('bun init -y', tmpDir);
 		run(`bun add ${RUNTIME_DEPS.join(' ')}`, tmpDir);
 		run(`bun add -D ${DEV_DEPS.join(' ')}`, tmpDir);
+		addJobsPackage(tmpDir, run);
 
 		// 2. codegen project init. `--runtime vendored` (ADR-037) — this smoke
 		//    vendors + compiles the runtime subsystems against `@shared/*`, so it
@@ -156,27 +159,29 @@ async function vendoredLeg(): Promise<number> {
 		//    consumer path). NO --backend flag: this exercises the default
 		//    the swe-brain dogfood actually hits. Bridge is the
 		//    dependency-graph linchpin — it consumes both events tokens
-		//    (EVENT_BUS) and jobs tokens (JOB_ORCHESTRATOR), and any
+		//    (EVENT_BUS) and the jobs engine (JobStarter), and any
 		//    re-export gap analogous to the ones D first missed in
 		//    events/jobs would surface here.
 		run(`bun ${CLI_PATH} subsystem install events`, tmpDir);
 		run(`bun ${CLI_PATH} subsystem install jobs`, tmpDir);
-		// JOBS-1 (#661): the install regenerates `subsystems.ts` + `app-config.ts`
-		// from the `jobs:` block it just injected (`worker_mode: embedded`,
-		// `extensions.drizzle.poll_interval_ms: 1000`) — no second command.
+		// JOBS-1 (#661): the install regenerates `subsystems.ts`, `app-config.ts` and the job registry from the
+		// `jobs:` block it just injected (`worker_mode: embedded`) — no second command (JOBS-3 shapes).
 		{
 			const barrel = fs.readFileSync(path.join(tmpDir, 'src/generated/subsystems.ts'), 'utf-8');
 			const appConfig = fs.readFileSync(path.join(tmpDir, 'src/generated/app-config.ts'), 'utf-8');
-			const drizzleExt = '{ drizzle: { pollIntervalMs: 1000 } }';
+			const registryPath = path.join(tmpDir, 'src/generated/jobs.ts');
 			const expected: Array<[string, boolean]> = [
-				...[
-					`JobsDomainModule.forRoot({ backend: 'drizzle', extensions: ${drizzleExt}, pools: jobPools })`,
-					`JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModuleExtensions: ${drizzleExt}, domainModulePools: jobPools })`,
-				].map((call): [string, boolean] => [call, barrel.includes(call)]),
 				[
-					'app-config.ts jobWorkerOptions: backend drizzle + domainModuleExtensions.drizzle.pollIntervalMs 1000',
-					/export const jobWorkerOptions = \{[^}]*"backend": "drizzle",\s*"domainModuleExtensions": \{\s*"drizzle": \{\s*"pollIntervalMs": 1000\s*\}/.test(appConfig),
+					'JobsEngineModule.forRoot({ definitions: jobDefinitions, worker: true, limiters: jobLimiters, inProcess: jobsInProcessOptions })',
+					barrel.includes(
+						'JobsEngineModule.forRoot({ definitions: jobDefinitions, worker: true, limiters: jobLimiters, inProcess: jobsInProcessOptions })',
+					),
 				],
+				[
+					'app-config.ts jobLimiters: interactive 20, batch 5',
+					/export const jobLimiters = \{\s*"interactive": \{\s*"inFlight": 20\s*\},\s*"batch": \{\s*"inFlight": 5\s*\}/.test(appConfig),
+				],
+				['src/generated/jobs.ts (the job registry)', fs.existsSync(registryPath)],
 			];
 			const missing = expected.filter(([, ok]) => !ok).map(([what]) => what);
 			if (missing.length > 0) {
@@ -184,8 +189,27 @@ async function vendoredLeg(): Promise<number> {
 					`subsystem install jobs did not regenerate from the jobs: block it injected (#661) — missing:\n  ${missing.join('\n  ')}\n--- subsystems.ts\n${barrel}\n--- app-config.ts\n${appConfig}`,
 				);
 			}
-			log('jobs install regenerated subsystems.ts + app-config.ts from the injected jobs: block (#661)');
+			log('jobs install regenerated subsystems.ts + app-config.ts + jobs.ts from the injected jobs: block (#661)');
 		}
+		// A job of the app's own (JOBS-3): a `defineJob` export under src/jobs/ joins the generated registry on the next
+		// `entity new`, its step's limiter must be a declared pool, and the boot check asserts it is registered.
+		fs.mkdirSync(path.join(tmpDir, 'src/jobs'), { recursive: true });
+		fs.writeFileSync(
+			path.join(tmpDir, 'src/jobs/ping.job.ts'),
+			[
+				"import { defineJob, step } from '@pattern-stack/jobs';",
+				"import { z } from 'zod';",
+				'',
+				'export const pingJob = defineJob({',
+				"  key: 'smoke.ping',",
+				'  input: z.object({ at: z.string() }),',
+				'  output: z.object({ pong: z.string() }),',
+				'  limits: { maxItems: 1, maxUsd: 1, maxCalls: 1, maxDurationMs: 60_000 },',
+				"  steps: (s) => s.add('pong', step({ limiter: 'batch', run: ({ input }) => ({ pong: input.at }) })),",
+				'});',
+				'',
+			].join('\n'),
+		);
 		run(`bun ${CLI_PATH} subsystem install bridge`, tmpDir);
 		// #473 — observability is a combiner (ADR-025) that composes the read
 		// ports above via @Optional() DI. Installing it here exercises the
@@ -194,13 +218,12 @@ async function vendoredLeg(): Promise<number> {
 		run(`bun ${CLI_PATH} subsystem install observability`, tmpDir);
 
 		// 5a-prep. The jobs install scaffold defaults `worker_mode: embedded`
-		//   in codegen.config.yaml, which has the barrel emit
-		//   `JobWorkerModule.forRoot({ mode: 'embedded' })` in `SUBSYSTEM_MODULES`.
-		//   `JobWorkerOrchestrator.onModuleInit` performs Postgres I/O
-		//   (`upsertJobRows`) which we can't satisfy without a real DB.
-		//   For the smoke boot check, flip to `worker_mode: standalone` so
-		//   the barrel skips JobWorkerModule and the boot exercises the
-		//   Events + JobsDomain + Bridge graph without a DB write. The
+		//   in codegen.config.yaml, which has the barrel compose
+		//   `JobsEngineModule.forRoot({ worker: true })`: the executor polls
+		//   Postgres from bootstrap, which we can't satisfy without a real DB.
+		//   For the smoke boot check, flip to `worker_mode: standalone`
+		//   (`worker: false`) so the boot exercises the Events + Jobs + Bridge
+		//   graph without a query. The
 		//   `subsystem install events --force --force-config` rerun below
 		//   regenerates the barrel against the patched config.
 		{
@@ -234,7 +257,7 @@ async function vendoredLeg(): Promise<number> {
 		//   want to KEEP the patched `worker_mode: standalone`). The
 		//   subsystem install flow regenerates `src/generated/subsystems.ts`
 		//   from the current codegen.config.yaml, so after this the barrel
-		//   no longer includes `JobWorkerModule.forRoot(...)`. Cheap re-run.
+		//   composes `JobsEngineModule.forRoot({ …, worker: false, … })`. Cheap re-run.
 		run(`bun ${CLI_PATH} subsystem install events --force`, tmpDir);
 
 		// 5b. Sanity check: the install scaffold should have appended the
@@ -267,7 +290,7 @@ async function vendoredLeg(): Promise<number> {
 		// installs (the four infra subsystems + the observability combiner).
 		const expectedForRoots: Record<string, string> = {
 			events: 'EventsModule.forRoot',
-			jobs: 'JobsDomainModule.forRoot',
+			jobs: 'JobsEngineModule.forRoot',
 			bridge: 'BridgeModule.forRoot',
 			observability: 'ObservabilityModule.forRoot',
 		};
@@ -285,7 +308,7 @@ async function vendoredLeg(): Promise<number> {
 		// read ports it composes (it consumes their tokens via @Optional() DI).
 		// Assert it comes after jobs/bridge in the emitted SUBSYSTEM_MODULES.
 		const obsIdx = barrel.indexOf('ObservabilityModule.forRoot');
-		for (const before of ['JobsDomainModule.forRoot', 'BridgeModule.forRoot']) {
+		for (const before of ['JobsEngineModule.forRoot', 'BridgeModule.forRoot']) {
 			if (obsIdx < barrel.indexOf(before)) {
 				throw new Error(
 					`ObservabilityModule.forRoot must register AFTER ${before} ` +
@@ -330,8 +353,7 @@ async function vendoredLeg(): Promise<number> {
 
 		// 7. Acceptance #3 — assert no static `from 'bullmq'` / `from 'ioredis'`
 		//    line survives in the vendored subsystem tree. The non-literal
-		//    `await import(spec)` pattern in events.module / job-worker.module
-		//    is fine (it doesn't match the regex). Locks in the contract from
+		//    `await import(spec)` pattern in events.module is fine (it doesn't match the regex). Locks in the contract from
 		//    #6 — a future PR that re-introduces a static import is caught
 		//    here, not after smoke users hit TS2307.
 		const subsystemsRoot = path.join(tmpDir, 'src/shared/subsystems');
@@ -358,17 +380,12 @@ async function vendoredLeg(): Promise<number> {
 
 		// 9. Acceptance #4 — programmatic Nest boot. Mirror the openapi
 		//    verifier's `NestFactory.create + app.init` pattern (see
-		//    test/smoke/verify-openapi.ts). The bridge module's `onModuleInit`
-		//    is the meaningful invariant: it injects `JOB_WORKER_MODULE_OPTIONS`
-		//    `@Optional()` and throws `BridgeReservedPoolsNotPolledError` when
-		//    JobWorkerModule is bound but isn't draining the reserved
-		//    `events_*` pools. The verifier accepts either clean boot or that
-		//    specific throw; any OTHER error indicates a regression in the
-		//    events ↔ jobs ↔ bridge dependency graph.
+		//    test/smoke/verify-openapi.ts): a clean boot with the jobs engine,
+		//    the smoke's own job and the bridge facade resolved (JOBS-3).
 		if (exitCode === 0) {
-			log('verifying programmatic AppModule boot (bridge guard locks in events ↔ jobs ↔ bridge wiring)');
+			log('verifying programmatic AppModule boot (events ↔ jobs ↔ bridge wiring)');
 			const verifyResult = runSilent(
-				`bun ${path.join(REPO_ROOT, 'test', 'smoke', 'verify-subsystems-boot.ts')} ${tmpDir}`,
+				`bun ${path.join(REPO_ROOT, 'test', 'smoke', 'verify-subsystems-boot.ts')} ${tmpDir} smoke.ping`,
 				tmpDir,
 			);
 			if (verifyResult.code !== 0) {
@@ -398,22 +415,17 @@ async function vendoredLeg(): Promise<number> {
 
 // ---------------------------------------------------------------------------
 // Package leg (#517) — package mode is the ADR-037 DEFAULT. Installing jobs
-// must now emit the consumer-owned scaffold (`src/worker.ts` + the `src/main.ts`
-// embedded-mode hook); the schema template is skipped (the schema ships in the
-// package, re-exported via the schema barrel). #516 made the worker's
-// JobWorkerModule import mode-aware; this leg locks in that the package-mode
-// INSTALL path actually emits it.
+// must emit the consumer-owned scaffold (`src/worker.ts` + the `src/main.ts`
+// hook); the schema template is skipped (the schema ships in the package,
+// re-exported via the schema barrel).
 //
 // Acceptance:
 //   1. `src/worker.ts` exists after a package-mode jobs install.
-//   2. The worker imports `@pattern-stack/codegen/runtime/subsystems/jobs/index`
-//      and carries NO `@shared/subsystems` reference (the vendored specifier).
+//   2. The worker starts `JOBS_EXECUTOR` from `@pattern-stack/jobs/nest` and
+//      carries NO `@shared/subsystems` reference (the vendored specifier) and
+//      none of ADR-022's JobWorkerModule (JOBS-3).
 //   3. NO templated schema vendored into the consumer's subsystems tree.
-//   4. The consumer tree typechecks (`tsc --noEmit`). In checkout mode the
-//      package isn't `bun add`-ed, so the worker's `@pattern-stack/codegen/`
-//      import is unresolvable — that single line is filtered (same precedent as
-//      run-smoke.ts), but every OTHER line in the worker (relative `./app.module`
-//      import, the `forRoot` literal, the bootstrap body) must typecheck clean.
+//   4. The emitted worker typechecks, against an AppModule stub.
 // ---------------------------------------------------------------------------
 
 /**
@@ -426,11 +438,9 @@ async function vendoredLeg(): Promise<number> {
  * full-tree tsc the vendored leg runs is impossible here, and its errors are all
  * downstream of the unresolvable base-class imports, NOT worker bugs. #517 is
  * about whether the worker is EMITTED and structurally correct, so we typecheck
- * the worker alone. The worker's only package import (`JobWorkerModule`) is
- * filtered (run-smoke.ts precedent); its relative `./app.module` import resolves
- * against the stub, and every other line (the `forRoot` literal, the bootstrap
- * body, the `WorkerAppModule` class) must typecheck clean — that's the surface
- * #516 built and #517 wires.
+ * the worker alone. Its package import (`@pattern-stack/jobs/nest`) resolves from
+ * the smoke project's install; its relative `./app.module` import resolves
+ * against the stub, and the bootstrap body must typecheck clean.
  */
 function typecheckWorkerInIsolation(tmpDir: string): string[] {
 	const checkDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegen-worker-tc-'));
@@ -446,16 +456,9 @@ function typecheckWorkerInIsolation(tmpDir: string): string[] {
 			"import { Module } from '@nestjs/common';\n@Module({})\nexport class AppModule {}\n",
 			'utf-8',
 		);
-		// CFG-1: the worker imports `jobPools` from the generated
-		// `./generated/app-config` — the real one, so its literal is checked
-		// against `JobWorkerModule`'s `domainModulePools` type.
-		fs.mkdirSync(path.join(srcDir, 'generated'), { recursive: true });
-		fs.copyFileSync(
-			path.join(tmpDir, 'src', 'generated', 'app-config.ts'),
-			path.join(srcDir, 'generated', 'app-config.ts'),
-		);
-		// Reuse the consumer's deps (NestJS, reflect-metadata) by pointing
-		// node_modules resolution at the tmpDir install.
+		// Reuse the consumer's deps (NestJS, reflect-metadata, @pattern-stack/jobs) by pointing
+		// node_modules resolution at the tmpDir install: a link, so package `exports` maps resolve as they do there.
+		fs.symlinkSync(path.join(tmpDir, 'node_modules'), path.join(checkDir, 'node_modules'), 'dir');
 		fs.writeFileSync(
 			path.join(checkDir, 'tsconfig.json'),
 			JSON.stringify(
@@ -537,6 +540,7 @@ async function packageLeg(): Promise<number> {
 		run('bun init -y', tmpDir);
 		run(`bun add ${RUNTIME_DEPS.join(' ')}`, tmpDir);
 		run(`bun add -D ${DEV_DEPS.join(' ')}`, tmpDir);
+		addJobsPackage(tmpDir, run);
 
 		// 2. project init in PACKAGE mode (the ADR-037 default — pass it
 		//    explicitly for clarity). Package mode vendors no runtime tree;
@@ -560,12 +564,12 @@ async function packageLeg(): Promise<number> {
 		}
 		const worker = fs.readFileSync(workerPath, 'utf-8');
 
-		// Acceptance #2 — mode-aware import resolves to the PACKAGE, never @shared.
-		if (!worker.includes("from '@pattern-stack/codegen/runtime/subsystems/jobs/index'")) {
-			throw new Error(
-				`src/worker.ts does not import JobWorkerModule from the package runtime subpath ` +
-					`(#516 mode-aware import regression):\n${worker}`,
-			);
+		// Acceptance #2 — the worker starts @pattern-stack/jobs' executor out of the app's own graph (JOBS-3).
+		if (!worker.includes("import { JOBS_EXECUTOR } from '@pattern-stack/jobs/nest';") || !worker.includes('(JOBS_EXECUTOR).start()')) {
+			throw new Error(`src/worker.ts does not start JOBS_EXECUTOR from @pattern-stack/jobs/nest:\n${worker}`);
+		}
+		if (worker.includes('JobWorkerModule')) {
+			throw new Error(`src/worker.ts still names ADR-022's JobWorkerModule:\n${worker}`);
 		}
 		if (worker.includes('@shared/subsystems')) {
 			throw new Error(
@@ -599,8 +603,7 @@ async function packageLeg(): Promise<number> {
 		}
 
 		// Acceptance #4 — the emitted worker typechecks (in isolation against an
-		// AppModule stub; the package's JobWorkerModule import is the only line
-		// filtered — checkout mode can't resolve it).
+		// AppModule stub; `@pattern-stack/jobs/nest` resolves from the project's install).
 		log('[package] typechecking emitted src/worker.ts in isolation');
 		const errs = typecheckWorkerInIsolation(tmpDir);
 		if (errs.length > 0) {

@@ -3,7 +3,7 @@
  * in the user's project.
  *
  * Detection keys on the subsystem's **module file** (`<name>.module.ts`, e.g.
- * `events.module.ts`; jobs uses `jobs-domain.module.ts`), NOT merely on the
+ * `events.module.ts`; jobs uses `jobs-engine.module.ts`), NOT merely on the
  * subsystem directory or a `*.protocol.ts` stub. This matters because
  * installing one subsystem can vendor *protocol/token/schema stubs* of another
  * (e.g. an events install drops `bridge/bridge.protocol.ts` +
@@ -78,8 +78,8 @@ export const SUBSYSTEMS: SubsystemDescriptor[] = [
 	},
 	{
 		name: 'jobs',
-		description: 'Background job queue',
-		backends: ['drizzle', 'memory'],
+		description: 'Durable jobs on @pattern-stack/jobs (Postgres)',
+		backends: ['drizzle'],
 		defaultBackend: 'drizzle',
 	},
 	{
@@ -102,7 +102,7 @@ export const SUBSYSTEMS: SubsystemDescriptor[] = [
 	},
 	{
 		name: 'bridge',
-		description: 'Event-to-job bridge (durable async fanout via @JobHandler.triggers)',
+		description: 'Event-to-job bridge (durable async fanout via jobTriggers)',
 		backends: ['drizzle', 'memory'],
 		defaultBackend: 'drizzle',
 	},
@@ -162,14 +162,13 @@ const KNOWN_NAMES = SUBSYSTEMS.map((s) => s.name);
 /**
  * The module file that signals a subsystem is fully installed (carries the
  * `forRoot()` dynamic module). Most subsystems use `<name>.module.ts`; `jobs`
- * is the exception — its composition module is `jobs-domain.module.ts`
- * (`job-worker.module.ts` is the optional embedded-worker module). Subsystems
+ * is the exception — its module is `jobs-engine.module.ts` (JOBS-3). Subsystems
  * detected by other means (`openapi-config` via config key, `auth-integrations`
  * via vendored module elsewhere) are absent from this map.
  */
 const SUBSYSTEM_MODULE_FILE: Partial<Record<SubsystemName, string>> = {
 	events: 'events.module.ts',
-	jobs: 'jobs-domain.module.ts',
+	jobs: 'jobs-engine.module.ts',
 	cache: 'cache.module.ts',
 	storage: 'storage.module.ts',
 	integration: 'integration.module.ts',

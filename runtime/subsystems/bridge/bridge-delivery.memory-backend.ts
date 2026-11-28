@@ -6,11 +6,9 @@
  * `Map<"${eventId}::${triggerId}", BridgeDeliveryRecord>` so the UNIQUE
  * `(event_id, trigger_id)` constraint can be simulated cheaply.
  *
- * Precedent: `MemoryEventBus` (EVT-5), `MemoryJobOrchestrator`
- * (jobs subsystem). Same shape — a class implementing the protocol plus
+ * Precedent: `MemoryEventBus` (EVT-5). Same shape — a class implementing the protocol plus
  * test-only helpers (`getDeliveriesForEvent`, `getByStatus`, `clear`) that
- * BRIDGE-5's framework-handler tests and BRIDGE-7's facade tests will
- * exercise.
+ * BRIDGE-7's facade tests exercise.
  *
  * The synthetic `UniqueConstraintError` carries a `constraint` field equal
  * to the Drizzle constraint name (`uq_bridge_delivery_event_trigger`, set
@@ -29,6 +27,7 @@ import type {
   StatusHistogram,
 } from './bridge.protocol';
 import type { BridgeDeliveryRecord } from './bridge-delivery.schema';
+import { assertTenantId } from './assert-tenant-id';
 import { UniqueConstraintError } from './bridge-errors';
 
 const BRIDGE_DELIVERY_UNIQUE_CONSTRAINT =
@@ -41,7 +40,24 @@ function key(eventId: string, triggerId: string): string {
 export class MemoryBridgeDeliveryRepo implements IJobBridge {
   private readonly deliveries = new Map<string, BridgeDeliveryRecord>();
 
+  /**
+   * The Drizzle backend's twin: `multiTenant` makes a delivery with no tenant `MissingTenantIdError`. No framework:
+   * `BridgeModule` builds it with the flag, and a plain host can too.
+   */
+  constructor(private readonly multiTenant: boolean = false) {}
+
+  async claimDelivery(
+    row: Pick<BridgeDeliveryInsert, 'eventId' | 'triggerId' | 'tenantId'>,
+  ): Promise<string | null> {
+    assertTenantId('MemoryBridgeDeliveryRepo.claimDelivery', this.multiTenant, row.tenantId);
+    if (this.deliveries.has(key(row.eventId, row.triggerId))) return null;
+    const id = randomUUID();
+    await this.insertDelivery({ ...row, id, status: 'pending' });
+    return id;
+  }
+
   async insertDelivery(row: BridgeDeliveryInsert): Promise<void> {
+    assertTenantId('MemoryBridgeDeliveryRepo.insertDelivery', this.multiTenant, row.tenantId);
     const k = key(row.eventId, row.triggerId);
     if (this.deliveries.has(k)) {
       throw new UniqueConstraintError(
@@ -56,7 +72,6 @@ export class MemoryBridgeDeliveryRepo implements IJobBridge {
       id: row.id ?? randomUUID(),
       eventId: row.eventId,
       triggerId: row.triggerId,
-      wrapperRunId: row.wrapperRunId ?? null,
       userRunId: row.userRunId ?? null,
       status: row.status ?? 'pending',
       skipReason: row.skipReason ?? null,

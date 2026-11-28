@@ -49,6 +49,14 @@ describe('emitJobHandlers', () => {
 		expect(readFileSync(join(dir, 'drive_poll.job.generated.ts'), 'utf8')).toContain('@generated');
 	});
 
+	it('given the registry dir, lists the jobs it just wrote in <generated>/jobs.ts, on the first run (review #969)', () => {
+		const dir = tmpJobsDir();
+		const generated = tmpJobsDir();
+		emitJobHandlers({ jobs: [drivePoll], jobsHandlersDir: dir, registryDir: generated });
+		const registry = readFileSync(join(generated, 'jobs.ts'), 'utf8');
+		expect(registry).toMatch(/drivePoll\w*Job/);
+	});
+
 	it('reflows the base but PRESERVES author edits to the subclass on re-emit', () => {
 		const dir = tmpJobsDir();
 		emitJobHandlers({ jobs: [drivePoll], jobsHandlersDir: dir });
@@ -61,7 +69,7 @@ describe('emitJobHandlers', () => {
 		expect(res2.scaffoldsSkipped).toEqual([subPath]);
 		expect(res2.scaffoldsWritten).toEqual([]);
 		expect(readFileSync(subPath, 'utf8')).toBe('// AUTHOR EDIT — do not clobber\n');
-		expect(readFileSync(join(dir, 'drive_poll.job.generated.ts'), 'utf8')).toContain('DrivePollJobBase');
+		expect(readFileSync(join(dir, 'drive_poll.job.generated.ts'), 'utf8')).toContain('defineDrivePollJob');
 	});
 
 	it('dryRun computes paths without writing', () => {

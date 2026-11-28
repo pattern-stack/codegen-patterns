@@ -1,0 +1,105 @@
+{
+  "name": "@pattern-stack/jobs",
+  "type": "module",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./ports": {
+      "bun": "./src/ports.ts",
+      "types": "./dist/ports.d.ts",
+      "default": "./dist/ports.js"
+    },
+    "./testing": {
+      "bun": "./src/testing.ts",
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    },
+    "./postgres": {
+      "bun": "./src/postgres.ts",
+      "types": "./dist/postgres.d.ts",
+      "default": "./dist/postgres.js"
+    },
+    "./schema": {
+      "bun": "./src/postgres/schema.ts",
+      "types": "./dist/postgres/schema.d.ts",
+      "default": "./dist/postgres/schema.js"
+    },
+    "./bullmq": {
+      "bun": "./src/bullmq.ts",
+      "types": "./dist/bullmq.d.ts",
+      "default": "./dist/bullmq.js"
+    },
+    "./redis": {
+      "bun": "./src/redis.ts",
+      "types": "./dist/redis.d.ts",
+      "default": "./dist/redis.js"
+    },
+    "./nest": {
+      "bun": "./src/nest.ts",
+      "types": "./dist/nest.d.ts",
+      "default": "./dist/nest.js"
+    },
+    "./shapes": {
+      "bun": "./src/shapes.ts",
+      "types": "./dist/shapes.d.ts",
+      "default": "./dist/shapes.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.check.json",
+    "test": "bun test src",
+    "prepublishOnly": "bun run build"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "zod": "^4.6.7"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@nestjs/core": "^10.0.0 || ^11.0.0",
+    "bullmq": "^5.81.5",
+    "drizzle-orm": "^1.0.0-rc.4"
+  },
+  "peerDependenciesMeta": {
+    "@nestjs/common": {
+      "optional": true
+    },
+    "@nestjs/core": {
+      "optional": true
+    },
+    "bullmq": {
+      "optional": true
+    },
+    "drizzle-orm": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@opentelemetry/context-async-hooks": "^2.12.0",
+    "@opentelemetry/sdk-trace-base": "^2.12.0",
+    "bullmq": "^5.81.5"
+  },
+  "version": "0.1.0",
+  "description": "Durable jobs for pattern-stack apps: typed jobs of steps, a deterministic engine, stores, executors, test contracts, and a Nest layer.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pattern-stack/codegen-patterns.git",
+    "directory": "packages/jobs"
+  },
+  "files": [
+    "dist",
+    "src",
+    "!src/**/__tests__",
+    "README.md",
+    "JOBS_CONTRACT.md"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  }
+}

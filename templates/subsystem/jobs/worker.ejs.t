@@ -3,95 +3,42 @@ to: "<%= workerPath %>"
 unless_exists: true
 ---
 /**
- * Standalone job worker entrypoint — emitted by `codegen subsystem install jobs`.
+ * Standalone job worker entrypoint — emitted by `codegen subsystem install jobs` (JOBS-3).
  *
- * Boots a Nest application context (NO HTTP listener) that composes the
- * consumer's root `AppModule` plus `JobWorkerModule.forRoot(jobWorkerOptions)`
- * — `{ mode: 'standalone', allPools: true, … }`, generated from
- * codegen.config.yaml `jobs:` into `<generated>/app-config.ts`. This file holds
- * no config value; edit the YAML and regenerate. Run with:
+ * With `jobs.worker_mode: standalone` in codegen.config.yaml, the HTTP process composes
+ * `JobsEngineModule.forRoot({ worker: false })`: it starts runs but never advances them. This process boots the same
+ * `AppModule` (so every job's dependencies resolve as they do in the API) with no HTTP listener, and starts the
+ * `@pattern-stack/jobs` in-process executor. Its open-run sweep finds every run the HTTP process (or the event
+ * bridge) started. Run more than one: the advance lease keeps one advancer per run. Run with:
  *
  *   bun src/worker.ts
  *
- * Why import `AppModule` whole:
- *   - Job handlers are Nest providers registered by the consumer's handler
- *     modules (and the subsystem barrel). Composing around `AppModule` gives
- *     this worker the SAME DI graph as the HTTP process — every `@JobHandler`
- *     resolves its dependencies here exactly as it would in the API. A bare
- *     `SUBSYSTEM_MODULES`-only worker boots with an empty handler surface.
- *   - `AppModule` already wires `DatabaseModule` + `SUBSYSTEM_MODULES` (events +
- *     jobs + bridge + integration, dependency-ordered), so the worker needs no
- *     mode-aware barrel import — only `JobWorkerModule` itself.
- *
- * Why `allPools: true`:
- *   - The events subsystem's outbox drain and the bridge's fanout wrappers run
- *     as `job_run` rows in the RESERVED `events_*` pools. A worker that only
- *     polls the non-reserved pools (`interactive`, `batch`, …) strands those
- *     lanes — `BridgeDeliveryHandler` never fires and durable event→job fanout
- *     silently stops.
- *   - `allPools: true` activates every pool in the resolved config, reserved
- *     lanes included, so this single standalone process drains both user work
- *     and the framework's reserved lanes.
- *
- * STANDALONE ONLY: this entrypoint is for `jobs.worker_mode: standalone`. In
- * embedded mode the worker already runs inside `AppModule` (via the
- * `JobWorkerModule.forRoot({ mode: 'embedded', backend, … })` the barrel composes), so
- * booting this file too would double-spawn the worker against the same pools.
- *
- * DO NOT boot `AppModule` twice in one process: a consumer `AppModule`
- * registers an OpenAPI document against the per-process `OpenApiRegistry`
- * singleton, which throws `DuplicateSchemaError` on the second registration.
- * Multi-rung boot validation (e.g. "does the worker boot AND does the API
- * boot?") must spawn CHILD PROCESSES, not import both modules into one.
- *
- * SIGTERM triggers graceful shutdown bounded by SHUTDOWN_TIMEOUT_MS; after the
- * timeout the process exits hard so orchestrators (systemd, Kubernetes) can
- * reclaim the slot.
+ * SIGTERM / SIGINT close the app, which drains the executor (in-flight steps finish) before exit.
  */
 import 'reflect-metadata';
-import { Logger, Module } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { JOBS_EXECUTOR } from '@pattern-stack/jobs/nest';
 
 import { AppModule } from './app.module';
-import { jobWorkerOptions } from '<%= appConfigImport %>';
-import { JobWorkerModule } from '<%= jobWorkerModuleImport %>';
 
 const SHUTDOWN_TIMEOUT_MS = 30_000;
 
-@Module({
-  imports: [
-    // Consumer root — DatabaseModule + SUBSYSTEM_MODULES + handler modules.
-    // Importing it whole keeps the worker's DI graph identical to the HTTP app's
-    // so every `@JobHandler` resolves the same way in both processes.
-    AppModule,
-    // `jobWorkerOptions` is codegen.config.yaml `jobs.backend`, `jobs.extensions.*`
-    // and `jobs.pools`, regenerated into <generated>/app-config (GEN-0) — so
-    // config edits reach this emit-once file on regeneration. It sets
-    // `allPools: true`: drain the reserved `events_*` lanes (events outbox +
-    // bridge wrappers) alongside the user pools.
-    JobWorkerModule.forRoot(jobWorkerOptions),
-  ],
-})
-export class WorkerAppModule {}
-
 async function bootstrap(): Promise<void> {
   const logger = new Logger('JobWorker');
-  const app = await NestFactory.createApplicationContext(WorkerAppModule, {
-    bufferLogs: false,
-  });
+  const app = await NestFactory.createApplicationContext(AppModule, { bufferLogs: false });
+  await app.get<{ start(): Promise<void> }>(JOBS_EXECUTOR).start();
 
   let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
-    logger.log(`${signal} received — shutting down (timeout ${SHUTDOWN_TIMEOUT_MS}ms)`);
-
+    logger.log(`${signal} received — draining the job executor (timeout ${SHUTDOWN_TIMEOUT_MS}ms)`);
     const forceExit = setTimeout(() => {
       logger.error(`shutdown exceeded ${SHUTDOWN_TIMEOUT_MS}ms — forcing exit`);
       process.exit(1);
     }, SHUTDOWN_TIMEOUT_MS);
     forceExit.unref();
-
     try {
       await app.close();
       logger.log('shutdown complete');
@@ -101,19 +48,11 @@ async function bootstrap(): Promise<void> {
       process.exit(1);
     }
   };
-
-  process.on('SIGTERM', () => {
-    void shutdown('SIGTERM');
-  });
-  process.on('SIGINT', () => {
-    void shutdown('SIGINT');
-  });
-
-  logger.log('job worker started (standalone mode, all pools)');
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+  logger.log('job worker started (standalone)');
 }
 
-// Gated so the module can be imported by boot-checks / e2e without spawning a
-// worker; `bun src/worker.ts` runs it as the entrypoint.
 if (import.meta.main) {
   bootstrap().catch((err) => {
     // eslint-disable-next-line no-console

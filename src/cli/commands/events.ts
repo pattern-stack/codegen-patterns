@@ -5,7 +5,7 @@
  * It indexes all three tiers from ADR-023 §Three tiers of event-driven work
  * and prints one greppable report per event type:
  *
- *   - Tier 3 (bridge):  bridgeRegistry entries declared on `@JobHandler.triggers`
+ *   - Tier 3 (bridge):  bridgeRegistry entries declared with `jobTriggers(key, [...])`
  *   - Tier 2 (facade):  AST scan for `<expr>.publishAndStart(<type>, ...)`
  *   - Tier 1 (subscr.): AST scan for `@OnEvent(<type>)` and
  *                       `<expr>.subscribe(<type>, ...)` call sites
@@ -43,7 +43,7 @@ import { levenshtein } from '../../utils/edit-distance.js';
 
 export interface Tier3Hit {
 	triggerId: string;
-	jobType: string;
+	jobKey: string;
 	sourceFile: string;
 	sourceLine: number;
 }
@@ -347,7 +347,7 @@ export function runConsumersScan(
 		.filter((t) => t.event === opts.eventType)
 		.map((t) => ({
 			triggerId: t.triggerId,
-			jobType: t.jobType,
+			jobKey: t.jobKey,
 			sourceFile: t.sourceFile,
 			sourceLine: t.sourceLine,
 		}));

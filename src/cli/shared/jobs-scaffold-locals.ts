@@ -14,14 +14,12 @@
 import path from 'node:path';
 
 import type { CodegenConfig } from './context.js';
-import { importSpecifier, projectLayout } from './project-layout.js';
-import { resolveRuntimeMode, runtimeImport } from './runtime-import.js';
+import { projectLayout } from './project-layout.js';
+import { resolveRuntimeMode } from './runtime-import.js';
 
 export interface JobsScaffoldLocals {
 	/** Fallback basename for logs; not rendered in templates today. */
 	appName: string;
-	/** Gates the `tenantId` column in the schema template (Q1 2026-04-19). */
-	multiTenant: boolean;
 	/** Where `main-hook.ejs.t` injects the embedded-mode guidance block. */
 	mainTsPath: string;
 	/** Where `codegen-config-jobs-block.ejs.t` appends the `jobs:` block. */
@@ -32,15 +30,6 @@ export interface JobsScaffoldLocals {
 	 * (next to `app.module.ts`) so it lands inside the default tsconfig include
 	 * and the relative `./app.module` import resolves (#513). */
 	workerPath: string;
-	/** Mode-aware import specifier for `JobWorkerModule` (ADR-037, #513). Package
-	 * mode → `@pattern-stack/codegen/runtime/subsystems/jobs/index`; vendored →
-	 * `@shared/subsystems/jobs/index`. The only mode-dependent import the worker
-	 * carries — `AppModule` is imported relatively. */
-	jobWorkerModuleImport: string;
-	/** `<generated>/app-config` as imported from `worker.ts`, for the
-	 * `jobWorkerOptions` the worker passes to `JobWorkerModule.forRoot` (GEN-0,
-	 * #652 — the emit-once worker carries no config value). */
-	appConfigImport: string;
 	/** Where `job-orchestration.schema.ejs.t` writes the scaffolded schema. */
 	schemaPath: string;
 	/** Sentinel-based idempotence flag for `main-hook.ejs.t`'s `skip_if`. */
@@ -68,7 +57,7 @@ export interface JobsScaffoldLocalsInput {
 /** Literal first line of the comment block emitted by `main-hook.ejs.t`. Must
  * match the template content exactly (including the em-dash) so re-running the
  * install detects the prior injection and skips. */
-const MAIN_HOOK_SENTINEL = 'JOBS — Embedded worker mode (optional)';
+const MAIN_HOOK_SENTINEL = 'JOBS — the job executor (@pattern-stack/jobs, JOBS-3)';
 
 /** Hygen front-matter treats any non-empty string as truthy for `skip_if`, so the
  * boolean-ish locals must render as the literal 'true' / empty string. EJS
@@ -82,8 +71,6 @@ function workerSkipValue(exists: boolean): string {
 /**
  * Resolve all Hygen locals for `subsystem install jobs` from config + cwd.
  *
- * - `jobs.multi_tenant` defaults to `false` when the block is absent (first
- *   install case). JOB-8 flips this to an opt-in toggle end-to-end.
  * - No template reads `worker_mode`: the composition is the barrel's, from the
  *   schema's one default (JOBS-1, #659).
  * - `schemaPath` resolves from the subsystems root
@@ -96,8 +83,6 @@ export function resolveJobsScaffoldLocals(
 	input: JobsScaffoldLocalsInput,
 ): JobsScaffoldLocals {
 	const { cwd, config, fileExists, readFile } = input;
-
-	const jobsBlock = (config?.jobs ?? {}) as Record<string, unknown>;
 
 	const layout = projectLayout(cwd, config);
 	const subsystemsRoot = layout.subsystems;
@@ -121,35 +106,16 @@ export function resolveJobsScaffoldLocals(
 
 	return {
 		appName: path.basename(cwd),
-		multiTenant: normaliseMultiTenant(jobsBlock.multi_tenant),
 		mainTsPath,
 		configPath,
 		workerExists: fileExists(workerPath),
 		workerPath,
-		jobWorkerModuleImport: resolveJobWorkerModuleImport(config),
-		appConfigImport: importSpecifier(workerPath, path.join(layout.generated, 'app-config')),
 		schemaPath,
 		mainHookInjected,
 		// #517 — in package mode the schema ships in the package (consumed via the
 		// schema barrel), so the template is skipped; vendored mode renders it.
 		skipSchema: resolveRuntimeMode(config) === 'package',
 	};
-}
-
-/**
- * #513 — resolve the mode-aware `JobWorkerModule` import for the standalone
- * worker (ADR-037). Routes through the shared `runtimeImport` resolver against
- * `subsystems/jobs/index` (NOT the top-level `/subsystems` barrel, which
- * re-exports only `EventsModule` in package mode — see `makeModuleImport`):
- *   - package  → `@pattern-stack/codegen/runtime/subsystems/jobs/index`
- *   - vendored → `@shared/subsystems/jobs/index`
- */
-function resolveJobWorkerModuleImport(config: CodegenConfig | null): string {
-	return runtimeImport(resolveRuntimeMode(config), 'subsystems/jobs/index');
-}
-
-function normaliseMultiTenant(raw: unknown): boolean {
-	return raw === true;
 }
 
 /**
@@ -161,13 +127,10 @@ function normaliseMultiTenant(raw: unknown): boolean {
 export function localsToHygenArgs(locals: JobsScaffoldLocals): string[] {
 	return [
 		'--appName', locals.appName,
-		'--multiTenant', locals.multiTenant ? 'true' : 'false',
 		'--mainTsPath', locals.mainTsPath,
 		'--configPath', locals.configPath,
 		'--workerExists', workerSkipValue(locals.workerExists),
 		'--workerPath', locals.workerPath,
-		'--jobWorkerModuleImport', locals.jobWorkerModuleImport,
-		'--appConfigImport', locals.appConfigImport,
 		'--schemaPath', locals.schemaPath,
 		'--mainHookInjected', workerSkipValue(locals.mainHookInjected),
 		// #517 — boolean-ish for `skip_if` (same '' / 'true' encoding as
@@ -177,27 +140,20 @@ export function localsToHygenArgs(locals: JobsScaffoldLocals): string[] {
 	];
 }
 
-/** The call a current `worker.ts` makes (GEN-0, #652). */
-const CURRENT_WORKER_CALL = 'JobWorkerModule.forRoot(jobWorkerOptions)';
-/** That call as a line of code — the template's doc comment names it too. */
-const CURRENT_WORKER_CALL_LINE = /^\s*JobWorkerModule\.forRoot\(jobWorkerOptions\)/m;
+/** What a current `worker.ts` does (JOBS-3): it starts the jobs executor out of the app's own graph. */
+const CURRENT_WORKER_LINE = /\.get(?:<.*>)?\(JOBS_EXECUTOR\)\.start\(\)/;
 
 /**
- * GEN-0 (#652) — a `worker.ts` emitted before GEN-0 bakes `jobs.backend` /
- * `jobs.extensions.*` into its `JobWorkerModule.forRoot({ … })` literal, so
- * later config edits never reach it. The file is emit-once and consumer-owned:
- * no codemod rewrites it (I7). Returns the one-time manual edit when `content`
- * lacks the current call, else null.
+ * JOBS-3 — a `worker.ts` emitted before JOBS-3 boots ADR-022's `JobWorkerModule`, which no longer exists. The file is
+ * emit-once and consumer-owned: no codemod rewrites it (I7). Returns the one-time manual edit when `content` lacks the
+ * current start, else null.
  */
-export function staleWorkerNotice(
-	content: string,
-	workerPath: string,
-	appConfigImport: string,
-): string | null {
-	if (CURRENT_WORKER_CALL_LINE.test(content)) return null;
+export function staleWorkerNotice(content: string, workerPath: string): string | null {
+	if (CURRENT_WORKER_LINE.test(content)) return null;
 	return [
-		`${workerPath} predates GEN-0 (#652): its JobWorkerModule.forRoot({ … }) options were fixed at install, so later jobs.backend / jobs.extensions edits never reach it. One-time edit:`,
-		`  import { jobWorkerOptions } from '${appConfigImport}';   // replaces any \`import { jobPools } …\``,
-		`  ${CURRENT_WORKER_CALL},   // replaces JobWorkerModule.forRoot({ mode: 'standalone', … })`,
+		`${workerPath} predates JOBS-3: it boots ADR-022's JobWorkerModule, which is gone. One-time edit (or delete the file and re-run \`codegen subsystem install jobs\`):`,
+		`  import { JOBS_EXECUTOR } from '@pattern-stack/jobs/nest';`,
+		`  const app = await NestFactory.createApplicationContext(AppModule);`,
+		`  await app.get(JOBS_EXECUTOR).start();   // replaces the WorkerAppModule + JobWorkerModule.forRoot(jobWorkerOptions)`,
 	].join('\n');
 }
