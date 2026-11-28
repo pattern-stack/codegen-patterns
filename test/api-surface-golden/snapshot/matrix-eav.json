@@ -826,7 +826,8 @@
 					}
 				],
 				"includeRoutes": [],
-				"includesConst": "LEADS_API_INCLUDES"
+				"includesConst": "LEADS_API_INCLUDES",
+				"routesFunction": "leadRoutes"
 			}
 		}
 	}

@@ -34,6 +34,12 @@ import { configOrDefaults } from '../../config/project-config.js';
 import { isSubsystemInstalled } from './subsystem-detect.js';
 import { CONNECTION_STORE_FILE, eventsGeneratedDir } from './pattern-stack-subsystems.js';
 import { removeOtherWiringFiles } from '../../emitters/composition/stale-files.js';
+import { HTTP_LAYERS, patternStackHttpLayer, patternStackHttpName, type PatternStackHttp } from '../../targets/http.js';
+
+/** The target's HTTP layer for the composition (H-1b): its name and runtime import, or null for none. */
+function httpInput(name: PatternStackHttp | null, mode: RuntimeMode): { name: PatternStackHttp; runtimeImport: string } | null {
+	return name ? { name, runtimeImport: runtimeImport(mode, HTTP_LAYERS[name].runtimeModule) } : null;
+}
 import { openApiImport, resolveRuntimeMode, runtimeImport, subsystemCoreImport, type RuntimeMode } from './runtime-import.js';
 import { printInfo, printWarning } from '../ui/output.js';
 import { listEntityYamls } from '../../utils/find-yaml-files.js';
@@ -263,6 +269,7 @@ function compositionInput(ctx: Context): CompositionInput {
 		})(),
 		settings: { settings: projectSettings(ctx), runtimeImport: runtimeImport(mode, 'settings') },
 		jobs: patternStackJobsInput(ctx, layout.generated),
+		http: httpInput(patternStackHttpName(configOrDefaults(ctx.config).target), resolveRuntimeMode(ctx.config)),
 	};
 }
 
@@ -283,6 +290,7 @@ export function planPatternStackComposition(ctx: Context): CompositionFile[] {
 export function emptyPatternStackComposition(
 	dirs: { modulesDir: string; generatedDir: string },
 	mode: RuntimeMode,
+	http: PatternStackHttp | null = null,
 ): CompositionFile[] {
 	return emitComposition({
 		// No entity, no junction; the tenancy column is the schema's default, as a config without `tenancy:` reads it.
@@ -292,9 +300,11 @@ export function emptyPatternStackComposition(
 		...emitterOptions(mode),
 		// SET-1: the project's own settings (the database URL); the first `entity new` adds the providers' and subsystems'.
 		settings: {
-			settings: deriveProjectSettings({ providers: [], installedSubsystems: [] }),
+			settings: deriveProjectSettings({ providers: [], installedSubsystems: [], wiring: 'pattern-stack', ...(http ? { http } : {}) }),
 			runtimeImport: runtimeImport(mode, 'settings'),
 		},
+		// H-1b: `<generated>/http.ts` over no entity yet, so the served `main.ts` compiles before the first `entity new`.
+		http: httpInput(http, mode),
 		dryRun: true,
 	});
 }
@@ -318,6 +328,7 @@ export function writePatternStackComposition(ctx: Context): PatternStackComposit
 		integrationsDir: integrationsRoot(projectLayout(ctx.cwd, ctx.config)),
 		// The composition's files and the integration systems this run writes (`emitPatternStackIntegrations`).
 		keep: new Set([...files.map((f) => f.path), ...(input.integrations?.systems ?? []).map((s) => s.file)]),
+		httpLayer: patternStackHttpLayer(configOrDefaults(ctx.config).target),
 	});
 	const behind = wiringFilesBehind(input);
 	// SET-1: `.env.example` from the same settings as `<generated>/settings.ts`.

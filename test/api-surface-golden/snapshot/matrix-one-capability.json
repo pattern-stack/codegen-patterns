@@ -743,7 +743,8 @@
 					}
 				],
 				"includeRoutes": [],
-				"includesConst": "MEETINGS_API_INCLUDES"
+				"includesConst": "MEETINGS_API_INCLUDES",
+				"routesFunction": "meetingRoutes"
 			}
 		}
 	}

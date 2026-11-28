@@ -583,6 +583,7 @@
 			}
 		],
 		"includeRoutes": [],
-		"includesConst": "MEETING_TRANSCRIPTS_API_INCLUDES"
+		"includesConst": "MEETING_TRANSCRIPTS_API_INCLUDES",
+		"routesFunction": "meetingTranscriptRoutes"
 	}
 }

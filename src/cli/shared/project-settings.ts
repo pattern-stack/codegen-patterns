@@ -18,10 +18,10 @@ import {
 } from '../../derived/settings/index.js';
 import { envExampleContent, isGeneratedEnvExample } from '../../emitters/settings/emit-settings.js';
 import { generating } from '../../utils/generated-file.js';
-import { projectSource, settingValueProblem, type SettingsSource } from '../../../runtime/settings.js';
-import { printWarning } from '../ui/output.js';
 import { configOrDefaults } from '../../config/project-config.js';
 import { targetApp } from '../../targets/apps.js';
+import { projectSource, settingValueProblem, type SettingsSource } from '../../../runtime/settings.js';
+import { printWarning } from '../ui/output.js';
 
 /** The installed subsystems that declare settings: `isSubsystemInstalled`'s one rule, as the composition reads it. */
 function installedWithSettings(ctx: Context): string[] {
@@ -50,6 +50,8 @@ export function projectSettings(ctx: Context): ProjectSetting[] {
 		installedSubsystems: installedWithSettings(ctx),
 		cwd: ctx.cwd,
 		wiring: targetApp(configOrDefaults(ctx.config).target).wiring,
+		// H-1b: the HTTP layer's settings (the port), from its row; Nest's and `none`'s have none.
+		http: targetApp(configOrDefaults(ctx.config).target).http,
 	});
 }
 

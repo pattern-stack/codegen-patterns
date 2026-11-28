@@ -18,7 +18,7 @@ import { z } from 'zod';
 
 /** One setting: the env var it is read from, whether it is a secret, its default, and what it is for. */
 /** How a setting's value is checked: the one list (codegen's derived settings read the type too). */
-export const SETTING_FORMATS = ['string', 'url', 'boolean'] as const;
+export const SETTING_FORMATS = ['string', 'url', 'boolean', 'port'] as const;
 export type SettingFormat = (typeof SETTING_FORMATS)[number];
 
 /** Each format's check, one row each: a new format is a compile error here until it has one. */
@@ -26,6 +26,9 @@ export const SETTING_FORMAT_SCHEMAS: Readonly<Record<SettingFormat, () => z.ZodT
   string: () => z.string().min(1),
   url: () => z.string().url(),
   boolean: () => z.enum(['true', 'false'], { error: 'expected true or false' }),
+  // H-1b: a TCP port a server listens on.
+  port: () =>
+    z.string().refine((v) => /^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= 65535, { error: 'expected a port, 1 to 65535' }),
 };
 
 export interface SettingSpec {

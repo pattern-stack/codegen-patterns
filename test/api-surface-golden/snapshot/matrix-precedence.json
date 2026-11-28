@@ -946,7 +946,8 @@
 					}
 				],
 				"includeRoutes": [],
-				"includesConst": "TICKETS_API_INCLUDES"
+				"includesConst": "TICKETS_API_INCLUDES",
+				"routesFunction": "ticketRoutes"
 			}
 		}
 	}

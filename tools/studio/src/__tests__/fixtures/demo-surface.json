@@ -856,7 +856,8 @@
             }
           ],
           "includeRoutes": [],
-          "includesConst": "ACCOUNTS_API_INCLUDES"
+          "includesConst": "ACCOUNTS_API_INCLUDES",
+          "routesFunction": "accountRoutes"
         }
       },
       "contact": {
@@ -1690,7 +1691,8 @@
             }
           ],
           "includeRoutes": [],
-          "includesConst": "CONTACTS_API_INCLUDES"
+          "includesConst": "CONTACTS_API_INCLUDES",
+          "routesFunction": "contactRoutes"
         }
       },
       "opportunity": {
@@ -2523,7 +2525,8 @@
             }
           ],
           "includeRoutes": [],
-          "includesConst": "OPPORTUNITIES_API_INCLUDES"
+          "includesConst": "OPPORTUNITIES_API_INCLUDES",
+          "routesFunction": "opportunityRoutes"
         }
       }
     },

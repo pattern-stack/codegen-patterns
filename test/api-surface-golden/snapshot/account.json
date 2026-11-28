@@ -524,6 +524,7 @@
 			}
 		],
 		"includeRoutes": [],
-		"includesConst": "ACCOUNTS_API_INCLUDES"
+		"includesConst": "ACCOUNTS_API_INCLUDES",
+		"routesFunction": "accountRoutes"
 	}
 }

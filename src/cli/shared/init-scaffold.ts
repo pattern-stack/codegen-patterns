@@ -24,7 +24,10 @@ import {
 import { buildApiIncludes, emptyRelationsManifest, RELATIONS_MANIFEST_FILE } from '../../emitters/relations/index.js';
 import { DEFAULT_CODEGEN_CONFIG } from '../../config/project-config.js';
 import { DEFAULT_TARGET_PAIR } from '../../targets/pairs.js';
-import { DEFAULT_TARGET_APP, TARGET_WIRINGS, targetApp, targetWiring, type TargetWiring } from '../../targets/apps.js';
+import { DEFAULT_TARGET_APP, TARGET_WIRINGS, targetApp, targetWiring, type TargetApp, type TargetHttp, type TargetWiring } from '../../targets/apps.js';
+import { rowFor } from '../../utils/keyed-row.js';
+import { allLayerRuntimeFiles, HTTP_LAYERS, patternStackHttpLayer, patternStackHttpName, type PatternStackHttp, type PatternStackHttpLayer } from '../../targets/http.js';
+import { HTTP_APP_FILE, HTTP_RENDERERS } from '../../emitters/http/index.js';
 import { configOrDefaults } from '../../config/project-config.js';
 import { buildSubsystemSchemaBarrel } from './subsystem-schema-generator.js';
 import { emptyPatternStackComposition } from './pattern-stack-composition.js';
@@ -71,6 +74,8 @@ export interface InitPlan {
 		runtimePath: string;
 		/** `target.wiring` the plan was built for (PW-4). */
 		wiring: TargetWiring;
+		/** What the HTTP layer needs installed (H-1b): its row's `packages`; none without one. */
+		httpPackages: readonly string[];
 	};
 }
 
@@ -96,6 +101,11 @@ export interface InitOptions {
 	 * that starts and stops the composition. Absent ⇒ the existing config's, else `nest`.
 	 */
 	wiring?: TargetWiring;
+	/**
+	 * `target.http` (H-1b), under pattern-stack wiring: `hono` ⇒ each entity's routes, `<generated>/http.ts` and a
+	 * `main.ts` that serves them. Absent ⇒ the existing config's, else `none`.
+	 */
+	http?: TargetHttp;
 }
 
 // ---------------------------------------------------------------------------
@@ -231,6 +241,8 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	// H-1: the generated commands' runtime (pattern-stack), and the bad-input body both targets answer with.
 	{ runtime: 'commands.ts', target: 'commands.ts', wirings: ['pattern-stack'] },
 	{ runtime: 'validation-error.ts', target: 'validation-error.ts' },
+	// H-1b: the Hono view of the commands; vendored only with `http: hono` (its HTTP_LAYERS row).
+	{ runtime: 'http/hono.ts', target: 'http/hono.ts', wirings: ['pattern-stack'] },
 	{ runtime: 'base-classes/base-read-use-cases.ts', target: 'base-classes/base-read-use-cases.ts' },
 	// Types + constants reached via `@shared/types/*` and `@shared/constants/*`
 	{ runtime: 'types/drizzle.ts', target: 'types/drizzle.ts' },
@@ -291,13 +303,19 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
  * The vendored closure for a wiring: every file under `nest`, and the ones that don't import `@nestjs/*` under
  * `pattern-stack` (PW-4). `project init` writes it and `project update` re-syncs it.
  */
-export function vendoredRuntimeFiles(wiring: TargetWiring): VendoredRuntimeFile[] {
-	return VENDORED_RUNTIME_FILES.filter((v) => (v.wirings ?? TARGET_WIRINGS).includes(wiring));
+export function vendoredRuntimeFiles(wiring: TargetWiring, httpLayer: PatternStackHttpLayer | null = null): VendoredRuntimeFile[] {
+	// H-1b: an HTTP layer's runtime files (its `HTTP_LAYERS` row) come only with that layer.
+	const layerFiles = new Set(allLayerRuntimeFiles());
+	const ofLayer = (v: VendoredRuntimeFile) => !layerFiles.has(v.runtime) || (httpLayer?.runtimeFiles.includes(v.runtime) ?? false);
+	return VENDORED_RUNTIME_FILES.filter((v) => (v.wirings ?? TARGET_WIRINGS).includes(wiring)).filter(ofLayer);
 }
 
-/** The vendored files another wiring has and this one doesn't: `project update` removes them (PW-4). */
-export function otherWiringVendoredFiles(wiring: TargetWiring): VendoredRuntimeFile[] {
-	const own = new Set(vendoredRuntimeFiles(wiring));
+/**
+ * The vendored files another wiring (or another HTTP layer) has and this one doesn't: `project update` removes them
+ * (PW-4, H-1b).
+ */
+export function otherWiringVendoredFiles(wiring: TargetWiring, httpLayer: PatternStackHttpLayer | null = null): VendoredRuntimeFile[] {
+	const own = new Set(vendoredRuntimeFiles(wiring, httpLayer));
 	return VENDORED_RUNTIME_FILES.filter((v) => !own.has(v));
 }
 
@@ -694,6 +712,27 @@ main().catch((err) => {
 });
 `;
 }
+
+/** The `http` values pattern-stack wiring takes (its `TARGET_APPS` rows). */
+type PatternStackHttpValue = Extract<TargetApp, { wiring: 'pattern-stack' }>['http'];
+
+/**
+ * Each pattern-stack `http` value's `main.ts` (H-1b), read with `rowFor`: `none` runs the app's work; every HTTP layer
+ * serves it, by its own row in `HTTP_RENDERERS` (so a new layer needs that row only).
+ */
+const PATTERN_STACK_MAINS: { readonly [H in PatternStackHttpValue]: (layout: ProjectLayout) => string } = {
+	none: patternStackMainContent,
+	...(Object.fromEntries(
+		Object.entries(HTTP_RENDERERS).map(([name, renderers]) => [
+			name,
+			(layout: ProjectLayout) =>
+				renderers.mainContent({
+					composeImport: importSpecifier(layout.mainTs, layout.composeTs),
+					httpImport: importSpecifier(layout.mainTs, path.join(layout.generated, HTTP_APP_FILE.replace(/\.ts$/, ''))),
+				}),
+		]),
+	) as { readonly [H in PatternStackHttp]: (layout: ProjectLayout) => string }),
+};
 
 function rootSchemaContent(layout: ProjectLayout): string {
 	const barrel = path.join(layout.generated, 'schema');
@@ -1144,6 +1183,15 @@ export function initWiringRefusal(ctx: Context, cwd: string, options: InitOption
 			`target.wiring in codegen.config.yaml and re-run init without --wiring, or pass --force to rewrite the config.`
 		);
 	}
+	// H-1b: an existing config is kept (init skips it), so an `--http` it doesn't say would write files for a layer the
+	// project doesn't have.
+	const configHttp = targetApp(target).http;
+	if (options.http && configExists && !options.force && options.http !== configHttp) {
+		return (
+			`--http ${options.http}, but codegen.config.yaml says target.http ${configHttp}${configWiring === 'nest' ? ' (wiring nest)' : ''}. Set ` +
+			`target.wiring: pattern-stack and target.http in codegen.config.yaml and re-run init without --http, or pass --force to rewrite the config.`
+		);
+	}
 	return null;
 }
 
@@ -1164,9 +1212,21 @@ export async function buildInitPlan(
 	// model and vendors the runtime closure below.
 	const runtimeMode = options.runtimeMode === 'vendored' ? 'vendored' : 'package';
 	// `target.wiring` (PW-4): the flag, else the existing config's, else `nest`.
-	const wiring: TargetWiring = options.wiring ?? targetWiring(configOrDefaults(ctx.config).target);
-	const app = targetApp({ wiring });
+	// An `--http` alone means pattern-stack: only pattern-stack wiring has a layer to pick (H-1b).
+	const wiring: TargetWiring =
+		options.wiring ?? (options.http !== undefined ? 'pattern-stack' : targetWiring(configOrDefaults(ctx.config).target));
 	const patternStack = wiring === 'pattern-stack';
+	// `target.http` (H-1b): the flag, else the existing config's when it is this wiring's, else the wiring's first
+	// `TARGET_APPS` row (`targetApp` with no http). Its layer is its `HTTP_LAYERS` row.
+	const configured = configOrDefaults(ctx.config).target;
+	// `target.http` (H-1b): the flag, else the existing config's when it is this wiring's, else the wiring's first
+	// `TARGET_APPS` row (`targetApp` with no http). Its layer is its `HTTP_LAYERS` row.
+	const configuredHttp = targetWiring(configured) === wiring ? configured.http : undefined;
+	const http: TargetHttp = targetApp({ wiring, http: options.http ?? configuredHttp }).http;
+	const httpName = patternStackHttpName({ wiring, http });
+	const httpLayer = patternStackHttpLayer({ wiring, http });
+	// The target's row of TARGET_APPS (the config writes it out unless it is the default).
+	const app = targetApp({ wiring, http });
 	const refusal = initWiringRefusal(ctx, cwd, options);
 	if (refusal) throw new InitRefusal(refusal);
 
@@ -1313,7 +1373,7 @@ export async function buildInitPlan(
 	// `@pattern-stack/codegen` and the generated code imports from the package, so
 	// there is nothing to vendor. See VENDORED_RUNTIME_FILES comment.
 	if (runtimeMode === 'vendored') {
-		for (const v of vendoredRuntimeFiles(wiring)) {
+		for (const v of vendoredRuntimeFiles(wiring, httpLayer)) {
 			entries.push(
 				fileEntry(cwd, path.join(layout.shared, v.target), loadRuntimeFile(v.runtime), { force })
 			);
@@ -1332,13 +1392,13 @@ export async function buildInitPlan(
 				{ skipReason: 'exists — `entity new` and `subsystem install` keep it current' },
 			),
 		);
-		for (const f of emptyPatternStackComposition({ modulesDir: layout.modules, generatedDir: layout.generated }, runtimeMode)) {
+		for (const f of emptyPatternStackComposition({ modulesDir: layout.modules, generatedDir: layout.generated }, runtimeMode, httpName)) {
 			// Never forced: over a project with entities it would empty `MODULES` until the next `entity new`.
 			entries.push(fileEntry(cwd, f.path, f.content, { skipReason: 'exists — `entity new` keeps it current' }));
 		}
 		// SET-1: `.env.example` over the project's own settings; `entity new` rewrites it with every provider's.
 		entries.push(
-			fileEntry(cwd, path.join(cwd, '.env.example'), envExampleContent(deriveProjectSettings({ providers: [], installedSubsystems: [] })), {
+			fileEntry(cwd, path.join(cwd, '.env.example'), envExampleContent(deriveProjectSettings({ providers: [], installedSubsystems: [], wiring: 'pattern-stack', http })), {
 				skipReason: 'exists — `entity new` keeps it current',
 			}),
 		);
@@ -1420,7 +1480,9 @@ export async function buildInitPlan(
 	// their own bootstrap (custom logging, Helmet, cors, etc.) copy the
 	// Swagger block manually from CONSUMER-SETUP §OpenAPI. Under pattern-stack: compose, start, run, stop (PW-4).
 	if (patternStack) {
-		entries.push(fileEntry(cwd, layout.mainTs, patternStackMainContent(layout), { skipReason: 'exists — yours to edit' }));
+		// H-1b: each http value's main.ts is its row: `none` runs the app's work, an HTTP layer serves it.
+		const main = rowFor('target.http', PATTERN_STACK_MAINS, http)(layout);
+		entries.push(fileEntry(cwd, layout.mainTs, main, { skipReason: 'exists — yours to edit' }));
 	} else {
 		const mainPath = layout.mainTs;
 		if (!fs.existsSync(mainPath)) {
@@ -1548,6 +1610,7 @@ export async function buildInitPlan(
 			frontend,
 			runtimePath,
 			wiring,
+			httpPackages: httpLayer?.packages ?? [],
 		},
 	};
 }

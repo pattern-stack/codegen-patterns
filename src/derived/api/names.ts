@@ -218,6 +218,11 @@ export function notFoundMessage(entityName: string): { before: string; after: st
 	return { before: `${entityClassName(entityName)} `, after: ' not found' };
 }
 
+/** The function in `<entity>.routes.ts` that builds an entity's Hono routes (H-1b): `deal_state` → `dealStateRoutes`. */
+export function routesFunctionName(entityName: string): string {
+	return `${camelCase(entityName)}Routes`;
+}
+
 /** The export that lists an entity's commands, in `<entity>.commands.ts`: `deal_state` → `dealStateCommands`. */
 export function commandsConstName(entityName: string): string {
 	return `${camelCase(entityName)}Commands`;

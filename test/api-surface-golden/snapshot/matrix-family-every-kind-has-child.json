@@ -803,7 +803,8 @@
 					}
 				],
 				"includeRoutes": [],
-				"includesConst": "SHIPMENTS_API_INCLUDES"
+				"includesConst": "SHIPMENTS_API_INCLUDES",
+				"routesFunction": "shipmentRoutes"
 			},
 			"createDisabledBy": {
 				"doc": {
@@ -1706,7 +1707,8 @@
 					}
 				],
 				"includeRoutes": [],
-				"includesConst": "AIR_FREIGHTS_API_INCLUDES"
+				"includesConst": "AIR_FREIGHTS_API_INCLUDES",
+				"routesFunction": "airFreightRoutes"
 			}
 		}
 	}

@@ -42,6 +42,7 @@ import {
 	commandName,
 	commandsConstName,
 	notFoundMessage,
+	routesFunctionName,
 	type JunctionSide,
 	publishedWriteEvent,
 } from './names.js';
@@ -139,6 +140,15 @@ export function writesDisabledBy(definition: {
 export function commandsDisabledBy(definition: { generate: EntityDefinitionInput['generate'] }): YamlPath | null {
 	if (definition.generate?.commands === false) return ['generate', 'commands'];
 	return null;
+}
+
+/**
+ * Whether an entity has HTTP routes under an HTTP layer (H-1b): its HTTP is on and it has commands to view (routes are
+ * views of commands). The one rule: the routes template, its file path and `<generated>/http.ts` read it (through
+ * `http.routesFunction`, present exactly when this holds).
+ */
+export function routesOn(definition: Pick<EntityDefinitionInput, 'api' | 'generate'>): boolean {
+	return apiEnabled(definition) && commandsDisabledBy({ generate: definition.generate }) === null;
 }
 
 /**
@@ -1042,7 +1052,13 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 	const commandsOff = commandsDisabledBy({ generate: definition.generate });
 	const commands = commandsOff ? [] : deriveCommands(entityName, plural, useCases, routes, includeRoute);
 
-	const http: EntityApiSurface['http'] = { enabled, routes, includeRoutes, includesConst: includesConstName(plural) };
+	const http: EntityApiSurface['http'] = {
+		enabled,
+		routes,
+		includeRoutes,
+		includesConst: includesConstName(plural),
+		...(routesOn(definition) ? { routesFunction: routesFunctionName(entityName) } : {}),
+	};
 	if (disabledBy) http.disabledBy = disabledBy;
 
 	return {

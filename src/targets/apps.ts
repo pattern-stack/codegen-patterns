@@ -5,7 +5,9 @@
  *
  * - `wiring`: how the generated classes are composed — `nest` (decorators, a Nest module per entity) or `pattern-stack` (no
  *   decorators; one composition and one `@pattern-stack/wiring` manifest per context).
- * - `http`: the HTTP layer — `nest` (Nest controllers) or `none` (no HTTP: a CLI, hook or MCP app). H-1 adds `hono`.
+ * - `http`: the HTTP layer — `nest` (Nest controllers), `none` (no HTTP: a CLI, hook or MCP app) or `hono` (Hono routes
+ *   over the commands, H-1). What each value emits under pattern-stack wiring is its row in `HTTP_LAYERS`
+ *   (`src/targets/http/`).
  *
  * Both keys are optional in `target:`, and absent means the first row, so every config written before them parses
  * to the same output.
@@ -24,6 +26,12 @@ export const TARGET_APPS = [
 		http: 'none',
 		description:
 			'No NestJS and no HTTP: decorator-free classes composed per context with @pattern-stack/wiring (PW-3)',
+	},
+	{
+		wiring: 'pattern-stack',
+		http: 'hono',
+		description:
+			'No NestJS, with HTTP: the pattern-stack composition, and Hono routes as views of the commands (H-1); runs on Bun and Node',
 	},
 ] as const;
 

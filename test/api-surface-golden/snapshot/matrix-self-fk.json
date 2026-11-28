@@ -619,7 +619,8 @@
 					}
 				],
 				"includeRoutes": [],
-				"includesConst": "CATEGORIES_API_INCLUDES"
+				"includesConst": "CATEGORIES_API_INCLUDES",
+				"routesFunction": "categoryRoutes"
 			}
 		}
 	}
