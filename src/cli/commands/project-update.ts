@@ -131,10 +131,12 @@ async function syncSubsystemRuntime(
 		runtimeRoot: runtimeRoot(),
 		depsTargetRoot: path.resolve(subsystemsRoot, '..'),
 		dryRun: !write,
-		// Refresh files already vendored for this subsystem; never install new
-		// ones (that's `subsystem install`). copyRuntime classifies accurately
-		// in dry-run too, so this report is correct either way.
-		onlyExisting: true,
+		// Write every file of the installed subsystem (new ones too: the
+		// refreshed index.ts may import a file the old version lacked); refresh
+		// only already-installed dependencies outside its folder. copyRuntime
+		// classifies accurately in dry-run too, so this report is correct
+		// either way.
+		refreshInstalled: true,
 	});
 
 	const changes: FileChange[] = [];

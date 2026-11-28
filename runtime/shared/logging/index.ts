@@ -3,8 +3,5 @@
  *
  * Imported by consumers as `@pattern-stack/codegen/runtime/shared/logging`.
  */
-export {
-  CompactConsoleLogger,
-  createAppLogger,
-  parseLogLevels,
-} from './compact-console-logger';
+export { CompactConsoleLogger, createAppLogger } from './compact-console-logger';
+export { parseLogLevels } from '../../logger';

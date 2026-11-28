@@ -5,10 +5,13 @@
  * fail the host CRUD operation). Before this fix the failure was swallowed by a
  * bare `catch` and printed via `console.warn` with no cause — these tests lock
  * in the never-throw contract AND that the cause + the distinct event types now
- * reach the Nest Logger.
+ * reach the Nest Logger (the logger port bound to Nest, as a Nest app binds it).
  */
-import { describe, it, expect, mock, spyOn, afterEach } from 'bun:test';
+import { describe, it, expect, mock, spyOn, afterEach, beforeEach } from 'bun:test';
 import { Logger } from '@nestjs/common';
+
+import { consoleLoggerFactory, setLoggerFactory } from '../../../../runtime/logger';
+import { useNestLogger } from '../../../../runtime/nest-logger';
 
 import {
   emitSafely,
@@ -40,8 +43,13 @@ function makeBus(overrides: Partial<IEventBus> = {}): IEventBus {
   } as unknown as IEventBus;
 }
 
+beforeEach(() => {
+  useNestLogger();
+});
+
 afterEach(() => {
   mock.restore();
+  setLoggerFactory(consoleLoggerFactory);
 });
 
 describe('emitSafely', () => {

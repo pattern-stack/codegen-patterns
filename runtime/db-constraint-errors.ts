@@ -19,13 +19,9 @@
  * whose `code` is one of the three.
  */
 
-/** The reason phrase Nest prints for each status this module answers with. */
-const REASONS = {
-  409: 'Conflict',
-  422: 'Unprocessable Entity',
-} as const;
+import { codedErrorBody, type ErrorBodyStatus } from './errors';
 
-export type ConstraintViolationStatus = keyof typeof REASONS;
+export type ConstraintViolationStatus = Extract<ErrorBodyStatus, 409 | 422>;
 export type ConstraintViolationCode = 'foreign_key_violation' | 'still_referenced' | 'unique_violation';
 
 export interface ConstraintViolation {
@@ -136,12 +132,10 @@ export function constraintViolationOf(err: unknown): ConstraintViolation | null 
 }
 
 export function constraintViolationBody(v: ConstraintViolation): ConstraintViolationBody {
-  return {
-    statusCode: v.status,
-    error: REASONS[v.status],
-    code: v.code,
-    fields: v.fields.join(','),
-    constraint: v.constraint,
-    message: v.message,
-  };
+  return codedErrorBody(
+    v.status,
+    v.code,
+    { fields: v.fields.join(','), constraint: v.constraint },
+    v.message,
+  ) as ConstraintViolationBody;
 }

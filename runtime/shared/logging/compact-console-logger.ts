@@ -16,14 +16,12 @@
  *     pane header already names the process) and shortens the timestamp to
  *     `HH:mm:ss`.
  *   - `parseLogLevels` / the `LOG_LEVEL` env convention — a single severity
- *     threshold enables that level and everything above it.
+ *     threshold enables that level and everything above it (owned by the
+ *     Nest-free `runtime/logger.ts`, which the console default reads too).
  *   - `createAppLogger` — the factory the entrypoints hand to `NestFactory`.
  */
 import { ConsoleLogger, type LogLevel } from '@nestjs/common';
-
-/** Severity-ordered (lowest → highest); a threshold enables its suffix. */
-const LEVELS: LogLevel[] = ['verbose', 'debug', 'log', 'warn', 'error', 'fatal'];
-const DEFAULT_THRESHOLD: LogLevel = 'log';
+import { parseLogLevels } from '../../logger';
 
 const TIME = new Intl.DateTimeFormat('en-GB', {
   hour: '2-digit',
@@ -31,26 +29,6 @@ const TIME = new Intl.DateTimeFormat('en-GB', {
   second: '2-digit',
   hour12: false,
 });
-
-/**
- * Resolve a `LOG_LEVEL` threshold into the enabled-levels array Nest's
- * `logLevels` option expects.
- *
- * `LOG_LEVEL=debug` → `['debug','log','warn','error','fatal']`. Unknown input
- * warns and falls back to the default (`'log'` and above).
- */
-export function parseLogLevels(threshold = process.env.LOG_LEVEL): LogLevel[] {
-  const idx = LEVELS.indexOf(
-    (threshold ?? DEFAULT_THRESHOLD).toLowerCase() as LogLevel,
-  );
-  if (idx === -1) {
-    console.warn(
-      `[logging] unknown LOG_LEVEL '${threshold}' — defaulting to '${DEFAULT_THRESHOLD}'`,
-    );
-    return LEVELS.slice(LEVELS.indexOf(DEFAULT_THRESHOLD));
-  }
-  return LEVELS.slice(idx);
-}
 
 /**
  * A `ConsoleLogger` with a compact one-line format tuned for split-pane TUIs.

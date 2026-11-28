@@ -25,8 +25,7 @@
  * connection; behind a transaction pooler notifies are simply never received and
  * the system degrades to polling. See the jobs config block / skill.
  */
-// TODO(logging-subsystem): swap to ILogger once ADR-028 lands
-import { Logger } from '@nestjs/common';
+import { createLogger, type Logger } from '../../logger';
 import { sql } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';
 import type { DrizzleTransaction } from './event-bus.protocol';
@@ -122,7 +121,7 @@ export class PgNotifyListener {
   private connecting: Promise<void> | null = null;
 
   constructor(private readonly opts: PgNotifyListenerOptions) {
-    this.logger = new Logger(`PgNotifyListener(${opts.label})`);
+    this.logger = createLogger(`PgNotifyListener(${opts.label})`);
     this.backoffMinMs = opts.backoffMinMs ?? DEFAULT_BACKOFF_MIN_MS;
     this.backoffMaxMs = opts.backoffMaxMs ?? DEFAULT_BACKOFF_MAX_MS;
     this.backoffMs = this.backoffMinMs;
