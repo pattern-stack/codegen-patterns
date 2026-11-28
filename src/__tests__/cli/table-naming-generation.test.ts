@@ -105,7 +105,10 @@ beforeAll(() => {
 
 	bun([CLI, 'entity', 'new', '--all', '--force']);
 	bun([CLI, 'junction', 'new', '--all', '--force']);
-});
+	// Two CLI processes (`entity new --all`, then `junction new --all`): ~2 s locally, but past bun's 5 s hook default
+	// on a slow CI runner, where it failed as "(unnamed)" with a killed dangling process (#965, #968). The other
+	// hooks that spawn the CLI (test/junction/*) set 120 s.
+}, 60_000);
 
 afterAll(() => {
 	if (root && !process.env.KEEP_SMOKE_DIR) fs.rmSync(root, { recursive: true, force: true });
