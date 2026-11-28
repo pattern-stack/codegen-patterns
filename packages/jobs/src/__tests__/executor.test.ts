@@ -97,3 +97,31 @@ describe('the in-process loop outlives a failed poll', () => {
     expect(executor.error).toBeNull();
   });
 });
+
+describe('the in-process loop stops at once', () => {
+  test('a stop that lands during a poll ends the loop without waiting out pollMs (review #969 follow-up)', async () => {
+    const job = defineJob({
+      key: 'loop.stop',
+      input: z.object({}),
+      output: z.object({}),
+      steps: (s) => s.add('noop', step({ run: async () => ({}) })),
+    });
+    const store = new MemoryJobStore();
+    let release: () => void = () => {};
+    const real = store.sweepExpired.bind(store);
+    // The first poll is held until the stop is in flight, then fails: the loop must not then sleep 60 s.
+    (store as unknown as { sweepExpired: () => Promise<unknown> }).sweepExpired = () =>
+      new Promise((_, reject) => {
+        release = () => reject(new Error('held poll'));
+      }).finally(() => {
+        (store as unknown as { sweepExpired: () => Promise<unknown> }).sweepExpired = real;
+      });
+    const executor = new InProcessExecutor({ store, registry: createRegistry([job]), pollMs: 60_000, warn: () => {} });
+    await executor.start();
+    const stopped = executor.stop();
+    release();
+    const t0 = Date.now();
+    await stopped;
+    expect(Date.now() - t0).toBeLessThan(1_000);
+  });
+});

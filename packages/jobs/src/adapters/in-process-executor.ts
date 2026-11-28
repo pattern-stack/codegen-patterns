@@ -355,6 +355,8 @@ export class InProcessExecutor implements Executor {
           `@pattern-stack/jobs in-process: a poll failed, so the loop tries again at the next one: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
+      // A stop that landed during the poll found no wait to wake: end now, not a poll later.
+      if (!this.running) break;
       const woken = new AbortController();
       this.wakeUp = () => woken.abort();
       if (retryIn !== null)
