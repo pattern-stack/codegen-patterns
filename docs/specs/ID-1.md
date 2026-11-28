@@ -99,7 +99,7 @@ transaction with the cache invalidation, and reads the requester from the reques
 - `listMine()`: the principal's workspaces, each with its role.
 
 What each role may do is one table (`ROLE_RIGHTS`: `manage`, `manageOwners`), not branches. They are commands too:
-hand-written ones in identity's own list (`WORKSPACE_COMMANDS`), next to the generated ones in `<generated>/commands.ts`
+hand-written ones in identity's own list (`workspaceCommandsUnder`), next to the generated ones in `<generated>/commands.ts`
 (ID-1b, `docs/specs/ID-1b.md`).
 
 ### Under pattern-stack

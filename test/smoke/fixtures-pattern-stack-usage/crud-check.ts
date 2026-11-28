@@ -437,6 +437,10 @@ async function workspaceCommandsCheck(app: App): Promise<void> {
     );
   };
 
+  // The table keeps each one's HTTP binding through its re-targeting (an HTTP layer mounts it from there).
+  const http = (commandNamed('membership change-role') as { http?: { verb: string; path: string } } | undefined)?.http;
+  assert(http?.verb === 'PATCH' && http.path === '/members/:userId', `the table keeps the HTTP binding: ${JSON.stringify(http)}`);
+
   const slug = `cmd-${stamp}`;
   const created = await as(d!.id, undefined, 'workspace create', { name: 'Commands', slug });
   assert(created.ok && (created.result as { role: string }).role === 'owner', `workspace create makes D the owner: ${JSON.stringify(created)}`);

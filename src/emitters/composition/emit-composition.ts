@@ -60,6 +60,8 @@ import { IDENTITY_ENTITIES } from '../../../runtime/subsystems/identity/names.js
 import { HTTP_APP_FILE, HTTP_RENDERERS } from '../http/index.js';
 import { HTTP_LAYERS, type PatternStackHttp } from '../../targets/http.js';
 import { routesOn } from '../../derived/api/entity.js';
+import type { CommandHttp } from '../../../runtime/commands.js';
+import type { EntityCommand } from '../../derived/api/types.js';
 
 /** The module name of the entities that declare no `context:`. */
 export const ROOT_MODULE = 'entities';
@@ -313,6 +315,13 @@ export const GENERATED_SYSTEM_FILES = [
 	REQUESTER_SYSTEM_FILE,
 	WORKSPACES_MODULE_FILE,
 ] as const;
+
+/**
+ * A hand-written command's HTTP binding (`CommandHttp`, the runtime's) is a derived command's (`EntityCommand['http']`),
+ * so an HTTP layer mounts both through one view: either changing alone fails `tsc` here.
+ */
+type DerivedHttp = NonNullable<EntityCommand['http']>;
+export const COMMAND_HTTP_IS_DERIVED_HTTP: [CommandHttp, DerivedHttp] extends [DerivedHttp, CommandHttp] ? true : never = true;
 
 export interface CompositionFile {
 	path: string;
@@ -676,14 +685,14 @@ import type { Wired } from '@pattern-stack/wiring';
 import { allOnApis, type Command } from '@pattern-stack/wiring/commands';
 import type { ModuleApis, SystemApis } from './wiring';
 ${allEntities.map(({ entity }) => `import { ${commandsConstName(entity)} } from '${relativeImport(commandsFile, commandsOf(entity))}';`).join('\n')}
-${identityPlan ? `import { WORKSPACE_COMMANDS } from '${input.identity!.coreImport}';\n` : ''}
+${identityPlan ? `import { WORKSPACE_SOURCES, workspaceCommandsUnder } from '${input.identity!.coreImport}';\n` : ''}
 /** The composed app, as \`compose\` returns it. */
 export type App = Wired<ModuleApis, SystemApis>;
 
 /** Each with its input and result typed loosely; an entity's own list (\`<entity>.commands.ts\`) keeps them exact. */
 export const COMMANDS: readonly Command<App>[] = [
 ${allEntities.map(({ entity, module }) => `  ...allOnApis(${commandsConstName(entity)}, (app: App) => app.module('${module}').${camelCase(entity)}.useCases),`).join('\n')}
-${identityPlan ? "  // ID-1b: the workspace operations, hand-written (identity's entities have no generated commands).\n  ...allOnApis(WORKSPACE_COMMANDS, (app: App) => app.module('workspaces')),\n" : ''}];
+${identityPlan ? `  // ID-1b: the workspace operations, hand-written (identity's entities have no generated commands), routed under the\n  // configured workspace source's row.\n  ...allOnApis(workspaceCommandsUnder(WORKSPACE_SOURCES['${input.identity!.workspaceFrom}']()), (app: App) => app.module('workspaces')),\n` : ''}];
 
 /** A command by name (\`contact create\`), or undefined. */
 export function commandNamed(name: string): Command<App> | undefined {

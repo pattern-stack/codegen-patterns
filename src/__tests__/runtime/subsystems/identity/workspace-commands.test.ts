@@ -10,17 +10,19 @@ import yaml from 'yaml';
 
 import {
   WORKSPACE_FIELD_MAX,
+  WORKSPACE_SOURCES,
+  WORKSPACE_SOURCE_NAMES,
   membershipAddCommand,
   membershipChangeRoleCommand,
   membershipRemoveCommand,
-  WORKSPACE_COMMANDS,
   workspaceCreateCommand,
+  workspaceCommandsUnder,
   workspaceListMineCommand,
   type WorkspaceCommandApis,
 } from '../../../../../runtime/subsystems/identity/core';
 import { withRequester } from '../../../../../runtime/base-classes/tenant-context';
 import { invokeCommand } from '../../../../../runtime/commands';
-import type { Command } from '@pattern-stack/wiring/commands';
+import { allOnApis, type Command } from '@pattern-stack/wiring/commands';
 
 import { A, B, W, fakeWorkspaces } from './fake-workspaces';
 
@@ -41,12 +43,56 @@ const setup = async () => {
 
 describe('the workspace commands', () => {
   it('five, each named, with an effect a caller can trust', () => {
-    expect(WORKSPACE_COMMANDS.map((c) => [c.name, c.effect])).toEqual([
+    expect(workspaceCommandsUnder(WORKSPACE_SOURCES.header()).map((c) => [c.name, c.effect])).toEqual([
       ['workspace create', 'side-effect'],
       ['workspace list-mine', 'read'],
       ['membership add', 'side-effect'],
       ['membership change-role', 'idempotent'],
       ['membership remove', 'side-effect'],
+    ]);
+  });
+
+  it("each is routed: the workspace at the root, a membership change under the source's prefix", () => {
+    const routes = (prefix: string) =>
+      workspaceCommandsUnder({ routePrefix: prefix }).map((c) => `${c.http.verb} ${c.http.path} ${c.http.success}`);
+    expect(routes(WORKSPACE_SOURCES.header().routePrefix)).toEqual([
+      'POST /workspaces 201',
+      'GET /workspaces/mine 200',
+      'POST /members 201',
+      'PATCH /members/:userId 200',
+      'DELETE /members/:userId 200',
+    ]);
+    expect(routes(WORKSPACE_SOURCES.path().routePrefix).slice(2)).toEqual([
+      'POST /w/:workspaceId/members 201',
+      'PATCH /w/:workspaceId/members/:userId 200',
+      'DELETE /w/:workspaceId/members/:userId 200',
+    ]);
+  });
+
+  it("every source's routes bind only the input's fields, each path field a :param of its path; POST is 201", () => {
+    for (const name of WORKSPACE_SOURCE_NAMES) {
+      for (const c of workspaceCommandsUnder(WORKSPACE_SOURCES[name]())) {
+        const fields = Object.keys((c.input as unknown as { shape: Record<string, unknown> }).shape);
+        for (const p of c.http.binding.path) {
+          expect(fields).toContain(p);
+          expect(c.http.path).toContain(`/:${p}`);
+        }
+        expect(c.http.success).toBe(c.http.verb === 'POST' ? 201 : 200);
+        // A command with input fields takes them from the body or the path, never neither.
+        const bound = new Set([...c.http.binding.path, ...(c.http.binding.body ? fields : [])]);
+        expect(fields.every((f) => bound.has(f))).toBe(true);
+      }
+    }
+  });
+
+  it("re-targeted onto a larger app (as the commands table does), each keeps its binding", () => {
+    const outer = allOnApis(workspaceCommandsUnder(WORKSPACE_SOURCES.header()), (app: { workspaces: WorkspaceCommandApis }) => app.workspaces);
+    expect(outer.map((c) => (c as { http?: { path: string } }).http?.path)).toEqual([
+      '/workspaces',
+      '/workspaces/mine',
+      '/members',
+      '/members/:userId',
+      '/members/:userId',
     ]);
   });
 

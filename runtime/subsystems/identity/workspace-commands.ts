@@ -11,9 +11,10 @@
  */
 import { z } from 'zod';
 import { defineCommand } from '@pattern-stack/wiring/commands';
-import { attempt } from '../../commands';
+import { attempt, type CommandHttp } from '../../commands';
 import { ROLES, WORKSPACE_FIELD_MAX } from './names';
 import type { WorkspaceService } from './workspace-service';
+import type { WorkspaceSource } from './workspace-sources';
 
 /** What the workspace commands run on: the `workspaces` module. */
 export interface WorkspaceCommandApis {
@@ -70,13 +71,33 @@ export const membershipRemoveCommand = defineCommand({
 });
 
 /**
- * Every workspace command, each exact; `<generated>/commands.ts` re-targets them onto the composed app. Constant-case,
- * so it can't share a name with an entity's generated list (`workspaceCommands`, were workspace's turned back on).
+ * Every workspace command, each exact, with its HTTP binding (`http`, as a derived command carries it). The workspace
+ * itself is created and listed at the app's root; a membership change sits under the workspace source's `routePrefix`
+ * (`''` for the header row, `/w/:workspaceId` for the path row), where the requester port reads the workspace from.
+ * `<generated>/commands.ts` lists them, under its configured source's row, re-targeted onto the composed app.
  */
-export const WORKSPACE_COMMANDS = [
-  workspaceCreateCommand,
-  workspaceListMineCommand,
-  membershipAddCommand,
-  membershipChangeRoleCommand,
-  membershipRemoveCommand,
-] as const;
+export function workspaceCommandsUnder(source: Pick<WorkspaceSource, 'routePrefix'>) {
+  const members = `${source.routePrefix}/members`;
+  return [
+    routed(workspaceCreateCommand, { verb: 'POST', path: '/workspaces', binding: { path: [], query: [], body: true }, success: 201 }),
+    routed(workspaceListMineCommand, { verb: 'GET', path: '/workspaces/mine', binding: { path: [], query: [], body: false }, success: 200 }),
+    routed(membershipAddCommand, { verb: 'POST', path: members, binding: { path: [], query: [], body: true }, success: 201 }),
+    routed(membershipChangeRoleCommand, {
+      verb: 'PATCH',
+      path: `${members}/:userId`,
+      binding: { path: ['userId'], query: [], body: true },
+      success: 200,
+    }),
+    routed(membershipRemoveCommand, {
+      verb: 'DELETE',
+      path: `${members}/:userId`,
+      binding: { path: ['userId'], query: [], body: false },
+      success: 200,
+    }),
+  ] as const;
+}
+
+/** A command with its HTTP binding. */
+function routed<C extends object>(command: C, http: CommandHttp): C & { readonly http: CommandHttp } {
+  return { ...command, http };
+}

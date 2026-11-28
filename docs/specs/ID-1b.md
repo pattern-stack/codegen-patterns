@@ -15,13 +15,13 @@ reached by any way in.
 Five hand-written commands in the identity runtime (`runtime/subsystems/identity/workspace-commands.ts`, exported from
 `identity/core.ts`), each a `defineCommand` over the `workspaces` module (`{ service }`):
 
-| Command | Input | Effect | Runs |
-|---|---|---|---|
-| `workspace create` | `{ name, slug }` | side-effect | `createWorkspace` |
-| `workspace list-mine` | `{}` | read | `listMine` |
-| `membership add` | `{ userId, role }` | side-effect | `addMember` |
-| `membership change-role` | `{ userId, role }` | idempotent | `changeRole` |
-| `membership remove` | `{ userId }` | side-effect | `removeMember` |
+| Command | Input | Effect | Runs | HTTP |
+|---|---|---|---|---|
+| `workspace create` | `{ name, slug }` | side-effect | `createWorkspace` | `POST /workspaces` (body), 201 |
+| `workspace list-mine` | `{}` | read | `listMine` | `GET /workspaces/mine`, 200 |
+| `membership add` | `{ userId, role }` | side-effect | `addMember` | `POST <prefix>/members` (body), 201 |
+| `membership change-role` | `{ userId, role }` | idempotent | `changeRole` | `PATCH <prefix>/members/:userId` (role in the body), 200 |
+| `membership remove` | `{ userId }` | side-effect | `removeMember` | `DELETE <prefix>/members/:userId`, 200 |
 
 - **Inputs are Zod schemas**, checked by `invokeCommand` before the service runs: `userId` is a `z.guid()`, `role` one
   of `ROLES`, and a workspace's `name` and `slug` are at most `WORKSPACE_FIELD_MAX` (`workspace.yaml`'s `max_length`s;
@@ -33,15 +33,23 @@ Five hand-written commands in the identity runtime (`runtime/subsystems/identity
   throws.
 - **The requester comes from the request state**, as for the service. A way in resolves the requester with the port and
   runs `invokeCommand` inside `withRequester(requester, …)`; a job or an agent uses `requesterFor`.
-- **The table lists them** when identity is composed: `<generated>/commands.ts` imports `WORKSPACE_COMMANDS` from the
-  identity entry and adds `...allOnApis(WORKSPACE_COMMANDS, (app: App) => app.module('workspaces'))` after the
-  generated entries. The list is constant-case, so it can't collide with an entity's generated list
-  (`workspaceCommands`, were workspace's commands turned back on).
+- **Each is routed** (the Hono lane's ask): it carries `http`, a `CommandHttp` (`runtime/commands.ts`), which is the
+  derived commands' `EntityCommand['http']` structurally; a type check beside the commands table's emitter
+  (`COMMAND_HTTP_IS_DERIVED_HTTP`) fails `tsc` if either changes alone. So H-2 mounts these through the same view as the
+  generated routes, inside `withRequester(resolved)`; a command without `http` isn't routed. The success status is
+  Nest's rule (POST 201, else 200). `<prefix>` is the configured workspace source's `routePrefix` row: `''` for
+  `header`, `/w/:workspaceId` for `path`, where the requester port reads the workspace from (it is not an input field).
+  The workspace itself is created and listed at the root.
+- **The table lists them** when identity is composed: `<generated>/commands.ts` imports `workspaceCommandsUnder` and
+  `WORKSPACE_SOURCES` from the identity entry and adds
+  `...allOnApis(workspaceCommandsUnder(WORKSPACE_SOURCES['<workspace_from>']()), (app: App) => app.module('workspaces'))`
+  after the generated entries: the source is its registry row, picked by name, never a branch. `onApis` keeps `http`
+  (it spreads the command), so the table's entries carry it; the table's type (`Command<App>`) doesn't name it yet.
 
 ## Not in this step
 
 - Commands for users: today the app creates users through the generated `user` use cases.
-- Routes. Under `http: hono` the routes are views of the commands (the Hono lane's).
+- Mounting the routes: H-2's (the Hono lane's).
 - Idempotency keys: no command reads `ctx.idempotencyKey` yet (H-1d).
 
 ## The gate
@@ -50,8 +58,11 @@ Five hand-written commands in the identity runtime (`runtime/subsystems/identity
   add, change and remove through `invokeCommand`; every schema refusal names its field and never reaches the service;
   each service refusal's reason, `instead` and body; a crash throws; the limits match the shipped YAML. The fake
   service is shared with the ID-1 tests (`fake-workspaces.ts`).
-- `src/__tests__/cli/identity-pattern-stack.test.ts`: the commands table imports `WORKSPACE_COMMANDS` and lists it on
-  the `workspaces` module.
+- `src/__tests__/cli/identity-pattern-stack.test.ts`: the commands table lists them on the `workspaces` module, under
+  the fixture's configured source (`path`).
+- Routes: each command's verb, path and status under both sources; every bound field is an input field and every path
+  field a `:param`; the binding survives `allOnApis`. `COMMAND_HTTP_IS_DERIVED_HTTP` fails `tsc` when the two shapes
+  differ (proved with a third success status).
 - The smoke's Postgres leg (`crud-check.ts`, `workspaceCommandsCheck`): each command through `commandNamed` and
   `invokeCommand`, inside the requester the port resolved from the request's headers, with a refusal each (a taken
   slug, nobody signed in, a second add, a member adding, demoting the last owner, a role that isn't one, a second

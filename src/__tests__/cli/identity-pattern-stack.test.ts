@@ -178,8 +178,10 @@ describe('the requester system and the workspaces module', () => {
 
 	it('the workspace operations are in the commands table, hand-written, on the workspaces module (ID-1b)', () => {
 		const commands = file('/generated/commands.ts')!;
-		expect(commands).toMatch(/import \{ WORKSPACE_COMMANDS \} from '[^']+';/);
-		expect(commands).toContain("  ...allOnApis(WORKSPACE_COMMANDS, (app: App) => app.module('workspaces')),\n];");
+		expect(commands).toMatch(/import \{ WORKSPACE_SOURCES, workspaceCommandsUnder \} from '[^']+';/);
+		expect(commands).toContain(
+			"  ...allOnApis(workspaceCommandsUnder(WORKSPACE_SOURCES['path']()), (app: App) => app.module('workspaces')),\n];",
+		);
 	});
 
 	it('both are registered: SystemApis, ModuleApis, SYSTEMS, MODULES', () => {

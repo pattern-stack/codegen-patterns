@@ -20,6 +20,19 @@ import { AppError, BadRequestError, errorBody, NotFoundError, type AppErrorStatu
 import { IncludeNotAllowedError } from './http/includes';
 import { validationErrorBody, type ValidationIssueInput } from './validation-error';
 
+/**
+ * How a command is reached over HTTP: its verb and path, which input fields the path, the query and the body carry, and
+ * a result's status (Nest's rule: POST 201, else 200). The derived commands' `EntityCommand['http']`, structurally (a
+ * check beside the commands table's emitter holds the two together). A hand-written command declares one to be routed;
+ * one without isn't.
+ */
+export interface CommandHttp {
+  readonly verb: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  readonly path: string;
+  readonly binding: { readonly path: string[]; readonly query: 'all' | string[]; readonly body: boolean };
+  readonly success: 200 | 201;
+}
+
 /** Every reason a generated command refuses with, and what the caller can do instead. */
 export const REFUSALS = {
   'invalid-input': 'fix the fields the issues name and try again',
