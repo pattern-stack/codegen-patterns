@@ -1398,6 +1398,33 @@ function alreadyInstalledStaleWorker(subsystem: string, ctx: Context): string | 
 }
 
 /**
+ * What the jobs install writes besides its config block, per `target.wiring` (J-1). Nest: `worker.ts`, the `main.ts`
+ * hook and (vendored) the schema file, through the `subsystem/jobs` templates. Pattern-stack: nothing, since the
+ * composition's `jobs` system starts the executor and the job tables reach the schema barrel through the Nest-free entry.
+ */
+interface JobsScaffoldRow {
+	appFiles(locals: ReturnType<typeof jobsLocals>): string[];
+	schemaFiles(locals: ReturnType<typeof jobsLocals>): string[];
+	runsTemplates: boolean;
+	staleWorker(cwd: string, locals: ReturnType<typeof jobsLocals>): string | undefined;
+}
+
+const JOBS_SCAFFOLD: Readonly<Record<TargetWiring, JobsScaffoldRow>> = {
+	nest: {
+		appFiles: (locals) => [...(!locals.workerExists ? [locals.workerPath] : []), locals.mainTsPath],
+		schemaFiles: (locals) => (locals.skipSchema ? [] : [locals.schemaPath]),
+		runsTemplates: true,
+		staleWorker: (cwd, locals) => jobsStaleWorker(cwd, locals),
+	},
+	'pattern-stack': {
+		appFiles: () => [],
+		schemaFiles: () => [],
+		runsTemplates: false,
+		staleWorker: () => undefined,
+	},
+};
+
+/**
  * The jobs scaffold's success line, from the files it planned and wrote, never a fixed list: under pattern-stack the
  * `jobs` system starts the executor, so there is no worker.ts or main.ts hook to name (review #984).
  */
@@ -1428,26 +1455,19 @@ export function runJobsScaffold(
 	},
 ): JobsScaffoldOutcome {
 	const locals = jobsLocals(cwd, config);
-	// J-1: under pattern-stack the composition starts the executor (the `jobs` system), so there is no worker.ts and no
-	// main.ts hook, and the job tables reach the schema barrel through the Nest-free entry: only the config block.
-	const patternStack = isPatternStackWiring(configOrDefaults(config).target);
+	const scaffold = rowFor('target.wiring', JOBS_SCAFFOLD, targetWiring(configOrDefaults(config).target));
 
 	// Files the jobs templates will target (used by --dry-run output and
 	// JSON reporting). Ordering matches the template set. #517: the schema
 	// template is skipped in package mode (the package ships the schema), so
 	// drop it from the planned list there to keep dry-run output honest.
-	const planned: string[] = patternStack
-		? opts.skipConfigBlock
-			? []
-			: [locals.configPath]
-		: [
-				...(!locals.workerExists ? [locals.workerPath] : []),
-				locals.mainTsPath,
-				...(opts.skipConfigBlock ? [] : [locals.configPath]),
-				...(locals.skipSchema ? [] : [locals.schemaPath]),
-			];
+	const planned: string[] = [
+		...scaffold.appFiles(locals),
+		...(opts.skipConfigBlock ? [] : [locals.configPath]),
+		...scaffold.schemaFiles(locals),
+	];
 
-	const staleWorker = patternStack ? undefined : jobsStaleWorker(cwd, locals);
+	const staleWorker = scaffold.staleWorker(cwd, locals);
 
 	// #121 (F13): inspect the user's codegen.config.yaml BEFORE we invoke the
 	// main scaffold so a parse-error aborts early. The main scaffold
@@ -1468,16 +1488,16 @@ export function runJobsScaffold(
 		return { ok: true, planned, configBlockOutcome, staleWorker };
 	}
 
-	const result = patternStack
-		? { ok: true as const, stderr: undefined }
-		: invokeHygen({
+	const result = scaffold.runsTemplates
+		? invokeHygen({
 				generator: 'subsystem',
 				action: 'jobs',
 				cwd,
 				args: localsToHygenArgs(locals),
 				// Suppress Hygen stdout in JSON mode so it doesn't corrupt the JSON output.
 				inherit: !opts.json,
-			});
+			})
+		: { ok: true as const, stderr: undefined };
 
 	if (!result.ok) {
 		return {

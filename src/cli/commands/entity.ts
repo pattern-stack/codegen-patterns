@@ -82,8 +82,11 @@ import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
 import {
+	bridgeInstalled,
+	bridgeRegistryFile,
 	eventsInstalled,
 	integrationInstalled,
+	jobsInstalled,
 	planPatternStackComposition,
 	writePatternStackIntegrations,
 	printPatternStackComposition,
@@ -92,6 +95,8 @@ import {
 import { eventsGeneratedDir } from '../shared/pattern-stack-subsystems.js';
 import { integrationsRoot } from '../../config/integration-layout.js';
 import { envExamplePath } from '../shared/project-settings.js';
+import { writeAppConfig } from '../shared/app-config-generator.js';
+import { bridgePrerequisite } from '../shared/pattern-stack-subsystems.js';
 import { patternStackRelationshipYamlsRefusal } from '../shared/storage-only.js';
 
 // ---------------------------------------------------------------------------
@@ -451,6 +456,15 @@ export class EntityNewCommand extends Command {
 
 		// PW-3a: the dry run predicts a pattern-stack run too — the schema barrel without the Nest modules barrel, and the
 		// composition's files (or its refusal, e.g. a cycle between contexts).
+		// J-1: the bridge combines events (on a bus that drains an outbox) and jobs: with either gone its triggers would never
+		// start a run, so the command stops, naming what is missing. A dry run stops the same way (review #985).
+		if (patternStackWiring) {
+			const bridgeProblem = bridgeInstalled(ctx) ? bridgePrerequisite(ctx) : null;
+			if (bridgeProblem) {
+				printError(`[codegen] wiring: pattern-stack: the bridge subsystem is installed, but ${bridgeProblem}`);
+				return 1;
+			}
+		}
 		if (this.dryRun && patternStackWiring) {
 			const barrelPlan = await regenerateBarrels({
 				ctx, entitiesDir, nonEntityDirs, relationshipsDir, generatedDir, dryRun: true, modulesBarrel: false, junctions: true,
@@ -460,12 +474,27 @@ export class EntityNewCommand extends Command {
 			let eventFiles: string[] = [];
 			// S-3: the integration files (systems, factories, adapters, sinks) the real run writes.
 			let integrationFiles: string[] = [];
+			// J-1: the YAML jobs' files, the pools and knobs (`app-config.ts`) and the bridge registry; the job registry
+			// (`jobs.ts`) is the composition's, listed with it.
+			let jobFiles: string[] = [];
 			try {
 				compositionFiles = planPatternStackComposition(ctx).map((f) => f.path);
 				// SET-1: and `.env.example`, from the same settings as `<generated>/settings.ts`.
 				compositionFiles.push(envExamplePath(ctx));
 				const plannedIntegrations = writePatternStackIntegrations(ctx, { entitiesDir, generatedDir, dryRun: true });
 				integrationFiles = plannedIntegrations ? [...plannedIntegrations.written, ...plannedIntegrations.scaffoldsWritten] : [];
+				if (jobsInstalled(ctx)) {
+					const plannedJobs =
+						jobLoad.jobs.length > 0
+							? emitJobHandlers({ jobs: jobLoad.jobs, jobsHandlersDir: bridgeHandlersDir, mode: runtimeMode, wiring: 'pattern-stack', dryRun: true })
+							: { basesWritten: [], scaffoldsWritten: [] };
+					jobFiles = [
+						...plannedJobs.basesWritten,
+						...plannedJobs.scaffoldsWritten,
+						path.resolve(generatedDir, 'app-config.ts'),
+						...(bridgeInstalled(ctx) ? [bridgeRegistryFile(ctx, generatedDir)] : []),
+					];
+				}
 				if (eventsInstalled(ctx)) {
 					const plannedEvents = await runEventCodegen({ wiring: 'pattern-stack', dryRun: true });
 					eventFiles = [
@@ -486,11 +515,13 @@ export class EntityNewCommand extends Command {
 					composition: compositionFiles,
 					events: eventFiles,
 					integrations: integrationFiles,
+					jobs: jobFiles,
 				});
 			} else {
 				for (const f of compositionFiles) printInfo(`[dry run] composition: ${path.relative(ctx.cwd, f)}`);
 				for (const f of eventFiles) printInfo(`[dry run] events: ${path.relative(ctx.cwd, f)}`);
 				for (const f of integrationFiles) printInfo(`[dry run] integrations: ${path.relative(ctx.cwd, f)}`);
+				for (const f of jobFiles) printInfo(`[dry run] jobs: ${path.relative(ctx.cwd, f)}`);
 			}
 			return invalid.length === 0 ? 0 : 1;
 		}
@@ -767,8 +798,13 @@ export class EntityNewCommand extends Command {
 			// scheduler reads) and the `domain_events` table in the subsystem schema barrel; the composition then writes
 			// the `events` system.
 			const withEvents = eventsInstalled(ctx);
-			// S-3: the `integration_*` audit tables reach drizzle-kit through the same barrel.
-			if (withEvents || integrationInstalled(ctx)) {
+			// J-1: the jobs system and the bridge (the drain the events system passes to its bus).
+			const withJobs = jobsInstalled(ctx);
+			const withBridge = bridgeInstalled(ctx);
+			// (The bridge's prerequisite was checked before the dry run, for both.)
+			// S-3: the `integration_*` audit tables reach drizzle-kit through the same barrel; J-1: the job tables and
+			// `bridge_delivery` too.
+			if (withEvents || integrationInstalled(ctx) || withJobs || withBridge) {
 				try {
 					await regenerateSubsystemSchemaBarrel({ ctx, generatedDir });
 				} catch (err: unknown) {
@@ -778,6 +814,36 @@ export class EntityNewCommand extends Command {
 			if (withEvents) {
 				try {
 					await writeEventCodegen('pattern-stack');
+				} catch (err: unknown) {
+					return reportRegenerationFailure('entity new', err);
+				}
+			}
+			// J-1: the YAML jobs (`define<Type>Job` and the emit-once factory), before the composition below writes the job
+			// registry from its scan; the pools and knobs the jobs system reads (`app-config.ts`), and the bridge registry the events system's drain
+			// reads (after the event codegen: it checks each trigger's event against the registry).
+			if (withJobs) {
+				try {
+					if (jobLoad.jobs.length > 0) {
+						generating(bridgeHandlersDir, () =>
+							emitJobHandlers({ jobs: jobLoad.jobs, jobsHandlersDir: bridgeHandlersDir, mode: runtimeMode, wiring: 'pattern-stack' }),
+						);
+					}
+					// The job registry is the composition's (written below, from the same scan as the jobDeps module).
+					writeAppConfig(generatedDir, ctx.config);
+					if (withBridge) {
+						const registry = bridgeRegistryFile(ctx, generatedDir);
+						await generating(registry, () =>
+							generateBridgeRegistry({
+								handlersDir: bridgeHandlersDir,
+								eventsGeneratedDir: eventCodegenOutputDir,
+								outputDir: path.dirname(registry),
+								mode: runtimeMode,
+								bridgeInstalled: true,
+								extraTriggers: jobBridgeTriggers,
+								wiring: 'pattern-stack',
+							}),
+						);
+					}
 				} catch (err: unknown) {
 					return reportRegenerationFailure('entity new', err);
 				}

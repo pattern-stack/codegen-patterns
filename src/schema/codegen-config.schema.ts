@@ -762,6 +762,10 @@ const JobsPoolSchema = z
  * - `poll_interval_ms`, `open_sweep_every`, `version_grace_ms`: the in-process executor's poll, how many polls
  *   between open-run sweeps, and the drain window a version bump gives the old version's open runs (set it above a
  *   deploy's length when replicas roll).
+ * - `lease_ttl_ms` (J-1): how long a run's advance lease and a chunk's claim live without a heartbeat, so how long a
+ *   run a crashed process held waits before another process resumes it. Default 60 s.
+ * - Under `target.wiring: pattern-stack` `worker_mode` is not read: each process's `JOBS_WORKER` setting says whether it
+ *   runs the executor (J-1).
  * - A run's tenant is the start's (`JobStarter.start({ tenantId })`; the bridge passes the event's), so there is no
  *   `multi_tenant` key.
  */
@@ -773,6 +777,7 @@ export const JobsConfigSchema = z
     poll_interval_ms: z.number().int().positive().optional(),
     open_sweep_every: z.number().int().positive().optional(),
     version_grace_ms: z.number().int().nonnegative().optional(),
+    lease_ttl_ms: z.number().int().positive().optional(),
     backend: removedJobsKey('jobs.backend', "the store is always the app's Postgres; delete the key"),
     extensions: removedJobsKey('jobs.extensions', 'use poll_interval_ms / open_sweep_every; there is no BullMQ or LISTEN option'),
     worker_pools: removedJobsKey('jobs.worker_pools', 'every executor runs every pool; delete the key'),

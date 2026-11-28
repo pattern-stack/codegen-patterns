@@ -200,3 +200,12 @@ describe('generateJobHandlerSubclass', () => {
 		expect(sub).toContain('not implemented');
 	});
 });
+
+describe('generateJobHandlerBase under pattern-stack (review #985)', () => {
+	it("each arm's doc points at the integrations module, never the Nest ExecuteIntegrationUseCase it doesn't vendor", () => {
+		const base = generateJobHandlerBase({ job: reconcilePoll, wiring: 'pattern-stack' });
+		expect(base).not.toContain('ExecuteIntegrationUseCase');
+		expect(base).toContain("run the provider's run from the `integrations` module with it");
+		expect(generateJobHandlerBase({ job: reconcilePoll })).toContain("run your provider's ExecuteIntegrationUseCase with it");
+	});
+});

@@ -35,7 +35,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
-import type { RuntimeMode } from './runtime-import.js';
+import { subsystemCoreImport, type RuntimeMode } from './runtime-import.js';
+import type { TargetWiring } from '../../targets/apps.js';
+import { rowFor } from '../../utils/keyed-row.js';
 import { generating } from '../../utils/generated-file.js';
 
 // ---------------------------------------------------------------------------
@@ -51,6 +53,23 @@ import { generating } from '../../utils/generated-file.js';
  */
 export const PACKAGE_BRIDGE_TYPE_IMPORT =
   '@pattern-stack/codegen/runtime/subsystems/bridge/index';
+
+/**
+ * The registry's `BridgeRegistry` type import, per runtime mode and `target.wiring`. Vendored: the protocol beside it
+ * (Nest-free). Package: the published runtime index, or under pattern-stack the Nest-free entry (J-1: the index
+ * re-exports the Nest module).
+ */
+const BRIDGE_TYPE_IMPORTS: Readonly<Record<RuntimeMode, Readonly<Record<TargetWiring, string>>>> = {
+  vendored: { nest: '../bridge.protocol', 'pattern-stack': '../bridge.protocol' },
+  package: {
+    nest: PACKAGE_BRIDGE_TYPE_IMPORT,
+    'pattern-stack': subsystemCoreImport('package', 'bridge'),
+  },
+};
+
+export function bridgeRegistryTypeImport(mode: RuntimeMode, wiring: TargetWiring): string {
+  return rowFor('target.wiring', rowFor('runtime mode', BRIDGE_TYPE_IMPORTS, mode), wiring);
+}
 
 /** Output filename per mode. Package mode co-locates with the other
  * `src/generated/*` barrels (and must NOT collide with a vendored
@@ -105,6 +124,8 @@ export interface BridgeRegistryGeneratorOptions {
    * unknown-event / duplicate / audit checking and flow into the registry unchanged.
    */
   extraTriggers?: ScannedTrigger[];
+  /** `target.wiring` (J-1): under pattern-stack the package-mode registry types against the Nest-free entry. */
+  wiring?: TargetWiring;
 }
 
 /**
@@ -604,8 +625,7 @@ export async function generateBridgeRegistry(
   } = opts;
 
   const outputFileName = OUTPUT_FILE_BY_MODE[mode];
-  const typeImport =
-    mode === 'package' ? PACKAGE_BRIDGE_TYPE_IMPORT : '../bridge.protocol';
+  const typeImport = bridgeRegistryTypeImport(mode, opts.wiring ?? 'nest');
 
   // 0. Gate on bridge subsystem installation (issue #191). The emitted file
   //    imports the `BridgeRegistry` type; in vendored mode that type comes

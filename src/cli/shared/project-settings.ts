@@ -10,7 +10,12 @@ import type { Context } from './context.js';
 import { projectLayout } from './project-layout.js';
 import { isSubsystemInstalled, type SubsystemName } from './subsystem-detect.js';
 import { loadProviderSet } from './provider-module-generator.js';
-import { deriveProjectSettings, SUBSYSTEM_SETTINGS, type ProjectSetting } from '../../derived/settings/index.js';
+import {
+	deriveProjectSettings,
+	SUBSYSTEM_SETTINGS,
+	SUBSYSTEM_SETTINGS_BY_WIRING,
+	type ProjectSetting,
+} from '../../derived/settings/index.js';
 import { envExampleContent, isGeneratedEnvExample } from '../../emitters/settings/emit-settings.js';
 import { generating } from '../../utils/generated-file.js';
 import { projectSource, settingValueProblem, type SettingsSource } from '../../../runtime/settings.js';
@@ -20,7 +25,11 @@ import { targetApp } from '../../targets/apps.js';
 
 /** The installed subsystems that declare settings: `isSubsystemInstalled`'s one rule, as the composition reads it. */
 function installedWithSettings(ctx: Context): string[] {
-	return Object.keys(SUBSYSTEM_SETTINGS).filter((n) => isSubsystemInstalled(ctx, n as SubsystemName));
+	// Every subsystem that declares a setting: under any wiring (SUBSYSTEM_SETTINGS), or under one (J-1: jobs' worker flag).
+	const names = [
+		...new Set([...Object.keys(SUBSYSTEM_SETTINGS), ...Object.values(SUBSYSTEM_SETTINGS_BY_WIRING).flatMap((t) => Object.keys(t))]),
+	];
+	return names.filter((n) => isSubsystemInstalled(ctx, n as SubsystemName));
 }
 
 /**

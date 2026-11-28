@@ -9,6 +9,8 @@
  * Each setting carries its provenance (`source`: the YAML or table that declared it), as `src/derived/api` does.
  */
 
+import type { TargetWiring } from '../../targets/apps.js';
+import { rowFor } from '../../utils/keyed-row.js';
 import path from 'node:path';
 
 import { camelCase } from '../../config/file-naming.js';
@@ -16,7 +18,6 @@ import type { LoadedProvider } from '../../parser/validate-providers.js';
 import { isActiveProvider } from '../../schema/provider-definition.schema.js';
 import { TOKEN_ENCRYPTION_KEY_ENV } from '../../../runtime/subsystems/auth/backends/encryption-key/env.js';
 import type { SettingFormat } from '../../../runtime/settings.js';
-import type { TargetWiring } from '../../targets/apps.js';
 
 export interface ProjectSetting {
 	/** Where it sits in the typed settings: `settings.<group>.<key>`. */
@@ -77,28 +78,14 @@ export const PROJECT_SETTINGS: readonly Declared[] = [
 	},
 ];
 
-/** A subsystem's setting, and the wiring it is read under when only one reads it (J-1: jobs' worker flag). */
-type SubsystemDeclared = Declared & { readonly wiring?: TargetWiring };
 
 /**
  * Each subsystem's settings, included when it is installed. Events and integration read none today. Jobs' worker flag
  * is read under pattern-stack only (a Nest app's `main.ts` / `worker.ts` pass it). `REDIS_URL` joins with the BullMQ
  * executor, and the logger's `LOG_LEVEL` when the logger reads one.
  */
-export const SUBSYSTEM_SETTINGS: Readonly<Record<string, readonly SubsystemDeclared[]>> = {
-	jobs: [
-		{
-			group: 'jobs',
-			key: 'worker',
-			env: JOBS_WORKER_ENV,
-			secret: false,
-			default: 'true',
-			format: 'boolean',
-			description: "Whether this process runs the jobs executor's loop (false in a process that only starts runs).",
-			wiring: 'pattern-stack',
-		},
-	],
-	auth: [
+export const SUBSYSTEM_SETTINGS: Readonly<Record<string, readonly Declared[]>> = {
+		auth: [
 		{
 			group: 'auth',
 			key: 'tokenEncryptionKey',
@@ -117,6 +104,27 @@ export const SUBSYSTEM_SETTINGS: Readonly<Record<string, readonly SubsystemDecla
 			description: 'The public base URL OAuth providers redirect back to.',
 		},
 	],
+};
+
+/**
+ * The subsystem settings one wiring reads and the other doesn't, by `target.wiring` (J-1). Jobs' worker flag is read by
+ * a pattern-stack app's `jobs` system; a Nest app's `main.ts` / `worker.ts` pass theirs.
+ */
+export const SUBSYSTEM_SETTINGS_BY_WIRING: Readonly<Record<TargetWiring, Readonly<Record<string, readonly Declared[]>>>> = {
+	nest: {},
+	'pattern-stack': {
+		jobs: [
+			{
+				group: 'jobs',
+				key: 'worker',
+				env: JOBS_WORKER_ENV,
+				secret: false,
+				default: 'true',
+				format: 'boolean',
+				description: "Whether this process runs the jobs executor's loop (false in a process that only starts runs).",
+			},
+		],
+	},
 };
 
 /** `salesforce` → `SALESFORCE`; `google-workspace` → `GOOGLE_WORKSPACE`. */
@@ -185,10 +193,10 @@ export interface DeriveProjectSettingsInput {
  */
 export function deriveProjectSettings(input: DeriveProjectSettingsInput): ProjectSetting[] {
 	const out: ProjectSetting[] = PROJECT_SETTINGS.map((s) => ({ ...s, owner: { kind: 'project', name: 'project' }, source: TABLE }));
-	for (const name of Object.keys(SUBSYSTEM_SETTINGS).sort()) {
+	const byWiring = rowFor('target.wiring', SUBSYSTEM_SETTINGS_BY_WIRING, input.wiring ?? 'nest');
+	for (const name of [...new Set([...Object.keys(SUBSYSTEM_SETTINGS), ...Object.keys(byWiring)])].sort()) {
 		if (!input.installedSubsystems.includes(name)) continue;
-		for (const { wiring, ...s } of SUBSYSTEM_SETTINGS[name]!) {
-			if (wiring && wiring !== (input.wiring ?? 'nest')) continue;
+		for (const s of [...(SUBSYSTEM_SETTINGS[name] ?? []), ...(byWiring[name] ?? [])]) {
 			out.push({ ...s, owner: { kind: 'subsystem', name }, source: `${TABLE}: ${name}` });
 		}
 	}

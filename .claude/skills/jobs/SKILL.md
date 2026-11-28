@@ -46,3 +46,11 @@ Generated apps run jobs on `@pattern-stack/jobs`, a workspace package in `packag
   wiring calls `create(deps)`. `create` never reads a dependency while building the job.
 - The bridge's exactly-once is its transaction and the `bridge_delivery` UNIQUE key, never a dedupe key or window.
 - A removed config key is declared as removed (`removedJobsKey`), naming itself and the migration note.
+
+## Under `target.wiring: pattern-stack` (J-1)
+
+The same engine without Nest: `runtime/subsystems/jobs/core.ts` (`createJobsEngine`, `JobRunStarter`; `JobStarter` is the
+Nest subclass), `@pattern-stack/jobs/host` (the framework-free host parts the package's Nest layer wraps), and the
+composition's `jobs` system and `jobDeps` module (`src/emitters/composition/emit-composition.ts`). A factory's
+dependencies are composition parts provided typed per factory. Every choice made from a config value is a table read
+through `rowFor`. Spec: `docs/specs/J-1.md`.

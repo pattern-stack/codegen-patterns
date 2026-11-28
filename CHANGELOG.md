@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added: jobs and the bridge under `wiring: pattern-stack`, the composition (J-1, part 2)
+
+`docs/specs/J-1.md`. `entity new` under pattern-stack writes the `jobs` system (`<generated>/jobs-system.ts`: the engine
+over the job registry, the pools and knobs, `JOBS_WORKER`), the `jobDeps` module (`<generated>/job-deps.ts`: each job
+factory's dependencies are composition parts, `injected<T>('<module or system>')`, provided typed by the factory; it
+stops the engine first), the YAML jobs, the job registry and the bridge registry; with the bridge, the events system's
+bus drains through `BridgeOutboxDrainer`, starting each trigger's run in the event's transaction. A factory dependency
+that names no part, or a part the composition lacks, is refused naming the job. New config: `jobs.lease_ttl_ms` (the
+in-process executor's claim and lease TTL). Every choice made from a config value is a table (`rowFor`). The pattern-stack
+smoke proves it with no Nest installed: an event starts a job and its step completes; a process killed mid-step is
+resumed by the next.
+
 ### Added: jobs and the bridge under `wiring: pattern-stack`, the runtime (J-1, part 1)
 
 `docs/specs/J-1.md`. The jobs and bridge runtime run with no framework: `JobRunStarter` (Nest's `JobStarter` is it

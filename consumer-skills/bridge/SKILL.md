@@ -116,3 +116,13 @@ new one. A trigger whose job is gone from this process is delivered as `skipped`
 - Do not skip `codegen entity new` after changing a trigger: the registry is generated.
 - Do not lean on a dedupe key or window for the bridge's exactly-once; the ledger and the transaction own it.
 - Do not drop `tenantId` when `multi_tenant: true`.
+
+## Under `target.wiring: pattern-stack` (no Nest)
+
+- `codegen subsystem install bridge` needs events (on drizzle) and jobs installed first; it vendors the Nest-free entry
+  (`@shared/subsystems/bridge/core`, where `jobTriggers` lives) and no module, facade or tokens.
+- `codegen entity new` writes the bridge registry, and the `events` system builds `BridgeOutboxDrainer` over the `jobs`
+  system's starter and passes it to the bus: the drain starts each trigger's run in the event's own transaction, as
+  under Nest. A trigger naming a job the app does not register stops the compose.
+- `publishAndStart` (Tier 2) is Nest's `EventFlowService`; under pattern-stack, write the event and call
+  `starter.start(…, tx)` in one transaction yourself.

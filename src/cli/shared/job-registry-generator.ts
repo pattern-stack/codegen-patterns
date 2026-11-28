@@ -13,6 +13,8 @@ import path from 'node:path';
 import ts from 'typescript';
 
 import { findHandlerFiles } from './bridge-registry-generator.js';
+import type { TargetWiring } from '../../targets/apps.js';
+import { rowFor } from '../../utils/keyed-row.js';
 
 export const JOB_REGISTRY_FILE = 'jobs.ts';
 
@@ -21,6 +23,57 @@ export interface ScannedJob {
   name: string;
   /** Absolute path of the file that declares it. */
   file: string;
+  /**
+   * A `jobFactory(...)` export's dependencies, in its `deps` order (J-1): each one's name and, when it is written
+   * `injected<T>('<token>')` with a string, the token. A class token (or anything else) has no `token`: under
+   * pattern-stack wiring a dependency must name a composition part, so the composition refuses it.
+   */
+  deps?: ScannedJobDep[];
+}
+
+export interface ScannedJobDep {
+  name: string;
+  token?: string;
+  /** Why the scan could not read this dependency (a spread, a computed key, `deps` not an object literal). */
+  unreadable?: string;
+}
+
+/** A key the emitted `jobDeps` module can write unquoted (`name: deps.part`). */
+const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+/**
+ * A `jobFactory({ deps: { … } })` call's dependencies, read from its object literal. A form the scan cannot read is
+ * kept, marked `unreadable`, so the composition refuses it by name instead of dropping it: the spec not an object
+ * literal, `deps` written as a shorthand or not there as a property, `deps` not an object literal, a spread, a computed
+ * key, or a string key that is no identifier (`'my-dep'`, which the jobDeps module could not write).
+ */
+function factoryDeps(call: ts.CallExpression): ScannedJobDep[] {
+  const [spec] = call.arguments;
+  if (!spec) return [];
+  if (!ts.isObjectLiteralExpression(spec)) return [{ name: spec.getText(), unreadable: 'the factory spec is not an object literal' }];
+  const depsProp = spec.properties.find((p) => p.name !== undefined && p.name.getText() === 'deps');
+  if (!depsProp) return [];
+  if (!ts.isPropertyAssignment(depsProp)) return [{ name: 'deps', unreadable: '`deps` is a shorthand, not `deps: { … }`' }];
+  if (!ts.isObjectLiteralExpression(depsProp.initializer)) {
+    return [{ name: depsProp.initializer.getText(), unreadable: '`deps` is not an object literal' }];
+  }
+  return depsProp.initializer.properties.map((p): ScannedJobDep => {
+    if (ts.isShorthandPropertyAssignment(p)) return { name: p.name.text, unreadable: 'a shorthand property' };
+    if (!ts.isPropertyAssignment(p) || !(ts.isIdentifier(p.name) || ts.isStringLiteral(p.name))) {
+      return { name: p.getText(), unreadable: 'not a `name: injected(…)` property' };
+    }
+    if (!IDENTIFIER.test(p.name.text)) return { name: p.name.text, unreadable: 'a key that is not an identifier' };
+    const init = p.initializer;
+    const token =
+      ts.isCallExpression(init) &&
+      ts.isIdentifier(init.expression) &&
+      init.expression.text === 'injected' &&
+      init.arguments[0] &&
+      ts.isStringLiteralLike(init.arguments[0])
+        ? init.arguments[0].text
+        : undefined;
+    return { name: p.name.text, ...(token !== undefined ? { token } : {}) };
+  });
 }
 
 /** Every `export const <name> = defineJob(...)` / `jobFactory(...)` in one source file, in declaration order. */
@@ -36,7 +89,11 @@ export function extractJobsFromSourceFile(sourceFile: ts.SourceFile, filePath: s
       // `defineJob(...)`, a generated `define<Name>Job(...)` (a YAML job's, RFC-0005), which returns one, or
       // `jobFactory(...)`, the job with dependencies.
       if (!/^(?:define(?:[A-Z]\w*)?Job|jobFactory)$/.test(init.expression.text)) continue;
-      out.push({ name: decl.name.text, file: filePath });
+      out.push({
+        name: decl.name.text,
+        file: filePath,
+        ...(init.expression.text === 'jobFactory' ? { deps: factoryDeps(init) } : {}),
+      });
     }
   }
   return out;
@@ -54,7 +111,17 @@ export function scanJobFiles(jobsDir: string): ScannedJob[] {
 }
 
 /** The module's content: one import per job file, and the list. */
-export function buildJobRegistryContent(jobs: readonly ScannedJob[], outputDir: string): string {
+/** The list's doc line, per `target.wiring`: who builds the factories (J-1). */
+const REGISTRY_DOC: Readonly<Record<TargetWiring, string>> = {
+  nest: '/** Every job this app runs (a factory is built with its dependencies), handed to `JobsEngineModule.forRoot({ definitions })`. */',
+  'pattern-stack': "/** Every job this app runs (a factory is built with the values `jobDeps` provides), the `jobs` system's definitions. */",
+};
+
+export function buildJobRegistryContent(
+  jobs: readonly ScannedJob[],
+  outputDir: string,
+  wiring: TargetWiring = 'nest',
+): string {
   const seen = new Map<string, string>();
   for (const job of jobs) {
     const first = seen.get(job.name);
@@ -76,7 +143,7 @@ export function buildJobRegistryContent(jobs: readonly ScannedJob[], outputDir: 
     "import type { JobEntry } from '@pattern-stack/jobs';",
     ...[...byFile.entries()].map(([file, names]) => `import { ${names.join(', ')} } from '${specifier(file)}';`),
     '',
-    '/** Every job this app runs (a factory is built with its dependencies), handed to `JobsEngineModule.forRoot({ definitions })`. */',
+    rowFor('target.wiring', REGISTRY_DOC, wiring),
     `export const jobDefinitions: readonly JobEntry[] = [${jobs.map((j) => j.name).join(', ')}];`,
     '',
   ];
@@ -88,10 +155,11 @@ export function generateJobRegistry(opts: {
   jobsDir: string;
   outputDir: string;
   dryRun?: boolean;
+  wiring?: TargetWiring;
 }): { path: string; jobs: ScannedJob[]; changed: boolean } {
   const target = path.join(opts.outputDir, JOB_REGISTRY_FILE);
   const jobs = scanJobFiles(opts.jobsDir);
-  const content = buildJobRegistryContent(jobs, opts.outputDir);
+  const content = buildJobRegistryContent(jobs, opts.outputDir, opts.wiring);
   const existing = fs.existsSync(target) ? fs.readFileSync(target, 'utf-8') : null;
   const changed = existing !== content;
   if (changed && !opts.dryRun) {
