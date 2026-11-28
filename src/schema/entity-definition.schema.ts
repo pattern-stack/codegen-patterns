@@ -1175,10 +1175,20 @@ export type AnalyticsBlock = z.infer<typeof AnalyticsBlockSchema>;
  *
  * - `writes`: when `false`, suppresses create/update/delete use cases,
  *   matching controller routes, and module providers. Defaults to `true`.
+ * - `commands`: when `false`, the entity gets no generated commands (H-1): no
+ *   `<entity>.commands.ts`, no entry in `<generated>/commands.ts`, so no way in
+ *   (HTTP, MCP, a CLI) reaches its use cases generically. For entities whose
+ *   only ways in are hand-written, rights-checked commands (identity's, ID-1).
+ *   Defaults to `true`.
  */
 const GenerateConfigSchema = z
   .object({
     writes: z.boolean().optional().default(true),
+    commands: z
+      .boolean()
+      .optional()
+      .default(true)
+      .describe('false: no generated commands for this entity (its only commands are hand-written ones)'),
   })
   .strict();
 

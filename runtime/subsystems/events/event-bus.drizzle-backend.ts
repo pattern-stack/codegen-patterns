@@ -54,6 +54,7 @@ import { createLogger } from '../../logger';
 import {
   EVENTS_WAKE_CHANNEL,
   PgNotifyListener,
+  listenerPoolOf,
   pgNotify,
 } from './pg-notify';
 
@@ -213,16 +214,11 @@ export class DrizzleEventBus implements IEventBus, IEventReadPort {
     // interval timer above stays the durability heartbeat. Startup is
     // fire-and-forget — a connect failure self-heals via the listener's backoff.
     if (this.opts.listenNotify) {
-      const pool = (this.db as unknown as { $client?: unknown }).$client;
-      if (!pool || typeof (pool as { connect?: unknown }).connect !== 'function') {
-        this.logger.warn(
-          `listen_notify enabled but the Drizzle client exposes no pg Pool ` +
-            `($client.connect missing) — falling back to interval polling only.`,
-        );
-      } else {
+      const pool = listenerPoolOf(this.db, 'events', 'listen_notify falls back to interval polling only');
+      if (pool) {
         this.notifyListener = new PgNotifyListener({
           channel: EVENTS_WAKE_CHANNEL,
-          pool: pool as { connect(): Promise<never> },
+          pool,
           label: 'events',
           onNotify: (payload) => this.onWake(payload),
         });

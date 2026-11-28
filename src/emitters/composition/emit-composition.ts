@@ -28,6 +28,7 @@ import path from 'node:path';
 import { composedRepositoryOwners } from '../../derived/wiring/classes.js';
 import { contextCycles } from '../../derived/wiring/order.js';
 import { deriveProjectClassGraph } from '../../derived/wiring/project.js';
+import { commandsDisabledBy } from '../../derived/api/entity.js';
 import { EAV_FIELD_VALUE_ENTITY, FIELD_VALUES_DEPS_FIELD, SYSTEM_DEPS_FIELD, useCaseSystems } from '../../derived/wiring/classes.js';
 import type { SystemDependency } from '../../derived/wiring/types.js';
 import type { ProjectApiContext } from '../../derived/api/project.js';
@@ -49,11 +50,12 @@ import { junctionIdentity } from '../../emitters/relations/build-graph.js';
 import { rowFor } from '../../utils/keyed-row.js';
 import { junctionWiringFile } from '../../config/junction-naming.js';
 import { camelCase, emittedDir } from '../../config/file-naming.js';
-import { entityModuleNaming } from '../../config/module-tree.js';
+import { entityModuleNaming, type EntityModuleNaming } from '../../config/module-tree.js';
 import { generating } from '../../utils/generated-file.js';
 import { relativeImport } from '../../utils/import-path.js';
 import { JOBS_WORKER_ENV, type ProjectSetting } from '../../derived/settings/index.js';
 import { SETTINGS_FILE, settingsContent } from '../settings/emit-settings.js';
+import { IDENTITY_ENTITIES } from '../../../runtime/subsystems/identity/names.js';
 
 /** The module name of the entities that declare no `context:`. */
 export const ROOT_MODULE = 'entities';
@@ -63,7 +65,7 @@ export const ROOT_MODULE = 'entities';
 export const DATABASE_SYSTEM = 'database';
 
 /** The names of the systems codegen generates (and the app's `database`): a module may not take one. */
-export const GENERATED_SYSTEM_NAMES = [DATABASE_SYSTEM, 'settings', 'jobs', 'events', 'integration', 'auth', 'connections', 'jobDeps'] as const;
+export const GENERATED_SYSTEM_NAMES = [DATABASE_SYSTEM, 'settings', 'jobs', 'events', 'integration', 'auth', 'connections', 'requester', 'jobDeps'] as const;
 
 const RESERVED_MODULE_NAMES = new Set<string>([ROOT_MODULE, ...GENERATED_SYSTEM_NAMES]);
 
@@ -147,6 +149,11 @@ export interface CompositionInput {
 	 * `<generated>/connections-system.ts`, listed after `auth`. Needs `auth` and a generated `connection` entity.
 	 */
 	connections?: CompositionConnectionsInput | null;
+	/**
+	 * Identity (ID-1), when installed: the `requester` system (`<generated>/requester-system.ts`) and the `workspaces`
+	 * module (`<generated>/workspaces-module.ts`). Needs the identity context's `user`, `workspace` and `membership`.
+	 */
+	identity?: CompositionIdentityInput | null;
 	/**
 	 * The project's settings (SET-1): written to `<generated>/settings.ts` with the `settings` system, first in
 	 * `SYSTEMS` (so a missing value fails compose before any other part is made), and `settings: Settings` in
@@ -263,12 +270,40 @@ export interface CompositionConnectionsInput {
 /** The module that holds the `connections` system, beside `wiring.ts`. */
 export const CONNECTIONS_SYSTEM_FILE = 'connections-system.ts';
 
+/** Identity's input (ID-1): the Nest-free entry, each port's registry row (from `identity:`), the principal source. */
+export interface CompositionIdentityInput {
+	coreImport: string;
+	workspaceFrom: string;
+	resolver: string;
+	cache: string;
+	/** Absolute: the author's `identity/principal-source.ts` (`principalSource`). */
+	principalSourceFile: string;
+	/** The membership roles the rights table has (`ROLES`): `membership.yaml`'s `role` choices must be these. */
+	roles: readonly string[];
+}
+
+export const REQUESTER_SYSTEM_FILE = 'requester-system.ts';
+export const WORKSPACES_MODULE_FILE = 'workspaces-module.ts';
+/** The module that holds the workspace operations (`app.module('workspaces').service`). */
+export const WORKSPACES_MODULE = 'workspaces';
+/** The context identity's entities live in, and so the module that holds their repositories. */
+export const IDENTITY_CONTEXT = 'identity';
 
 /** The entity the connection store reads and writes: the starter's `connection.yaml`. */
 export const CONNECTION_ENTITY = 'connection';
 
 /** Every generated system's file beside `wiring.ts`; stale-files removes each when its subsystem goes, or on a switch. */
-export const GENERATED_SYSTEM_FILES = [SETTINGS_FILE, JOBS_SYSTEM_FILE, JOB_DEPS_FILE, EVENTS_SYSTEM_FILE, INTEGRATION_SYSTEM_FILE, AUTH_SYSTEM_FILE, CONNECTIONS_SYSTEM_FILE] as const;
+export const GENERATED_SYSTEM_FILES = [
+	SETTINGS_FILE,
+	JOBS_SYSTEM_FILE,
+	JOB_DEPS_FILE,
+	EVENTS_SYSTEM_FILE,
+	INTEGRATION_SYSTEM_FILE,
+	AUTH_SYSTEM_FILE,
+	CONNECTIONS_SYSTEM_FILE,
+	REQUESTER_SYSTEM_FILE,
+	WORKSPACES_MODULE_FILE,
+] as const;
 
 export interface CompositionFile {
 	path: string;
@@ -394,6 +429,15 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 
 	const registryFile = path.join(generatedDir, COMPOSITION_GENERATED_FILES.registry);
 	const eventsSystemFile = path.join(generatedDir, EVENTS_SYSTEM_FILE);
+	const identityPlan = input.identity
+		? planIdentity(input, definitions, moduleOf, plans, (e) => entityModuleNaming(blockOf.get(e)!, modulesDir))
+		: null;
+	if (identityPlan && plans.has(WORKSPACES_MODULE)) {
+		throw new Error(
+			"[codegen] wiring: pattern-stack: a context named 'workspaces' would share its module's name with identity's " +
+				'`workspaces` module (ID-1); rename the context',
+		);
+	}
 	const connectionsPlan = input.connections
 		? planConnections(input, definitions.find((d) => d.entity.name === CONNECTION_ENTITY), wiringFile)
 		: null;
@@ -554,7 +598,7 @@ export const ${plan.name}Module = defineModule({
 	if (integrationsModule) files.push({ path: integrationsModule.file, content: integrationsModule.content });
 	// The systems codegen generates, in order: each is imported by the registry (its API type, its `SystemApis` key)
 	// and by composition.ts (its manifest, in `SYSTEMS`), and its file is written. One list, so a new system is a row.
-	const systems = generatedSystems(input, eventsSystemFile, connectionsPlan);
+	const systems = generatedSystems(input, eventsSystemFile, connectionsPlan, identityPlan);
 	// J-1: the job factories' dependencies, each a composition part (a module, or a system from the same list as
 	// `SystemApis` and `SYSTEMS`); the module that provides them, when any is named.
 	const jobDeps = input.jobs
@@ -574,11 +618,11 @@ export const ${plan.name}Module = defineModule({
 import { createWiring } from '@pattern-stack/wiring';
 import type { DrizzleClient } from '${input.drizzleTypeImport}';
 import type { Relations } from './relations';
-${systems.map((s) => `import type { ${s.apiType} } from '${relativeImport(registryFile, s.apiTypeFile)}';\n`).join('')}${jobDeps ? `import type { JobDepsModule } from './${JOB_DEPS_FILE.replace(/\.ts$/, '')}';\n` : ''}${names.map((n) => `import type { ${pascalCase(n)}Module } from '${relativeImport(registryFile, plans.get(n)!.file)}';`).join('\n')}
+${systems.map((s) => `import type { ${s.apiType} } from '${relativeImport(registryFile, s.apiTypeFile)}';\n`).join('')}${jobDeps ? `import type { JobDepsModule } from './${JOB_DEPS_FILE.replace(/\.ts$/, '')}';\n` : ''}${identityPlan ? `import type { WorkspacesModule } from './${WORKSPACES_MODULE_FILE.replace(/\.ts$/, '')}';\n` : ''}${names.map((n) => `import type { ${pascalCase(n)}Module } from '${relativeImport(registryFile, plans.get(n)!.file)}';`).join('\n')}
 ${integrationsModule ? `import type { IntegrationsModule } from '${relativeImport(registryFile, integrationsModule.file)}';\n` : ''}
 export interface ModuleApis {
 ${names.map((n) => `  ${n}: ${pascalCase(n)}Module;`).join('\n')}
-${integrationsModule ? `  ${INTEGRATIONS_MODULE}: IntegrationsModule;\n` : ''}${jobDeps ? `  ${JOB_DEPS_MODULE}: JobDepsModule;\n` : ''}}
+${integrationsModule ? `  ${INTEGRATIONS_MODULE}: IntegrationsModule;\n` : ''}${identityPlan ? `  ${WORKSPACES_MODULE}: WorkspacesModule;\n` : ''}${jobDeps ? `  ${JOB_DEPS_MODULE}: JobDepsModule;\n` : ''}}
 
 export interface SystemApis {
   ${DATABASE_SYSTEM}: { db: DrizzleClient<Relations> };
@@ -596,17 +640,21 @@ export const { defineModule, defineSystem, compose } = createWiring<ModuleApis, 
  * \`integration\`, \`auth\`, \`connections\` and the integrations' when installed), for the app's \`compose.ts\`:
  * \`compose({ systems: [databaseSystem(), ...SYSTEMS], modules: MODULES })\`.
  */
-${systems.map((s) => `import { ${s.exportName} } from '${relativeImport(compositionFile, s.file)}';\n`).join('')}${jobDeps ? `import { jobDepsModule } from './${JOB_DEPS_FILE.replace(/\.ts$/, '')}';\n` : ''}${integrationsModule ? `import { integrationsModule } from '${relativeImport(compositionFile, integrationsModule.file)}';\n` : ''}${names.map((n) => `import { ${n}Module } from '${relativeImport(compositionFile, plans.get(n)!.file)}';`).join('\n')}
+${systems.map((s) => `import { ${s.exportName} } from '${relativeImport(compositionFile, s.file)}';\n`).join('')}${jobDeps ? `import { jobDepsModule } from './${JOB_DEPS_FILE.replace(/\.ts$/, '')}';\n` : ''}${identityPlan ? `import { workspacesModule } from './${WORKSPACES_MODULE_FILE.replace(/\.ts$/, '')}';\n` : ''}${integrationsModule ? `import { integrationsModule } from '${relativeImport(compositionFile, integrationsModule.file)}';\n` : ''}${names.map((n) => `import { ${n}Module } from '${relativeImport(compositionFile, plans.get(n)!.file)}';`).join('\n')}
 
 export const SYSTEMS = [${systems.map((s) => s.exportName).join(', ')}] as const;
 
-export const MODULES = [${[...names.map((n) => `${n}Module`), ...(integrationsModule ? ['integrationsModule'] : []), ...(jobDeps ? ['jobDepsModule'] : [])].join(', ')}] as const;
+export const MODULES = [${[...names.map((n) => `${n}Module`), ...(integrationsModule ? ['integrationsModule'] : []), ...(identityPlan ? ['workspacesModule'] : []), ...(jobDeps ? ['jobDepsModule'] : [])].join(', ')}] as const;
 `,
 	});
 	// H-1: every entity's commands, each re-targeted onto the composed app: the one table HTTP, MCP and a CLI read.
 	const commandsFile = path.join(generatedDir, COMPOSITION_GENERATED_FILES.commands);
 	const commandsOf = (e: string) => entityModuleNaming(blockOf.get(e)!, modulesDir).commandsFile;
-	const allEntities = [...plans.values()].flatMap((p) => p.entities.map((e) => ({ entity: e, module: p.name }))).sort((a, b) => (a.entity < b.entity ? -1 : a.entity > b.entity ? 1 : 0));
+	// ID-1: an entity whose generated commands are off (`commandsDisabledBy`, the derivation's one owner) has no entry.
+	const withCommands = (e: string) => !commandsDisabledBy({ generate: relations.definitions.get(e)?.generate });
+	const allEntities = [...plans.values()]
+		.flatMap((p) => p.entities.filter(withCommands).map((e) => ({ entity: e, module: p.name })))
+		.sort((a, b) => (a.entity < b.entity ? -1 : a.entity > b.entity ? 1 : 0));
 	files.push({
 		path: commandsFile,
 		content: `${input.banner}
@@ -653,6 +701,10 @@ ${entities.map((e) => `  ${registerSchemasName(e)}(openApi);`).join('\n')}
 	});
 	for (const s of systems) if (s.content !== null) files.push({ path: s.file, content: s.content });
 	if (jobDeps) files.push({ path: jobDeps.file, content: jobDeps.content });
+	if (identityPlan) {
+		const moduleFile = path.join(generatedDir, WORKSPACES_MODULE_FILE);
+		files.push({ path: moduleFile, content: workspacesModuleContent(input.identity!, identityPlan, moduleFile, input.banner, input.drizzleTypeImport) });
+	}
 	if (input.jobs) files.push(input.jobs.registry);
 	return files;
 }
@@ -674,12 +726,14 @@ function generatedSystems(
 	input: CompositionInput,
 	eventsSystemFile: string,
 	connectionsPlan: ConnectionsPlan | null,
+	identityPlan: IdentityPlan | null,
 ): GeneratedSystem[] {
 	const integrationFile = path.join(input.generatedDir, INTEGRATION_SYSTEM_FILE);
 	const authFile = path.join(input.generatedDir, AUTH_SYSTEM_FILE);
 	const connectionsFile = path.join(input.generatedDir, CONNECTIONS_SYSTEM_FILE);
 	const settingsFile = path.join(input.generatedDir, SETTINGS_FILE);
 	const jobsFile = path.join(input.generatedDir, JOBS_SYSTEM_FILE);
+	const requesterFile = path.join(input.generatedDir, REQUESTER_SYSTEM_FILE);
 	return [
 		// SET-1: the settings, checked before the build; every other system may read them.
 		...(input.settings
@@ -702,6 +756,10 @@ function generatedSystems(
 		...(connectionsPlan
 			? [{ key: 'connections', apiType: 'ConnectionStore', apiTypeFile: connectionsPlan.storeFile, exportName: 'connectionsSystem', file: connectionsFile, content: connectionsSystemContent(connectionsPlan, connectionsFile, input.banner) }]
 			: []),
+		// ID-1: who a request is and in which workspace (the requester port, `requesterFor`, the cache).
+		...(identityPlan
+			? [{ key: 'requester', apiType: 'RequesterApi', apiTypeFile: requesterFile, exportName: 'requesterSystem', file: requesterFile, content: requesterSystemContent(input.identity!, identityPlan, requesterFile, input.banner) }]
+			: []),
 		// S-3b: each provider's and adapter set's system, which `emitPatternStackIntegrations` writes.
 		...(input.integrations?.systems ?? []).map((s) => ({
 			key: s.name,
@@ -713,6 +771,195 @@ function generatedSystems(
 		})),
 	];
 
+}
+
+interface IdentityPlan {
+	/** The module holding identity's repositories (the `identity` context's). */
+	module: string;
+	moduleFile: string;
+	/** Absolute: `membership.wiring.ts` (`createMembershipRepository`). */
+	membershipWiringFile: string;
+	/** Absolute, without its extension: `membership.entity` (the `memberships` table the locked reads select from). */
+	membershipEntityFile: string;
+}
+
+/**
+ * Identity's plan (ID-1), or a refusal: its three entities, in the `identity` context, with `membership.role`'s choices
+ * the rights table's; and the author's principal source.
+ */
+function planIdentity(
+	input: CompositionInput,
+	definitions: ReadonlyArray<{ entity: { name: string; context?: string }; fields?: Record<string, { choices?: unknown }> }>,
+	moduleOf: Map<string, string>,
+	plans: Map<string, ModulePlan>,
+	naming: (entity: string) => EntityModuleNaming,
+): IdentityPlan {
+	const identity = input.identity!;
+	for (const name of IDENTITY_ENTITIES) {
+		const d = definitions.find((x) => x.entity.name === name);
+		if (!d) {
+			throw new Error(
+				`[codegen] wiring: pattern-stack: identity is installed and there is no '${name}' entity: keep the ${name}.yaml ` +
+					'`subsystem install identity` vendored into <entities>/identity/ (or re-run it).',
+			);
+		}
+		if (d.entity.context !== IDENTITY_CONTEXT) {
+			throw new Error(
+				`[codegen] wiring: pattern-stack: identity's '${name}' entity must be in the '${IDENTITY_CONTEXT}' context ` +
+					`(context: ${IDENTITY_CONTEXT} in ${name}.yaml): the workspaces module reads its repositories from that module.`,
+			);
+		}
+	}
+	const membership = definitions.find((x) => x.entity.name === 'membership')!;
+	const choices = membership.fields?.role?.choices;
+	const same =
+		Array.isArray(choices) && choices.length === identity.roles.length && identity.roles.every((r) => choices.includes(r));
+	if (!same) {
+		throw new Error(
+			`[codegen] wiring: pattern-stack: membership.yaml's role choices (${Array.isArray(choices) ? choices.join(', ') : 'none'}) ` +
+				`must be identity's roles, ${identity.roles.join(', ')}: the workspace operations' rights table is keyed by them.`,
+		);
+	}
+	if (!fs.existsSync(identity.principalSourceFile)) {
+		throw new Error(
+			`[codegen] wiring: pattern-stack: the requester system reads the principal from ${identity.principalSourceFile}, ` +
+				'which is missing: re-run `codegen subsystem install identity` to write it, then bind your sign-in there.',
+		);
+	}
+	const module = moduleOf.get('membership')!;
+	const membershipFiles = naming('membership');
+	return {
+		module,
+		moduleFile: plans.get(module)!.file,
+		membershipWiringFile: membershipFiles.wiringFile,
+		membershipEntityFile: membershipFiles.entityFile,
+	};
+}
+
+/**
+ * \`<generated>/requester-system.ts\` (ID-1): who a request is and in which workspace, as a \`@pattern-stack/wiring\`
+ * system. Each port is its registry's row for the \`identity:\` block's value; nothing else picks a backend.
+ */
+function requesterSystemContent(identity: CompositionIdentityInput, plan: IdentityPlan, file: string, banner: string): string {
+	const create = `create${repositoryClassName('membership')}`;
+	return `${banner}
+/**
+ * The \`requester\` system (ID-1): the requester port H-2's middleware calls (\`resolve\`), and \`requesterFor\` for
+ * work with no request (a job, an agent). The principal comes from your \`principalSource\`, the workspace from the
+ * \`${identity.workspaceFrom}\` source, the role from the \`${identity.cache}\` requester cache (filled from the memberships, evicted
+ * when one changes). Each port is its registry's row for codegen.config.yaml's \`identity:\` block.
+ *
+ * It builds its own membership repository: a system can't depend on a module, and a repository is stateless over
+ * \`db\`, so this one reads what the \`${plan.module}\` module's does.
+ */
+import {
+  REQUESTER_CACHES,
+  REQUESTER_RESOLVERS,
+  WORKSPACE_SOURCES,
+  type RequesterCache,
+  type RequesterResolver,
+  type WorkspaceSource,
+} from '${identity.coreImport}';
+import { ${create} } from '${relativeImport(file, plan.membershipWiringFile)}';
+import { principalSource } from '${relativeImport(file, identity.principalSourceFile)}';
+import { defineSystem } from './wiring';
+
+export interface RequesterApi extends RequesterResolver {
+  /** The membership cache; the workspace operations invalidate it in their transactions. */
+  cache: RequesterCache;
+  /** How a request names its workspace (and the route prefix the HTTP layer mounts under). */
+  workspaces: WorkspaceSource;
+}
+
+export const requesterSystem = defineSystem({
+  name: 'requester',
+  uses: ['database'],
+  create: ({ database }): RequesterApi => {
+    const memberships = ${create}(database.db);
+    const cache = REQUESTER_CACHES['${identity.cache}']({
+      db: database.db,
+      lookup: async ({ principalId, workspaceId }) =>
+        (await memberships.findByWorkspaceIdAndUserId(workspaceId, principalId))?.role ?? null,
+    });
+    const workspaces = WORKSPACE_SOURCES['${identity.workspaceFrom}']();
+    const resolver = REQUESTER_RESOLVERS['${identity.resolver}']({ principals: principalSource, workspaces, cache });
+    return {
+      resolve: (request) => resolver.resolve(request),
+      requesterFor: (who) => resolver.requesterFor(who),
+      cache,
+      workspaces,
+    };
+  },
+  start: ({ cache }) => cache.start(),
+  stop: ({ cache }) => cache.stop(),
+});
+`;
+}
+
+/** \`<generated>/workspaces-module.ts\` (ID-1): the workspace operations over the identity module's repositories. */
+function workspacesModuleContent(
+	identity: CompositionIdentityInput,
+	plan: IdentityPlan,
+	file: string,
+	banner: string,
+	drizzleTypeImport: string,
+): string {
+	const moduleType = `${pascalCase(plan.module)}Module`;
+	return `${banner}
+/**
+ * The \`workspaces\` module (ID-1): \`app.module('workspaces').service\` creates a workspace (its creator the owner), adds
+ * an existing user, changes a role, removes a member and lists mine. It is the only writer of workspaces and
+ * memberships, and each write invalidates the requester cache in its own transaction.
+ */
+import { and, eq } from 'drizzle-orm';
+import { WorkspaceService } from '${identity.coreImport}';
+import type { DrizzleClient } from '${drizzleTypeImport}';
+import { memberships } from '${relativeImport(file, plan.membershipEntityFile)}';
+import type { ${moduleType} } from '${relativeImport(file, plan.moduleFile)}';
+import type { RequesterApi } from './${REQUESTER_SYSTEM_FILE.replace(/\.ts$/, '')}';
+import { defineModule } from './wiring';
+
+export function composeWorkspaces(deps: { database: { db: DrizzleClient }; requester: RequesterApi; ${plan.module}: ${moduleType} }) {
+  return {
+    service: new WorkspaceService({
+      db: deps.database.db,
+      workspaces: deps.${plan.module}.repositories.workspace,
+      memberships: deps.${plan.module}.repositories.membership,
+      users: deps.${plan.module}.repositories.user,
+      cache: deps.requester.cache,
+      workspaceSource: deps.requester.workspaces,
+      // The target's membership and the owners, each locked for the write's transaction, so the rights are judged on
+      // the rows as they are: a concurrent promote can't slip an owner past a remove, nor two owners leave none.
+      membershipForUpdate: async (workspaceId, userId, tx) =>
+        (
+          await tx
+            .select({ id: memberships.id, workspaceId: memberships.workspaceId, userId: memberships.userId, role: memberships.role })
+            .from(memberships)
+            .where(and(eq(memberships.workspaceId, workspaceId), eq(memberships.userId, userId)))
+            .for('update')
+        )[0] ?? null,
+      ownersForUpdate: async (workspaceId, tx) =>
+        (
+          await tx
+            .select({ userId: memberships.userId })
+            .from(memberships)
+            .where(and(eq(memberships.workspaceId, workspaceId), eq(memberships.role, 'owner')))
+            .for('update')
+        ).map((row) => row.userId),
+    }),
+  };
+}
+
+export type WorkspacesModule = ReturnType<typeof composeWorkspaces>;
+
+export const workspacesModule = defineModule({
+  name: '${WORKSPACES_MODULE}',
+  kind: 'derived',
+  dependsOn: ['${plan.module}'],
+  uses: ['database', 'requester'],
+  create: (deps) => composeWorkspaces(deps),
+});
+`;
 }
 
 interface ConnectionsPlan {
@@ -1313,10 +1560,11 @@ export function wiringFilesBehind(input: Pick<CompositionInput, 'relations' | 'm
 		const { module, openApi } = wiringImports(e);
 		const exports = [...module, ...openApi].map((name) => name.replace(/^type /, ''));
 		const commandsText = fs.existsSync(naming.commandsFile) ? fs.readFileSync(naming.commandsFile, 'utf8') : '';
+		const hasCommands = !commandsDisabledBy({ generate: d.generate });
 		if (
 			!exports.every((name) => new RegExp(`export (function|type) ${name}\\b`).test(text)) ||
-			// H-1: the commands table imports each entity's commands.
-			!new RegExp(`export const ${commandsConstName(e)}\\b`).test(commandsText)
+			// H-1: the commands table imports each entity's commands (ID-1: an entity with them off has none).
+			(hasCommands && !new RegExp(`export const ${commandsConstName(e)}\\b`).test(commandsText))
 		) {
 			behind.push(e);
 		}

@@ -209,6 +209,23 @@ async function main(): Promise<number> {
 		if (!storeText.includes("from '../../shared/subsystems/auth/core'")) fail(`the starter should import the Nest-free auth entry:\n${storeText}`);
 		log('auth + auth-integrations installed: the Nest-free closure, no Nest module, barrel, controller, guard or middleware');
 
+		// 3e. Identity (ID-1): the runtime (Nest-free, the requester port with it), three entity YAMLs, the identity: block,
+		// the tenant column, and the principal source, which the smoke replaces with a header-reading one.
+		run(`${CLI} subsystem install identity --yes`, tmpDir);
+		for (const f of ['subsystems/identity/core.ts', 'subsystems/identity/requester-cache.postgres-backend.ts', 'requester.ts', 'subsystems/events/pg-notify.ts']) {
+			if (!fs.existsSync(path.join(tmpDir, 'src/shared', f))) fail(`subsystem install identity should vendor ${f}`);
+		}
+		for (const f of ['user.yaml', 'workspace.yaml', 'membership.yaml']) {
+			if (!fs.existsSync(path.join(tmpDir, 'entities/identity', f))) fail(`subsystem install identity should vendor entities/identity/${f}`);
+		}
+		const identityConfig = fs.readFileSync(path.join(tmpDir, 'codegen.config.yaml'), 'utf8');
+		if (!/^identity:\n(?:.*\n)*?  workspace_from: header\n/m.test(identityConfig)) fail(`the identity: block is missing:\n${identityConfig}`);
+		if (!/^tenancy:\n(?:.*\n)*?  column: workspace_id\n/m.test(identityConfig)) fail(`tenancy.column should be workspace_id:\n${identityConfig}`);
+		const principalScaffold = path.join(tmpDir, 'src/identity/principal-source.ts');
+		if (!/principalOf: async \(\) => null/.test(fs.readFileSync(principalScaffold, 'utf8'))) fail('the principal source scaffold should let nobody in');
+		fs.copyFileSync(path.join(import.meta.dirname, 'fixtures-pattern-stack-usage', 'principal-source.ts'), principalScaffold);
+		log('identity installed: the Nest-free runtime, user/workspace/membership, the identity: block, tenancy.column, the principal source');
+
 		// 4. Fixtures, then generate.
 		const entitiesDir = path.join(tmpDir, 'entities');
 		fs.mkdirSync(entitiesDir, { recursive: true });
@@ -241,7 +258,7 @@ async function main(): Promise<number> {
 		const expectOne = (suffix: string) => {
 			if (!generated.some((f) => f.endsWith(suffix))) fail(`expected a generated file ending ${suffix}`);
 		};
-		for (const s of ['/crm/module.ts', '/billing/module.ts', 'modules/module.ts', '/wiring.ts', '/composition.ts', 'generated/openapi.ts', 'generated/events-system.ts', 'generated/integration-system.ts', 'generated/auth-system.ts', 'generated/connections-system.ts', 'events/generated/bus.ts', 'generated/jobs-system.ts', 'generated/job-deps.ts', 'generated/jobs.ts']) expectOne(s);
+		for (const s of ['/crm/module.ts', '/billing/module.ts', 'modules/module.ts', '/wiring.ts', '/composition.ts', 'generated/openapi.ts', 'generated/events-system.ts', 'generated/integration-system.ts', 'generated/auth-system.ts', 'generated/connections-system.ts', 'generated/requester-system.ts', 'generated/workspaces-module.ts', '/identity/module.ts', 'events/generated/bus.ts', 'generated/jobs-system.ts', 'generated/job-deps.ts', 'generated/jobs.ts']) expectOne(s);
 		// J-1: the jobDeps module provides the factory's two modules, typed; the events system drains through the bridge.
 		const jobDeps = fs.readFileSync(path.join(tmpDir, 'src/generated/job-deps.ts'), 'utf8');
 		if (!/dependsOn: \['billing', 'crm'\]/.test(jobDeps)) fail(`jobDeps should dependsOn the modules the factory names:\n${jobDeps}`);
@@ -260,6 +277,13 @@ async function main(): Promise<number> {
 			const nest = generated.filter((f) => f.endsWith(s) && !f.endsWith('/module.ts'));
 			if (nest.length > 0) fail(`wiring: pattern-stack emitted Nest-only files: ${nest.join(', ')}`);
 		}
+		// ID-1: identity's entities have their generated commands off (generate.commands: false): no file, no entry.
+		for (const e of ['users/user', 'workspaces/workspace', 'memberships/membership']) {
+			if (fs.existsSync(path.join(tmpDir, `src/modules/identity/${e}.commands.ts`))) fail(`identity's ${e}.commands.ts should not be generated`);
+		}
+		if (/\b(userCommands|workspaceCommands|membershipCommands)\b/.test(fs.readFileSync(path.join(tmpDir, 'src/generated/commands.ts'), 'utf8'))) {
+			fail('the commands table should list no identity entity');
+		}
 		log('composition files present; billing dependsOn crm; no controllers or Nest modules');
 
 		// 5c. tsc, scoped by location only.
@@ -276,7 +300,9 @@ async function main(): Promise<number> {
 		// No database here, so this process runs no executor loop (JOBS_WORKER=false): it composes, starts and stops.
 		const main = spawnSync('bun', ['src/main.ts'], { cwd: tmpDir, encoding: 'utf8', env: { ...process.env, JOBS_WORKER: 'false' } });
 		if (main.status !== 0) fail(`bun src/main.ts exited ${main.status}:\n${main.stdout}${main.stderr}`);
-		if (!/composed: settings, database, jobs, events, integration, auth, connections, .*crm.*billing.*jobDeps/.test(main.stdout)) fail(`main.ts should print the composed order: ${main.stdout}`);
+		if (!/composed: settings, database, jobs, events, integration, auth, connections, requester, .*crm.*billing.*workspaces, jobDeps/.test(main.stdout)) {
+			fail(`main.ts should print the composed order: ${main.stdout}`);
+		}
 		log(`main.ts: ${main.stdout.trim()}`);
 
 		// 5d. The OpenAPI document needs no database: every schema registers, every $ref resolves, every prefill parses.
@@ -294,7 +320,7 @@ async function main(): Promise<number> {
 				execSync('bunx drizzle-kit push --force', { cwd: tmpDir, stdio: 'inherit', env: { ...process.env, DATABASE_URL: dbUrl } });
 				log('schema pushed');
 				run(`bun src/crud-check.ts '${dbUrl}'`, tmpDir);
-				log('CRUD through the composed use cases OK (create, findById, list, query, update, delete, NotFoundError); an integration run on the integration system; OAuth state, a stored grant and a refresh on the auth and connections systems');
+				log('CRUD through the composed use cases OK (create, findById, list, query, update, delete, NotFoundError); an integration run on the integration system; OAuth state, a stored grant and a refresh on the auth and connections systems; workspaces, membership and the requester, evicted across apps and cleared on reconnect');
 				// J-1: an event starts a job and its step completes; then a process killed mid-step, and a restart that resumes it.
 				run(`bun src/jobs-check.ts bridge '${dbUrl}'`, tmpDir);
 				await killAndResume(tmpDir, dbUrl);

@@ -1,0 +1,48 @@
+# Identity (ID-1): a principal's role in a workspace, the first case of a role assignment (a principal holds a role on
+# a resource). Written only by the workspace operations, each in one transaction with the requester cache's
+# invalidation, so the generic writes and commands are off. Its references are `restrict`, not `cascade`: a delete of
+# a user or a workspace that took their memberships with it would skip that invalidation (every process would keep
+# serving the cached role until it aged out), so the memberships go first, through the operations. `role`'s choices are the rights table's (`ROLE_RIGHTS`): keep them so.
+entity:
+  name: membership
+  plural: memberships
+  context: identity
+
+fields:
+  role:
+    type: enum
+    choices: [owner, admin, member]
+    required: true
+  invited_by:
+    type: uuid
+    nullable: true
+
+relationships:
+  workspace:
+    type: belongs_to
+    target: workspace
+    foreign_key: workspace_id
+    on_delete: restrict
+  user:
+    type: belongs_to
+    target: user
+    foreign_key: user_id
+    on_delete: restrict
+
+behaviors:
+  - timestamps
+
+unique_indexes:
+  - fields: [workspace_id, user_id]
+
+queries:
+  - by: [workspace_id, user_id]
+    unique: true
+  - by: [user_id]
+  - by: [workspace_id]
+
+api: false
+
+generate:
+  writes: false
+  commands: false

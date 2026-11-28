@@ -1,0 +1,32 @@
+# Identity (ID-1): a workspace, the tenant every `tenant_scoped` entity points at (`tenancy.column: workspace_id`).
+# Written only by the workspace operations (`WorkspaceService.createWorkspace`), which add its creator as the owner in
+# the same transaction, so the generic writes are off.
+entity:
+  name: workspace
+  plural: workspaces
+  context: identity
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255
+  slug:
+    type: string
+    required: true
+    unique: true
+    max_length: 64
+
+behaviors:
+  - timestamps
+
+queries:
+  - by: [slug]
+    unique: true
+
+api: false
+
+generate:
+  writes: false
+  # No generated commands either: a generic `workspace list` would read every tenant's workspaces.
+  commands: false

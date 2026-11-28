@@ -2593,6 +2593,8 @@ export function buildBackendLocals(definition, baseLocals) {
     // PW-3 / H-1a: the files each wiring writes beside the module, one row per `target.wiring` value: pattern-stack's
     // wiring factories and commands (the naming record's), none under nest.
     ...rowFor('target.wiring', WIRING_ENTITY_FILES, baseLocals.target?.wiring ?? 'nest')(ownNaming),
+    // ID-1: no commands file when the derivation says its commands are off (`generate.commands: false`).
+    ...(apiSurface.commandsDisabledBy ? { commands: null } : {}),
   };
 
   // PW-3: pattern-stack wiring (`target: { wiring: pattern-stack, http: none }`) emits the same table, DTOs, repository, service and use

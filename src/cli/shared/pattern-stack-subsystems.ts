@@ -182,6 +182,18 @@ export const PATTERN_STACK_SUBSYSTEMS: Readonly<Record<SubsystemName, PatternSta
 			"passes the drain to the `events` system, which starts each trigger's run in the event's transaction. " +
 			"drizzle.config.ts's `schema` must include `<generated>/subsystems-schema.ts` (the `bridge_delivery` table).",
 	},
+	// ID-1: its own install (`executeIdentity`, refused under Nest by `IDENTITY_INSTALL`) vendors the runtime, three
+	// entity YAMLs, its config block and the principal source. The cache's backend is the identity: block's row, not
+	// --backend, so any. Nothing Nest is in its folder, so nothing is skipped.
+	identity: {
+		backends: 'any',
+		skipped: new Set(),
+		entryFile: 'core.ts',
+		nextStep:
+			'Next: `codegen entity new --all` generates user, workspace and membership (the `identity` module) and writes the ' +
+			'`requester` system (`<generated>/requester-system.ts`) and the `workspaces` module. Bind your sign-in in ' +
+			'`identity/principal-source.ts`: as written it lets nobody in.',
+	},
 	cache: { comesWith: null },
 	storage: { comesWith: null },
 	observability: { comesWith: null },

@@ -537,6 +537,11 @@
         "writes": {
           "default": true,
           "type": "boolean"
+        },
+        "commands": {
+          "default": true,
+          "description": "false: no generated commands for this entity (its only commands are hand-written ones)",
+          "type": "boolean"
         }
       },
       "additionalProperties": false

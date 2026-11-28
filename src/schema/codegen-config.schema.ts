@@ -3,6 +3,12 @@ import { DEFAULT_TARGET_PAIR, supportedTargetPairs, TARGET_PAIRS, targetPairRow 
 import { supportedTargetApps, TARGET_APPS, TARGET_HTTPS, TARGET_WIRINGS, targetAppRow, type TargetHttp, type TargetWiring } from '../targets/apps.js';
 import { DEFAULT_TENANT_COLUMN, TENANT_COLUMN_PATTERN } from "./tenancy.js";
 import { TABLE_PREFIX_PATTERN } from "../config/table-naming.js";
+import {
+  IDENTITY_DEFAULTS,
+  REQUESTER_CACHE_NAMES,
+  REQUESTER_RESOLVER_NAMES,
+  WORKSPACE_SOURCE_NAMES,
+} from "../../runtime/subsystems/identity/names.js";
 
 /**
  * Codegen Configuration Schemas
@@ -693,6 +699,7 @@ export const SUBSYSTEM_NAMES = [
   'observability',
   'auth',
   'auth-integrations',
+  'identity',
 ] as const;
 
 /**
@@ -705,6 +712,26 @@ export const SubsystemsConfigSchema = z
     install: z.array(z.enum(SUBSYSTEM_NAMES)).optional(),
   })
   .strict();
+
+/**
+ * `identity:` (ID-1) — written by `subsystem install identity`; read by the pattern-stack composition's `requester`
+ * system. Each value names a row in its registry (`runtime/subsystems/identity/`), and the enums are those registries'
+ * name lists, so a value with no row is refused here, naming the rows.
+ */
+export const IdentityConfigSchema = z
+  .object({
+    workspace_from: z.enum(WORKSPACE_SOURCE_NAMES).default(IDENTITY_DEFAULTS.workspace_from),
+    requester: z
+      .object({
+        resolver: z.enum(REQUESTER_RESOLVER_NAMES).default(IDENTITY_DEFAULTS.requester.resolver),
+        cache: z.enum(REQUESTER_CACHE_NAMES).default(IDENTITY_DEFAULTS.requester.cache),
+      })
+      .strict()
+      .prefault({}),
+  })
+  .strict();
+
+export type IdentityConfig = z.infer<typeof IdentityConfigSchema>;
 
 /** `multi_tenant` + a `backend` enum — the shape every durable subsystem shares. */
 const drizzleOrMemory = z.enum(['drizzle', 'memory']);
@@ -907,6 +934,7 @@ export const CodegenConfigObjectSchema = z
     jobs: JobsConfigSchema.optional(),
     bridge: BridgeConfigSchema.optional(),
     integration: IntegrationConfigSchema.optional(),
+    identity: IdentityConfigSchema.optional(),
     observability: ObservabilityConfigSchema.optional(),
     openapi: OpenApiConfigSchema.optional(),
     cache: CacheConfigSchema.optional(),

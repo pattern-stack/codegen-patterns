@@ -59,6 +59,7 @@ import {
 	patternStackSubsystem,
 	patternStackSubsystemRefusal,
 } from '../shared/pattern-stack-subsystems.js';
+import { installIdentity } from '../shared/identity-install.js';
 import { rowFor } from '../../utils/keyed-row.js';
 import { CONNECTIONS_AUTH_MODULE_FILE } from '../shared/subsystem-detect.js';
 import { authInstalled } from '../shared/pattern-stack-composition.js';
@@ -298,6 +299,17 @@ export function backendFileFilter(
 	};
 }
 
+/**
+ * Identity installs per `target.wiring` (ID-1): a refusal, or null to install. One row per wiring; the identity
+ * plan's Nest step fills the Nest row.
+ */
+export const IDENTITY_INSTALL: Readonly<Record<TargetWiring, string | null>> = {
+	nest:
+		"the identity subsystem needs target.wiring: pattern-stack: under Nest it comes in a later step (the identity plan's " +
+		'Nest step). Its workspace operations and the requester system are composed with @pattern-stack/wiring.',
+	'pattern-stack': null,
+};
+
 /** The vendored copy's filter, by `target.wiring`: the backend's, or under pattern-stack the row's too. */
 const INSTALL_FILE_FILTER: Readonly<
 	Record<TargetWiring, (name: SubsystemName, base: (file: string) => boolean) => (file: string) => boolean>
@@ -395,6 +407,11 @@ export class SubsystemInstallCommand extends Command {
 		// Same parallel structure as `executeOpenApiConfig`.
 		if (desc.name === 'auth-integrations') {
 			return this.executeAuthIntegrations(ctx);
+		}
+
+		// ID-1: identity vendors its runtime, three entity YAMLs, its config block and the principal source itself.
+		if (desc.name === 'identity') {
+			return this.executeIdentity(ctx);
 		}
 
 		// ADR-037: in `runtime: package` mode the subsystem runtime lives in the
@@ -1097,6 +1114,32 @@ export class SubsystemInstallCommand extends Command {
 		printInfo(
 			'Swagger UI mounts at /docs once main.ts calls SwaggerModule.setup(...) — see CONSUMER-SETUP.md §OpenAPI.',
 		);
+		return 0;
+	}
+
+	/** ID-1: install identity (its runtime, three YAMLs, its config block, the principal source), per `IDENTITY_INSTALL`. */
+	private async executeIdentity(ctx: Context): Promise<number> {
+		const refusal = IDENTITY_INSTALL[targetWiring(configOrDefaults(ctx.config).target)];
+		if (refusal) {
+			printError(refusal);
+			return 2;
+		}
+		const configPath = this.configPath ? path.resolve(ctx.cwd, this.configPath) : path.join(ctx.cwd, 'codegen.config.yaml');
+		const result = await installIdentity(ctx, { force: this.force, dryRun: this.dryRun, configPath });
+		if (!this.dryRun) {
+			const refreshed = await this.loadInstallContext();
+			await regenerateSubsystemSchemaBarrel({ ctx: refreshed, generatedDir: projectLayout(refreshed.cwd, refreshed.config).generated });
+		}
+		if (isJsonMode()) {
+			printJson({ command: 'subsystem install', subsystem: 'identity', dryRun: this.dryRun, ...result });
+			return 0;
+		}
+		for (const f of result.written) printInfo(`${this.dryRun ? 'would write' : 'wrote'} ${path.relative(ctx.cwd, f)}`);
+		for (const f of result.skipped) printInfo(`kept ${path.relative(ctx.cwd, f)} (exists; --force replaces all but the principal source)`);
+		for (const n of result.notes) printWarning(n);
+		printSuccess('identity installed: workspaces, membership and the requester.');
+		const next = patternStackSubsystem('identity')?.nextStep;
+		if (next) printInfo(next);
 		return 0;
 	}
 

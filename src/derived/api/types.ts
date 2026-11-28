@@ -254,6 +254,8 @@ export interface EntityApiSurface {
 	 * provider — `generate.writes: false`. Absent when the entity emits writes.
 	 */
 	writesDisabledBy?: YamlRef;
+	/** The declaration that turned the generated commands off — `generate.commands: false` (ID-1). Absent when it has them. */
+	commandsDisabledBy?: YamlRef;
 	/**
 	 * The declaration that removed a base's own `create` use case, route and provider while its `update` / `delete`
 	 * stay: the `discriminator:`, every kind of which has a child table (RFC-0006 §4.1). Absent otherwise.

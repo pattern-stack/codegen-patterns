@@ -3,7 +3,7 @@
  * `database` system, PW-4), then CRUD through the use cases. Copied into the smoke project's `src/`: the compile
  * half type-checks it (every key it reads is the composition's real API); `--postgres <url>` runs it.
  */
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { accountTags } from './modules/account-tags/account-tag.entity';
 import {
   IntegrationRunner,
@@ -15,6 +15,11 @@ import {
 } from './shared/subsystems/integration/core';
 import { OAuth2RefreshStrategy, OAuthStateError, type AuthCredentials, type ParsedRefreshResponse } from './shared/subsystems/auth/core';
 import { connections } from './modules/connections/connection.entity';
+import { memberships } from './modules/identity/memberships/membership.entity';
+import { IDENTITY_REQUESTER_CHANNEL, PostgresRequesterCache, requestFacts, type RequesterOutcome } from './shared/subsystems/identity/core';
+import { PgNotifyListener, listenerPoolOf } from './shared/subsystems/events/pg-notify';
+import { withRequester } from './shared/base-classes/tenant-context';
+import { ConflictError, ForbiddenError } from './shared/errors';
 import { composeApp } from './compose';
 import { registerOpenApiSchemas } from './generated/openapi';
 import { NotFoundError } from './shared/errors';
@@ -99,6 +104,7 @@ export async function crudCheck(url: string): Promise<void> {
 
     await integrationCheck(app.system('integration'), db);
     await authCheck(app.system('auth'), app.system('connections'), db);
+    await identityCheck(app, url);
 
     // A junction inside crm (PW-3c): attached from one parent, listed from the other, read from `crm.junctions`.
     const tag = await crm.tag.useCases.create.execute({ label: 'priority' });
@@ -277,6 +283,130 @@ async function integrationCheck(
     JSON.stringify(await integration.cursors.get(subscription!.id)) === JSON.stringify({ at: 2 }),
     'the cursor store keeps the last cursor',
   );
+}
+
+const refusalOf = (outcome: RequesterOutcome): string | null => ('refusal' in outcome ? outcome.refusal.reason : null);
+const roleOf = (outcome: RequesterOutcome): string | null => ('requester' in outcome ? (outcome.requester.role ?? null) : null);
+
+async function until(what: string, ok: () => Promise<boolean>, ms = 2000): Promise<void> {
+  for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 25))) {
+    if (await ok()) return;
+  }
+  throw new Error(`crud-check: ${what} (waited ${ms} ms)`);
+}
+
+async function refusedWith(kind: new (...a: never[]) => Error, fn: () => Promise<unknown>): Promise<boolean> {
+  try {
+    await fn();
+    return false;
+  } catch (err) {
+    return err instanceof kind;
+  }
+}
+
+/**
+ * Identity (ID-1) on the `requester` system and the `workspaces` module: the requester port's four outcomes, the
+ * workspace operations and their rules, and the Postgres cache's two promises — a change made by one app is evicted
+ * in another (its own listener, its own cache), and a listener that reconnects clears its cache.
+ */
+async function identityCheck(app: App, url: string): Promise<void> {
+  const users = app.module('identity').user.useCases;
+  const workspaces = app.module('workspaces').service;
+  const requester = app.system('requester');
+  const stamp = Date.now();
+  const [a, b, c] = await Promise.all(
+    ['a', 'b', 'c'].map((n) => users.create.execute({ email: `${n}-${stamp}@smoke.test`, displayName: n })),
+  );
+  const facts = (who?: string, workspace?: string) =>
+    requestFacts('/anything', { 'X-Smoke-Principal': who, 'X-Workspace': workspace });
+
+  assert(refusalOf(await requester.resolve(facts())) === 'unauthenticated', 'no principal is unauthenticated');
+  const { workspace, role } = await withRequester({ userId: a!.id }, () =>
+    workspaces.createWorkspace({ name: 'Smoke', slug: `smoke-${stamp}` }),
+  );
+  assert(role === 'owner', 'the creator owns the workspace');
+  const asA = await requester.resolve(facts(a!.id, workspace.id));
+  assert(
+    'requester' in asA && asA.requester.tenantId === workspace.id && asA.requester.role === 'owner',
+    `the owner resolves in the workspace: ${JSON.stringify(asA)}`,
+  );
+  const ownerA = (asA as { requester: Parameters<typeof withRequester>[0] }).requester;
+  const mine = await withRequester({ userId: a!.id }, () => workspaces.listMine());
+  assert(mine.some((m) => m.workspace.id === workspace.id && m.role === 'owner'), 'listMine has it, as owner');
+  assert(refusalOf(await requester.resolve(facts(a!.id, 'not-an-id'))) === 'bad-workspace', 'a malformed workspace is refused');
+  assert(refusalOf(await requester.resolve(facts(c!.id, workspace.id))) === 'not-a-member', 'a non-member is refused');
+
+  await withRequester(ownerA, () => workspaces.addMember({ userId: b!.id, role: 'member' }));
+  assert(roleOf(await requester.resolve(facts(b!.id, workspace.id))) === 'member', 'an added user resolves as member');
+  const memberB = { userId: b!.id, tenantId: workspace.id, role: 'member' };
+  assert(
+    await refusedWith(ForbiddenError, () => withRequester(memberB, () => workspaces.addMember({ userId: c!.id, role: 'member' }))),
+    'a member may not add members',
+  );
+  await withRequester(ownerA, () => workspaces.changeRole({ userId: b!.id, role: 'admin' }));
+  assert(roleOf(await requester.resolve(facts(b!.id, workspace.id))) === 'admin', 'a role change is seen at once by the app that made it');
+  assert(
+    await refusedWith(ConflictError, () => withRequester(ownerA, () => workspaces.changeRole({ userId: a!.id, role: 'member' }))),
+    'the last owner may not be demoted',
+  );
+  assert(
+    await refusedWith(ConflictError, () => withRequester(ownerA, () => workspaces.removeMember({ userId: a!.id }))),
+    'the last owner may not leave',
+  );
+
+  // A second app: its own pool, listener and cache. It caches B, the first app removes B, the second hears it.
+  const other = composeApp({ databaseUrl: url });
+  await other.start();
+  try {
+    const otherRequester = other.system('requester');
+    const otherCache = otherRequester.cache as PostgresRequesterCache;
+    await until('the second app\'s listener connects', async () => otherCache.caching);
+    assert(roleOf(await otherRequester.resolve(facts(b!.id, workspace.id))) === 'admin', 'the second app sees B as admin');
+    assert(otherCache.size > 0, 'the second app cached the membership');
+    await withRequester(ownerA, () => workspaces.removeMember({ userId: b!.id }));
+    await until(
+      'the second app refuses B after the first removed it',
+      async () => refusalOf(await otherRequester.resolve(facts(b!.id, workspace.id))) === 'not-a-member',
+    );
+
+    // Reconnect, on a cache whose listener waits 2 s before reconnecting (its test seam, `options.listener`), so the
+    // window is certain: C is cached; its listener's backend is ended; C's membership is removed with its notification
+    // while nobody listens; after the listener is back, C must be refused. Only a drop that clears (or a connect that
+    // clears) makes that so.
+    await withRequester(ownerA, () => workspaces.addMember({ userId: c!.id, role: 'member' }));
+    const { db } = app.system('database');
+    const membershipRows = app.module('identity').repositories.membership;
+    const pool = listenerPoolOf(db, 'identity-smoke', 'no pool')!;
+    const slow = new PostgresRequesterCache(
+      {
+        db,
+        lookup: async ({ principalId, workspaceId }) =>
+          (await membershipRows.findByWorkspaceIdAndUserId(workspaceId, principalId))?.role ?? null,
+      },
+      {
+        listener: (hooks) =>
+          new PgNotifyListener({ channel: IDENTITY_REQUESTER_CHANNEL, pool, label: 'identity-smoke', backoffMinMs: 2000, ...hooks }),
+      },
+    );
+    await slow.start();
+    try {
+      const cKey = { principalId: c!.id, workspaceId: workspace.id };
+      await until('the slow cache\'s listener connects', async () => slow.caching);
+      assert((await slow.role(cKey)) === 'member' && slow.size === 1, 'the slow cache caches C');
+      await db.execute(sql`select pg_terminate_backend(pid, 5000) from pg_stat_activity where application_name = 'pg-notify:identity-smoke'`);
+      await until('the slow cache\'s listener drops', async () => !slow.caching);
+      await db.transaction(async (tx) => {
+        await tx.delete(memberships).where(and(eq(memberships.workspaceId, workspace.id), eq(memberships.userId, c!.id)));
+        await tx.execute(sql`select pg_notify(${IDENTITY_REQUESTER_CHANNEL}, ${`${c!.id}:${workspace.id}`})`);
+      });
+      await until('the slow cache\'s listener reconnects', async () => slow.caching, 10_000);
+      assert((await slow.role(cKey)) === null, 'a membership removed while the listener was down is not served after it reconnects');
+    } finally {
+      await slow.stop();
+    }
+  } finally {
+    await other.stop();
+  }
 }
 
 /** A provider's refresh strategy, as an author writes one: the token endpoint is stubbed (`fetch`), the store is real. */

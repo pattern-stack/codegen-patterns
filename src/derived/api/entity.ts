@@ -98,7 +98,7 @@ export interface EntityDefinitionInput {
 	roles?: Readonly<Record<string, RoleDefinition>> | null;
 	queries?: readonly QueryInput[] | null;
 	api?: boolean | { enabled?: boolean; includes?: Readonly<Record<string, unknown>> } | null;
-	generate?: { writes?: boolean } | null;
+	generate?: { writes?: boolean; commands?: boolean } | null;
 	/** `inherits:` (RFC-0006) — a bare base name or `{ base, as? }`. */
 	inherits?: string | { base: string; as?: string };
 	/** The base's kind column (RFC-0006 §1.1). */
@@ -128,6 +128,16 @@ export function writesDisabledBy(definition: {
 	generate: EntityDefinitionInput['generate'];
 }): YamlPath | null {
 	if (definition.generate?.writes === false) return ['generate', 'writes'];
+	return null;
+}
+
+/**
+ * The YAML declaration that turns the entity's generated commands off (H-1) — `generate.commands: false` — or `null`
+ * when it has them. The ONE owner: `deriveEntityApiSurface` reads it for `commands`, and the commands template and the
+ * whole-set table read that, so an entity with none gets no file and no entry.
+ */
+export function commandsDisabledBy(definition: { generate: EntityDefinitionInput['generate'] }): YamlPath | null {
+	if (definition.generate?.commands === false) return ['generate', 'commands'];
 	return null;
 }
 
@@ -1029,7 +1039,8 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 		}
 	}
 
-	const commands = deriveCommands(entityName, plural, useCases, routes, includeRoute);
+	const commandsOff = commandsDisabledBy({ generate: definition.generate });
+	const commands = commandsOff ? [] : deriveCommands(entityName, plural, useCases, routes, includeRoute);
 
 	const http: EntityApiSurface['http'] = { enabled, routes, includeRoutes, includesConst: includesConstName(plural) };
 	if (disabledBy) http.disabledBy = disabledBy;
@@ -1052,6 +1063,8 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 		http,
 		// Recorded only when writes are off, so an entity that emits them carries no new key.
 		...(writesOff ? { writesDisabledBy: ref(writesOff) } : {}),
+		// Recorded only when commands are off (ID-1: identity's entities), so an entity that has them carries no new key.
+		...(commandsOff ? { commandsDisabledBy: ref(commandsOff) } : {}),
 		// Recorded only for a base with no create of its own; the note names the kinds that all have a child table.
 		...(createOff
 			? {

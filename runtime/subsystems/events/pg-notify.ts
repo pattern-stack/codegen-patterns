@@ -68,6 +68,24 @@ interface PgPoolish {
   connect(): Promise<PgListenClient>;
 }
 
+/** The `application_name` a listener's connection carries: `pg-notify:<label>` (labels are framework constants). */
+export function listenerApplicationName(label: string): string {
+  return `pg-notify:${label.replace(/[^a-zA-Z0-9:_-]/g, '_')}`;
+}
+
+/**
+ * The pg pool a listener checks its connection out of: the Drizzle client's `$client`, or null (logged once, under
+ * `label`) when the client exposes no pool. The one probe for every LISTEN user (events' wake, identity's cache).
+ */
+export function listenerPoolOf(db: unknown, label: string, fallback: string): PgPoolish | null {
+  const pool = (db as { $client?: { connect?: unknown } } | null)?.$client;
+  if (pool && typeof pool.connect === 'function') return pool as PgPoolish;
+  createLogger(`PgNotifyListener(${label})`).warn(
+    `the Drizzle client exposes no pg Pool ($client.connect missing) — ${fallback}.`,
+  );
+  return null;
+}
+
 const DEFAULT_BACKOFF_MIN_MS = 100;
 const DEFAULT_BACKOFF_MAX_MS = 5_000;
 
@@ -87,6 +105,22 @@ export interface PgNotifyListenerOptions {
    * own claim cycle.
    */
   onNotify: (payload: string) => void;
+  /**
+   * Called each time `LISTEN` is in place: the first connect and every reconnect (ID-1). A cache that evicts on
+   * notifications clears itself here, since notifications sent while it was down are lost.
+   */
+  onConnect?: () => void;
+  /** Called when the listener connection drops or a connect fails, before the reconnect is scheduled (ID-1). */
+  onDrop?: () => void;
+  /**
+   * While connected, run `SELECT 1` on the listener connection this often (ms), and treat a failure or no answer
+   * within `heartbeatTimeoutMs` as a drop. Off when absent. A half-open socket (a NAT timeout, a failover with no
+   * reset) emits no error, so without it a listener can go quiet for good; an owner whose correctness rests on hearing
+   * every notification (identity's requester cache, ID-1) turns it on.
+   */
+  heartbeatMs?: number;
+  /** How long a heartbeat may take before the connection counts as dead. Defaults to `heartbeatMs`. */
+  heartbeatTimeoutMs?: number;
   /** Label used in log lines (e.g. 'jobs:interactive', 'events'). */
   label: string;
   backoffMinMs?: number;
@@ -119,6 +153,7 @@ export class PgNotifyListener {
    * holding `LISTEN <channel>` forever past `app.close()`.
    */
   private connecting: Promise<void> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly opts: PgNotifyListenerOptions) {
     this.logger = createLogger(`PgNotifyListener(${opts.label})`);
@@ -197,6 +232,8 @@ export class PgNotifyListener {
         this.logger.debug?.(`listener connection error: ${err.message}`);
         this.handleDrop();
       });
+      // Named, so an operator (or a test) can find the listener's backend in pg_stat_activity: `pg-notify:<label>`.
+      await client.query(`SET application_name TO '${listenerApplicationName(this.opts.label)}'`);
       await client.query(`LISTEN ${this.opts.channel}`);
       // A stop() could have fired during the LISTEN round-trip too — same guard.
       if (this.stopped) {
@@ -204,6 +241,8 @@ export class PgNotifyListener {
         return;
       }
       this.client = client;
+      this.startHeartbeat(client);
+      this.callHook('onConnect');
       // Recovery: only announce if we had previously warned about being down.
       if (this.warnedDown) {
         this.logger.log(
@@ -217,14 +256,25 @@ export class PgNotifyListener {
     }
   }
 
+  /** An owner's `onConnect` / `onDrop`; a throw is logged, as `onNotify`'s is, and never breaks the listener. */
+  private callHook(hook: 'onConnect' | 'onDrop'): void {
+    try {
+      this.opts[hook]?.();
+    } catch (err) {
+      this.logger.error(`${hook} threw: ${(err as Error).message}`);
+    }
+  }
+
   /** Connection dropped after being established → reconnect. */
   private handleDrop(): void {
     if (this.stopped) return;
+    this.callHook('onDrop');
     void this.releaseClient().finally(() => this.scheduleReconnect());
   }
 
   /** Initial / reconnect `connect()` threw. */
   private handleConnectFailure(err: unknown): void {
+    this.callHook('onDrop');
     this.scheduleReconnect(err);
   }
 
@@ -247,7 +297,33 @@ export class PgNotifyListener {
     }, delay);
   }
 
+  /** The heartbeat (when `heartbeatMs` is set): a failed or unanswered `SELECT 1` is a drop. */
+  private startHeartbeat(client: PgListenClient): void {
+    const every = this.opts.heartbeatMs;
+    if (!every) return;
+    const timeout = this.opts.heartbeatTimeoutMs ?? every;
+    this.heartbeatTimer = setInterval(() => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`no heartbeat answer in ${timeout} ms`)), timeout);
+      });
+      Promise.race([client.query('SELECT 1'), late])
+        .catch((err: unknown) => {
+          if (this.client !== client) return;
+          this.logger.debug?.(`heartbeat failed: ${(err as Error).message}`);
+          this.handleDrop();
+        })
+        .finally(() => clearTimeout(timer));
+    }, every);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
+  }
+
   private async releaseClient(): Promise<void> {
+    this.stopHeartbeat();
     const client = this.client;
     this.client = null;
     if (!client) return;

@@ -14,10 +14,12 @@
 
 /**
  * The HTTP reason phrase for each status a generated error body carries, as Nest prints it: the application
- * errors here (400, 404) and the constraint violations in `db-constraint-errors.ts` (409, 422).
+ * errors here (400, 401, 403, 404, 409) and the constraint violations in `db-constraint-errors.ts` (409, 422).
  */
 export const HTTP_REASONS = {
   400: 'Bad Request',
+  401: 'Unauthorized',
+  403: 'Forbidden',
   404: 'Not Found',
   409: 'Conflict',
   422: 'Unprocessable Entity',
@@ -26,7 +28,7 @@ export const HTTP_REASONS = {
 export type ErrorBodyStatus = keyof typeof HTTP_REASONS;
 
 /** The statuses an application error can carry. */
-export type AppErrorStatus = Extract<ErrorBodyStatus, 400 | 404>;
+export type AppErrorStatus = Extract<ErrorBodyStatus, 400 | 401 | 403 | 404 | 409>;
 
 /** The keys `errorBody` owns; a detail can't shadow them. */
 const RESERVED_BODY_KEYS = ['statusCode', 'error', 'code', 'message'] as const;
@@ -69,6 +71,24 @@ export class NotFoundError extends AppError {
 export class BadRequestError extends AppError {
   override readonly name = 'BadRequestError';
   readonly status = 400 as const;
+}
+
+/** Nobody is signed in, or the credential isn't valid (ID-1: the requester port's `unauthenticated`). */
+export class UnauthorizedError extends AppError {
+  override readonly name = 'UnauthorizedError';
+  readonly status = 401 as const;
+}
+
+/** The requester is known, and may not do this (not a member of the workspace, or a role that can't). */
+export class ForbiddenError extends AppError {
+  override readonly name = 'ForbiddenError';
+  readonly status = 403 as const;
+}
+
+/** The request conflicts with the current state (already a member; the last owner can't leave). */
+export class ConflictError extends AppError {
+  override readonly name = 'ConflictError';
+  readonly status = 409 as const;
 }
 
 export function isAppError(err: unknown): err is AppError {

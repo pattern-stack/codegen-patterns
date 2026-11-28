@@ -1,0 +1,32 @@
+# Identity (ID-1): a principal, the "who" of every request. The app creates users (sign-in does, from the next identity
+# release); the workspace operations read them. Vendored by `codegen subsystem install identity`, then yours: add
+# fields (an avatar, a locale) freely; keep `email` unique.
+entity:
+  name: user
+  plural: users
+  context: identity
+
+fields:
+  email:
+    type: string
+    required: true
+    unique: true
+    max_length: 320
+  display_name:
+    type: string
+    nullable: true
+    max_length: 255
+
+behaviors:
+  - timestamps
+
+queries:
+  - by: [email]
+    unique: true
+
+# No HTTP routes and no generated commands: identity's own operations are the way in, each checked against the
+# requester's rights. The app creates users through the service directly (sign-in does, from the next release).
+api: false
+
+generate:
+  commands: false
