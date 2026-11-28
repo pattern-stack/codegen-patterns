@@ -24,5 +24,9 @@ queries:
   - by: [email]
     unique: true
 
-# No HTTP routes: identity's own operations are the way in.
+# No HTTP routes and no generated commands: identity's own operations are the way in, each checked against the
+# requester's rights. The app creates users through the service directly (sign-in does, from the next release).
 api: false
+
+generate:
+  commands: false

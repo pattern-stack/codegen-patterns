@@ -293,3 +293,54 @@ describe('PgNotifyListener — stop() racing an in-flight connect() (LISTEN-NOTI
     expect(ctl.released).toBe(true);
   });
 });
+
+describe('PgNotifyListener — connect / drop hooks and the heartbeat (ID-1)', () => {
+  /** A client whose `SELECT 1` (the heartbeat) answers or hangs as the test says; everything else answers. */
+  function hangingClient(answers: () => boolean) {
+    const handlers: Record<string, (arg: unknown) => void> = {};
+    return {
+      query: mock((text: string) =>
+        text !== 'SELECT 1' || answers() ? Promise.resolve({}) : new Promise(() => {}),
+      ),
+      on: (event: string, cb: (arg: unknown) => void) => void (handlers[event] = cb),
+      removeAllListeners: () => {},
+      release: mock(() => {}),
+    };
+  }
+
+  it('calls onConnect once LISTEN is in place, and a heartbeat with no answer is a drop that reconnects', async () => {
+    let answer = true;
+    const client = hangingClient(() => answer);
+    const pool = { connect: mock(async () => client) };
+    const events: string[] = [];
+    const listener = new PgNotifyListener({
+      channel: 'identity_requester',
+      pool: pool as never,
+      label: 'test',
+      onNotify: () => {},
+      onConnect: () => events.push('connect'),
+      onDrop: () => events.push('drop'),
+      heartbeatMs: 20,
+      heartbeatTimeoutMs: 20,
+      backoffMinMs: 10,
+    });
+    await listener.start();
+    expect(events).toEqual(['connect']);
+    answer = false;
+    await new Promise((r) => setTimeout(r, 80));
+    answer = true;
+    await new Promise((r) => setTimeout(r, 60));
+    await listener.stop();
+    expect(events.slice(0, 3)).toEqual(['connect', 'drop', 'connect']);
+    expect(pool.connect.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('sends no heartbeat when heartbeatMs is absent (jobs and events, as before)', async () => {
+    const client = hangingClient(() => true);
+    const listener = new PgNotifyListener({ channel: 'c', pool: { connect: async () => client } as never, label: 'test', onNotify: () => {} });
+    await listener.start();
+    await new Promise((r) => setTimeout(r, 40));
+    await listener.stop();
+    expect(client.query.mock.calls.map((c) => c[0])).toEqual(["SET application_name TO 'pg-notify:test'", 'LISTEN c']);
+  });
+});

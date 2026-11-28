@@ -31,6 +31,10 @@ export interface RequesterCache {
 export interface RequesterCacheDeps {
   db: DrizzleClient;
   lookup: MembershipLookup;
+  /** The longest an entry is served (default `REQUESTER_CACHE_MAX_AGE_MS`). */
+  maxAgeMs?: number;
+  /** The clock (tests). */
+  now?: () => number;
 }
 
 /** One key per membership. Ids are compared lowercased, as Postgres compares uuids. */
@@ -42,15 +46,25 @@ export const cacheKey = (key: MembershipKey): string => `${key.principalId.toLow
  * eviction marks; a key's tokens live only while its fills do, so nothing grows with the keys evicted.
  */
 export class CacheEntries {
-  private readonly entries = new Map<string, string | null>();
+  private readonly entries = new Map<string, { role: string | null; at: number }>();
   private readonly fills = new Map<string, Set<{ evicted: boolean }>>();
 
+  /** `maxAgeMs`: an entry older than this is read again (the backstop for a notification that never came). */
+  constructor(
+    private readonly maxAgeMs: number,
+    private readonly now: () => number = Date.now,
+  ) {}
+
   has(key: string): boolean {
-    return this.entries.has(key);
+    const entry = this.entries.get(key);
+    if (!entry) return false;
+    if (this.now() - entry.at < this.maxAgeMs) return true;
+    this.entries.delete(key);
+    return false;
   }
 
   get(key: string): string | null {
-    return this.entries.get(key) ?? null;
+    return this.entries.get(key)?.role ?? null;
   }
 
   get size(): number {
@@ -63,9 +77,11 @@ export class CacheEntries {
     const tokens = this.fills.get(key) ?? new Set<{ evicted: boolean }>();
     this.fills.set(key, tokens);
     tokens.add(token);
+    const startedAt = this.now();
     try {
       const role = await load();
-      if (!token.evicted && store()) this.entries.set(key, role);
+      // Aged from when the read began, so a slow read can't extend what it saw.
+      if (!token.evicted && store()) this.entries.set(key, { role, at: startedAt });
       return role;
     } finally {
       tokens.delete(token);

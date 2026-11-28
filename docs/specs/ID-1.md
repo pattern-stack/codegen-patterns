@@ -72,9 +72,14 @@ the `identity` module):
 
 | Entity | Fields | Notes |
 |---|---|---|
-| `user` | `email` (unique), `display_name` | `api: false`. Created by the app (and by sign-in, next release) |
-| `workspace` | `name`, `slug` (unique) | `api: false`, `generate: { writes: false }`: written only by the workspace operations |
-| `membership` | `workspace` and `user` (`belongs_to`, `on_delete: cascade`), `role` (enum), `invited_by` | `api: false`, `writes: false`; unique `(workspace_id, user_id)`; queries by the pair, by user, by workspace |
+| `user` | `email` (unique), `display_name` | `api: false`, `generate: { commands: false }`. Created by the app (and by sign-in, next release) |
+| `workspace` | `name`, `slug` (unique) | `api: false`, `generate: { writes: false, commands: false }`: written only by the workspace operations |
+| `membership` | `workspace` and `user` (`belongs_to`, `on_delete: restrict`), `role` (enum), `invited_by` | `api: false`, `writes: false`, `commands: false`; unique `(workspace_id, user_id)`; queries by the pair, by user, by workspace |
+
+None of the three gets generated commands (`generate.commands: false`, the derivation's one switch,
+`commandsDisabledBy`): a generic `membership list` would read every workspace's memberships. Their only commands are
+the hand-written, rights-checked ones (the follow-up on the command layer). Membership's references are `restrict`:
+a cascade from a user or workspace delete would remove memberships with no invalidation.
 
 `role`'s choices must be exactly the role table's (`owner`, `admin`, `member`). `entity new` refuses otherwise, naming
 the YAML. There is no `identity.roles` key, which the plan had: the YAML is the declaration, and a second list would
@@ -139,15 +144,35 @@ H-1 is under this step: hand-written ones in the identity context's own list, ne
 
 ## As built
 
+- **Review fixes (#987's independent review):**
+  - **Ids are normalised where they come in.** `WorkspaceService` lowercases every user and workspace id (and refuses
+    one that isn't a uuid, `bad_user_id`) before any check, so the leaving check, the owner count and the cache key
+    see the same id: an upper-case id can't remove the last owner.
+  - **The target's membership is read inside the change's transaction and locked** (`membershipForUpdate`, a
+    `SELECT … FOR UPDATE` the generated module builds, next to `ownersForUpdate`). Every rights check runs on that
+    locked row, so a concurrent promote can't slip an owner past an admin's remove.
+  - **A quietly dead listener can't serve stale roles for long.** `PgNotifyListener` gains an optional heartbeat
+    (`heartbeatMs`, off by default; identity's cache runs `SELECT 1` every 10 s, dead after 5 s), so a half-open
+    socket becomes a drop. And no cache entry is served longer than `REQUESTER_CACHE_MAX_AGE_MS` (30 s), aged from when
+    its read began, the backstop for any notification that never comes.
+  - **No cascade around the invalidation:** membership's references are `restrict` (above).
+  - The reconnect check can fail on its subject: it runs on a cache whose listener reconnects after 2 s, removes a
+    membership with its notification while nobody listens, and asserts the role isn't served after the reconnect. With
+    the drop and connect clears removed, it fails.
+  - Every listener connection is named `pg-notify:<label>` (`application_name`), so its backend can be found.
+  - One pool probe (`listenerPoolOf`) for every LISTEN user; one list of identity's entities (`IDENTITY_ENTITIES`);
+    the missing-workspace message is the configured source's `instead`; transaction handles are typed `DrizzleTx`.
+  - Registry rows, not branches: the install's runtime step is a row per runtime mode (`IDENTITY_RUNTIME_STEP`), and
+    the Nest refusal a row per wiring (`IDENTITY_INSTALL`).
+
 - **The cache contract has `evict`.** `invalidate(key, tx)` runs in the change's transaction (Postgres sends the
   notification, delivered on commit), and the workspace operations call `evict(key)` once the transaction committed,
   so the writing process needn't wait for its own notification. A fill that read the old row before an eviction
   doesn't store it: both backends keep their entries in `CacheEntries`, where each fill in flight holds a token that
   an eviction or a clear marks. Tokens live only while their fills do, so nothing grows with the keys evicted.
-- **The last owner is checked inside the write's transaction, the owners locked.** `WorkspaceService` takes
-  `ownersForUpdate(workspaceId, tx)`, which the generated `workspaces` module builds as a `SELECT … FOR UPDATE` on the
-  workspace's owner memberships. Two owners stepping down at once: the second waits for the first and then sees one
-  owner left.
+- **The last owner is checked inside the write's transaction, the owners locked** (`ownersForUpdate`, a
+  `SELECT … FOR UPDATE` on the workspace's owner memberships). Two owners stepping down at once: the second waits for
+  the first and then sees one owner left.
 - **Two adds of one user at once** are both `already_a_member` (409): the second is refused by the
   `(workspace_id, user_id)` unique index, and the service maps that violation (`constraintViolationOf`).
 - **Ids:** the resolver lowercases the principal and workspace ids and the cache key does too, so a job passing an

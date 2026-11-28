@@ -1389,3 +1389,17 @@ describe('subsystem — install jobs: stale worker.ts notice on the already-inst
 		});
 	}
 });
+
+describe('subsystem install identity under Nest (ID-1)', () => {
+	test('is refused, exit 2, and writes nothing', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const before = fs.readFileSync(path.join(root, 'codegen.config.yaml'), 'utf8');
+		const cli = buildCli();
+		const { result, out } = await capture(() => cli.run(['subsystem', 'install', 'identity', '--cwd', root]));
+		expect(result).toBe(2);
+		expect(out).toContain('needs target.wiring: pattern-stack');
+		expect(fs.readFileSync(path.join(root, 'codegen.config.yaml'), 'utf8')).toBe(before);
+		expect(fs.readdirSync(root)).toEqual(['codegen.config.yaml']);
+	});
+});

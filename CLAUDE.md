@@ -424,7 +424,9 @@ each port with `REGISTRY['<value>']`) and the `workspaces` module (`WorkspaceSer
 memberships; rights are the `ROLE_RIGHTS` table; the last owner stays, checked on owners locked in the write's
 transaction). The Postgres cache invalidates with `pg_notify` on the change's own transaction (`evict` follows the
 commit), stops caching while its `PgNotifyListener` is down (`onDrop`) and clears on every connect (`onConnect`, both
-optional hooks on the listener); a fill racing an eviction never stores (`CacheEntries`).
+optional hooks on the listener) and heartbeats it (`heartbeatMs`), serves no entry past 30 s, and a fill racing an
+eviction never stores (`CacheEntries`). Identity's entities set `generate: { commands: false }` (the derivation's one
+switch, `commandsDisabledBy`): no generated commands, so no generic way in reaches memberships.
 
 ### Integration Codegen (RFC-0001/0002/0003)
 

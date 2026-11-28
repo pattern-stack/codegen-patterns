@@ -16,19 +16,19 @@ import path from 'node:path';
 import type { Context } from './context.js';
 import { projectLayout } from './project-layout.js';
 import { copyRuntime } from './runtime-copier.js';
-import { resolveRuntimeMode, subsystemCoreImport } from './runtime-import.js';
+import { resolveRuntimeMode, subsystemCoreImport, type RuntimeMode } from './runtime-import.js';
 import { ensureSubsystemInstalled } from './subsystems-install-config.js';
 import { entitiesDirPath } from '../../config/entities-dir.js';
 import { configOrDefaults } from '../../config/project-config.js';
 import { runtimeRoot } from './init-scaffold.js';
-import { IDENTITY_DEFAULTS, WORKSPACE_SOURCE_NAMES, REQUESTER_CACHE_NAMES, REQUESTER_RESOLVER_NAMES } from '../../../runtime/subsystems/identity/names.js';
+import { IDENTITY_DEFAULTS, IDENTITY_ENTITIES, WORKSPACE_SOURCE_NAMES, REQUESTER_CACHE_NAMES, REQUESTER_RESOLVER_NAMES } from '../../../runtime/subsystems/identity/names.js';
 import { generating } from '../../utils/generated-file.js';
 
 /** The tenant column identity's workspace is: every `tenant_scoped` entity points at it. */
 export const IDENTITY_TENANT_COLUMN = 'workspace_id';
 
-/** The entity YAMLs identity vendors, under `<entities>/identity/`. */
-export const IDENTITY_ENTITY_FILES = ['user.yaml', 'workspace.yaml', 'membership.yaml'] as const;
+/** The entity YAMLs identity vendors, under `<entities>/identity/`: one per `IDENTITY_ENTITIES`. */
+export const IDENTITY_ENTITY_FILES = IDENTITY_ENTITIES.map((e) => `${e}.yaml`);
 
 /** Where the principal source lives in the project (emit-once, the author's). */
 export function principalSourceFile(ctx: Pick<Context, 'cwd' | 'config'>): string {
@@ -95,6 +95,32 @@ export const principalSource: PrincipalSource = {
 `;
 }
 
+interface RuntimeStepInput {
+	ctx: Context;
+	layout: ReturnType<typeof projectLayout>;
+	configPath: string;
+	dryRun: boolean;
+}
+
+/** How each runtime mode installs identity's runtime: package mode records it, vendored mode copies it. */
+const IDENTITY_RUNTIME_STEP: Readonly<Record<RuntimeMode, (input: RuntimeStepInput) => Promise<string[]>>> = {
+	package: async ({ configPath, dryRun }) => {
+		if (!dryRun) ensureSubsystemInstalled(configPath, 'identity');
+		return dryRun ? [] : [configPath];
+	},
+	vendored: async ({ layout, dryRun }) => {
+		const copied = await copyRuntime({
+			sourceDir: path.join(runtimeRoot(), 'subsystems', 'identity'),
+			targetDir: path.join(layout.subsystems, 'identity'),
+			resolveDeps: true,
+			runtimeRoot: runtimeRoot(),
+			depsTargetRoot: path.resolve(layout.subsystems, '..'),
+			dryRun,
+		});
+		return [...copied.written, ...copied.updated, ...copied.dependenciesCopied];
+	},
+};
+
 export interface IdentityInstallResult {
 	written: string[];
 	skipped: string[];
@@ -120,20 +146,8 @@ export async function installIdentity(
 		result.written.push(file);
 	};
 
-	// 1. The runtime.
-	if (mode === 'package') {
-		if (!opts.dryRun) ensureSubsystemInstalled(opts.configPath, 'identity');
-	} else {
-		const copied = await copyRuntime({
-			sourceDir: path.join(runtimeRoot(), 'subsystems', 'identity'),
-			targetDir: path.join(layout.subsystems, 'identity'),
-			resolveDeps: true,
-			runtimeRoot: runtimeRoot(),
-			depsTargetRoot: path.resolve(layout.subsystems, '..'),
-			dryRun: opts.dryRun,
-		});
-		result.written.push(...copied.written, ...copied.updated, ...copied.dependenciesCopied);
-	}
+	// 1. The runtime: a row per runtime mode, never a branch on it.
+	result.written.push(...(await IDENTITY_RUNTIME_STEP[mode]({ ctx, layout, configPath: opts.configPath, dryRun: opts.dryRun })));
 
 	// 2. The entity YAMLs.
 	const entitiesDir = path.join(entitiesDirPath(ctx.cwd, configOrDefaults(ctx.config).paths), 'identity');

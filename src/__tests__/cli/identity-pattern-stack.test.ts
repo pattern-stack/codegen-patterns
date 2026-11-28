@@ -165,6 +165,15 @@ describe('the requester system and the workspaces module', () => {
 		expect(w).toContain('cache: deps.requester.cache,');
 		expect(w).toContain("import { memberships } from '../modules/identity/memberships/membership.entity';");
 		expect(w).toContain(".where(and(eq(memberships.workspaceId, workspaceId), eq(memberships.role, 'owner')))\n            .for('update')");
+		expect(w).toContain(".where(and(eq(memberships.workspaceId, workspaceId), eq(memberships.userId, userId)))\n            .for('update')");
+		expect(w).toContain('workspaceSource: deps.requester.workspaces,');
+		expect(w).not.toContain('as DrizzleClient');
+	});
+
+	it("identity's entities have no generated commands: no entry in the commands table (generate.commands: false)", () => {
+		const commands = file('/generated/commands.ts')!;
+		expect(commands).not.toMatch(/\b(userCommands|workspaceCommands|membershipCommands)\b/);
+		expect(commands).toContain('accountCommands');
 	});
 
 	it('both are registered: SystemApis, ModuleApis, SYSTEMS, MODULES', () => {

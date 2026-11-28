@@ -277,6 +277,13 @@ async function main(): Promise<number> {
 			const nest = generated.filter((f) => f.endsWith(s) && !f.endsWith('/module.ts'));
 			if (nest.length > 0) fail(`wiring: pattern-stack emitted Nest-only files: ${nest.join(', ')}`);
 		}
+		// ID-1: identity's entities have their generated commands off (generate.commands: false): no file, no entry.
+		for (const e of ['users/user', 'workspaces/workspace', 'memberships/membership']) {
+			if (fs.existsSync(path.join(tmpDir, `src/modules/identity/${e}.commands.ts`))) fail(`identity's ${e}.commands.ts should not be generated`);
+		}
+		if (/\b(userCommands|workspaceCommands|membershipCommands)\b/.test(fs.readFileSync(path.join(tmpDir, 'src/generated/commands.ts'), 'utf8'))) {
+			fail('the commands table should list no identity entity');
+		}
 		log('composition files present; billing dependsOn crm; no controllers or Nest modules');
 
 		// 5c. tsc, scoped by location only.
@@ -293,7 +300,7 @@ async function main(): Promise<number> {
 		// No database here, so this process runs no executor loop (JOBS_WORKER=false): it composes, starts and stops.
 		const main = spawnSync('bun', ['src/main.ts'], { cwd: tmpDir, encoding: 'utf8', env: { ...process.env, JOBS_WORKER: 'false' } });
 		if (main.status !== 0) fail(`bun src/main.ts exited ${main.status}:\n${main.stdout}${main.stderr}`);
-		if (!/composed: settings, database, jobs, events, integration, auth, connections, requester, .*crm.*billing.*jobDeps/.test(main.stdout) || !/\bworkspaces\b/.test(main.stdout)) {
+		if (!/composed: settings, database, jobs, events, integration, auth, connections, requester, .*crm.*billing.*workspaces, jobDeps/.test(main.stdout)) {
 			fail(`main.ts should print the composed order: ${main.stdout}`);
 		}
 		log(`main.ts: ${main.stdout.trim()}`);

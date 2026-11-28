@@ -3,12 +3,15 @@
  * commits, and a fill that read the old row meanwhile doesn't store it. For tests and a single process; with more than
  * one, use `postgres`, which tells every process.
  */
+import { REQUESTER_CACHE_MAX_AGE_MS } from './names';
 import { CacheEntries, cacheKey, type MembershipKey, type RequesterCache, type RequesterCacheDeps } from './requester-cache';
 
 export class MemoryRequesterCache implements RequesterCache {
-  private readonly entries = new CacheEntries();
+  private readonly entries: CacheEntries;
 
-  constructor(private readonly deps: Pick<RequesterCacheDeps, 'lookup'>) {}
+  constructor(private readonly deps: Pick<RequesterCacheDeps, 'lookup' | 'maxAgeMs' | 'now'>) {
+    this.entries = new CacheEntries(deps.maxAgeMs ?? REQUESTER_CACHE_MAX_AGE_MS, deps.now);
+  }
 
   async role(key: MembershipKey): Promise<string | null> {
     const k = cacheKey(key);

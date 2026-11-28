@@ -3,7 +3,7 @@
  * `database` system, PW-4), then CRUD through the use cases. Copied into the smoke project's `src/`: the compile
  * half type-checks it (every key it reads is the composition's real API); `--postgres <url>` runs it.
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { accountTags } from './modules/account-tags/account-tag.entity';
 import {
   IntegrationRunner,
@@ -15,7 +15,9 @@ import {
 } from './shared/subsystems/integration/core';
 import { OAuth2RefreshStrategy, OAuthStateError, type AuthCredentials, type ParsedRefreshResponse } from './shared/subsystems/auth/core';
 import { connections } from './modules/connections/connection.entity';
-import { PostgresRequesterCache, requestFacts, type RequesterOutcome } from './shared/subsystems/identity/core';
+import { memberships } from './modules/identity/memberships/membership.entity';
+import { IDENTITY_REQUESTER_CHANNEL, PostgresRequesterCache, requestFacts, type RequesterOutcome } from './shared/subsystems/identity/core';
+import { PgNotifyListener, listenerPoolOf } from './shared/subsystems/events/pg-notify';
 import { withRequester } from './shared/base-classes/tenant-context';
 import { ConflictError, ForbiddenError } from './shared/errors';
 import { composeApp } from './compose';
@@ -283,8 +285,6 @@ async function integrationCheck(
   );
 }
 
-type App = ReturnType<typeof composeApp>;
-
 const refusalOf = (outcome: RequesterOutcome): string | null => ('refusal' in outcome ? outcome.refusal.reason : null);
 const roleOf = (outcome: RequesterOutcome): string | null => ('requester' in outcome ? (outcome.requester.role ?? null) : null);
 
@@ -369,18 +369,41 @@ async function identityCheck(app: App, url: string): Promise<void> {
       async () => refusalOf(await otherRequester.resolve(facts(b!.id, workspace.id))) === 'not-a-member',
     );
 
-    // Reconnect: end every identity listener's backend; each drops (stops caching), reconnects and clears its cache.
-    assert(roleOf(await otherRequester.resolve(facts(a!.id, workspace.id))) === 'owner', 'A is cached in the second app');
-    const { db } = app.system('database');
-    await db.execute(sql`select pg_terminate_backend(pid) from pg_stat_activity where query = 'LISTEN identity_requester'`);
-    await until('the second app\'s listener drops', async () => !otherCache.caching);
-    await until('the second app\'s listener reconnects', async () => otherCache.caching, 10_000);
-    assert(otherCache.size === 0, `a reconnected listener clears its cache (size ${otherCache.size})`);
+    // Reconnect, on a cache whose listener waits 2 s before reconnecting (its test seam, `options.listener`), so the
+    // window is certain: C is cached; its listener's backend is ended; C's membership is removed with its notification
+    // while nobody listens; after the listener is back, C must be refused. Only a drop that clears (or a connect that
+    // clears) makes that so.
     await withRequester(ownerA, () => workspaces.addMember({ userId: c!.id, role: 'member' }));
-    await until(
-      'the second app sees a member added after it reconnected',
-      async () => roleOf(await otherRequester.resolve(facts(c!.id, workspace.id))) === 'member',
+    const { db } = app.system('database');
+    const membershipRows = app.module('identity').repositories.membership;
+    const pool = listenerPoolOf(db, 'identity-smoke', 'no pool')!;
+    const slow = new PostgresRequesterCache(
+      {
+        db,
+        lookup: async ({ principalId, workspaceId }) =>
+          (await membershipRows.findByWorkspaceIdAndUserId(workspaceId, principalId))?.role ?? null,
+      },
+      {
+        listener: (hooks) =>
+          new PgNotifyListener({ channel: IDENTITY_REQUESTER_CHANNEL, pool, label: 'identity-smoke', backoffMinMs: 2000, ...hooks }),
+      },
     );
+    await slow.start();
+    try {
+      const cKey = { principalId: c!.id, workspaceId: workspace.id };
+      await until('the slow cache\'s listener connects', async () => slow.caching);
+      assert((await slow.role(cKey)) === 'member' && slow.size === 1, 'the slow cache caches C');
+      await db.execute(sql`select pg_terminate_backend(pid, 5000) from pg_stat_activity where application_name = 'pg-notify:identity-smoke'`);
+      await until('the slow cache\'s listener drops', async () => !slow.caching);
+      await db.transaction(async (tx) => {
+        await tx.delete(memberships).where(and(eq(memberships.workspaceId, workspace.id), eq(memberships.userId, c!.id)));
+        await tx.execute(sql`select pg_notify(${IDENTITY_REQUESTER_CHANNEL}, ${`${c!.id}:${workspace.id}`})`);
+      });
+      await until('the slow cache\'s listener reconnects', async () => slow.caching, 10_000);
+      assert((await slow.role(cKey)) === null, 'a membership removed while the listener was down is not served after it reconnects');
+    } finally {
+      await slow.stop();
+    }
   } finally {
     await other.stop();
   }

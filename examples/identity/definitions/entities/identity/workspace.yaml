@@ -28,3 +28,5 @@ api: false
 
 generate:
   writes: false
+  # No generated commands either: a generic `workspace list` would read every tenant's workspaces.
+  commands: false

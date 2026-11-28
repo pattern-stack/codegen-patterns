@@ -175,6 +175,27 @@ describe('the postgres requester cache', () => {
     expect(cache.size).toBe(0);
   });
 
+  it('a connect clears what was cached before it (the reconnect after a drop that went unnoticed)', async () => {
+    const t = setup();
+    t.fake.state.hooks!.onConnect();
+    await t.cache.role(key);
+    expect(t.cache.size).toBe(1);
+    t.fake.state.hooks!.onConnect();
+    expect(t.cache.size).toBe(0);
+  });
+
+  it('an entry is served no longer than its maximum age', async () => {
+    let now = 1_000;
+    let lookups = 0;
+    const cache = new MemoryRequesterCache({ lookup: async () => (lookups++, 'member'), maxAgeMs: 100, now: () => now });
+    await cache.role(key);
+    await cache.role(key);
+    expect(lookups).toBe(1);
+    now += 100;
+    await cache.role(key);
+    expect(lookups).toBe(2);
+  });
+
   it('a drop stops caching and clears; a reconnect clears again and caches', async () => {
     const t = setup();
     t.fake.state.hooks!.onConnect();
@@ -245,6 +266,11 @@ describe('the workspace operations', () => {
         invalidate: async (k) => void invalidated.push(`${k.principalId}:${k.workspaceId}`),
         evict: (k) => void evicted.push(`${k.principalId}:${k.workspaceId}`),
       },
+      workspaceSource: { instead: 'name the workspace somehow' },
+      membershipForUpdate: async (w, u, tx) => {
+        lockedIn.push(tx);
+        return memberships.find((m) => m.workspaceId === w && m.userId === u) ?? null;
+      },
       ownersForUpdate: async (w, tx) => {
         lockedIn.push(tx);
         return memberships.filter((m) => m.workspaceId === w && m.role === 'owner').map((m) => m.userId);
@@ -271,7 +297,7 @@ describe('the workspace operations', () => {
     await withRequester({ userId: A }, () => t.service.createWorkspace({ name: 'Acme', slug: 'acme' }));
     await expect(t.as(B, 'member')(() => t.service.addMember({ userId: B, role: 'member' }))).rejects.toBeInstanceOf(ForbiddenError);
     await expect(t.as(B, 'admin')(() => t.service.addMember({ userId: B, role: 'owner' }))).rejects.toBeInstanceOf(ForbiddenError);
-    await expect(t.as(A, 'owner')(() => t.service.addMember({ userId: 'nobody', role: 'member' }))).rejects.toBeInstanceOf(NotFoundError);
+    await expect(t.as(A, 'owner')(() => t.service.addMember({ userId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', role: 'member' }))).rejects.toBeInstanceOf(NotFoundError);
     await t.as(A, 'owner')(() => t.service.addMember({ userId: B, role: 'member' }));
     await expect(t.as(A, 'owner')(() => t.service.addMember({ userId: B, role: 'member' }))).rejects.toBeInstanceOf(ConflictError);
     expect(t.invalidated).toContain(`${B}:${W}`);
@@ -305,6 +331,36 @@ describe('the workspace operations', () => {
     const t = setup();
     await withRequester({ userId: A }, () => t.service.createWorkspace({ name: 'Acme', slug: 'acme' }));
     await expect(t.as(B)(() => t.service.removeMember({ userId: B }))).rejects.toMatchObject({ code: 'role_unresolved' });
+  });
+
+  it('the last owner stays whatever the case of the id sent (ids are normalised where they come in)', async () => {
+    const t = setup();
+    await withRequester({ userId: A }, () => t.service.createWorkspace({ name: 'Acme', slug: 'acme' }));
+    await expect(t.as(A, 'owner')(() => t.service.removeMember({ userId: A.toUpperCase() }))).rejects.toMatchObject({ code: 'last_owner' });
+    await expect(t.as(A, 'owner')(() => t.service.changeRole({ userId: A.toUpperCase(), role: 'member' }))).rejects.toMatchObject({
+      code: 'last_owner',
+    });
+    await expect(t.as(A, 'owner')(() => t.service.addMember({ userId: 'not-an-id', role: 'member' }))).rejects.toMatchObject({
+      code: 'bad_user_id',
+    });
+  });
+
+  it("the target's membership is read inside the change's transaction, and the rights judged on it", async () => {
+    const t = setup();
+    await withRequester({ userId: A }, () => t.service.createWorkspace({ name: 'Acme', slug: 'acme' }));
+    await t.as(A, 'owner')(() => t.service.addMember({ userId: B, role: 'member' }));
+    // B became an owner after an admin's request started: the admin's remove is judged on the locked row, and refused.
+    t.memberships.find((m) => m.userId === B)!.role = 'owner';
+    t.lockedIn.length = 0;
+    await expect(t.as(A, 'admin')(() => t.service.removeMember({ userId: B }))).rejects.toBeInstanceOf(ForbiddenError);
+    expect(t.lockedIn).toEqual([TX]);
+  });
+
+  it("a request with no workspace is told what the configured source wants", async () => {
+    const t = setup();
+    await expect(withRequester({ userId: A, role: 'owner' }, () => t.service.addMember({ userId: B, role: 'member' }))).rejects.toThrow(
+      'name the workspace somehow',
+    );
   });
 
   it('anyone may leave; nobody signed in is unauthorized; an unknown role is refused', async () => {

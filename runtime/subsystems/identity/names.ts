@@ -16,6 +16,19 @@ export type RequesterResolverName = (typeof REQUESTER_RESOLVER_NAMES)[number];
 export const REQUESTER_CACHE_NAMES = ['postgres', 'memory'] as const;
 export type RequesterCacheName = (typeof REQUESTER_CACHE_NAMES)[number];
 
+/** Identity's entities: the YAMLs `subsystem install identity` vendors, and what the composition needs of them. */
+export const IDENTITY_ENTITIES = ['user', 'workspace', 'membership'] as const;
+export type IdentityEntity = (typeof IDENTITY_ENTITIES)[number];
+
+/**
+ * How long a cached membership may be served, at most (ms). Eviction is what keeps the cache right; this bounds what a
+ * notification that never arrives can cost (a quietly dead listener, a delete outside the workspace operations).
+ */
+export const REQUESTER_CACHE_MAX_AGE_MS = 30_000;
+
+/** The `postgres` cache's listener heartbeat: a `SELECT 1` this often, dead after the timeout (ms). */
+export const REQUESTER_LISTENER_HEARTBEAT = { everyMs: 10_000, timeoutMs: 5_000 } as const;
+
 /** The membership roles: `membership.yaml`'s `role` choices must be exactly these (the rights table is keyed by them). */
 export const ROLES = ['owner', 'admin', 'member'] as const;
 export type Role = (typeof ROLES)[number];

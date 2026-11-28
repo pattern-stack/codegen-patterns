@@ -28,6 +28,7 @@ import path from 'node:path';
 import { composedRepositoryOwners } from '../../derived/wiring/classes.js';
 import { contextCycles } from '../../derived/wiring/order.js';
 import { deriveProjectClassGraph } from '../../derived/wiring/project.js';
+import { commandsDisabledBy } from '../../derived/api/entity.js';
 import { EAV_FIELD_VALUE_ENTITY, FIELD_VALUES_DEPS_FIELD, SYSTEM_DEPS_FIELD, useCaseSystems } from '../../derived/wiring/classes.js';
 import type { SystemDependency } from '../../derived/wiring/types.js';
 import type { ProjectApiContext } from '../../derived/api/project.js';
@@ -49,11 +50,12 @@ import { junctionIdentity } from '../../emitters/relations/build-graph.js';
 import { rowFor } from '../../utils/keyed-row.js';
 import { junctionWiringFile } from '../../config/junction-naming.js';
 import { camelCase, emittedDir } from '../../config/file-naming.js';
-import { entityModuleNaming } from '../../config/module-tree.js';
+import { entityModuleNaming, type EntityModuleNaming } from '../../config/module-tree.js';
 import { generating } from '../../utils/generated-file.js';
 import { relativeImport } from '../../utils/import-path.js';
 import { JOBS_WORKER_ENV, type ProjectSetting } from '../../derived/settings/index.js';
 import { SETTINGS_FILE, settingsContent } from '../settings/emit-settings.js';
+import { IDENTITY_ENTITIES } from '../../../runtime/subsystems/identity/names.js';
 
 /** The module name of the entities that declare no `context:`. */
 export const ROOT_MODULE = 'entities';
@@ -286,7 +288,6 @@ export const WORKSPACES_MODULE_FILE = 'workspaces-module.ts';
 export const WORKSPACES_MODULE = 'workspaces';
 /** The context identity's entities live in, and so the module that holds their repositories. */
 export const IDENTITY_CONTEXT = 'identity';
-const IDENTITY_ENTITIES = ['user', 'workspace', 'membership'] as const;
 
 /** The entity the connection store reads and writes: the starter's `connection.yaml`. */
 export const CONNECTION_ENTITY = 'connection';
@@ -428,7 +429,9 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 
 	const registryFile = path.join(generatedDir, COMPOSITION_GENERATED_FILES.registry);
 	const eventsSystemFile = path.join(generatedDir, EVENTS_SYSTEM_FILE);
-	const identityPlan = input.identity ? planIdentity(input, definitions, moduleOf, plans, wiringFile) : null;
+	const identityPlan = input.identity
+		? planIdentity(input, definitions, moduleOf, plans, (e) => entityModuleNaming(blockOf.get(e)!, modulesDir))
+		: null;
 	if (identityPlan && plans.has(WORKSPACES_MODULE)) {
 		throw new Error(
 			"[codegen] wiring: pattern-stack: a context named 'workspaces' would share its module's name with identity's " +
@@ -641,13 +644,17 @@ ${systems.map((s) => `import { ${s.exportName} } from '${relativeImport(composit
 
 export const SYSTEMS = [${systems.map((s) => s.exportName).join(', ')}] as const;
 
-export const MODULES = [${[...names.map((n) => `${n}Module`), ...(integrationsModule ? ['integrationsModule'] : []), ...(jobDeps ? ['jobDepsModule'] : []), ...(identityPlan ? ['workspacesModule'] : [])].join(', ')}] as const;
+export const MODULES = [${[...names.map((n) => `${n}Module`), ...(integrationsModule ? ['integrationsModule'] : []), ...(identityPlan ? ['workspacesModule'] : []), ...(jobDeps ? ['jobDepsModule'] : [])].join(', ')}] as const;
 `,
 	});
 	// H-1: every entity's commands, each re-targeted onto the composed app: the one table HTTP, MCP and a CLI read.
 	const commandsFile = path.join(generatedDir, COMPOSITION_GENERATED_FILES.commands);
 	const commandsOf = (e: string) => entityModuleNaming(blockOf.get(e)!, modulesDir).commandsFile;
-	const allEntities = [...plans.values()].flatMap((p) => p.entities.map((e) => ({ entity: e, module: p.name }))).sort((a, b) => (a.entity < b.entity ? -1 : a.entity > b.entity ? 1 : 0));
+	// ID-1: an entity whose generated commands are off (`commandsDisabledBy`, the derivation's one owner) has no entry.
+	const withCommands = (e: string) => !commandsDisabledBy({ generate: relations.definitions.get(e)?.generate });
+	const allEntities = [...plans.values()]
+		.flatMap((p) => p.entities.filter(withCommands).map((e) => ({ entity: e, module: p.name })))
+		.sort((a, b) => (a.entity < b.entity ? -1 : a.entity > b.entity ? 1 : 0));
 	files.push({
 		path: commandsFile,
 		content: `${input.banner}
@@ -772,6 +779,8 @@ interface IdentityPlan {
 	moduleFile: string;
 	/** Absolute: `membership.wiring.ts` (`createMembershipRepository`). */
 	membershipWiringFile: string;
+	/** Absolute, without its extension: `membership.entity` (the `memberships` table the locked reads select from). */
+	membershipEntityFile: string;
 }
 
 /**
@@ -783,7 +792,7 @@ function planIdentity(
 	definitions: ReadonlyArray<{ entity: { name: string; context?: string }; fields?: Record<string, { choices?: unknown }> }>,
 	moduleOf: Map<string, string>,
 	plans: Map<string, ModulePlan>,
-	wiringFile: (entity: string) => string,
+	naming: (entity: string) => EntityModuleNaming,
 ): IdentityPlan {
 	const identity = input.identity!;
 	for (const name of IDENTITY_ENTITIES) {
@@ -818,7 +827,13 @@ function planIdentity(
 		);
 	}
 	const module = moduleOf.get('membership')!;
-	return { module, moduleFile: plans.get(module)!.file, membershipWiringFile: wiringFile('membership') };
+	const membershipFiles = naming('membership');
+	return {
+		module,
+		moduleFile: plans.get(module)!.file,
+		membershipWiringFile: membershipFiles.wiringFile,
+		membershipEntityFile: membershipFiles.entityFile,
+	};
 }
 
 /**
@@ -899,7 +914,7 @@ function workspacesModuleContent(
 import { and, eq } from 'drizzle-orm';
 import { WorkspaceService } from '${identity.coreImport}';
 import type { DrizzleClient } from '${drizzleTypeImport}';
-import { memberships } from '${relativeImport(file, path.join(path.dirname(plan.membershipWiringFile), 'membership.entity.ts'))}';
+import { memberships } from '${relativeImport(file, plan.membershipEntityFile)}';
 import type { ${moduleType} } from '${relativeImport(file, plan.moduleFile)}';
 import type { RequesterApi } from './${REQUESTER_SYSTEM_FILE.replace(/\.ts$/, '')}';
 import { defineModule } from './wiring';
@@ -912,10 +927,20 @@ export function composeWorkspaces(deps: { database: { db: DrizzleClient }; reque
       memberships: deps.${plan.module}.repositories.membership,
       users: deps.${plan.module}.repositories.user,
       cache: deps.requester.cache,
-      // The owners, locked for the write's transaction: two owners stepping down at once can't leave none.
+      workspaceSource: deps.requester.workspaces,
+      // The target's membership and the owners, each locked for the write's transaction, so the rights are judged on
+      // the rows as they are: a concurrent promote can't slip an owner past a remove, nor two owners leave none.
+      membershipForUpdate: async (workspaceId, userId, tx) =>
+        (
+          await tx
+            .select({ id: memberships.id, workspaceId: memberships.workspaceId, userId: memberships.userId, role: memberships.role })
+            .from(memberships)
+            .where(and(eq(memberships.workspaceId, workspaceId), eq(memberships.userId, userId)))
+            .for('update')
+        )[0] ?? null,
       ownersForUpdate: async (workspaceId, tx) =>
         (
-          await (tx as DrizzleClient)
+          await tx
             .select({ userId: memberships.userId })
             .from(memberships)
             .where(and(eq(memberships.workspaceId, workspaceId), eq(memberships.role, 'owner')))
@@ -1535,10 +1560,11 @@ export function wiringFilesBehind(input: Pick<CompositionInput, 'relations' | 'm
 		const { module, openApi } = wiringImports(e);
 		const exports = [...module, ...openApi].map((name) => name.replace(/^type /, ''));
 		const commandsText = fs.existsSync(naming.commandsFile) ? fs.readFileSync(naming.commandsFile, 'utf8') : '';
+		const hasCommands = !commandsDisabledBy({ generate: d.generate });
 		if (
 			!exports.every((name) => new RegExp(`export (function|type) ${name}\\b`).test(text)) ||
-			// H-1: the commands table imports each entity's commands.
-			!new RegExp(`export const ${commandsConstName(e)}\\b`).test(commandsText)
+			// H-1: the commands table imports each entity's commands (ID-1: an entity with them off has none).
+			(hasCommands && !new RegExp(`export const ${commandsConstName(e)}\\b`).test(commandsText))
 		) {
 			behind.push(e);
 		}

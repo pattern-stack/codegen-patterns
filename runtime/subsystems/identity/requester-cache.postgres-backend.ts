@@ -11,13 +11,16 @@
  *   listener connects (the first time, and every reconnect) it clears everything and caches again: what changed while
  *   it was down is gone with the rest.
  *
+ * Two backstops for a notification that never comes: the listener's heartbeat makes a quietly dead connection a drop,
+ * and no entry is served longer than `REQUESTER_CACHE_MAX_AGE_MS`.
+ *
  * The listener needs a direct or session-mode connection: behind a transaction-mode pooler `LISTEN` isn't delivered,
  * and the cache would never start caching (it stays correct, and reads through on every request).
  */
-import { PgNotifyListener, pgNotify } from '../events/pg-notify';
+import { PgNotifyListener, listenerPoolOf, pgNotify } from '../events/pg-notify';
+import { REQUESTER_CACHE_MAX_AGE_MS, REQUESTER_LISTENER_HEARTBEAT } from './names';
 import type { DrizzleClient } from '../../types/drizzle';
 import type { DrizzleTransaction } from '../events/event-bus.protocol';
-import { createLogger } from '../../logger';
 import { CacheEntries, cacheKey, type MembershipKey, type RequesterCache, type RequesterCacheDeps } from './requester-cache';
 
 export const IDENTITY_REQUESTER_CHANNEL = 'identity_requester';
@@ -34,7 +37,7 @@ export interface PostgresRequesterCacheOptions {
 }
 
 export class PostgresRequesterCache implements RequesterCache {
-  private readonly entries = new CacheEntries();
+  private readonly entries: CacheEntries;
   private listening = false;
   private readonly listener: CacheListener;
 
@@ -42,6 +45,7 @@ export class PostgresRequesterCache implements RequesterCache {
     private readonly deps: RequesterCacheDeps,
     options: PostgresRequesterCacheOptions = {},
   ) {
+    this.entries = new CacheEntries(deps.maxAgeMs ?? REQUESTER_CACHE_MAX_AGE_MS, deps.now);
     const hooks = {
       onNotify: (payload: string) => this.entries.evict(payload.toLowerCase()),
       onConnect: () => {
@@ -95,18 +99,16 @@ function defaultListener(
   db: DrizzleClient,
   hooks: { onNotify: (payload: string) => void; onConnect: () => void; onDrop: () => void },
 ): CacheListener {
-  const pool = (db as unknown as { $client?: { connect?: unknown } }).$client;
-  if (!pool || typeof pool.connect !== 'function') {
-    // No pool to listen on: never cache (correct, just a read per request), and say why once.
-    createLogger('PostgresRequesterCache').warn(
-      'the Drizzle client exposes no pg Pool ($client.connect missing): the requester cache reads through on every request',
-    );
-    return { start: async () => {}, stop: async () => {} };
-  }
+  // No pool to listen on: never cache (correct, just a read per request).
+  const pool = listenerPoolOf(db, 'identity', 'the requester cache reads through on every request');
+  if (!pool) return { start: async () => {}, stop: async () => {} };
   return new PgNotifyListener({
     channel: IDENTITY_REQUESTER_CHANNEL,
-    pool: pool as { connect(): Promise<never> },
+    pool,
     label: 'identity',
+    // A half-open socket emits no error: the heartbeat turns it into a drop, so the cache stops serving.
+    heartbeatMs: REQUESTER_LISTENER_HEARTBEAT.everyMs,
+    heartbeatTimeoutMs: REQUESTER_LISTENER_HEARTBEAT.timeoutMs,
     ...hooks,
   });
 }
