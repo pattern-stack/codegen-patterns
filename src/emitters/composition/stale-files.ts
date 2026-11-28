@@ -18,12 +18,12 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { HTTP_LAYERS, type PatternStackHttpLayer } from '../../targets/http.js';
+import { allRoutesSuffixes, type PatternStackHttpLayer } from '../../targets/http.js';
+import { HTTP_APP_FILE } from '../http/index.js';
 
 /** The routes-file suffixes of every HTTP layer but `current` (H-1b). */
 function otherRoutesSuffixes(current: PatternStackHttpLayer | null): string[] {
-	const all = Object.values(HTTP_LAYERS).flatMap((l: PatternStackHttpLayer | null) => (l ? [l.routesFileSuffix] : []));
-	return all.filter((s) => s !== current?.routesFileSuffix);
+	return allRoutesSuffixes().filter((s) => s !== current?.routesFileSuffix);
 }
 
 import type { TargetWiring } from '../../targets/apps.js';
@@ -97,13 +97,13 @@ export function removeOtherWiringFiles(input: {
 					...GENERATED_SYSTEM_FILES.map((f) => path.join(generatedDir, f)).filter((f) => !keep.has(f)),
 					// H-1b: an HTTP layer's files, once the target has none (or another).
 					...underModules.filter((f) => otherRoutesSuffixes(input.httpLayer ?? null).some((s) => f.endsWith(s))),
-					...[path.join(generatedDir, 'http.ts')].filter((f) => !keep.has(f)),
+					...[path.join(generatedDir, HTTP_APP_FILE)].filter((f) => !keep.has(f)),
 				]
 			: [
 					...underModules.filter((f) => path.basename(f) === 'module.ts' || f.endsWith('.wiring.ts') || f.endsWith('.commands.ts')),
 					...Object.values(COMPOSITION_GENERATED_FILES).map((f) => path.join(generatedDir, f)),
 					...GENERATED_SYSTEM_FILES.map((f) => path.join(generatedDir, f)),
-					path.join(generatedDir, 'http.ts'),
+					path.join(generatedDir, HTTP_APP_FILE),
 					...underModules.filter((f) => otherRoutesSuffixes(null).some((s) => f.endsWith(s))),
 				];
 	const stale = [...candidates, ...integrationCandidates].filter((f) => !keep.has(f) && fs.existsSync(f) && isGenerated(f));

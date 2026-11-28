@@ -26,8 +26,8 @@ import { DEFAULT_CODEGEN_CONFIG } from '../../config/project-config.js';
 import { DEFAULT_TARGET_PAIR } from '../../targets/pairs.js';
 import { DEFAULT_TARGET_APP, TARGET_WIRINGS, targetApp, targetWiring, type TargetApp, type TargetHttp, type TargetWiring } from '../../targets/apps.js';
 import { rowFor } from '../../utils/keyed-row.js';
-import { HTTP_LAYERS, patternStackHttpName, type PatternStackHttpLayer } from '../../targets/http.js';
-import { HTTP_RENDERERS } from '../../emitters/http/index.js';
+import { allLayerRuntimeFiles, HTTP_LAYERS, patternStackHttpLayer, patternStackHttpName, type PatternStackHttp, type PatternStackHttpLayer } from '../../targets/http.js';
+import { HTTP_APP_FILE, HTTP_RENDERERS } from '../../emitters/http/index.js';
 import { configOrDefaults } from '../../config/project-config.js';
 import { buildSubsystemSchemaBarrel } from './subsystem-schema-generator.js';
 import { emptyPatternStackComposition } from './pattern-stack-composition.js';
@@ -305,7 +305,7 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
  */
 export function vendoredRuntimeFiles(wiring: TargetWiring, httpLayer: PatternStackHttpLayer | null = null): VendoredRuntimeFile[] {
 	// H-1b: an HTTP layer's runtime files (its `HTTP_LAYERS` row) come only with that layer.
-	const layerFiles = new Set(Object.values(HTTP_LAYERS).flatMap((l: PatternStackHttpLayer | null) => l?.runtimeFiles ?? []));
+	const layerFiles = new Set(allLayerRuntimeFiles());
 	const ofLayer = (v: VendoredRuntimeFile) => !layerFiles.has(v.runtime) || (httpLayer?.runtimeFiles.includes(v.runtime) ?? false);
 	return VENDORED_RUNTIME_FILES.filter((v) => (v.wirings ?? TARGET_WIRINGS).includes(wiring)).filter(ofLayer);
 }
@@ -716,14 +716,22 @@ main().catch((err) => {
 /** The `http` values pattern-stack wiring takes (its `TARGET_APPS` rows). */
 type PatternStackHttpValue = Extract<TargetApp, { wiring: 'pattern-stack' }>['http'];
 
-/** Each pattern-stack `http` value's `main.ts` (H-1b): one row per value, read with `rowFor`. */
+/**
+ * Each pattern-stack `http` value's `main.ts` (H-1b), read with `rowFor`: `none` runs the app's work; every HTTP layer
+ * serves it, by its own row in `HTTP_RENDERERS` (so a new layer needs that row only).
+ */
 const PATTERN_STACK_MAINS: { readonly [H in PatternStackHttpValue]: (layout: ProjectLayout) => string } = {
 	none: patternStackMainContent,
-	hono: (layout) =>
-		HTTP_RENDERERS.hono.mainContent({
-			composeImport: importSpecifier(layout.mainTs, layout.composeTs),
-			httpImport: importSpecifier(layout.mainTs, path.join(layout.generated, 'http')),
-		}),
+	...(Object.fromEntries(
+		Object.entries(HTTP_RENDERERS).map(([name, renderers]) => [
+			name,
+			(layout: ProjectLayout) =>
+				renderers.mainContent({
+					composeImport: importSpecifier(layout.mainTs, layout.composeTs),
+					httpImport: importSpecifier(layout.mainTs, path.join(layout.generated, HTTP_APP_FILE.replace(/\.ts$/, ''))),
+				}),
+		]),
+	) as { readonly [H in PatternStackHttp]: (layout: ProjectLayout) => string }),
 };
 
 function rootSchemaContent(layout: ProjectLayout): string {
@@ -1208,13 +1216,15 @@ export async function buildInitPlan(
 	const wiring: TargetWiring =
 		options.wiring ?? (options.http !== undefined ? 'pattern-stack' : targetWiring(configOrDefaults(ctx.config).target));
 	const patternStack = wiring === 'pattern-stack';
-	// `target.http` (H-1b): the flag, else the existing pattern-stack config's, else `none`; Nest's is `nest`.
+	// `target.http` (H-1b): the flag, else the existing config's when it is this wiring's, else the wiring's first
+	// `TARGET_APPS` row (`targetApp` with no http). Its layer is its `HTTP_LAYERS` row.
 	const configured = configOrDefaults(ctx.config).target;
-	const http: TargetHttp = patternStack
-		? (options.http ?? (targetWiring(configured) === 'pattern-stack' ? targetApp(configured).http : 'none'))
-		: 'nest';
-	const httpName = patternStack ? patternStackHttpName({ wiring, http }) : null;
-	const httpLayer = httpName ? HTTP_LAYERS[httpName] : null;
+	// `target.http` (H-1b): the flag, else the existing config's when it is this wiring's, else the wiring's first
+	// `TARGET_APPS` row (`targetApp` with no http). Its layer is its `HTTP_LAYERS` row.
+	const configuredHttp = targetWiring(configured) === wiring ? configured.http : undefined;
+	const http: TargetHttp = targetApp({ wiring, http: options.http ?? configuredHttp }).http;
+	const httpName = patternStackHttpName({ wiring, http });
+	const httpLayer = patternStackHttpLayer({ wiring, http });
 	// The target's row of TARGET_APPS (the config writes it out unless it is the default).
 	const app = targetApp({ wiring, http });
 	const refusal = initWiringRefusal(ctx, cwd, options);

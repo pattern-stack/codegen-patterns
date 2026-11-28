@@ -51,7 +51,7 @@ import { junctionIdentity } from '../../emitters/relations/build-graph.js';
 import { rowFor } from '../../utils/keyed-row.js';
 import { junctionWiringFile } from '../../config/junction-naming.js';
 import { camelCase, emittedDir } from '../../config/file-naming.js';
-import { entityModuleNaming, type EntityModuleNaming } from '../../config/module-tree.js';
+import { entityModuleNaming, entityRoutesFile, type EntityModuleNaming } from '../../config/module-tree.js';
 import { generating } from '../../utils/generated-file.js';
 import { relativeImport } from '../../utils/import-path.js';
 import { JOBS_WORKER_ENV, type ProjectSetting } from '../../derived/settings/index.js';
@@ -59,7 +59,7 @@ import { SETTINGS_FILE, settingsContent } from '../settings/emit-settings.js';
 import { IDENTITY_ENTITIES } from '../../../runtime/subsystems/identity/names.js';
 import { HTTP_APP_FILE, HTTP_RENDERERS } from '../http/index.js';
 import { HTTP_LAYERS, type PatternStackHttp } from '../../targets/http.js';
-import { apiEnabled } from '../../derived/api/entity.js';
+import { routesOn } from '../../derived/api/entity.js';
 
 /** The module name of the entities that declare no `context:`. */
 export const ROOT_MODULE = 'entities';
@@ -692,11 +692,11 @@ export function commandNamed(name: string): Command<App> | undefined {
 `,
 	});
 	if (input.http) {
-		// H-1b: every entity whose HTTP is on (`api:` not false) and that has commands mounts its routes.
+		// H-1b: every entity with routes (`routesOn`: HTTP on and commands on) mounts them.
 		const layer = HTTP_LAYERS[input.http.name];
 		const httpFile = path.join(generatedDir, HTTP_APP_FILE);
 		const routed = definitions
-			.filter((d) => apiEnabled(d) && !commandsDisabledBy({ generate: d.generate }))
+			.filter((d) => routesOn(d))
 			.map((d) => {
 				const e = d.entity.name;
 				const module = moduleOf.get(e)!;
@@ -704,7 +704,7 @@ export function commandNamed(name: string): Command<App> | undefined {
 					module,
 					key: camelCase(e),
 					routesFunction: routesFunctionName(e),
-					routesImport: relativeImport(httpFile, wiringFile(e).replace(/\.wiring\.ts$/, layer.routesFileSuffix)),
+					routesImport: relativeImport(httpFile, entityRoutesFile(entityModuleNaming(blockOf.get(e)!, modulesDir).moduleDir, e, layer.routesFileSuffix)),
 				};
 			});
 		files.push({

@@ -143,6 +143,15 @@ export function commandsDisabledBy(definition: { generate: EntityDefinitionInput
 }
 
 /**
+ * Whether an entity has HTTP routes under an HTTP layer (H-1b): its HTTP is on and it has commands to view (routes are
+ * views of commands). The one rule: the routes template, its file path and `<generated>/http.ts` read it (through
+ * `http.routesFunction`, present exactly when this holds).
+ */
+export function routesOn(definition: Pick<EntityDefinitionInput, 'api' | 'generate'>): boolean {
+	return apiEnabled(definition) && commandsDisabledBy({ generate: definition.generate }) === null;
+}
+
+/**
  * The declaration that removes a base's own `create` — the use case, the `POST` route and its provider — or `null`
  * when it has one (RFC-0006 §4.1, §5, #875 S5). A base's create accepts only base-only kinds, so a base whose every
  * kind has a child table has none: a row of any kind is created through its child's `POST`. The cause is the
@@ -1048,7 +1057,7 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 		routes,
 		includeRoutes,
 		includesConst: includesConstName(plural),
-		routesFunction: routesFunctionName(entityName),
+		...(routesOn(definition) ? { routesFunction: routesFunctionName(entityName) } : {}),
 	};
 	if (disabledBy) http.disabledBy = disabledBy;
 

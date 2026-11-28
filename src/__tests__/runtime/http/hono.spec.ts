@@ -3,8 +3,9 @@
  */
 import { describe, expect, it } from 'bun:test';
 import { Hono } from 'hono';
-import { answer, badId, bindInput, jsonBody, queryOf, REFUSAL_STATUS, useNestFallbacks } from '../../../../runtime/http/hono';
-import { REFUSALS } from '../../../../runtime/commands';
+import { answer, badId, bindInput, BODY_LIMIT_BYTES, jsonBody, queryOf, useNestBodyLimit, useNestFallbacks } from '../../../../runtime/http/hono';
+import { refusalOf } from '../../../../runtime/commands';
+import { NotFoundError } from '../../../../runtime/errors';
 
 const appWith = (handler: Parameters<Hono['post']>[1]) => {
 	const app = new Hono();
@@ -17,8 +18,23 @@ const appWith = (handler: Parameters<Hono['post']>[1]) => {
 };
 
 describe('the Hono view of the commands', () => {
-	it('has a status for every reason a command refuses with', () => {
-		expect(Object.keys(REFUSAL_STATUS).sort()).toEqual(Object.keys(REFUSALS).sort());
+	it("answers a refusal with the status its owner's body names", async () => {
+		const app = new Hono();
+		app.get('/gone', (c) => answer(c, { ok: false, refusal: refusalOf(new NotFoundError('gone'))! }, 200));
+		const res = await app.request('/gone');
+		expect(res.status).toBe(404);
+		expect(await res.json()).toEqual({ message: 'gone', error: 'Not Found', statusCode: 404 });
+	});
+
+	it("refuses a body over the limit with Nest's 413, before reading it", async () => {
+		const app = new Hono();
+		useNestBodyLimit(app);
+		app.post('/x', (c) => c.json({ ok: true }));
+		const big = await app.request('/x', { method: 'POST', headers: { 'content-type': 'application/json' }, body: 'x'.repeat(BODY_LIMIT_BYTES + 1) });
+		expect(big.status).toBe(413);
+		expect(await big.json()).toEqual({ message: 'request entity too large', error: 'Payload Too Large', statusCode: 413 });
+		const small = await app.request('/x', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+		expect(small.status).toBe(200);
 	});
 
 	it('answers a result with its success status, and no result with an empty body', async () => {
@@ -37,6 +53,7 @@ describe('the Hono view of the commands', () => {
 		const app = new Hono();
 		const data = { message: 'gone', error: 'Not Found', statusCode: 404 };
 		app.get('/r', (c) => answer(c, { ok: false, refusal: { reason: 'not-found', detail: 'gone', instead: 'look', data } }, 200));
+		// A refusal whose body names no status is a crash.
 		app.get('/odd', (c) => answer(c, { ok: false, refusal: { reason: 'who-knows', detail: 'x', instead: 'y' } }, 200));
 		useNestFallbacks(app);
 		const r = await app.request('/r');

@@ -44,7 +44,7 @@ const hono: HttpRenderers = {
  */
 import { Hono } from 'hono';
 import { OpenApiRegistry } from '${input.openApiImport}';
-import { useNestFallbacks } from '${input.runtimeImport}';
+import { useNestBodyLimit, useNestFallbacks } from '${input.runtimeImport}';
 import type { App } from './commands';
 import { registerOpenApiSchemas } from './openapi';
 ${input.entities.map((e) => `import { ${e.routesFunction} } from '${e.routesImport}';`).join('\n')}
@@ -55,7 +55,9 @@ export interface CreateAppOptions {
 }
 
 export function createApp(app: App, options: CreateAppOptions = {}): Hono {
-  const http = new Hono();
+  // Express's router (under Nest) ignores a trailing slash; Hono's must be told (case still matters: a known difference).
+  const http = new Hono({ strict: false });
+  useNestBodyLimit(http);
   const openApi = new OpenApiRegistry();
   registerOpenApiSchemas(openApi);
   const docs = options.openApi ?? {};
@@ -73,42 +75,57 @@ ${input.entities.map((e) => `  http.route('/', ${e.routesFunction}(app.module('$
   return http;
 }
 `,
-	mainContent: (input) => `import { serve } from '@hono/node-server';
+	mainContent: (input) => `import { serve, type ServerType } from '@hono/node-server';
 import { composeApp } from '${input.composeImport}';
 import { createApp } from '${input.httpImport}';
 
+/** How long a stop waits for open requests before it exits anyway. */
+const SHUTDOWN_DEADLINE_MS = 10_000;
+
 /**
- * Compose, start, and serve the HTTP layer (H-1b) on the \`http.port\` setting. SIGINT / SIGTERM close the server, then
- * stop the composition. \`@hono/node-server\` runs on Bun and Node alike.
+ * Compose, start, and serve the HTTP layer (H-1b) on the \`http.port\` setting. SIGINT / SIGTERM, from the start on,
+ * close the server (if it is listening), then stop the composition; a stop that outlasts the deadline exits anyway. A
+ * server that can't listen (the port is taken) stops the composition and exits 1. \`@hono/node-server\` runs on Bun
+ * and Node alike.
  */
 async function main(): Promise<void> {
   const app = composeApp();
-  await app.start();
-  // The \`port\` format checked it when the app composed: 1 to 65535.
-  const port = globalThis.Number(app.system('settings').http.port);
-  const server = serve({ fetch: createApp(app).fetch, port });
-  // eslint-disable-next-line no-console
-  console.log(\`listening on http://localhost:\${port}\`);
-
+  let server: ServerType | undefined;
   let stopping = false;
-  const stop = (signal: string) => {
+  const stop = (signal: string, code = 0) => {
     if (stopping) return;
     stopping = true;
     // eslint-disable-next-line no-console
     console.log(\`\${signal}: stopping\`);
-    server.close(() => {
+    globalThis.setTimeout(() => process.exit(1), SHUTDOWN_DEADLINE_MS).unref();
+    const stopApp = () =>
       app.stop().then(
-        () => process.exit(0),
+        () => process.exit(code),
         (err) => {
           // eslint-disable-next-line no-console
           console.error(err);
           process.exit(1);
         },
       );
-    });
+    if (server) server.close(() => void stopApp());
+    else void stopApp();
   };
   process.once('SIGINT', () => stop('SIGINT'));
   process.once('SIGTERM', () => stop('SIGTERM'));
+
+  await app.start();
+  // A signal during start stops what started; don't serve a stopped app.
+  if (stopping) return;
+  // The \`port\` format checked it when the app composed: 1 to 65535.
+  const port = globalThis.Number(app.system('settings').http.port);
+  server = serve({ fetch: createApp(app).fetch, port });
+  server.on('error', (err) => {
+    // eslint-disable-next-line no-console
+    console.error(\`listening on \${port} failed:\`, err);
+    stop('listen error', 1);
+  });
+  // eslint-disable-next-line no-console
+  console.log(\`listening on http://localhost:\${port}\`);
 }
 
 main().catch((err) => {

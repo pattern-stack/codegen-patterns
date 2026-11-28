@@ -77,3 +77,11 @@ export function entityModuleNaming(entity: ModuleTreeEntity, modulesDir: string)
 		commandsFile: `${moduleDir}/${emittedStem(entity.name)}.commands.ts`,
 	};
 }
+
+/**
+ * An entity's routes file under an HTTP layer (H-1b): `<moduleDir>/<name><suffix>` (`.routes.ts`), beside its
+ * commands. The one rule hygen writes it by and `<generated>/http.ts` imports it by.
+ */
+export function entityRoutesFile(moduleDir: string, entityName: string, routesFileSuffix: string): string {
+	return `${moduleDir}/${emittedStem(entityName)}${routesFileSuffix}`;
+}

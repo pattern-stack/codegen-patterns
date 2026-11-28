@@ -3,36 +3,29 @@
  * runtime-neutral (Bun and Node).
  *
  * A generated route binds the request onto its command's input, runs it with `invokeCommand`, and answers with
- * `answer`: a result with the route's success status, a refusal with the status its reason has in `REFUSAL_STATUS`
- * and the body the refusal carries (the Nest target's, byte for byte). What a route checks before it binds, and what
+ * `answer`: a result with the route's success status, a refusal with the status its body names (the error owner's)
+ * and that body (the Nest target's, byte for byte). What a route checks before it binds, and what
  * the app answers outside any route, are Nest's too: a malformed `:id` (`ParseUUIDPipe`), an unknown route, a crash.
  */
 import type { Context, Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import type { Outcome } from '@pattern-stack/wiring/commands';
-import { REFUSALS, type RefusalReason } from '../commands';
 import { BadRequestError, errorBody } from '../errors';
 import { createLogger } from '../logger';
 
 const logger = createLogger('http');
 
-/** The status each refusal reason answers with. One row per reason `runtime/commands.ts` refuses with. */
-export const REFUSAL_STATUS: { readonly [R in RefusalReason]: 400 | 401 | 403 | 404 | 409 | 422 } = {
-  'invalid-input': 400,
-  'bad-request': 400,
-  'include-not-allowed': 400,
-  'not-found': 404,
-  'unique-violation': 409,
-  'still-referenced': 409,
-  'foreign-key-violation': 422,
-  unauthenticated: 401,
-  forbidden: 403,
-  conflict: 409,
-};
-
 /** A result's status: what a route answers when its command succeeds (Nest's: 201 for a create, else 200). */
 export type SuccessStatus = 200 | 201;
 
-/** The answer to a command's outcome. A refusal with a reason no row names is a crash (500), naming the rows. */
+/** An HTTP error status a refusal's body names (4xx). */
+type RefusalStatus = 400 | 401 | 403 | 404 | 409 | 413 | 422;
+
+/**
+ * The answer to a command's outcome. A refusal answers with the status its own body names: every body a refusal
+ * carries is built by its error's owner (`errorBody`, `constraintViolationBody`, `validationErrorBody`), each with its
+ * `statusCode`, so the status can't drift from the body. A refusal whose body names none is a crash (500).
+ */
 export function answer(c: Context, outcome: Outcome<unknown>, success: SuccessStatus): Response {
   if (outcome.ok) {
     // A command with no result (a delete) answers with an empty body, as a Nest handler returning void does.
@@ -40,11 +33,11 @@ export function answer(c: Context, outcome: Outcome<unknown>, success: SuccessSt
     return c.json(outcome.result as object, success);
   }
   const { reason, data } = outcome.refusal;
-  const status = (REFUSAL_STATUS as Readonly<Record<string, 400 | 401 | 403 | 404 | 409 | 422>>)[reason];
-  if (status === undefined) {
-    throw new Error(`answer: refusal '${reason}' has no status; REFUSAL_STATUS names ${Object.keys(REFUSALS).join(', ')}`);
+  const status = data?.['statusCode'];
+  if (typeof status !== 'number' || status < 400 || status > 499) {
+    throw new Error(`answer: refusal '${reason}' carries no 4xx statusCode in its body (${JSON.stringify(data)})`);
   }
-  return c.json(data ?? { statusCode: status, message: outcome.refusal.detail }, status);
+  return c.json(data as object, status as RefusalStatus);
 }
 
 /** `ParseUUIDPipe`'s check (Nest's default, any version): 8-4-4-4-12 hex. */
@@ -120,4 +113,21 @@ export function useNestFallbacks(app: Hono): void {
 export function bindInput(body: unknown, fields: Readonly<Record<string, unknown>>): unknown {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) return body;
   return { ...body, ...fields };
+}
+
+/** Nest's JSON body parser's limit (body-parser's default, 100kb): a larger body is refused before it is read. */
+export const BODY_LIMIT_BYTES = 100 * 1024;
+
+/**
+ * Caps every request body at `BODY_LIMIT_BYTES`, answering Nest's 413 for a larger one, so a client can't make the
+ * server buffer an unbounded body (Nest's parser refuses it the same way).
+ */
+export function useNestBodyLimit(app: Hono): void {
+  app.use(
+    '*',
+    bodyLimit({
+      maxSize: BODY_LIMIT_BYTES,
+      onError: (c) => c.json({ message: 'request entity too large', error: 'Payload Too Large', statusCode: 413 }, 413),
+    }),
+  );
 }

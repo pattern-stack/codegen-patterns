@@ -28,7 +28,7 @@
  * --force-config` for that subsystem.
  */
 
-import { HTTP_LAYERS, patternStackHttpLayer, type PatternStackHttpLayer } from '../../targets/http.js';
+import { allLayerRuntimeFiles, patternStackHttpLayer } from '../../targets/http.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Command, Option } from 'clipanion';

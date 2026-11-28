@@ -141,9 +141,10 @@ async function main(): Promise<number> {
 			if (!httpTs.includes(mount)) fail(`http.ts should mount ${mount}:\n${httpTs}`);
 		}
 		const accountRoutes = fs.readFileSync(path.join(tmpDir, generated.find((f) => f.endsWith('/account.routes.ts'))!), 'utf8');
-		if (accountRoutes.indexOf("'/accounts/search'") > accountRoutes.indexOf("'/accounts/:id'")) {
-			fail('the search route should be registered before /accounts/:id');
-		}
+		const searchAt = accountRoutes.indexOf("'/accounts/search'");
+		const idAt = accountRoutes.indexOf("'/accounts/:id'");
+		if (searchAt === -1 || idAt === -1) fail(`account.routes.ts should have both /accounts/search and /accounts/:id:\n${accountRoutes}`);
+		if (searchAt > idAt) fail('the search route should be registered before /accounts/:id');
 		log('routes and commands per entity; http.ts mounts them; search before /:id');
 		// 4c. tsc.
 		typecheck(tmpDir, 'the Hono project');

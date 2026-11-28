@@ -18,6 +18,7 @@ import pluralizePkg from 'pluralize';
 import {
   entityLookupFrom,
   entityModuleNaming,
+  entityRoutesFile,
   relativeModuleDir,
 } from '../../../_shared/entity-naming.mjs';
 import { junctionFanOutFor, junctionNaming } from '../../../_shared/junction-fan-out.mjs';
@@ -2527,7 +2528,7 @@ export function buildBackendLocals(definition, baseLocals) {
   };
 
   // H-1b: the pattern-stack target's HTTP layer (`HTTP_LAYERS`, src/targets/http.ts), or null for none.
-  const httpLayer = patternStackWiring ? patternStackHttpLayer(baseLocals.target) : null;
+  const httpLayer = patternStackHttpLayer(baseLocals.target);
   const httpRuntimeImport = httpLayer ? runtimeImport(runtimeMode, httpLayer.runtimeModule) : null;
   const outputPaths = {
     entity: `${ownNaming.entityFile}.ts`,
@@ -2601,7 +2602,7 @@ export function buildBackendLocals(definition, baseLocals) {
     ...(apiSurface.commandsDisabledBy ? { commands: null } : {}),
     // H-1b: its HTTP routes, when the pattern-stack target has an HTTP layer (`HTTP_LAYERS`, src/targets/http.ts) and
     // the entity has commands to view (`generate.commands: false` ⇒ none).
-    routes: httpLayer && !apiSurface.commandsDisabledBy ? `${moduleDir}/${emittedStem(entityName)}${httpLayer.routesFileSuffix}` : null,
+    routes: httpLayer && apiSurface.http.routesFunction ? entityRoutesFile(moduleDir, entityName, httpLayer.routesFileSuffix) : null,
   };
 
   // PW-3: pattern-stack wiring (`target: { wiring: pattern-stack, http: none }`) emits the same table, DTOs, repository, service and use

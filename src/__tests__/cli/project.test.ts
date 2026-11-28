@@ -676,7 +676,7 @@ describe('project init, wiring: pattern-stack, http: hono (H-1b)', () => {
 		const content = (rel: string) => plan.entries.find((e) => e.relPath === rel)!.content!;
 		const config = (await import('yaml')).parse(content('codegen.config.yaml'));
 		expect(config.target).toEqual({ database: 'postgres', orm: 'drizzle', wiring: 'pattern-stack', http: 'hono' });
-		expect(content('src/main.ts')).toContain("import { serve } from '@hono/node-server';");
+		expect(content('src/main.ts')).toContain("import { serve, type ServerType } from '@hono/node-server';");
 		expect(content('src/main.ts')).toContain("app.system('settings').http.port");
 		expect(content('src/generated/settings.ts')).toContain("env: 'PORT'");
 		expect(content('.env.example')).toContain('# PORT=3000');
@@ -864,14 +864,14 @@ describe('project init, wiring: pattern-stack — refusals and what it never ove
 describe('vendoredRuntimeFiles', () => {
 	test('a file is flagged `nest` exactly when it imports @nestjs or reflect-metadata', () => {
 		for (const v of VENDORED_RUNTIME_FILES) {
-			expect({ file: v.runtime, nest: NEST_IMPORT.test(loadRuntimeFile(v.runtime)) }).toEqual({ file: v.runtime, nest: !vendoredRuntimeFiles('pattern-stack').includes(v) });
+			expect({ file: v.runtime, nest: NEST_IMPORT.test(loadRuntimeFile(v.runtime)) }).toEqual({ file: v.runtime, nest: !vendoredRuntimeFiles('pattern-stack', HTTP_LAYERS.hono).includes(v) });
 		}
 	});
 
 	test('pattern-stack drops the Nest files; nest keeps the whole closure', () => {
 		// SET-1: the settings loader is pattern-stack's only.
 		expect(vendoredRuntimeFiles('nest').map((v) => v.runtime)).not.toContain('settings.ts');
-		expect(otherWiringVendoredFiles('nest').map((v) => v.runtime)).toEqual(['settings.ts', 'commands.ts']);
+		expect(otherWiringVendoredFiles('nest').map((v) => v.runtime)).toEqual(['settings.ts', 'commands.ts', 'http/hono.ts']);
 		expect(vendoredRuntimeFiles('pattern-stack').map((v) => v.runtime)).toContain('settings.ts');
 		const plain = vendoredRuntimeFiles('pattern-stack').map((v) => v.runtime);
 		expect(plain).not.toContain('nest-logger.ts');

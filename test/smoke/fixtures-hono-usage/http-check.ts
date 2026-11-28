@@ -91,6 +91,15 @@ export async function httpCheck(url: string): Promise<void> {
     assert(deletedContact.status === 200 && deletedContact.body === null, `DELETE is 200 with an empty body, as Nest's: ${JSON.stringify(deletedContact)}`);
     assert((await call('DELETE', `/accounts/${id}`)).status === 200, 'DELETE /accounts/:id is 200');
 
+    // Nest's body parser refuses a body over 100kb with a 413 before reading it; so does the Hono app.
+    const tooLarge = await call('POST', '/accounts', undefined, JSON.stringify({ name: 'x'.repeat(200 * 1024) }));
+    assert(tooLarge.status === 413, `a body over 100kb is 413: ${tooLarge.status}`);
+    same(tooLarge.body, { message: 'request entity too large', error: 'Payload Too Large', statusCode: 413 }, "the 413 body is Nest's");
+
+    // Express ignores a trailing slash; so does the Hono app.
+    const slashed = await call('GET', '/accounts/');
+    assert(slashed.status === 200 && Array.isArray(slashed.body!.items), `GET /accounts/ lists, as Nest's does: ${slashed.status}`);
+
     const unknown = await call('GET', '/nope');
     assert(unknown.status === 404, `an unknown route is 404: ${unknown.status}`);
     same(unknown.body, { message: 'Cannot GET /nope', error: 'Not Found', statusCode: 404 }, "the unknown route's body is Nest's");

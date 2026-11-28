@@ -58,3 +58,13 @@ export function patternStackHttpName(target: { wiring?: string; http?: string })
 	const http = targetApp(target).http;
 	return rowFor('target.http', HTTP_LAYERS, http) === null ? null : (http as PatternStackHttp);
 }
+
+/** Every HTTP layer's vendored runtime files: a project with another layer (or none) must not keep them. */
+export function allLayerRuntimeFiles(): string[] {
+	return Object.values(HTTP_LAYERS).flatMap((l: PatternStackHttpLayer | null) => l?.runtimeFiles ?? []);
+}
+
+/** Every HTTP layer's routes-file suffix. */
+export function allRoutesSuffixes(): string[] {
+	return Object.values(HTTP_LAYERS).flatMap((l: PatternStackHttpLayer | null) => (l ? [l.routesFileSuffix] : []));
+}

@@ -2428,7 +2428,6 @@
           "routes": [],
           "includeRoutes": [],
           "includesConst": "OPPORTUNITIES_API_INCLUDES",
-          "routesFunction": "opportunityRoutes",
           "disabledBy": {
             "doc": {
               "kind": "entity",

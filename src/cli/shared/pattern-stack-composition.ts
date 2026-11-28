@@ -34,12 +34,11 @@ import { configOrDefaults } from '../../config/project-config.js';
 import { isSubsystemInstalled } from './subsystem-detect.js';
 import { CONNECTION_STORE_FILE, eventsGeneratedDir } from './pattern-stack-subsystems.js';
 import { removeOtherWiringFiles } from '../../emitters/composition/stale-files.js';
-import { HTTP_LAYERS, patternStackHttpName, type PatternStackHttp } from '../../targets/http.js';
+import { HTTP_LAYERS, patternStackHttpLayer, patternStackHttpName, type PatternStackHttp } from '../../targets/http.js';
 
 /** The target's HTTP layer for the composition (H-1b): its name and runtime import, or null for none. */
-function httpInput(ctx: Context): { name: PatternStackHttp; runtimeImport: string } | null {
-	const name = patternStackHttpName(configOrDefaults(ctx.config).target);
-	return name ? { name, runtimeImport: runtimeImport(resolveRuntimeMode(ctx.config), HTTP_LAYERS[name].runtimeModule) } : null;
+function httpInput(name: PatternStackHttp | null, mode: RuntimeMode): { name: PatternStackHttp; runtimeImport: string } | null {
+	return name ? { name, runtimeImport: runtimeImport(mode, HTTP_LAYERS[name].runtimeModule) } : null;
 }
 import { openApiImport, resolveRuntimeMode, runtimeImport, subsystemCoreImport, type RuntimeMode } from './runtime-import.js';
 import { printInfo, printWarning } from '../ui/output.js';
@@ -270,7 +269,7 @@ function compositionInput(ctx: Context): CompositionInput {
 		})(),
 		settings: { settings: projectSettings(ctx), runtimeImport: runtimeImport(mode, 'settings') },
 		jobs: patternStackJobsInput(ctx, layout.generated),
-		http: httpInput(ctx),
+		http: httpInput(patternStackHttpName(configOrDefaults(ctx.config).target), resolveRuntimeMode(ctx.config)),
 	};
 }
 
@@ -305,7 +304,7 @@ export function emptyPatternStackComposition(
 			runtimeImport: runtimeImport(mode, 'settings'),
 		},
 		// H-1b: `<generated>/http.ts` over no entity yet, so the served `main.ts` compiles before the first `entity new`.
-		http: http ? { name: http, runtimeImport: runtimeImport(mode, HTTP_LAYERS[http].runtimeModule) } : null,
+		http: httpInput(http, mode),
 		dryRun: true,
 	});
 }
@@ -329,10 +328,7 @@ export function writePatternStackComposition(ctx: Context): PatternStackComposit
 		integrationsDir: integrationsRoot(projectLayout(ctx.cwd, ctx.config)),
 		// The composition's files and the integration systems this run writes (`emitPatternStackIntegrations`).
 		keep: new Set([...files.map((f) => f.path), ...(input.integrations?.systems ?? []).map((s) => s.file)]),
-		httpLayer: (() => {
-			const name = patternStackHttpName(configOrDefaults(ctx.config).target);
-			return name ? HTTP_LAYERS[name] : null;
-		})(),
+		httpLayer: patternStackHttpLayer(configOrDefaults(ctx.config).target),
 	});
 	const behind = wiringFilesBehind(input);
 	// SET-1: `.env.example` from the same settings as `<generated>/settings.ts`.

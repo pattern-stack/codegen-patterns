@@ -464,7 +464,7 @@ throws for a caller's mistake becomes a refusal by one table, `runtime/commands.
 body the Nest target sends for it, from that error's own owner (`errorBody`, `constraintViolationBody`,
 `validationErrorBody`). Every way in (HTTP, MCP, a CLI) calls `invokeCommand`; never re-translate errors in a view.
 Under `http: hono` (H-1b) each entity's `<entity>.routes.ts` is a view of its commands: bind, `invokeCommand`,
-`answer` (`runtime/http/hono.ts`: `REFUSAL_STATUS` is the one reason → status table); `<generated>/http.ts`'s
+`answer` (`runtime/http/hono.ts`: a refusal answers with the `statusCode` its owner's body names, no table of its own); `<generated>/http.ts`'s
 `createApp(app)` mounts them. What an HTTP layer emits is its row in `HTTP_LAYERS` (`src/targets/http.ts`) and
 `HTTP_RENDERERS` (`src/emitters/http/`); the port is the layer's setting. `just test-smoke-hono` holds it.
 

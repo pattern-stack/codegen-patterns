@@ -1,6 +1,6 @@
 ---
 to: "<%= outputPaths.routes %>"
-skip_if: "<%= !apiSurface.http.enabled %>"
+skip_if: "<%= !apiSurface.http.routesFunction %>"
 force: true
 ---
 <%- generatedBanner %>

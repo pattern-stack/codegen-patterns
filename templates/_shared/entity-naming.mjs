@@ -27,7 +27,7 @@ import yaml from 'yaml';
 import { entitiesDirPath, resolveEntitiesDir } from '../../src/config/entities-dir.js';
 import { configOrDefaults, loadProjectConfig } from '../../src/config/project-config.js';
 import { findYamlFiles } from '../../src/utils/find-yaml-files.js';
-import { entityModuleNaming } from '../../src/config/module-tree.js';
+import { entityModuleNaming, entityRoutesFile } from '../../src/config/module-tree.js';
 import { sqlTableName } from '../../src/config/table-naming.js';
 
 /**
@@ -37,7 +37,7 @@ import { sqlTableName } from '../../src/config/table-naming.js';
  * the CLI's own (`src/config/module-tree.ts`, GEN-0 #649): the barrels and the
  * integration assemblies read the same function.
  */
-export { entityModuleNaming };
+export { entityModuleNaming, entityRoutesFile };
 
 /**
  * The import directory of `toDir` as seen from a file in `fromDir` — both
