@@ -195,7 +195,7 @@ src/                    # Generator source code
   parser/               # YAML loading, cross-reference resolution (+ entity registry)
   scanner/              # Project pattern detection (framework, ORM, naming)
   schema/               # Zod schemas for entity definitions + codegen config (Zod 4 via schema/zod.ts; ZOD-0)
-  derived/              # Derived once from the YAML (ADR-046): api/ names + existence, columns/ field facts, constraints/ constraint facts, tables/ table columns
+  derived/              # Derived once from the YAML (ADR-046): api/ names + existence, columns/ field facts, constraints/ constraint facts, tables/ table columns, wiring/ the class graph (PW-1)
   targets/              # Per-target text rendered from derived facts, keyed by `target:` (ADR-047)
   utils/                # YAML and config loaders
   __tests__/            # Unit tests (mirrors src/ structure)
@@ -564,6 +564,8 @@ derivation. The entity backend (`templates/entity/new/backend/**`, `prompt.js`) 
 existence decision inline. Two things are still decided outside the derivation, each held to it: the generated
 **class** names (repository, service, controller, module, use cases), still built by `entity-locals.js` and held
 equal by the parity gate until #894 moves them; and the `// Inherited from <Base>:` comments, which print the
-pattern's lines (named expectation `inherited-comment-expectation.test.ts`, #893). The derivations left elsewhere
+pattern's lines (named expectation `inherited-comment-expectation.test.ts`, #893). **What each generated class's constructor takes** is the class graph (`src/derived/wiring/`, PW-1,
+`docs/specs/PW-1.md`), built from the surface: `module.ejs.t` prints its module imports, providers and controllers from
+it, and `entity new` refuses a class cycle by name (plain wiring constructs classes in dependency order). The derivations left elsewhere
 (the junction and relationship pipelines under #679, the broadcast bridge listener under #884) are each named,
 counted, in `no-name-derivation.allowlist.ts`, and that list only shrinks.

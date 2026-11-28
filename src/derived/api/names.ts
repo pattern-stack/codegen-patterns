@@ -318,3 +318,26 @@ export const FAMILY_METHOD = {
 	/** `natural_key: true`: the entity's own, or a child's through its base's. */
 	upsertByNaturalKey: 'upsertByNaturalKey',
 } as const;
+
+// ----------------------------------------------------------------------------
+// The event a write publishes (EVT-7 `emits:`)
+// ----------------------------------------------------------------------------
+
+/** The past tense a write's event type ends in: `create` publishes `<entity>_created`. */
+const WRITE_EVENT_SUFFIX = { create: 'created', update: 'updated', delete: 'deleted' } as const;
+export type WriteKind = keyof typeof WRITE_EVENT_SUFFIX;
+
+/**
+ * The event type a write use case publishes, or null: `<entity>_<created|updated|deleted>` when the entity's
+ * `emits:` lists it. The one statement of the rule — the delete's `preRead`, the class graph's transactional use
+ * cases and `prompt.js`'s `*EventType` locals all ask here.
+ */
+export function publishedWriteEvent(
+	entityName: string,
+	kind: string,
+	emits: readonly string[] | null | undefined,
+): string | null {
+	if (!Object.hasOwn(WRITE_EVENT_SUFFIX, kind)) return null;
+	const type = `${entityName}_${WRITE_EVENT_SUFFIX[kind as WriteKind]}`;
+	return (emits ?? []).includes(type) ? type : null;
+}
