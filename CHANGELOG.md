@@ -36,6 +36,11 @@ upgrade; `docs/specs/JOBS-3.md` the design and the full renamed-names table.
 
 ### Fixed
 
+- **The publish builds `@pattern-stack/jobs` before the root.** Main's publish failed: the tarball smoke built the root
+  first, and its type build could not resolve `@pattern-stack/jobs` (TS2307), whose `dist/` was not built yet.
+  `scripts/publish-order.ts` now orders the publishable packages from their manifests (each after the packages it names
+  in `dependencies` / `peerDependencies`), and both `just publish-ci` and the tarball smoke read it, so a new
+  workspace package the root imports takes its place by its manifest alone.
 - **A junction's `detach` and `setPrimary` work** (#973). A generated junction service's `detach(left, right)` and
   `setPrimary(left, right)` threw `table has no column 'id'` for every junction: they looked the link up, then deleted
   or updated it by `match.id`, and a junction table has no `id` (its key is the pair). The parents' fan-out methods

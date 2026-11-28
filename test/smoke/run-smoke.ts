@@ -44,6 +44,9 @@ const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
 // Run under bun, matching real consumers (`.js`→`.ts` extension resolution
 // inside templates only exists in bun).
 const TARBALL = process.env.SMOKE_TARBALL ?? '';
+// The workspace packages the root builds against (`@pattern-stack/jobs`), packed beside it by the tarball smoke:
+// installed with it, as a consumer installs codegen's peers. One path per line.
+const PEER_TARBALLS = (process.env.SMOKE_PEER_TARBALLS ?? '').split('\n').filter(Boolean);
 if (TARBALL && !fs.existsSync(TARBALL)) {
 	console.error(`SMOKE_TARBALL does not exist: ${TARBALL}`);
 	process.exit(2);
@@ -864,7 +867,7 @@ async function main(): Promise<number> {
 		// every subsequent CLI call runs from node_modules, exercising the
 		// published files manifest instead of the checkout.
 		if (TARBALL) {
-			run(`bun add ${TARBALL}`, tmpDir);
+			run(`bun add ${[TARBALL, ...PEER_TARBALLS].join(' ')}`, tmpDir);
 			log(`tarball mode: CLI runs from ${INSTALLED_CLI}`);
 		}
 
