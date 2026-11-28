@@ -22,7 +22,6 @@ import {
 } from './integration.tokens';
 import { IntegrationRunner } from './integration-runner';
 
-export type { ExecuteIntegrationInput, ExecuteIntegrationResult } from './integration-runner';
 
 @Injectable()
 export class ExecuteIntegrationUseCase<T extends Record<string, unknown>> extends IntegrationRunner<T> {

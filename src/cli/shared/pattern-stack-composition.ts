@@ -47,8 +47,7 @@ export function patternStackIntegrationInput(ctx: Context): CompositionIntegrati
 		multiTenant: integration.multi_tenant ?? false,
 		...(integration.differ ? { differ: integration.differ } : {}),
 		coreImport: subsystemCoreImport(mode, 'integration'),
-		cursorStoreImport: runtimeImport(mode, 'subsystems/integration/integration-cursor-store.drizzle-backend'),
-		runRecorderImport: runtimeImport(mode, 'subsystems/integration/integration-run-recorder.drizzle-backend'),
+		runtimeImport: (relpath) => runtimeImport(mode, relpath),
 	};
 }
 

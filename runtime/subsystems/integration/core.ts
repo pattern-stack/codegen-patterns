@@ -131,6 +131,7 @@ export { buildChangeSource } from './build-change-source';
 export {
   IntegrationRunner,
   type IntegrationRunnerParts,
+  type IntegrationSubstrate,
   type ExecuteIntegrationInput,
   type ExecuteIntegrationResult,
 } from './integration-runner';

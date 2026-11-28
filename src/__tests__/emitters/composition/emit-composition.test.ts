@@ -37,8 +37,7 @@ const INTEGRATION: IntegrationInput = {
 	backend: 'drizzle',
 	multiTenant: false,
 	coreImport: '@shared/subsystems/integration/core',
-	cursorStoreImport: '@shared/subsystems/integration/integration-cursor-store.drizzle-backend',
-	runRecorderImport: '@shared/subsystems/integration/integration-run-recorder.drizzle-backend',
+	runtimeImport: (relpath: string) => `@shared/${relpath}`,
 };
 
 function plan(
@@ -289,7 +288,7 @@ describe('the integration system in the composition (S-3)', () => {
 		const get = plan(FIXTURES, JUNCTIONS, EVENTS, INTEGRATION);
 		const system = get('/generated/integration-system.ts');
 		expect(system).toContain(
-			"import { DeepEqualDiffer, type ICursorStore, type IIntegrationRunRecorder } from '@shared/subsystems/integration/core';",
+			"import { DeepEqualDiffer, type IntegrationSubstrate } from '@shared/subsystems/integration/core';",
 		);
 		expect(system).toContain("import { PostgresCursorStore } from '@shared/subsystems/integration/integration-cursor-store.drizzle-backend';");
 		expect(system).toContain("uses: ['database'],");

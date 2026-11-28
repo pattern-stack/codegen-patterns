@@ -70,7 +70,7 @@ describe('subsystem install under pattern-stack wiring', () => {
 		expect(patternStackSubsystemRefusal('events', 'drizzle')).toBeNull();
 		expect(patternStackSubsystemRefusal('events', 'memory')).toBeNull();
 		expect(patternStackSubsystemRefusal('events', 'redis')).toMatch(/redis backend/);
-		expect(patternStackSubsystemRefusal('jobs', 'drizzle')).toMatch(/comes with J-1\. Supported: events, openapi-config\./);
+		expect(patternStackSubsystemRefusal('jobs', 'drizzle')).toMatch(/comes with J-1\. Supported: events, openapi-config, integration\./);
 		expect(patternStackSubsystemRefusal('auth', 'drizzle')).toMatch(/comes with S-2/);
 		// S-3: integration on either backend.
 		expect(patternStackSubsystemRefusal('integration', 'drizzle')).toBeNull();

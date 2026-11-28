@@ -144,13 +144,15 @@ export interface CompositionIntegrationInput {
 	differ?: { ignore?: string[]; unignore?: string[] };
 	/** The Nest-free integration entry (`subsystemCoreImport(mode, 'integration')`). */
 	coreImport: string;
-	/** The Drizzle cursor store's and run recorder's modules (`runtimeImport(mode, 'subsystems/integration/…')`). */
-	cursorStoreImport: string;
-	runRecorderImport: string;
+	/** A runtime file's import specifier in this project (`runtimeImport(mode, relpath)`), for the backend's files. */
+	runtimeImport: (relpath: string) => string;
 }
 
 /** The module that holds the `integration` system, beside `wiring.ts`. */
 export const INTEGRATION_SYSTEM_FILE = 'integration-system.ts';
+
+/** Every generated system's file beside `wiring.ts`; stale-files removes each when its subsystem goes, or on a switch. */
+export const GENERATED_SYSTEM_FILES = [EVENTS_SYSTEM_FILE, INTEGRATION_SYSTEM_FILE] as const;
 
 export interface CompositionFile {
 	path: string;
@@ -429,6 +431,9 @@ export const ${plan.name}Module = defineModule({
 	}
 
 	const names = [...plans.keys()].sort();
+	// The systems codegen generates, in order: each is imported by the registry (its API type, its `SystemApis` key)
+	// and by composition.ts (its manifest, in `SYSTEMS`), and its file is written. One list, so a new system is a row.
+	const systems = generatedSystems(input, eventsSystemFile);
 	files.push({
 		path: registryFile,
 		content: `${input.banner}
@@ -439,7 +444,7 @@ export const ${plan.name}Module = defineModule({
 import { createWiring } from '@pattern-stack/wiring';
 import type { DrizzleClient } from '${input.drizzleTypeImport}';
 import type { Relations } from './relations';
-${input.events ? `import type { EventsApi } from './${EVENTS_SYSTEM_FILE.replace(/\.ts$/, '')}';\n` : ''}${input.integration ? `import type { IntegrationApi } from './${INTEGRATION_SYSTEM_FILE.replace(/\.ts$/, '')}';\n` : ''}${names.map((n) => `import type { ${pascalCase(n)}Module } from '${relativeImport(registryFile, plans.get(n)!.file)}';`).join('\n')}
+${systems.map((s) => `import type { ${s.apiType} } from '${relativeImport(registryFile, s.apiTypeFile)}';\n`).join('')}${names.map((n) => `import type { ${pascalCase(n)}Module } from '${relativeImport(registryFile, plans.get(n)!.file)}';`).join('\n')}
 
 export interface ModuleApis {
 ${names.map((n) => `  ${n}: ${pascalCase(n)}Module;`).join('\n')}
@@ -447,7 +452,7 @@ ${names.map((n) => `  ${n}: ${pascalCase(n)}Module;`).join('\n')}
 
 export interface SystemApis {
   ${DATABASE_SYSTEM}: { db: DrizzleClient<Relations> };
-${input.events ? '  events: EventsApi;\n' : ''}${input.integration ? '  integration: IntegrationApi;\n' : ''}}
+${systems.map((s) => `  ${s.key}: ${s.apiType};\n`).join('')}}
 
 export const { defineModule, defineSystem, compose } = createWiring<ModuleApis, SystemApis>();
 `,
@@ -461,9 +466,9 @@ export const { defineModule, defineSystem, compose } = createWiring<ModuleApis, 
  * installed), for
  * the app's \`compose.ts\`: \`compose({ systems: [databaseSystem(), ...SYSTEMS], modules: MODULES })\`.
  */
-${input.events ? `import { eventsSystem } from './${EVENTS_SYSTEM_FILE.replace(/\.ts$/, '')}';\n` : ''}${input.integration ? `import { integrationSystem } from './${INTEGRATION_SYSTEM_FILE.replace(/\.ts$/, '')}';\n` : ''}${names.map((n) => `import { ${n}Module } from '${relativeImport(compositionFile, plans.get(n)!.file)}';`).join('\n')}
+${systems.map((s) => `import { ${s.exportName} } from '${relativeImport(compositionFile, s.file)}';\n`).join('')}${names.map((n) => `import { ${n}Module } from '${relativeImport(compositionFile, plans.get(n)!.file)}';`).join('\n')}
 
-export const SYSTEMS = [${[input.events ? 'eventsSystem' : null, input.integration ? 'integrationSystem' : null].filter(Boolean).join(', ')}] as const;
+export const SYSTEMS = [${systems.map((s) => s.exportName).join(', ')}] as const;
 
 export const MODULES = [${names.map((n) => `${n}Module`).join(', ')}] as const;
 `,
@@ -485,23 +490,68 @@ ${entities.map((e) => `  ${registerSchemasName(e)}(openApi);`).join('\n')}
 }
 `,
 	});
-	if (input.events) files.push({ path: eventsSystemFile, content: eventsSystemContent(input.events, eventsSystemFile, input.banner) });
-	if (input.integration) {
-		files.push({ path: path.join(generatedDir, INTEGRATION_SYSTEM_FILE), content: integrationSystemContent(input.integration, input.banner) });
-	}
+	for (const s of systems) if (s.content !== null) files.push({ path: s.file, content: s.content });
 	return files;
+}
+
+/** A system codegen generates, beside `wiring.ts`: its key in `SystemApis`, its API type, its manifest and file. */
+interface GeneratedSystem {
+	key: string;
+	apiType: string;
+	/** Where the API type is declared: the system's own file, unless it is a runtime type. */
+	apiTypeFile: string;
+	exportName: string;
+	file: string;
+	/** The file's content; null when another step writes it. */
+	content: string | null;
+}
+
+/** The systems codegen generates for this input, in `SYSTEMS` order: events (S-1), integration (S-3). */
+function generatedSystems(input: CompositionInput, eventsSystemFile: string): GeneratedSystem[] {
+	const integrationFile = path.join(input.generatedDir, INTEGRATION_SYSTEM_FILE);
+	return [
+		...(input.events
+			? [{ key: 'events', apiType: 'EventsApi', apiTypeFile: eventsSystemFile, exportName: 'eventsSystem', file: eventsSystemFile, content: eventsSystemContent(input.events, eventsSystemFile, input.banner) }]
+			: []),
+		...(input.integration
+			? [{ key: 'integration', apiType: 'IntegrationApi', apiTypeFile: integrationFile, exportName: 'integrationSystem', file: integrationFile, content: integrationSystemContent(input.integration, input.banner) }]
+			: []),
+	];
 }
 
 /**
  * \`<generated>/integration-system.ts\` (S-3): the integration substrate as a \`@pattern-stack/wiring\` system. Every
  * \`IntegrationRunner\` takes its cursor store, run recorder, differ and multi-tenant flag from here.
  */
+/**
+ * The integration system's classes by backend (S-3): the cursor store and the run recorder it builds, whether they take
+ * the database, and where each comes from (the Nest-free entry, or a backend file by path).
+ */
+const INTEGRATION_BACKENDS: Readonly<
+	Record<
+		CompositionIntegrationInput['backend'],
+		{ cursorClass: string; recorderClass: string; usesDatabase: boolean; byPath: readonly { name: string; file: string }[] }
+	>
+> = {
+	drizzle: {
+		cursorClass: 'PostgresCursorStore',
+		recorderClass: 'DrizzleIntegrationRunRecorder',
+		usesDatabase: true,
+		byPath: [
+			{ name: 'PostgresCursorStore', file: 'subsystems/integration/integration-cursor-store.drizzle-backend' },
+			{ name: 'DrizzleIntegrationRunRecorder', file: 'subsystems/integration/integration-run-recorder.drizzle-backend' },
+		],
+	},
+	memory: { cursorClass: 'MemoryCursorStore', recorderClass: 'MemoryRunRecorder', usesDatabase: false, byPath: [] },
+};
+
+/** `<generated>/integration-system.ts` (S-3), printed from the selected backend's row. */
 function integrationSystemContent(integration: CompositionIntegrationInput, banner: string): string {
-	const drizzle = integration.backend === 'drizzle';
+	const row = INTEGRATION_BACKENDS[integration.backend];
 	const differ = integration.differ && (integration.differ.ignore || integration.differ.unignore) ? JSON.stringify(integration.differ) : '';
-	const cursorClass = drizzle ? 'PostgresCursorStore' : 'MemoryCursorStore';
-	const recorderClass = drizzle ? 'DrizzleIntegrationRunRecorder' : 'MemoryRunRecorder';
-	const coreNames = ['DeepEqualDiffer', ...(drizzle ? [] : ['MemoryCursorStore', 'MemoryRunRecorder']), 'type ICursorStore', 'type IIntegrationRunRecorder'];
+	const byPath = new Set(row.byPath.map((b) => b.name));
+	const fromCore = ['DeepEqualDiffer', ...[row.cursorClass, row.recorderClass].filter((c) => !byPath.has(c)), 'type IntegrationSubstrate'];
+	const dbArgs = row.usesDatabase ? `database.db, ${integration.multiTenant}` : '';
 	return `${banner}
 /**
  * The \`integration\` system (S-3): the substrate every integration run shares, as a \`@pattern-stack/wiring\` system —
@@ -509,23 +559,18 @@ function integrationSystemContent(integration: CompositionIntegrationInput, bann
  * from codegen.config.yaml's \`integration:\` block. An \`IntegrationRunner\` takes them with its change source and sink:
  * \`new IntegrationRunner({ ...integration, source, sink })\`.
  */
-import { ${coreNames.join(', ')} } from '${integration.coreImport}';
-${drizzle ? `import { PostgresCursorStore } from '${integration.cursorStoreImport}';\nimport { DrizzleIntegrationRunRecorder } from '${integration.runRecorderImport}';\n` : ''}import { defineSystem } from './wiring';
+import { ${fromCore.join(', ')} } from '${integration.coreImport}';
+${row.byPath.map((b) => `import { ${b.name} } from '${integration.runtimeImport(b.file)}';\n`).join('')}import { defineSystem } from './wiring';
 
-export interface IntegrationApi {
-  cursors: ICursorStore;
-  recorder: IIntegrationRunRecorder;
-  /** The default differ. A runner that needs its own takes it instead. */
-  differ: DeepEqualDiffer<Record<string, unknown>>;
-  multiTenant: boolean;
-}
+/** The runtime's \`IntegrationSubstrate\`: what \`app.system('integration')\` holds. */
+export type IntegrationApi = IntegrationSubstrate;
 
 export const integrationSystem = defineSystem({
   name: 'integration',
-  uses: [${drizzle ? `'${DATABASE_SYSTEM}'` : ''}],
-  create: (${drizzle ? '{ database }' : ''}): IntegrationApi => ({
-    cursors: new ${cursorClass}(${drizzle ? `database.db, ${integration.multiTenant}` : ''}),
-    recorder: new ${recorderClass}(${drizzle ? `database.db, ${integration.multiTenant}` : ''}),
+  uses: [${row.usesDatabase ? `'${DATABASE_SYSTEM}'` : ''}],
+  create: (${row.usesDatabase ? '{ database }' : ''}): IntegrationApi => ({
+    cursors: new ${row.cursorClass}(${dbArgs}),
+    recorder: new ${row.recorderClass}(${dbArgs}),
     differ: new DeepEqualDiffer(${differ}),
     multiTenant: ${integration.multiTenant},
   }),
