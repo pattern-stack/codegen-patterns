@@ -3,6 +3,7 @@
  * one place that builds its input.
  */
 
+import fs from 'node:fs';
 import path from 'node:path';
 
 import { CODEGEN_BANNER } from '../../utils/generated-file.js';
@@ -18,12 +19,14 @@ import {
 	wiringFilesBehind,
 	type CompositionEventsInput,
 	type CompositionIntegrationInput,
+	type CompositionAuthInput,
+	type CompositionConnectionsInput,
 	type CompositionFile,
 	type CompositionInput,
 } from '../../emitters/composition/emit-composition.js';
 import { configOrDefaults } from '../../config/project-config.js';
 import { isSubsystemInstalled } from './subsystem-detect.js';
-import { eventsGeneratedDir } from './pattern-stack-subsystems.js';
+import { CONNECTION_STORE_FILE, eventsGeneratedDir } from './pattern-stack-subsystems.js';
 import { removeOtherWiringFiles } from '../../emitters/composition/stale-files.js';
 import { openApiImport, resolveRuntimeMode, runtimeImport, subsystemCoreImport, type RuntimeMode } from './runtime-import.js';
 import { printInfo, printWarning } from '../ui/output.js';
@@ -47,6 +50,30 @@ export function eventsInstalled(ctx: Context): boolean {
 /** Is the integration subsystem installed (S-3)? `isSubsystemInstalled`'s one rule. */
 export function integrationInstalled(ctx: Context): boolean {
 	return isSubsystemInstalled(ctx, 'integration');
+}
+
+export function authInstalled(ctx: Context): boolean {
+	return isSubsystemInstalled(ctx, 'auth');
+}
+
+/** The `auth` system's input (S-2), or null when the subsystem isn't installed. */
+export function patternStackAuthInput(ctx: Context): CompositionAuthInput | null {
+	return authInstalled(ctx) ? { coreImport: subsystemCoreImport(resolveRuntimeMode(ctx.config), 'auth') } : null;
+}
+
+/**
+ * The vendored auth-integrations store (S-2): `<modules_dir>/connections/connection-store.ts`, or null when the starter
+ * isn't vendored. The starter is always vendored (in package mode too), so its file is the record.
+ */
+export function connectionStoreFile(ctx: Context): string | null {
+	const file = path.join(projectLayout(ctx.cwd, ctx.config).modules, 'connections', CONNECTION_STORE_FILE);
+	return fs.existsSync(file) ? file : null;
+}
+
+/** The `connections` system's input (S-2), or null when the starter isn't vendored. */
+export function patternStackConnectionsInput(ctx: Context): CompositionConnectionsInput | null {
+	const storeFile = connectionStoreFile(ctx);
+	return storeFile ? { storeFile } : null;
 }
 
 /** The `integration` system's input (S-3), or null when the subsystem isn't installed. */
@@ -124,6 +151,8 @@ export function writePatternStackIntegrations(
 		wiringFile: path.join(dirs.generatedDir, 'wiring.ts'),
 		aliases: dirs.aliases ?? {},
 		tenancyColumn: TenancyConfigSchema.parse(ctx.config?.tenancy ?? {}).column,
+		// S-2: with the starter vendored, each provider's factory takes the connection store.
+		connectionStoreFile: connectionStoreFile(ctx),
 		dryRun: dirs.dryRun ?? false,
 	});
 }
@@ -146,6 +175,8 @@ function compositionInput(ctx: Context): CompositionInput {
 		...emitterOptions(mode),
 		events: patternStackEventsInput(ctx, layout.generated),
 		integration: patternStackIntegrationInput(ctx),
+		auth: patternStackAuthInput(ctx),
+		connections: patternStackConnectionsInput(ctx),
 		integrations: (() => {
 			const source = integrationsSource(ctx, layout.entities);
 			return source ? planPatternStackIntegrations(source) : null;

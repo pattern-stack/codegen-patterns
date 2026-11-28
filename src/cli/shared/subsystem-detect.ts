@@ -163,6 +163,9 @@ export const SUBSYSTEMS: SubsystemDescriptor[] = [
 
 const KNOWN_NAMES = SUBSYSTEMS.map((s) => s.name);
 
+/** The auth-integrations starter's Nest module (`ConnectionsAuthModule`), which marks a Nest install of it. */
+export const CONNECTIONS_AUTH_MODULE_FILE = 'connections-auth.module.ts';
+
 /**
  * The module file that signals a subsystem is fully installed (carries the
  * `forRoot()` dynamic module). Most subsystems use `<name>.module.ts`; `jobs`
@@ -314,8 +317,14 @@ function detectSubsystemStatesImpl(
 	if (!seen.has('auth-integrations')) {
 		const vendorRoot = projectLayout(ctx.cwd, ctx.config).modules;
 
+		// S-2: a pattern-stack project vendors no Nest module; the store it composes marks the starter (its row's entry).
 		const candidates = [
-			path.join(vendorRoot, 'connections', 'connections-auth.module.ts'),
+			path.join(
+				vendorRoot,
+				'connections',
+				rowFor('target.wiring', INSTALL_MARKER, targetWiring(configOrDefaults(ctx.config).target))('auth-integrations') ??
+					CONNECTIONS_AUTH_MODULE_FILE,
+			),
 		];
 		for (const moduleFile of candidates) {
 			if (fs.existsSync(moduleFile)) {

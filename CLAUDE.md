@@ -395,6 +395,14 @@ drain starts each trigger's run in the event's own transaction.
 `index.ts` is `export * from './core'` plus its Nest half). `src/__tests__/runtime/nest-free.test.ts` holds the list.
 Never add a Nest import, even `import type`, under one of those entries.
 
+**Auth under pattern-stack (S-2, `docs/specs/S-2.md`).** `subsystem install auth` vendors only `auth/core`'s closure
+(drizzle OAuth state; memory refused) and the composition writes the `auth` system (`<generated>/auth-system.ts`: the
+encryption key from `settings.auth`, the OAuth state store, `callbackUrl`). The `auth-integrations` starter's classes
+are plain; `createConnectionStore(rows, key)` is their one construction, called by Nest's `ConnectionsAuthModule` and by
+the `connections` system (which builds its own `ConnectionRepository`, because provider systems refresh through it and
+a system can't depend on a module). With `connections` composed, each provider factory takes the store as its second
+argument. The OAuth routes, `IUserContext` and the guard are H-2's.
+
 ### Integration Codegen (RFC-0001/0002/0003)
 
 For entities tagged with `surface:` (when `definitions/providers/*.yaml` exist), the `entity new` post-step emits the **full** integration layer per `(surface, provider, entity)`, not just the read side:

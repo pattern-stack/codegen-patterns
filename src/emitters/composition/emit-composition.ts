@@ -21,6 +21,7 @@
  * between modules (the root module's included) is refused, naming it.
  */
 
+import { TOKEN_ENCRYPTION_KEY_ENV } from '../../../runtime/subsystems/auth/backends/encryption-key/env.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -60,7 +61,7 @@ export const ROOT_MODULE = 'entities';
 export const DATABASE_SYSTEM = 'database';
 
 /** The names of the systems codegen generates (and the app's `database`): a module may not take one. */
-export const GENERATED_SYSTEM_NAMES = [DATABASE_SYSTEM, 'settings', 'events', 'integration'] as const;
+export const GENERATED_SYSTEM_NAMES = [DATABASE_SYSTEM, 'settings', 'events', 'integration', 'auth', 'connections'] as const;
 
 const RESERVED_MODULE_NAMES = new Set<string>([ROOT_MODULE, ...GENERATED_SYSTEM_NAMES]);
 
@@ -129,6 +130,16 @@ export interface CompositionInput {
 	 */
 	integrations?: CompositionIntegrationsInput | null;
 	/**
+	 * The `auth` system (S-2), when the auth subsystem is installed: written to `<generated>/auth-system.ts`, listed in
+	 * `SYSTEMS` and `SystemApis`. It reads the `auth` settings, so it needs `settings`.
+	 */
+	auth?: CompositionAuthInput | null;
+	/**
+	 * The `connections` system (S-2), when the auth-integrations starter is vendored: written to
+	 * `<generated>/connections-system.ts`, listed after `auth`. Needs `auth` and a generated `connection` entity.
+	 */
+	connections?: CompositionConnectionsInput | null;
+	/**
 	 * The project's settings (SET-1): written to `<generated>/settings.ts` with the `settings` system, first in
 	 * `SYSTEMS` (so a missing value fails compose before any other part is made), and `settings: Settings` in
 	 * `SystemApis`. Null ⇒ no settings system.
@@ -192,8 +203,28 @@ export interface CompositionIntegrationInput {
 /** The module that holds the `integration` system, beside `wiring.ts`. */
 export const INTEGRATION_SYSTEM_FILE = 'integration-system.ts';
 
+/** The `auth` system's import (S-2): the Nest-free auth entry (`subsystemCoreImport(mode, 'auth')`). */
+export interface CompositionAuthInput {
+	coreImport: string;
+}
+
+/** The module that holds the `auth` system, beside `wiring.ts`. */
+export const AUTH_SYSTEM_FILE = 'auth-system.ts';
+
+/** The `connections` system's input (S-2): where the vendored starter's store is. */
+export interface CompositionConnectionsInput {
+	/** Absolute: the vendored `connections/connection-store.ts` (`createConnectionStore`, `ConnectionStore`). */
+	storeFile: string;
+}
+
+/** The module that holds the `connections` system, beside `wiring.ts`. */
+export const CONNECTIONS_SYSTEM_FILE = 'connections-system.ts';
+
+/** The entity the connection store reads and writes: the starter's `connection.yaml`. */
+export const CONNECTION_ENTITY = 'connection';
+
 /** Every generated system's file beside `wiring.ts`; stale-files removes each when its subsystem goes, or on a switch. */
-export const GENERATED_SYSTEM_FILES = [SETTINGS_FILE, EVENTS_SYSTEM_FILE, INTEGRATION_SYSTEM_FILE] as const;
+export const GENERATED_SYSTEM_FILES = [SETTINGS_FILE, EVENTS_SYSTEM_FILE, INTEGRATION_SYSTEM_FILE, AUTH_SYSTEM_FILE, CONNECTIONS_SYSTEM_FILE] as const;
 
 export interface CompositionFile {
 	path: string;
@@ -319,6 +350,9 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 
 	const registryFile = path.join(generatedDir, COMPOSITION_GENERATED_FILES.registry);
 	const eventsSystemFile = path.join(generatedDir, EVENTS_SYSTEM_FILE);
+	const connectionsPlan = input.connections
+		? planConnections(input, definitions.find((d) => d.entity.name === CONNECTION_ENTITY), wiringFile)
+		: null;
 	const relationsFile = path.join(generatedDir, 'relations.ts');
 	const files: CompositionFile[] = [];
 
@@ -476,7 +510,7 @@ export const ${plan.name}Module = defineModule({
 	if (integrationsModule) files.push({ path: integrationsModule.file, content: integrationsModule.content });
 	// The systems codegen generates, in order: each is imported by the registry (its API type, its `SystemApis` key)
 	// and by composition.ts (its manifest, in `SYSTEMS`), and its file is written. One list, so a new system is a row.
-	const systems = generatedSystems(input, eventsSystemFile);
+	const systems = generatedSystems(input, eventsSystemFile, connectionsPlan);
 	files.push({
 		path: registryFile,
 		content: `${input.banner}
@@ -506,7 +540,7 @@ export const { defineModule, defineSystem, compose } = createWiring<ModuleApis, 
 		content: `${input.banner}
 /**
  * Every generated module's manifest (PW-3), and the systems codegen generates (\`settings\`, and \`events\`,
- * \`integration\` and the integrations' when installed), for the app's \`compose.ts\`:
+ * \`integration\`, \`auth\`, \`connections\` and the integrations' when installed), for the app's \`compose.ts\`:
  * \`compose({ systems: [databaseSystem(), ...SYSTEMS], modules: MODULES })\`.
  */
 ${systems.map((s) => `import { ${s.exportName} } from '${relativeImport(compositionFile, s.file)}';\n`).join('')}${integrationsModule ? `import { integrationsModule } from '${relativeImport(compositionFile, integrationsModule.file)}';\n` : ''}${names.map((n) => `import { ${n}Module } from '${relativeImport(compositionFile, plans.get(n)!.file)}';`).join('\n')}
@@ -549,9 +583,15 @@ interface GeneratedSystem {
 	content: string | null;
 }
 
-/** The systems codegen generates for this input, in `SYSTEMS` order: settings (SET-1), events (S-1), integration (S-3), the integrations' (S-3b). */
-function generatedSystems(input: CompositionInput, eventsSystemFile: string): GeneratedSystem[] {
+/** The systems codegen generates for this input, in `SYSTEMS` order: settings (SET-1), events (S-1), integration (S-3), auth and connections (S-2), the integrations' (S-3b). */
+function generatedSystems(
+	input: CompositionInput,
+	eventsSystemFile: string,
+	connectionsPlan: ConnectionsPlan | null,
+): GeneratedSystem[] {
 	const integrationFile = path.join(input.generatedDir, INTEGRATION_SYSTEM_FILE);
+	const authFile = path.join(input.generatedDir, AUTH_SYSTEM_FILE);
+	const connectionsFile = path.join(input.generatedDir, CONNECTIONS_SYSTEM_FILE);
 	const settingsFile = path.join(input.generatedDir, SETTINGS_FILE);
 	return [
 		// SET-1: the settings, checked before the build; every other system may read them.
@@ -564,6 +604,13 @@ function generatedSystems(input: CompositionInput, eventsSystemFile: string): Ge
 		...(input.integration
 			? [{ key: 'integration', apiType: 'IntegrationApi', apiTypeFile: integrationFile, exportName: 'integrationSystem', file: integrationFile, content: integrationSystemContent(input.integration, input.banner) }]
 			: []),
+		// S-2: auth (the key, the OAuth state, the callback URL), then the starter's connection store, which encrypts with it.
+		...(input.auth
+			? [{ key: 'auth', apiType: 'AuthApi', apiTypeFile: authFile, exportName: 'authSystem', file: authFile, content: authSystemContent(input.auth, input.banner) }]
+			: []),
+		...(connectionsPlan
+			? [{ key: 'connections', apiType: 'ConnectionStore', apiTypeFile: connectionsPlan.storeFile, exportName: 'connectionsSystem', file: connectionsFile, content: connectionsSystemContent(connectionsPlan, connectionsFile, input.banner) }]
+			: []),
 		// S-3b: each provider's and adapter set's system, which `emitPatternStackIntegrations` writes.
 		...(input.integrations?.systems ?? []).map((s) => ({
 			key: s.name,
@@ -574,6 +621,115 @@ function generatedSystems(input: CompositionInput, eventsSystemFile: string): Ge
 			content: null,
 		})),
 	];
+
+}
+
+interface ConnectionsPlan {
+	storeFile: string;
+	/** Absolute: `connection.wiring.ts` (`createConnectionRepository`). */
+	repositoryWiringFile: string;
+}
+
+/**
+ * The `connections` system's plan (S-2), or a refusal: it needs the `auth` system (the key), and a generated
+ * `connection` entity in the starter's folder whose repository is built from `db` alone.
+ */
+function planConnections(
+	input: CompositionInput,
+	connection: { inherits?: unknown; eav?: boolean } | undefined,
+	wiringFile: (entity: string) => string,
+): ConnectionsPlan {
+	const storeFile = input.connections!.storeFile;
+	if (!input.auth) {
+		throw new Error(
+			'[codegen] wiring: pattern-stack: the auth-integrations starter is vendored, and the auth subsystem isn\'t installed: ' +
+				'the connection store encrypts with its key. Run `codegen subsystem install auth`.',
+		);
+	}
+	if (!connection) {
+		throw new Error(
+			`[codegen] wiring: pattern-stack: the auth-integrations starter is vendored (${path.dirname(storeFile)}), and there is ` +
+				`no '${CONNECTION_ENTITY}' entity: its store reads and writes it. Keep the starter's connection.yaml and run ` +
+				'`codegen entity new --all`.',
+		);
+	}
+	if (connection.inherits !== undefined || connection.eav === true) {
+		throw new Error(
+			`[codegen] wiring: pattern-stack: the '${CONNECTION_ENTITY}' entity ${connection.inherits !== undefined ? 'inherits a base' : 'is EAV'}, so ` +
+				'its repository takes more than `db`, and the `connections` system builds it from `db` alone. Remove ' +
+				`\`${connection.inherits !== undefined ? 'inherits:' : 'eav:'}\` from connection.yaml.`,
+		);
+	}
+	const repositoryWiringFile = wiringFile(CONNECTION_ENTITY);
+	if (path.dirname(repositoryWiringFile) !== path.dirname(storeFile)) {
+		throw new Error(
+			`[codegen] wiring: pattern-stack: the '${CONNECTION_ENTITY}' entity generates into ${path.dirname(repositoryWiringFile)}, ` +
+				`and the auth-integrations starter (which imports it as ./connection.entity) is in ${path.dirname(storeFile)}: ` +
+				'drop `context:` from connection.yaml, or move the starter beside it.',
+		);
+	}
+	return { storeFile, repositoryWiringFile };
+}
+
+/**
+ * \`<generated>/auth-system.ts\` (S-2): auth's non-HTTP half as a \`@pattern-stack/wiring\` system — the encryption key,
+ * the OAuth state store and the callback URL, from the \`auth\` settings.
+ */
+function authSystemContent(auth: CompositionAuthInput, banner: string): string {
+	return `${banner}
+/**
+ * The \`auth\` system (S-2): what provider connections share, as a \`@pattern-stack/wiring\` system —
+ * - \`encryptionKey\`: AES-256-GCM over \`settings.auth.tokenEncryptionKey\` (\`${TOKEN_ENCRYPTION_KEY_ENV}\`); the
+ *   connection store encrypts every stored token with it;
+ * - \`oauthState\`: the single-use state of a connect → callback dance, in \`auth_oauth_state\`;
+ * - \`callbackUrl(provider)\`: where the provider redirects back, \`<settings.auth.redirectUriBase>/auth/<provider>/callback\`.
+ * The OAuth routes themselves are the HTTP layer's.
+ */
+import { DrizzleOAuthStateStore, EnvEncryptionKey, oauthCallbackUrl, type IEncryptionKey, type IOAuthStateStore } from '${auth.coreImport}';
+import { defineSystem } from './wiring';
+
+export interface AuthApi {
+  encryptionKey: IEncryptionKey;
+  oauthState: IOAuthStateStore;
+  /** The URL a provider redirects back to after an authorize: the authorize request and the code exchange send it. */
+  callbackUrl(provider: string): string;
+}
+
+export const authSystem = defineSystem({
+  name: 'auth',
+  uses: ['settings', 'database'],
+  create: ({ settings, database }): AuthApi => ({
+    encryptionKey: new EnvEncryptionKey({ key: settings.auth.tokenEncryptionKey }),
+    oauthState: new DrizzleOAuthStateStore(database.db),
+    callbackUrl: (provider) => oauthCallbackUrl(settings.auth.redirectUriBase, provider),
+  }),
+});
+`;
+}
+
+/** \`<generated>/connections-system.ts\` (S-2): the connection store, over its own connection repository. */
+function connectionsSystemContent(plan: ConnectionsPlan, file: string, banner: string): string {
+	const create = `create${repositoryClassName(CONNECTION_ENTITY)}`;
+	return `${banner}
+/**
+ * The \`connections\` system (S-2): the connection store (the auth-integrations starter's \`createConnectionStore\`) as a
+ * \`@pattern-stack/wiring\` system — \`reader\` and \`tokenWriter\` (what a refresh strategy takes), \`grantSink\` (what an
+ * OAuth callback hands a grant to) and \`connections\` (the facade), every token encrypted with the \`auth\` system's key.
+ *
+ * A system, not a module, because a provider system's refresh strategy needs it and a system can't depend on a module.
+ * So it builds its own connection repository: a repository is stateless over \`db\` and reads the same request state,
+ * so it acts as the one in \`connection\`'s module does.
+ */
+import { createConnectionStore, type ConnectionStore } from '${relativeImport(file, plan.storeFile)}';
+import { ${create} } from '${relativeImport(file, plan.repositoryWiringFile)}';
+import { defineSystem } from './wiring';
+
+export const connectionsSystem = defineSystem({
+  name: 'connections',
+  uses: ['database', 'auth'],
+  create: ({ database, auth }): ConnectionStore => createConnectionStore(${create}(database.db), auth.encryptionKey),
+});
+`;
 }
 
 /**

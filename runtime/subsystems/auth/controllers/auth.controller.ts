@@ -49,6 +49,7 @@ import type {
 } from '../protocols/provider-strategy';
 import type { IConnectionGrantSink } from '../protocols/connection-store';
 import { Public } from '../guards/public.decorator';
+import { oauthCallbackUrl } from '../runtime/oauth-callback-url';
 
 /**
  * Minimal response surface used by the controller — typed loosely so we
@@ -156,7 +157,6 @@ export class AuthController {
         `AuthModule.forRoot: redirectUriBase is required when AuthController is enabled`,
       );
     }
-    const trimmed = base.replace(/\/+$/, '');
-    return `${trimmed}/auth/${encodeURIComponent(slug)}/callback`;
+    return oauthCallbackUrl(base, slug);
   }
 }

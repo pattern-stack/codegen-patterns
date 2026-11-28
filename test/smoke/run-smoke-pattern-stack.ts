@@ -136,6 +136,30 @@ async function main(): Promise<number> {
 		}
 		log('integration installed: the Nest-free closure, no Nest module, barrel or use case');
 
+		// 3d. Auth (S-2): drizzle, vendored Nest-free (no module, barrel, controller, guard or middleware), then the
+		// connections starter without its Nest module. The key lands in .env.config, which the settings system reads.
+		run(`${CLI} subsystem install auth --yes`, tmpDir);
+		for (const f of ['core.ts', 'auth-oauth-state.schema.ts', 'backends/state-store.drizzle-backend.ts', 'runtime/oauth-callback-url.ts']) {
+			if (!fs.existsSync(path.join(tmpDir, 'src/shared/subsystems/auth', f))) fail(`subsystem install auth should vendor ${f}`);
+		}
+		for (const f of ['auth.module.ts', 'index.ts', 'controllers/auth.controller.ts', 'guards/authenticated.guard.ts', 'guards/public.decorator.ts', 'middleware/requester-context.ts']) {
+			if (fs.existsSync(path.join(tmpDir, 'src/shared/subsystems/auth', f))) fail(`subsystem install auth should not write ${f} under pattern-stack wiring`);
+		}
+		if (!/INTEGRATION_TOKEN_ENCRYPTION_KEY=/.test(fs.readFileSync(path.join(tmpDir, '.env.config'), 'utf8'))) {
+			fail('subsystem install auth should write INTEGRATION_TOKEN_ENCRYPTION_KEY to .env.config');
+		}
+		if (fs.existsSync(path.join(tmpDir, 'src/app.module.ts'))) fail('subsystem install auth should not write app.module.ts under pattern-stack wiring');
+		run(`${CLI} subsystem install auth-integrations --yes`, tmpDir);
+		for (const f of ['connection-store.ts', 'connection-rows.ts', 'adapters/connection-reader.adapter.ts', 'facade/connections.service.ts']) {
+			if (!fs.existsSync(path.join(tmpDir, 'src/modules/connections', f))) fail(`subsystem install auth-integrations should vendor ${f}`);
+		}
+		if (fs.existsSync(path.join(tmpDir, 'src/modules/connections/connections-auth.module.ts'))) {
+			fail('subsystem install auth-integrations should not write connections-auth.module.ts under pattern-stack wiring');
+		}
+		const storeText = fs.readFileSync(path.join(tmpDir, 'src/modules/connections/connection-store.ts'), 'utf8');
+		if (!storeText.includes("from '../../shared/subsystems/auth/core'")) fail(`the starter should import the Nest-free auth entry:\n${storeText}`);
+		log('auth + auth-integrations installed: the Nest-free closure, no Nest module, barrel, controller, guard or middleware');
+
 		// 4. Fixtures, then generate.
 		const entitiesDir = path.join(tmpDir, 'entities');
 		fs.mkdirSync(entitiesDir, { recursive: true });
@@ -167,7 +191,7 @@ async function main(): Promise<number> {
 		const expectOne = (suffix: string) => {
 			if (!generated.some((f) => f.endsWith(suffix))) fail(`expected a generated file ending ${suffix}`);
 		};
-		for (const s of ['/crm/module.ts', '/billing/module.ts', 'modules/module.ts', '/wiring.ts', '/composition.ts', 'generated/openapi.ts', 'generated/events-system.ts', 'generated/integration-system.ts', 'events/generated/bus.ts']) expectOne(s);
+		for (const s of ['/crm/module.ts', '/billing/module.ts', 'modules/module.ts', '/wiring.ts', '/composition.ts', 'generated/openapi.ts', 'generated/events-system.ts', 'generated/integration-system.ts', 'generated/auth-system.ts', 'generated/connections-system.ts', 'events/generated/bus.ts']) expectOne(s);
 		for (const s of ['/account.wiring.ts', '/contact.wiring.ts', '/invoice.wiring.ts', '/note.wiring.ts', '/person.wiring.ts']) expectOne(s);
 		const billing = fs.readFileSync(path.join(tmpDir, generated.find((f) => f.endsWith('/billing/module.ts'))!), 'utf8');
 		if (!/dependsOn: \['crm'\]/.test(billing)) fail("billing's module should dependsOn ['crm'] (invoice belongs_to account)");
@@ -191,7 +215,7 @@ async function main(): Promise<number> {
 		// 5c'. main.ts composes, starts, runs and stops (no database needed: the pool connects on first use).
 		const main = spawnSync('bun', ['src/main.ts'], { cwd: tmpDir, encoding: 'utf8' });
 		if (main.status !== 0) fail(`bun src/main.ts exited ${main.status}:\n${main.stdout}${main.stderr}`);
-		if (!/composed: settings, database, events, integration, .*crm.*billing/.test(main.stdout)) fail(`main.ts should print the composed order: ${main.stdout}`);
+		if (!/composed: settings, database, events, integration, auth, connections, .*crm.*billing/.test(main.stdout)) fail(`main.ts should print the composed order: ${main.stdout}`);
 		log(`main.ts: ${main.stdout.trim()}`);
 
 		// 5d. The OpenAPI document needs no database: every schema registers, every $ref resolves, every prefill parses.
@@ -209,7 +233,7 @@ async function main(): Promise<number> {
 				execSync('bunx drizzle-kit push --force', { cwd: tmpDir, stdio: 'inherit', env: { ...process.env, DATABASE_URL: dbUrl } });
 				log('schema pushed');
 				run(`bun src/crud-check.ts '${dbUrl}'`, tmpDir);
-				log('CRUD through the composed use cases OK (create, findById, list, query, update, delete, NotFoundError); an integration run on the integration system');
+				log('CRUD through the composed use cases OK (create, findById, list, query, update, delete, NotFoundError); an integration run on the integration system; OAuth state, a stored grant and a refresh on the auth and connections systems');
 			} finally {
 				admin(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
 			}

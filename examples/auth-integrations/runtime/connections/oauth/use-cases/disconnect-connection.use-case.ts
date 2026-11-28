@@ -1,5 +1,4 @@
-import { Injectable } from '@nestjs/common';
-import { ConnectionService } from '../../connection.service';
+import type { ConnectionRows } from '../../connection-rows';
 import type { Connection } from '../../connection.entity';
 
 /**
@@ -14,9 +13,8 @@ import type { Connection } from '../../connection.entity';
  * provider-specific strategy if/when needed (out of scope for the
  * starter).
  */
-@Injectable()
 export class DisconnectConnectionUseCase {
-  constructor(private readonly connections: ConnectionService) {}
+  constructor(private readonly connections: ConnectionRows) {}
 
   async execute(connectionId: string): Promise<Connection> {
     return this.connections.update(connectionId, {

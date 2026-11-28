@@ -1,11 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
-import {
-  ENCRYPTION_KEY,
-  type IEncryptionKey,
-  type IConnectionTokenWriter,
-  type ConnectionTokenUpdate,
+import type {
+  IEncryptionKey,
+  IConnectionTokenWriter,
+  ConnectionTokenUpdate,
 } from '@pattern-stack/codegen/runtime/subsystems/auth';
-import { ConnectionService } from '../connection.service';
+import type { ConnectionRows } from '../connection-rows';
 
 /**
  * `IConnectionTokenWriter` adapter — encrypts the new access token
@@ -21,11 +19,10 @@ import { ConnectionService } from '../connection.service';
  * a successful refresh is the signal that the connection is healthy
  * again.
  */
-@Injectable()
 export class ConnectionTokenWriterAdapter implements IConnectionTokenWriter {
   constructor(
-    private readonly connections: ConnectionService,
-    @Inject(ENCRYPTION_KEY) private readonly encryption: IEncryptionKey,
+    private readonly connections: ConnectionRows,
+    private readonly encryption: IEncryptionKey,
   ) {}
 
   async persistRefresh(update: ConnectionTokenUpdate): Promise<void> {

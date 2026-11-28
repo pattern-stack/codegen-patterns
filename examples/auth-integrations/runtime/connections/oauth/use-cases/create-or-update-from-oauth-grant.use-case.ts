@@ -1,10 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
-import {
-  ENCRYPTION_KEY,
-  type IEncryptionKey,
-  type ConnectionGrantInput,
+import type {
+  IEncryptionKey,
+  ConnectionGrantInput,
 } from '@pattern-stack/codegen/runtime/subsystems/auth';
-import { ConnectionService } from '../../connection.service';
+import type { ConnectionRows } from '../../connection-rows';
 import type { Connection } from '../../connection.entity';
 
 /**
@@ -24,11 +22,10 @@ import type { Connection } from '../../connection.entity';
  * — providers commonly omit the refresh token on a re-grant when
  * they haven't rotated it.
  */
-@Injectable()
 export class CreateOrUpdateFromOAuthGrantUseCase {
   constructor(
-    private readonly connections: ConnectionService,
-    @Inject(ENCRYPTION_KEY) private readonly encryption: IEncryptionKey,
+    private readonly connections: ConnectionRows,
+    private readonly encryption: IEncryptionKey,
   ) {}
 
   async execute(input: ConnectionGrantInput): Promise<Connection> {

@@ -1,10 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
-import {
-  ENCRYPTION_KEY,
-  type IEncryptionKey,
-  type ConnectionGrantInput,
+import type {
+  IEncryptionKey,
+  ConnectionGrantInput,
 } from '@pattern-stack/codegen/runtime/subsystems/auth';
-import { ConnectionService } from '../connection.service';
+import type { ConnectionRows } from '../connection-rows';
 import type { Connection } from '../connection.entity';
 import { CreateOrUpdateFromOAuthGrantUseCase } from '../oauth/use-cases/create-or-update-from-oauth-grant.use-case';
 import { DisconnectConnectionUseCase } from '../oauth/use-cases/disconnect-connection.use-case';
@@ -51,11 +49,10 @@ export interface DecryptedConnectionRow {
  * to use the tokens to make an outbound API call). `listByUser`
  * intentionally strips them to a safe metadata shape.
  */
-@Injectable()
 export class ConnectionsService {
   constructor(
-    private readonly connections: ConnectionService,
-    @Inject(ENCRYPTION_KEY) private readonly encryption: IEncryptionKey,
+    private readonly connections: ConnectionRows,
+    private readonly encryption: IEncryptionKey,
     private readonly createOrUpdateUseCase: CreateOrUpdateFromOAuthGrantUseCase,
     private readonly markReauthUseCase: MarkConnectionRequiresReauthUseCase,
     private readonly disconnectUseCase: DisconnectConnectionUseCase,

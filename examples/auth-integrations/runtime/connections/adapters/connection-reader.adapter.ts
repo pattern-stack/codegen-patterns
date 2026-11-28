@@ -1,11 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
-import {
-  ENCRYPTION_KEY,
-  type DecryptedConnection,
-  type IEncryptionKey,
-  type IConnectionReader,
+import type {
+  DecryptedConnection,
+  IEncryptionKey,
+  IConnectionReader,
 } from '@pattern-stack/codegen/runtime/subsystems/auth';
-import { ConnectionService } from '../connection.service';
+import type { ConnectionRows } from '../connection-rows';
 
 /**
  * `IConnectionReader` adapter — fetches the connection row by id and
@@ -22,11 +20,10 @@ import { ConnectionService } from '../connection.service';
  * standalone avoids a circular DI graph and matches the auth
  * subsystem's "narrow port" contract.
  */
-@Injectable()
 export class ConnectionReaderAdapter implements IConnectionReader {
   constructor(
-    private readonly connections: ConnectionService,
-    @Inject(ENCRYPTION_KEY) private readonly encryption: IEncryptionKey,
+    private readonly connections: ConnectionRows,
+    private readonly encryption: IEncryptionKey,
   ) {}
 
   async findByIdDecrypted(connectionId: string): Promise<DecryptedConnection | null> {

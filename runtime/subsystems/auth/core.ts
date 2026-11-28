@@ -59,6 +59,7 @@ export {
 } from './runtime/oauth2-refresh.strategy';
 export { withAuthRetry, type WithAuthRetryOptions } from './runtime/with-auth-retry';
 export { ConnectionBrokenError } from './runtime/connection-broken.error';
+export { oauthCallbackUrl } from './runtime/oauth-callback-url';
 export {
   SessionExpiredError,
   isSessionExpiredError,

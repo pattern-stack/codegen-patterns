@@ -83,7 +83,7 @@ export function removeOtherWiringFiles(input: {
 					),
 					...underModules.filter((f) => path.basename(f) === 'module.ts' && !keep.has(f)),
 					path.join(generatedDir, 'modules.ts'),
-					// S-1 / S-3: the events and integration systems, once their subsystem is no longer installed.
+					// The generated systems (settings, events, integration, auth, connections), once their subsystem is no longer installed.
 					...GENERATED_SYSTEM_FILES.map((f) => path.join(generatedDir, f)).filter((f) => !keep.has(f)),
 				]
 			: [

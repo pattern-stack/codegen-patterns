@@ -127,4 +127,11 @@ describe('module cycles', () => {
 		}
 		expect(message).not.toContain('a junction across two modules');
 	});
+
+	it('refuses a context named like a generated system (auth, connections, events…): compose() would throw at boot', () => {
+		for (const name of ['auth', 'connections', 'events', 'settings']) {
+			const entity = `entity:\n  name: thing\n  plural: things\n  context: ${name}\nfields:\n  label:\n    type: string\n`;
+			expect(plan({ 'thing.yaml': entity })).toThrow(`context '${name}' (entity 'thing') would be the module '${name}'`);
+		}
+	});
 });

@@ -6,8 +6,8 @@
  * ciphertexts — prevents replay-style inference. Auth tag enforces integrity;
  * any tampering throws on decrypt.
  *
- * Key source: `INTEGRATION_TOKEN_ENCRYPTION_KEY` env var, 32 bytes base64-encoded.
- * Generate via `openssl rand -base64 32`.
+ * Key source: `INTEGRATION_TOKEN_ENCRYPTION_KEY` env var, 32 bytes base64-encoded, or the value itself (`key`,
+ * which the pattern-stack `auth` system passes from its settings, S-2). Generate via `openssl rand -base64 32`.
  *
  * Future backend: `kms.ts` (AWS/GCP KMS) for production deployments that
  * need key rotation + audit trails.
@@ -16,6 +16,11 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import type { IEncryptionKey } from '../../protocols/encryption-key';
 
 export interface EnvEncryptionKeyOptions {
+  /**
+   * The key itself, base64 (S-2: the `auth` system passes `settings.auth.tokenEncryptionKey`). When given, `env` is
+   * not read; the error still names `envVar`, the setting's env var.
+   */
+  key?: string;
   /** Defaults to `process.env`. Tests inject a fixture. */
   env?: NodeJS.ProcessEnv;
   /** Defaults to `'INTEGRATION_TOKEN_ENCRYPTION_KEY'`. */
@@ -34,9 +39,8 @@ export class EnvEncryptionKey implements IEncryptionKey {
   private readonly key: Buffer;
 
   constructor(opts: EnvEncryptionKeyOptions = {}) {
-    const env = opts.env ?? process.env;
     const envVar = opts.envVar ?? TOKEN_ENCRYPTION_KEY_ENV;
-    const raw = env[envVar];
+    const raw = opts.key !== undefined ? opts.key : (opts.env ?? process.env)[envVar];
     if (!raw) {
       throw new Error(
         `EnvEncryptionKey: ${envVar} is not set. Generate with: openssl rand -base64 32`,

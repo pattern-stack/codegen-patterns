@@ -33,9 +33,20 @@ examples/auth-integrations/
         mark-connection-requires-reauth.use-case.ts
         disconnect-connection.use-case.ts
         list-user-connections.use-case.ts
-    connections-auth.module.ts             # @Global() — binds the three
-                                            #   AUTH_CONNECTION_* tokens.
+    connection-rows.ts                     # ConnectionRows: the rows the classes
+                                            #   read and write (the generated
+                                            #   service or repository satisfies it)
+    connection-store.ts                    # createConnectionStore(rows, key):
+                                            #   every class above, built once
+    connections-auth.module.ts             # Nest only: @Global() — binds the three
+                                            #   AUTH_CONNECTION_* tokens to the store's parts.
 ```
+
+The classes are plain (no decorators), and `createConnectionStore` is the one place they are constructed. Under Nest,
+`ConnectionsAuthModule` calls it with the generated `ConnectionService` and `ENCRYPTION_KEY`. Under
+`target.wiring: pattern-stack` (S-2) the module isn't vendored: the generated `connections` system calls it with the
+connection repository and the `auth` system's key, and each provider's factory receives the store (its `reader` and
+`tokenWriter` are what an `OAuth2RefreshStrategy` takes).
 
 ## How to install
 
@@ -54,7 +65,10 @@ The `auth-integrations` install:
   relative paths that resolve against the vendored auth subsystem at
   `<backend_src>/shared/subsystems/auth`.
 - appends a TODO to `<backend_src>/app.module.ts` reminding you to register
-  `ConnectionsAuthModule` AFTER `AuthModule.forRoot(...)`.
+  `ConnectionsAuthModule` AFTER `AuthModule.forRoot(...)` (Nest only).
+- under pattern-stack wiring: needs `auth` installed first, skips
+  `connections-auth.module.ts`, and rewrites the auth imports to the Nest-free
+  entry (`…/auth/core`).
 
 `ConnectionsAuthModule` is `@Global()` because `AuthController` (inside
 `AuthModule`'s injector) resolves the `AUTH_CONNECTION_*` providers exposed
