@@ -8,8 +8,8 @@
  * - Going **pattern-stack**: the Nest-only files — `*.controller.ts` and `*.module.ts` under `modules_dir` (not a context's
  *   `module.ts`) and `<generated>/modules.ts` — plus any context `module.ts` the current composition no longer writes
  *   (a context renamed or emptied).
- * - Going **nest**: the pattern-stack files — every context `module.ts`, every `*.wiring.ts`, `<generated>/wiring.ts`,
- *   `<generated>/composition.ts` and `<generated>/openapi.ts`.
+ * - Going **nest**: the pattern-stack files — every context `module.ts`, every `*.wiring.ts` and `*.commands.ts` (H-1),
+ *   `<generated>/wiring.ts`, `<generated>/commands.ts`, `<generated>/composition.ts` and `<generated>/openapi.ts`.
  * - Under `<backend_src>/integrations` (S-3): going pattern-stack, the Nest integration files (`*.module.ts`,
  *   `*.tokens.ts`, the adapters barrels); going nest, the pattern-stack ones (`*.system.ts`, `<slug>.provider.ts`, the
  *   `integrations` module). The author-owned scaffolds of the other wiring stay: `otherWiringScaffolds` names them.
@@ -87,7 +87,7 @@ export function removeOtherWiringFiles(input: {
 					...GENERATED_SYSTEM_FILES.map((f) => path.join(generatedDir, f)).filter((f) => !keep.has(f)),
 				]
 			: [
-					...underModules.filter((f) => path.basename(f) === 'module.ts' || f.endsWith('.wiring.ts')),
+					...underModules.filter((f) => path.basename(f) === 'module.ts' || f.endsWith('.wiring.ts') || f.endsWith('.commands.ts')),
 					...Object.values(COMPOSITION_GENERATED_FILES).map((f) => path.join(generatedDir, f)),
 					...GENERATED_SYSTEM_FILES.map((f) => path.join(generatedDir, f)),
 				];

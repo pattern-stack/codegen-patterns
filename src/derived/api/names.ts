@@ -9,7 +9,7 @@
  * ship in the package's `files`. The case primitive is `src/config/file-naming.ts`'s — never a local copy.
  */
 
-import { camelCase, emittedStem } from '../../config/file-naming.js';
+import { camelCase, emittedStem, kebab } from '../../config/file-naming.js';
 
 /** `deal_state` → `DealState`. */
 export function pascalCase(name: string): string {
@@ -186,6 +186,41 @@ export function useCaseClassName(kind: FixedUseCaseKind, entityName: string, plu
 		case 'search':
 			return `Search${p}UseCase`;
 	}
+}
+
+/** A use case's key in its entity's `useCases` (the composition's): the kind, camelCased (`find_by_id` → `findById`). */
+export function useCaseKey(kind: FixedUseCaseKind): string {
+	return camelCase(kind);
+}
+
+/** The verb a use case's command is named by: `find_by_id` → `find`, `list_with_fields` → `list-with-fields`. */
+const COMMAND_VERBS: Readonly<Record<FixedUseCaseKind, string>> = {
+	find_by_id: 'find',
+	list: 'list',
+	create: 'create',
+	update: 'update',
+	delete: 'delete',
+	find_by_id_with_fields: 'find-with-fields',
+	list_with_fields: 'list-with-fields',
+	search: 'search',
+};
+
+/** A command's name, as a caller types it: the entity, kebab-cased, then the verb (`deal-state find`, H-1). */
+export function commandName(kind: FixedUseCaseKind, entityName: string): string {
+	return `${kebab(entityName)} ${COMMAND_VERBS[kind]}`;
+}
+
+/**
+ * What a missing row's update (and EAV find) answers, around the id: `Contact <id> not found`. The Nest controller and
+ * the commands print it from here, so the two targets' 404 bodies can't drift.
+ */
+export function notFoundMessage(entityName: string): { before: string; after: string } {
+	return { before: `${entityClassName(entityName)} `, after: ' not found' };
+}
+
+/** The export that lists an entity's commands, in `<entity>.commands.ts`: `deal_state` → `dealStateCommands`. */
+export function commandsConstName(entityName: string): string {
+	return `${camelCase(entityName)}Commands`;
 }
 
 /**

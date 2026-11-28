@@ -454,6 +454,104 @@
 					}
 				}
 			],
+			"commands": [
+				{
+					"name": "task find",
+					"summary": "Find task by id",
+					"useCase": "FindTaskByIdUseCase",
+					"kind": "find_by_id",
+					"useCaseKey": "findById",
+					"effect": "read",
+					"input": {
+						"id": true,
+						"include": true
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/tasks/:id",
+						"binding": {
+							"path": [
+								"id"
+							],
+							"query": [
+								"include"
+							],
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "task list",
+					"summary": "List tasks",
+					"useCase": "ListTasksUseCase",
+					"kind": "list",
+					"useCaseKey": "list",
+					"effect": "read",
+					"input": {
+						"id": false,
+						"include": true,
+						"query": "list"
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/tasks",
+						"binding": {
+							"path": [],
+							"query": "all",
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "task search",
+					"summary": "Search tasks",
+					"useCase": "SearchTasksUseCase",
+					"kind": "search",
+					"useCaseKey": "search",
+					"effect": "read",
+					"input": {
+						"id": false,
+						"include": false,
+						"query": "search"
+					},
+					"http": {
+						"verb": "GET",
+						"path": "/tasks/search",
+						"binding": {
+							"path": [],
+							"query": "all",
+							"body": false
+						},
+						"success": 200
+					},
+					"origin": {
+						"from": "yaml",
+						"at": {
+							"doc": {
+								"kind": "entity",
+								"name": "task"
+							},
+							"path": [
+								"queries",
+								1
+							]
+						}
+					}
+				}
+			],
+			"commandsConst": "taskCommands",
+			"notFoundMessage": {
+				"before": "Task ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": true,
 				"routes": [

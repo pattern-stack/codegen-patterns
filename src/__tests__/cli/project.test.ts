@@ -832,7 +832,7 @@ describe('vendoredRuntimeFiles', () => {
 	test('pattern-stack drops the Nest files; nest keeps the whole closure', () => {
 		// SET-1: the settings loader is pattern-stack's only.
 		expect(vendoredRuntimeFiles('nest').map((v) => v.runtime)).not.toContain('settings.ts');
-		expect(otherWiringVendoredFiles('nest').map((v) => v.runtime)).toEqual(['settings.ts']);
+		expect(otherWiringVendoredFiles('nest').map((v) => v.runtime)).toEqual(['settings.ts', 'commands.ts']);
 		expect(vendoredRuntimeFiles('pattern-stack').map((v) => v.runtime)).toContain('settings.ts');
 		const plain = vendoredRuntimeFiles('pattern-stack').map((v) => v.runtime);
 		expect(plain).not.toContain('nest-logger.ts');

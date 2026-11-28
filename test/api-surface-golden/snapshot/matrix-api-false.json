@@ -325,6 +325,91 @@
 					}
 				}
 			],
+			"commands": [
+				{
+					"name": "audit-entry find",
+					"summary": "Find audit_entry by id",
+					"useCase": "FindAuditEntryByIdUseCase",
+					"kind": "find_by_id",
+					"useCaseKey": "findById",
+					"effect": "read",
+					"input": {
+						"id": true,
+						"include": true
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "audit-entry list",
+					"summary": "List audit_entries",
+					"useCase": "ListAuditEntriesUseCase",
+					"kind": "list",
+					"useCaseKey": "list",
+					"effect": "read",
+					"input": {
+						"id": false,
+						"include": true,
+						"query": "list"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "audit-entry create",
+					"summary": "Create audit_entry",
+					"useCase": "CreateAuditEntryUseCase",
+					"kind": "create",
+					"useCaseKey": "create",
+					"effect": "side-effect",
+					"input": {
+						"id": false,
+						"include": false,
+						"dto": "create"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "audit-entry update",
+					"summary": "Update audit_entry",
+					"useCase": "UpdateAuditEntryUseCase",
+					"kind": "update",
+					"useCaseKey": "update",
+					"effect": "idempotent",
+					"input": {
+						"id": true,
+						"include": false,
+						"dto": "update"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "audit-entry delete",
+					"summary": "Delete audit_entry",
+					"useCase": "DeleteAuditEntryUseCase",
+					"kind": "delete",
+					"useCaseKey": "delete",
+					"effect": "side-effect",
+					"input": {
+						"id": true,
+						"include": false
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"commandsConst": "auditEntryCommands",
+			"notFoundMessage": {
+				"before": "AuditEntry ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": false,
 				"routes": [],
@@ -723,6 +808,91 @@
 					}
 				}
 			],
+			"commands": [
+				{
+					"name": "sync-cursor find",
+					"summary": "Find sync_cursor by id",
+					"useCase": "FindSyncCursorByIdUseCase",
+					"kind": "find_by_id",
+					"useCaseKey": "findById",
+					"effect": "read",
+					"input": {
+						"id": true,
+						"include": true
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "sync-cursor list",
+					"summary": "List sync_cursors",
+					"useCase": "ListSyncCursorsUseCase",
+					"kind": "list",
+					"useCaseKey": "list",
+					"effect": "read",
+					"input": {
+						"id": false,
+						"include": true,
+						"query": "list"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "sync-cursor create",
+					"summary": "Create sync_cursor",
+					"useCase": "CreateSyncCursorUseCase",
+					"kind": "create",
+					"useCaseKey": "create",
+					"effect": "side-effect",
+					"input": {
+						"id": false,
+						"include": false,
+						"dto": "create"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "sync-cursor update",
+					"summary": "Update sync_cursor",
+					"useCase": "UpdateSyncCursorUseCase",
+					"kind": "update",
+					"useCaseKey": "update",
+					"effect": "idempotent",
+					"input": {
+						"id": true,
+						"include": false,
+						"dto": "update"
+					},
+					"origin": {
+						"from": "base"
+					}
+				},
+				{
+					"name": "sync-cursor delete",
+					"summary": "Delete sync_cursor",
+					"useCase": "DeleteSyncCursorUseCase",
+					"kind": "delete",
+					"useCaseKey": "delete",
+					"effect": "side-effect",
+					"input": {
+						"id": true,
+						"include": false
+					},
+					"origin": {
+						"from": "base"
+					}
+				}
+			],
+			"commandsConst": "syncCursorCommands",
+			"notFoundMessage": {
+				"before": "SyncCursor ",
+				"after": " not found"
+			},
 			"http": {
 				"enabled": false,
 				"routes": [],

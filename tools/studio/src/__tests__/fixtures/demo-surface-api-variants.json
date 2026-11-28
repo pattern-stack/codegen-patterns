@@ -653,6 +653,150 @@
             }
           }
         ],
+        "commands": [
+          {
+            "name": "account find",
+            "summary": "Find account by id",
+            "useCase": "FindAccountByIdUseCase",
+            "kind": "find_by_id",
+            "useCaseKey": "findById",
+            "effect": "read",
+            "input": {
+              "id": true,
+              "include": true
+            },
+            "includeRoute": "find_by_id",
+            "http": {
+              "verb": "GET",
+              "path": "/accounts/:id",
+              "binding": {
+                "path": [
+                  "id"
+                ],
+                "query": [
+                  "include"
+                ],
+                "body": false
+              },
+              "success": 200
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "name": "account list",
+            "summary": "List accounts",
+            "useCase": "ListAccountsUseCase",
+            "kind": "list",
+            "useCaseKey": "list",
+            "effect": "read",
+            "input": {
+              "id": false,
+              "include": true,
+              "query": "list"
+            },
+            "http": {
+              "verb": "GET",
+              "path": "/accounts",
+              "binding": {
+                "path": [],
+                "query": "all",
+                "body": false
+              },
+              "success": 200
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "name": "account create",
+            "summary": "Create account",
+            "useCase": "CreateAccountUseCase",
+            "kind": "create",
+            "useCaseKey": "create",
+            "effect": "side-effect",
+            "input": {
+              "id": false,
+              "include": false,
+              "dto": "create"
+            },
+            "http": {
+              "verb": "POST",
+              "path": "/accounts",
+              "binding": {
+                "path": [],
+                "query": [],
+                "body": true
+              },
+              "success": 201
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "name": "account update",
+            "summary": "Update account",
+            "useCase": "UpdateAccountUseCase",
+            "kind": "update",
+            "useCaseKey": "update",
+            "effect": "idempotent",
+            "input": {
+              "id": true,
+              "include": false,
+              "dto": "update"
+            },
+            "http": {
+              "verb": "PATCH",
+              "path": "/accounts/:id",
+              "binding": {
+                "path": [
+                  "id"
+                ],
+                "query": [],
+                "body": true
+              },
+              "success": 200
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "name": "account delete",
+            "summary": "Delete account",
+            "useCase": "DeleteAccountUseCase",
+            "kind": "delete",
+            "useCaseKey": "delete",
+            "effect": "side-effect",
+            "input": {
+              "id": true,
+              "include": false
+            },
+            "http": {
+              "verb": "DELETE",
+              "path": "/accounts/:id",
+              "binding": {
+                "path": [
+                  "id"
+                ],
+                "query": [],
+                "body": false
+              },
+              "success": 200
+            },
+            "origin": {
+              "from": "base"
+            }
+          }
+        ],
+        "commandsConst": "accountCommands",
+        "notFoundMessage": {
+          "before": "Account ",
+          "after": " not found"
+        },
         "http": {
           "enabled": true,
           "routes": [
@@ -1359,6 +1503,149 @@
             }
           }
         ],
+        "commands": [
+          {
+            "name": "contact find",
+            "summary": "Find contact by id",
+            "useCase": "FindContactByIdUseCase",
+            "kind": "find_by_id",
+            "useCaseKey": "findById",
+            "effect": "read",
+            "input": {
+              "id": true,
+              "include": true
+            },
+            "http": {
+              "verb": "GET",
+              "path": "/contacts/:id",
+              "binding": {
+                "path": [
+                  "id"
+                ],
+                "query": [
+                  "include"
+                ],
+                "body": false
+              },
+              "success": 200
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "name": "contact list",
+            "summary": "List contacts",
+            "useCase": "ListContactsUseCase",
+            "kind": "list",
+            "useCaseKey": "list",
+            "effect": "read",
+            "input": {
+              "id": false,
+              "include": true,
+              "query": "list"
+            },
+            "http": {
+              "verb": "GET",
+              "path": "/contacts",
+              "binding": {
+                "path": [],
+                "query": "all",
+                "body": false
+              },
+              "success": 200
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "name": "contact create",
+            "summary": "Create contact",
+            "useCase": "CreateContactUseCase",
+            "kind": "create",
+            "useCaseKey": "create",
+            "effect": "side-effect",
+            "input": {
+              "id": false,
+              "include": false,
+              "dto": "create"
+            },
+            "http": {
+              "verb": "POST",
+              "path": "/contacts",
+              "binding": {
+                "path": [],
+                "query": [],
+                "body": true
+              },
+              "success": 201
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "name": "contact update",
+            "summary": "Update contact",
+            "useCase": "UpdateContactUseCase",
+            "kind": "update",
+            "useCaseKey": "update",
+            "effect": "idempotent",
+            "input": {
+              "id": true,
+              "include": false,
+              "dto": "update"
+            },
+            "http": {
+              "verb": "PATCH",
+              "path": "/contacts/:id",
+              "binding": {
+                "path": [
+                  "id"
+                ],
+                "query": [],
+                "body": true
+              },
+              "success": 200
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "name": "contact delete",
+            "summary": "Delete contact",
+            "useCase": "DeleteContactUseCase",
+            "kind": "delete",
+            "useCaseKey": "delete",
+            "effect": "side-effect",
+            "input": {
+              "id": true,
+              "include": false
+            },
+            "http": {
+              "verb": "DELETE",
+              "path": "/contacts/:id",
+              "binding": {
+                "path": [
+                  "id"
+                ],
+                "query": [],
+                "body": false
+              },
+              "success": 200
+            },
+            "origin": {
+              "from": "base"
+            }
+          }
+        ],
+        "commandsConst": "contactCommands",
+        "notFoundMessage": {
+          "before": "Contact ",
+          "after": " not found"
+        },
         "http": {
           "enabled": true,
           "routes": [
@@ -2049,6 +2336,91 @@
             }
           }
         ],
+        "commands": [
+          {
+            "name": "opportunity find",
+            "summary": "Find opportunity by id",
+            "useCase": "FindOpportunityByIdUseCase",
+            "kind": "find_by_id",
+            "useCaseKey": "findById",
+            "effect": "read",
+            "input": {
+              "id": true,
+              "include": true
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "name": "opportunity list",
+            "summary": "List opportunities",
+            "useCase": "ListOpportunitiesUseCase",
+            "kind": "list",
+            "useCaseKey": "list",
+            "effect": "read",
+            "input": {
+              "id": false,
+              "include": true,
+              "query": "list"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "name": "opportunity create",
+            "summary": "Create opportunity",
+            "useCase": "CreateOpportunityUseCase",
+            "kind": "create",
+            "useCaseKey": "create",
+            "effect": "side-effect",
+            "input": {
+              "id": false,
+              "include": false,
+              "dto": "create"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "name": "opportunity update",
+            "summary": "Update opportunity",
+            "useCase": "UpdateOpportunityUseCase",
+            "kind": "update",
+            "useCaseKey": "update",
+            "effect": "idempotent",
+            "input": {
+              "id": true,
+              "include": false,
+              "dto": "update"
+            },
+            "origin": {
+              "from": "base"
+            }
+          },
+          {
+            "name": "opportunity delete",
+            "summary": "Delete opportunity",
+            "useCase": "DeleteOpportunityUseCase",
+            "kind": "delete",
+            "useCaseKey": "delete",
+            "effect": "side-effect",
+            "input": {
+              "id": true,
+              "include": false
+            },
+            "origin": {
+              "from": "base"
+            }
+          }
+        ],
+        "commandsConst": "opportunityCommands",
+        "notFoundMessage": {
+          "before": "Opportunity ",
+          "after": " not found"
+        },
         "http": {
           "enabled": false,
           "routes": [],

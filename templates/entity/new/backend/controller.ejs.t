@@ -35,6 +35,8 @@ const _decorator = (r) => {
 const _typedInclude = apiSurface.repository.typedInclude;
 const _includeRoutes = apiSurface.http.includeRoutes;
 const _allow = (r) => (r.includeRoute ? `${apiSurface.http.includesConst}.${r.includeRoute}` : 'undefined');
+// H-1a: each operation's summary is its command's (`apiSurface.commands`), the one MCP and the CLI describe it by.
+const _summary = (kind) => apiSurface.commands.find((c) => c.kind === kind).summary;
 _%>
 <% if (_list) { -%>
 import { BadRequestException, Controller, Get<% if (_create) { %>, Post<% } %><% if (_writes) { %>, Patch, Delete, Body<% } %>, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
@@ -126,7 +128,7 @@ export class <%= _list.controller %> {
     }
   }
 
-  @ApiOperation({ summary: 'List <%= entityNamePlural %>', operationId: '<%= _list.operationId %>' })
+  @ApiOperation({ summary: '<%= _summary('list') %>', operationId: '<%= _list.operationId %>' })
   @ApiQuery({ name: 'page', required: false, type: 'integer', example: <%= paramExamples.page %>, description: '1-based page number (default 1).' })
   @ApiQuery({ name: 'pageSize', required: false, type: 'integer', example: <%= paramExamples.pageSize %>, description: 'Page size (default 50, max 200).' })
   @ApiQuery({ name: 'cursor', required: false, type: 'string', description: 'Opaque keyset cursor (accepted; v1 paginates by offset).' })
@@ -181,7 +183,7 @@ export class <%= _list.controller %> {
   }
 <% if (_listWithFields) { %>
   @ApiOperation({
-    summary: 'List <%= entityNamePlural %> with EAV fields',
+    summary: '<%= _summary('list_with_fields') %>',
     operationId: '<%= _listWithFields.operationId %>',
   })
   @ApiResponse({ status: 200 })
@@ -191,7 +193,7 @@ export class <%= _list.controller %> {
     return this.listWithFieldsUseCase.execute();
   }
 <% } %>
-  @ApiOperation({ summary: 'Find <%= entityName %> by id', operationId: '<%= _findById.operationId %>' })
+  @ApiOperation({ summary: '<%= _summary('find_by_id') %>', operationId: '<%= _findById.operationId %>' })
   @ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/<%= classNames.outputDto %>' } })
   @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
@@ -228,7 +230,7 @@ export class <%= _list.controller %> {
   }
 <% if (_findByIdWithFields) { %>
   @ApiOperation({
-    summary: 'Find <%= entityName %> with EAV fields',
+    summary: '<%= _summary('find_by_id_with_fields') %>',
     operationId: '<%= _findByIdWithFields.operationId %>',
   })
   @ApiResponse({ status: 200 })
@@ -240,14 +242,14 @@ export class <%= _list.controller %> {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<<%= classNames.entity %> & { fields: globalThis.Record<string, unknown> }> {
     const entity = await this.findByIdWithFieldsUseCase.execute(id);
-    if (!entity) throw new NotFoundException(`<%= classNames.entity %> ${id} not found`);
+    if (!entity) throw new NotFoundException(`<%= apiSurface.notFoundMessage.before %>${id}<%= apiSurface.notFoundMessage.after %>`);
     return entity;
   }
 <% } %>
 <%_ const _W = isInheritanceChild ? `${classNames.entity}Flat` : classNames.entity; _%>
 <% if (_writes) { %>
 <%_ if (_create) { _%>
-  @ApiOperation({ summary: 'Create <%= entityName %>', operationId: '<%= _create.operationId %>' })
+  @ApiOperation({ summary: '<%= _summary('create') %>', operationId: '<%= _create.operationId %>' })
   @ApiBody({ schema: { $ref: '#/components/schemas/<%= classNames.createDto %>' } })
   @ApiResponse({ status: 201, schema: { $ref: '#/components/schemas/<%= classNames.outputDto %>' } })
   @ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
@@ -261,7 +263,7 @@ export class <%= _list.controller %> {
     return this.createUseCase.execute(dto);
   }
 <% } %>
-  @ApiOperation({ summary: 'Update <%= entityName %>', operationId: '<%= _update.operationId %>' })
+  @ApiOperation({ summary: '<%= _summary('update') %>', operationId: '<%= _update.operationId %>' })
   @ApiBody({ schema: { $ref: '#/components/schemas/<%= classNames.updateDto %>' } })
   @ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/<%= classNames.outputDto %>' } })
   @ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
@@ -276,11 +278,11 @@ export class <%= _list.controller %> {
     @Body(new ZodValidationPipe(<%= classNames.updateSchema %>)) dto: <%= classNames.updateDto %>,
   ): Promise<<%= _W %>> {
     const entity = await this.updateUseCase.execute(id, dto);
-    if (!entity) throw new NotFoundException(`<%= classNames.entity %> ${id} not found`);
+    if (!entity) throw new NotFoundException(`<%= apiSurface.notFoundMessage.before %>${id}<%= apiSurface.notFoundMessage.after %>`);
     return entity;
   }
 
-  @ApiOperation({ summary: 'Delete <%= entityName %>', operationId: '<%= _delete.operationId %>' })
+  @ApiOperation({ summary: '<%= _summary('delete') %>', operationId: '<%= _delete.operationId %>' })
   @ApiResponse({ status: 204 })
   @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })

@@ -380,6 +380,149 @@
 			}
 		}
 	],
+	"commands": [
+		{
+			"name": "meeting-transcript find",
+			"summary": "Find meeting_transcript by id",
+			"useCase": "FindMeetingTranscriptByIdUseCase",
+			"kind": "find_by_id",
+			"useCaseKey": "findById",
+			"effect": "read",
+			"input": {
+				"id": true,
+				"include": true
+			},
+			"http": {
+				"verb": "GET",
+				"path": "/meeting_transcripts/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [
+						"include"
+					],
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "meeting-transcript list",
+			"summary": "List meeting_transcripts",
+			"useCase": "ListMeetingTranscriptsUseCase",
+			"kind": "list",
+			"useCaseKey": "list",
+			"effect": "read",
+			"input": {
+				"id": false,
+				"include": true,
+				"query": "list"
+			},
+			"http": {
+				"verb": "GET",
+				"path": "/meeting_transcripts",
+				"binding": {
+					"path": [],
+					"query": "all",
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "meeting-transcript create",
+			"summary": "Create meeting_transcript",
+			"useCase": "CreateMeetingTranscriptUseCase",
+			"kind": "create",
+			"useCaseKey": "create",
+			"effect": "side-effect",
+			"input": {
+				"id": false,
+				"include": false,
+				"dto": "create"
+			},
+			"http": {
+				"verb": "POST",
+				"path": "/meeting_transcripts",
+				"binding": {
+					"path": [],
+					"query": [],
+					"body": true
+				},
+				"success": 201
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "meeting-transcript update",
+			"summary": "Update meeting_transcript",
+			"useCase": "UpdateMeetingTranscriptUseCase",
+			"kind": "update",
+			"useCaseKey": "update",
+			"effect": "idempotent",
+			"input": {
+				"id": true,
+				"include": false,
+				"dto": "update"
+			},
+			"http": {
+				"verb": "PATCH",
+				"path": "/meeting_transcripts/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [],
+					"body": true
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "meeting-transcript delete",
+			"summary": "Delete meeting_transcript",
+			"useCase": "DeleteMeetingTranscriptUseCase",
+			"kind": "delete",
+			"useCaseKey": "delete",
+			"effect": "side-effect",
+			"input": {
+				"id": true,
+				"include": false
+			},
+			"http": {
+				"verb": "DELETE",
+				"path": "/meeting_transcripts/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [],
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		}
+	],
+	"commandsConst": "meetingTranscriptCommands",
+	"notFoundMessage": {
+		"before": "MeetingTranscript ",
+		"after": " not found"
+	},
 	"http": {
 		"enabled": true,
 		"routes": [

@@ -174,6 +174,9 @@ describe('the composition refuses and warns (PW-3b)', () => {
 			path.join(modulesDir, 'notes', 'note.wiring.ts'),
 			`${pw3a}export type NoteRepositoryPort = {};\nexport function registerNoteSchemas() {}\n`,
 		);
+		// H-1: the commands table imports its commands too, so a file without them is behind.
+		expect(wiringFilesBehind({ relations, modulesDir })).toContain('note');
+		fs.writeFileSync(path.join(modulesDir, 'notes', 'note.commands.ts'), 'export const noteCommands = [];\n');
 		expect(wiringFilesBehind({ relations, modulesDir })).not.toContain('note');
 	});
 });

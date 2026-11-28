@@ -924,6 +924,185 @@
 			}
 		}
 	],
+	"commands": [
+		{
+			"name": "deal find",
+			"summary": "Find deal by id",
+			"useCase": "FindDealByIdUseCase",
+			"kind": "find_by_id",
+			"useCaseKey": "findById",
+			"effect": "read",
+			"input": {
+				"id": true,
+				"include": true
+			},
+			"http": {
+				"verb": "GET",
+				"path": "/deals/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [
+						"include"
+					],
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "deal list",
+			"summary": "List deals",
+			"useCase": "ListDealsUseCase",
+			"kind": "list",
+			"useCaseKey": "list",
+			"effect": "read",
+			"input": {
+				"id": false,
+				"include": true,
+				"query": "list"
+			},
+			"http": {
+				"verb": "GET",
+				"path": "/deals",
+				"binding": {
+					"path": [],
+					"query": "all",
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "deal create",
+			"summary": "Create deal",
+			"useCase": "CreateDealUseCase",
+			"kind": "create",
+			"useCaseKey": "create",
+			"effect": "side-effect",
+			"input": {
+				"id": false,
+				"include": false,
+				"dto": "create"
+			},
+			"http": {
+				"verb": "POST",
+				"path": "/deals",
+				"binding": {
+					"path": [],
+					"query": [],
+					"body": true
+				},
+				"success": 201
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "deal update",
+			"summary": "Update deal",
+			"useCase": "UpdateDealUseCase",
+			"kind": "update",
+			"useCaseKey": "update",
+			"effect": "idempotent",
+			"input": {
+				"id": true,
+				"include": false,
+				"dto": "update"
+			},
+			"http": {
+				"verb": "PATCH",
+				"path": "/deals/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [],
+					"body": true
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "deal delete",
+			"summary": "Delete deal",
+			"useCase": "DeleteDealUseCase",
+			"kind": "delete",
+			"useCaseKey": "delete",
+			"effect": "side-effect",
+			"input": {
+				"id": true,
+				"include": false
+			},
+			"http": {
+				"verb": "DELETE",
+				"path": "/deals/:id",
+				"binding": {
+					"path": [
+						"id"
+					],
+					"query": [],
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "base"
+			}
+		},
+		{
+			"name": "deal search",
+			"summary": "Search deals",
+			"useCase": "SearchDealsUseCase",
+			"kind": "search",
+			"useCaseKey": "search",
+			"effect": "read",
+			"input": {
+				"id": false,
+				"include": false,
+				"query": "search"
+			},
+			"http": {
+				"verb": "GET",
+				"path": "/deals/search",
+				"binding": {
+					"path": [],
+					"query": "all",
+					"body": false
+				},
+				"success": 200
+			},
+			"origin": {
+				"from": "yaml",
+				"at": {
+					"doc": {
+						"kind": "entity",
+						"name": "deal"
+					},
+					"path": [
+						"queries",
+						4
+					]
+				}
+			}
+		}
+	],
+	"commandsConst": "dealCommands",
+	"notFoundMessage": {
+		"before": "Deal ",
+		"after": " not found"
+	},
 	"http": {
 		"enabled": true,
 		"routes": [
