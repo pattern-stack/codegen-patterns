@@ -24,6 +24,7 @@ import { leads, type Lead } from './lead.entity';
 export interface LeadIntegrationWrite {
   readonly externalId: string;
   readonly name: string;
+  readonly userId: string;
   /** Flat custom-field bag (EAV). */
   readonly fields?: globalThis.Record<string, unknown>;
 }
@@ -37,6 +38,7 @@ export interface LeadIntegrationProjection {
   readonly id: string;
   readonly externalId: string;
   readonly name: string;
+  readonly userId: string;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -111,10 +113,10 @@ export class LeadRepository extends IntegratedEntityRepository<
   // resolvers carry LIVE Drizzle table handles ('self' → this.table).
   protected readonly integrationConfig: IntegrationUpsertConfig = {
     conflictTarget: ['provider', 'externalId'],
-    writeColumns: ['name'],
+    writeColumns: ['name', 'userId'],
     fkResolvers: [
     ],
-    projectionColumns: ['id', 'externalId', 'name', 'createdAt', 'updatedAt'],
+    projectionColumns: ['id', 'externalId', 'name', 'userId', 'createdAt', 'updatedAt'],
     eav: true,
     softDelete: false,
   };

@@ -865,8 +865,14 @@ fields:
   name:
     type: string
     required: true
+  user_id:            # required: each custom-field value is stamped with its owner
+    type: uuid
+    required: true
   # ... core columns
 ```
+
+With writes, `user_id` must be required on create (the value table needs the column); `entity new` refuses an entity
+without it, by name.
 
 Codegen emits:
 

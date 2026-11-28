@@ -456,7 +456,13 @@ Two independent flags:
 ```yaml
 # On a normal entity (e.g. opportunity): opt into custom fields
 eav: true
+fields:
+  user_id: { type: uuid, required: true }   # required: each custom-field value is stamped with its owner
 ```
+
+An `eav: true` entity with writes needs `user_id` required on create (a `required: true` field, or a NOT NULL
+`belongs_to` whose foreign key is `user_id`); a value table needs the column. `entity new` refuses one without it, by
+name.
 
 When `eav: true`:
 - Service gains **paired reads**: `findById` (typed entity) and
