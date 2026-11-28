@@ -3,7 +3,9 @@ to: "<%= outputPaths.repository %>"
 force: true
 ---
 <%- generatedBanner %>
+<% if (!patternStackWiring) { -%>
 import { Injectable, Inject } from '@nestjs/common';
+<% } -%>
 <%_
 // ADR-046 — this template PRINTS the repository's methods. Which methods exist,
 // what each is called and its parameter names come from `apiSurface`
@@ -87,7 +89,9 @@ const _parentImports = [...new Map(matchFills.flatMap((f) => f.sources).filter((
 _%>
 <%# READ-1: `eq` / `inArray` are unconditional — `findById` / `findByIds` use them. %>
 import { <%- _orm.join(', ') %> } from 'drizzle-orm';
+<% if (!patternStackWiring) { -%>
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
+<% } -%>
 import type { DrizzleClient<% if (_needsTx) { %>, DrizzleTx<% } %> } from '<%= drizzleTypeImport %>';
 // REL-2 (#587): the generated relation graph. `Relations` binds the repository's
 // third type parameter; `IncludeOf`/`ResultOf` are what make a `with` include
@@ -362,7 +366,9 @@ const <%= _C('UPSERT_NEVER') %>: globalThis.ReadonlySet<string> = new globalThis
 ]);
 
 <%_ } _%>
+<% if (!patternStackWiring) { -%>
 @Injectable()
+<% } -%>
 <%_ /* ADR-041: the spine alone, the spine wrapped in one capability mixin, or
       the generated `<Entity>ComposedBase` when two or more stack. Built in
       entity-locals.js so both shapes live in one place. REL-2 (#587) threads
@@ -442,7 +448,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
 
 <%_ if (eavEnabled) { -%>
   constructor(
-    @Inject(DRIZZLE) db: DrizzleClient<Relations>,
+    <%= patternStackWiring ? '' : '@Inject(DRIZZLE) ' %>db: DrizzleClient<Relations>,
     private readonly fieldValues: FieldValueService,
   ) {
     super(db);
@@ -465,12 +471,12 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
 <%_ } else { -%>
 <%_ if (_child) { _%>
   constructor(
-    @Inject(DRIZZLE) db: DrizzleClient<Relations>,
+    <%= patternStackWiring ? '' : '@Inject(DRIZZLE) ' %>db: DrizzleClient<Relations>,
     // The pair write goes through the base's OWN repository, so its tenant stamp and timestamps apply (RFC-0006 §4.1).
     private readonly baseRepo: <%= _child.baseRepositoryClass %>,
   ) {
 <%_ } else { _%>
-  constructor(@Inject(DRIZZLE) db: DrizzleClient<Relations>) {
+  constructor(<%= patternStackWiring ? '' : '@Inject(DRIZZLE) ' %>db: DrizzleClient<Relations>) {
 <%_ } _%>
     super(db);
     // Every read runs on db.query.<%= entityNamePlural %> — fail HERE, naming the cause,

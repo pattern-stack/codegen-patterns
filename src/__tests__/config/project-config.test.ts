@@ -334,11 +334,41 @@ describe('target: — the (database, orm) pair, derived from TARGET_PAIRS (TGT-0
 		expect(err.issues).toEqual([`target: required: write both database and orm; ${SUPPORTED}`]);
 	});
 
-	it('a key with no second value yet (http, wiring, runtime) is an unknown key, not a silently ignored one', () => {
+	it('a key with no second value yet (runtime) is an unknown key, not a silently ignored one', () => {
 		const err = errorOf(() =>
+			parseCodegenConfig({ target: { database: 'postgres', orm: 'drizzle', runtime: 'bun' } }, 'x.yaml'),
+		);
+		expect(err.issues).toEqual(['target.runtime: unknown key (expected one of: database, orm, wiring, http)']);
+	});
+
+	it('wiring and http (PW-3): pattern-stack/none parses, pattern-stack alone means pattern-stack/none, and the defaults stay nest', () => {
+		const plain = parseCodegenConfig(
+			{ target: { database: 'postgres', orm: 'drizzle', wiring: 'pattern-stack', http: 'none' } },
+			'x.yaml',
+		);
+		expect(plain.target).toEqual({ database: 'postgres', orm: 'drizzle', wiring: 'pattern-stack', http: 'none' });
+		const bare = parseCodegenConfig({ target: { database: 'postgres', orm: 'drizzle', wiring: 'pattern-stack' } }, 'x.yaml');
+		expect(bare.target.wiring).toBe('pattern-stack');
+		expect(parseCodegenConfig({}, 'x.yaml').target).toEqual({ database: 'postgres', orm: 'drizzle' });
+	});
+
+	it('an unsupported app is refused naming the supported ones', () => {
+		const err = errorOf(() =>
+			parseCodegenConfig({ target: { database: 'postgres', orm: 'drizzle', wiring: 'pattern-stack', http: 'nest' } }, 'x.yaml'),
+		);
+		expect(err.issues.join('\n')).toContain('{ wiring: pattern-stack, http: nest } is not a supported app');
+		expect(err.issues.join('\n')).toContain('{ wiring: pattern-stack, http: none }');
+		const hono = errorOf(() =>
 			parseCodegenConfig({ target: { database: 'postgres', orm: 'drizzle', http: 'hono' } }, 'x.yaml'),
 		);
-		expect(err.issues).toEqual(['target.http: unknown key (expected one of: database, orm)']);
+		expect(hono.issues[0]).toContain('http: hono is not one of nest, none');
+	});
+
+	it('pattern-stack wiring on a storage-only pair is refused until G7', () => {
+		const err = errorOf(() =>
+			parseCodegenConfig({ target: { database: 'sqlite', orm: 'drizzle', wiring: 'pattern-stack', http: 'none' } }, 'x.yaml'),
+		);
+		expect(err.issues.join('\n')).toContain('wiring: pattern-stack needs a pair that emits the app layers');
 	});
 
 	it('a bare string is not a target', () => {

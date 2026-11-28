@@ -1,7 +1,7 @@
 /**
  * Plain application errors (PW-0). Framework-free: nothing here imports Nest.
  *
- * Generated use cases under `target.wiring: plain` throw these instead of Nest's
+ * Generated use cases under `target.wiring: pattern-stack` throw these instead of Nest's
  * `NotFoundException` / `BadRequestException`; the HTTP layer, whichever it is,
  * maps them to a response. The Nest target keeps Nest's exceptions, byte for byte.
  *

@@ -5,7 +5,9 @@ force: true
 ---
 <%- generatedBanner %>
 <% if (hasSearchQuery) { -%>
+<% if (!patternStackWiring) { -%>
 import { Injectable } from '@nestjs/common';
+<% } -%>
 import { and, eq<% if (searchQuery.searchField) { %>, ilike<% } %>, type SQL } from 'drizzle-orm';
 import type { ListQuery, Page } from '<%= paginationImport %>';
 import { <%= classNames.listUseCase %> } from './list-<%= entityPluralFileStem %>.use-case';
@@ -33,7 +35,9 @@ export interface <%= searchQuery.inputTypeName %> extends ListQuery {
  * (and an ilike on `<%= searchQuery.searchField %>`)<% } %> and pages through `<%= classNames.listUseCase %>`,
  * so paging, sort and the `Page<T>` envelope are the list endpoint's own (#744).
  */
+<% if (!patternStackWiring) { -%>
 @Injectable()
+<% } -%>
 export class <%= searchQuery.useCaseClassName %> {
   constructor(private readonly listUseCase: <%= classNames.listUseCase %>) {}
 

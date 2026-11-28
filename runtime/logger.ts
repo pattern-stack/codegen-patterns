@@ -8,7 +8,7 @@
  *   - a NestJS app binds Nest's `Logger` (`runtime/nest-logger.ts`, called from
  *     the Nest subsystem modules), so its lines keep Nest's format and follow
  *     `app.useLogger` / the factory `logger:` option;
- *   - a plain app keeps the console default, or calls `setLoggerFactory` with
+ *   - a pattern-stack app keeps the console default, or calls `setLoggerFactory` with
  *     its own.
  *
  * A logger made before the binding still prints through the bound factory: the

@@ -244,6 +244,11 @@ typecheck: build-jobs
 build-jobs:
     cd "{{justfile_directory()}}/packages/jobs" && rm -rf dist && "{{justfile_directory()}}/node_modules/.bin/tsc" -p tsconfig.json
 
+# Pattern-stack wiring smoke (PW-3): a `target: { wiring: pattern-stack, http: none }` project generates and compiles with no
+# @nestjs package installed and decorators off.
+test-smoke-pattern-stack:
+    bun test/smoke/run-smoke-pattern-stack.ts
+
 # @pattern-stack/wiring (PW-2): its tests (crew's, ported, plus start / stop), then `tsc` over the package,
 # tests included, so the type assertions (expect-error directives) are checked too.
 test-wiring:
@@ -275,7 +280,7 @@ test-studio:
 # Run all tests. Docker-free by design — `just test-integration` needs Docker
 # and runs as its own CI job (see .github/workflows/ci.yml) so a Docker flake
 # cannot mask this suite.
-test-all: typecheck test-unit test-jobs test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-capability test-junction test-sqlite test-integration-emit test-smoke-integration test-smoke-frontend test-studio test-wiring
+test-all: typecheck test-unit test-jobs test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-capability test-junction test-sqlite test-integration-emit test-smoke-integration test-smoke-frontend test-studio test-wiring test-smoke-pattern-stack
 
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 

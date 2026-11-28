@@ -24,6 +24,16 @@ import type {
 /** The entity whose service an EAV entity's classes take (`FieldValueService`, ADR-13). Its name is fixed. */
 export const EAV_FIELD_VALUE_ENTITY = 'field_value';
 
+/** The service methods whose delegate onto another owner is a constructor argument of the service. */
+const CONSTRUCTOR_DELEGATES = new Set<string>([
+	'relation_one',
+	'relation_many',
+	'junction_attach',
+	'junction_detach',
+	'junction_list',
+	'junction_set_primary',
+]);
+
 /** A junction's name and its two ends, as `between:` lists them. */
 export interface JunctionClassInput {
 	name: string;
@@ -84,26 +94,20 @@ export function entityClassGraph(input: EntityApiInput, surface: EntityApiSurfac
 	node(repository, 'repository', ['db']);
 	if (base) g.add({ from: repository, ...repositoryOf(base), reason: 'inherits' });
 	if (eav) g.add({ from: repository, ...fieldValues, reason: 'eav_field_values' });
-	for (const m of surface.repository.methods) {
-		const to = m.delegatesTo;
-		if (to && to.entity !== self) {
-			g.add({ from: repository, ...targetOf(to, junctions), reason: to.entity === base ? 'inherits' : 'composes' });
-		}
-	}
 
 	// ── The service: its repository, EAV, then every other entity's repository or junction's service it delegates to ──
-	node(service, 'service', ['event_bus']);
+	// The event bus is Nest's optional property injection, not a constructor argument; pattern-stack wiring has none until S-1.
+	node(service, 'service', []);
 	g.add({ from: service, ...local(repository), reason: 'own' });
 	if (eav) g.add({ from: service, ...fieldValues, reason: 'eav_field_values' });
 	if (eavDefinition) g.add({ from: service, ...repositoryOf(eavDefinition), reason: 'eav_definition' });
+	// The service's constructor takes another owner's class for a relation method (a `belongs_to` / wired `has_many`
+	// target's repository, #632) or a junction fan-out method (the junction's service). Its other delegates onto
+	// another entity (a child's flat reads onto its base) go through its own repository, which holds the base's.
 	for (const m of surface.service.methods) {
 		const to = m.delegatesTo;
-		if (!to || to.entity === self) continue;
-		const reason: ClassEdgeReason = junctions.has(to.entity)
-			? 'junction_fan_out'
-			: to.entity === base
-				? 'inherits'
-				: 'composes';
+		if (!to || to.entity === self || !CONSTRUCTOR_DELEGATES.has(m.kind)) continue;
+		const reason: ClassEdgeReason = junctions.has(to.entity) ? 'junction_fan_out' : to.entity === base ? 'inherits' : 'composes';
 		g.add({ from: service, ...targetOf(to, junctions), reason });
 	}
 
@@ -141,11 +145,24 @@ export function junctionClassGraph(junction: JunctionClassInput): ClassGraph {
 	const service = serviceClassName(junction.name);
 	const owner = { owner: junction.name, ownerKind: 'junction' as const };
 	g.nodes.push({ id: repository, ...owner, role: 'repository', systems: ['db'] });
-	g.nodes.push({ id: service, ...owner, role: 'service', systems: ['event_bus'] });
+	g.nodes.push({ id: service, ...owner, role: 'service', systems: [] });
 	g.add({ from: service, to: repository, toOwner: junction.name, toOwnerKind: 'junction', reason: 'own' });
 	g.add({ from: service, ...repositoryOf(junction.left), reason: 'junction_end' });
 	g.add({ from: service, ...repositoryOf(junction.right), reason: 'junction_end' });
 	return { nodes: g.nodes, edges: g.edges };
+}
+
+/**
+ * The other entities whose repositories `entity`'s service takes, in the order the graph adds them (constructor
+ * order): the composition passes them, and `<entity>.wiring.ts` declares them. One test for "a composed
+ * repository" for both: an edge from the service onto another owner's repository class.
+ */
+export function composedRepositoryOwners(graph: ClassGraph, entity: string): string[] {
+	const service = graph.nodes.find((n) => n.owner === entity && n.role === 'service');
+	if (!service) throw new Error(`[codegen] wiring: '${entity}' has no service in the class graph`);
+	return graph.edges
+		.filter((e) => e.from === service.id && e.toOwner !== entity && e.to === repositoryClassName(e.toOwner))
+		.map((e) => e.toOwner);
 }
 
 /** The order a module files its imports in: the base it is a kind of first, the EAV blocks last. */

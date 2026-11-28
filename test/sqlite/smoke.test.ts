@@ -46,7 +46,7 @@ describe('a SQLite project, generated', () => {
 	it('entity new --all succeeds and says what it skipped', () => {
 		expect(gen.status).toBe(0);
 		expect(gen.stdout).toContain('target sqlite: storage layer only');
-		expect(gen.stdout).toContain('they come with wiring: plain (G7)');
+		expect(gen.stdout).toContain('they come with wiring: pattern-stack (G7)');
 	});
 
 	it('the dry run predicts the same: the storage layer only, exit 0', () => {

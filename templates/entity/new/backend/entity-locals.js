@@ -32,7 +32,13 @@ import { detectMethodCollisions } from '../../../../src/patterns/compose.js';
 import { resolvePatternComposition } from '../../../../src/patterns/resolve-composition.js';
 import '../../../../src/patterns/library/index.js';
 import { deriveEntityApiSurface } from '../../../../src/derived/api/entity.js';
-import { EAV_FIELD_VALUE_ENTITY, entityClassGraph, moduleImports } from '../../../../src/derived/wiring/classes.js';
+import {
+  composedRepositoryOwners,
+  EAV_FIELD_VALUE_ENTITY,
+  entityClassGraph,
+  moduleImports,
+} from '../../../../src/derived/wiring/classes.js';
+import { isPatternStackWiring } from '../../../../src/targets/apps.js';
 import { arrayElementType, deriveFieldFacts, isArrayType } from '../../../../src/derived/columns/fields.js';
 import { columnRendererFor } from '../../../../src/targets/columns.js';
 import { constraintRendererFor } from '../../../../src/targets/constraints.js';
@@ -50,6 +56,9 @@ import {
   finderName,
   fkFinderName,
   moduleClassName,
+  repositoryFactoryName,
+  repositoryPropertyName,
+  servicesFactoryName,
   pascalCase,
   relationMethodName,
   routePath,
@@ -625,7 +634,7 @@ function collectRepositoryDeps(belongsTo, existingHasMany) {
       fileStem: emittedStem(entity),
       entityClass: className,
       repositoryClass: `${className}Repository`,
-      property: `${camelCase(entity)}Repo`,
+      property: repositoryPropertyName(entity),
       importDir,
     });
   };
@@ -2419,6 +2428,8 @@ export function buildBackendLocals(definition, baseLocals) {
     entityLookup: (name) => (entityLookup ? entityLookup(name) : null),
   };
   const apiSurface = deriveEntityApiSurface(apiInput);
+  // PW-3 — `target.wiring: pattern-stack`: no decorators, no Nest module (TARGET_APPS, src/targets/apps.ts).
+  const patternStackWiring = isPatternStackWiring(baseLocals.target);
   // PW-1 — the classes this entity emits and what each one's constructor takes (`src/derived/wiring/`). The module
   // template prints its module imports, providers and controllers from it.
   const classGraph = entityClassGraph(apiInput, apiSurface);
@@ -2538,11 +2549,83 @@ export function buildBackendLocals(definition, baseLocals) {
     // TGT-2b: a SQLite pair's table module and its `.sql`; null on Postgres.
     sqliteEntity: null,
     sqliteDdl: null,
+    // PW-3: the entity's pattern-stack wiring factories (`<entity>.wiring.ts`); null under wiring: nest.
+    wiring: patternStackWiring ? ownNaming.wiringFile : null,
   };
+
+  // PW-3: pattern-stack wiring (`target: { wiring: pattern-stack, http: none }`) emits the same table, DTOs, repository, service and use
+  // cases without decorators, and no Nest-only file: the controllers, the Nest module and the integration-source
+  // module are skipped by name (printed, never silent). The per-context composition is the whole-set post-step's.
+  // What pattern-stack cannot emit yet is refused by name, with the step that lifts it.
+  if (patternStackWiring) {
+    const refuse = (what, step) => {
+      throw new Error(`[codegen] '${entityName}': ${what} is not supported under target.wiring: pattern-stack yet — it comes with ${step}.`);
+    };
+    if (Array.isArray(definition.emits) && definition.emits.length > 0) refuse('`emits:` (the typed event bus)', 'S-1 (events on pattern-stack wiring)');
+    if (definition.eav === true || definition.eav_value_table === true) refuse('EAV (`eav:` / `eav_value_table:`)', 'a later pattern-stack wiring step');
+    if (definition.entity?.surface || definition.surface) refuse('an integration `surface:`', 'S-3 (integrations on pattern-stack wiring)');
+    if (junctionFanOut.length > 0) refuse('a junction fan-out (a junction names this entity)', 'PW-3b');
+    const nestOnly = ['controller', 'searchController', 'module', 'integrationSourceModule'];
+    // `integrationSourceModule` always has a path; its template writes only for a `detection:` entity, so it is named
+    // only then.
+    const skipped = nestOnly.filter(
+      (k) => outputPaths[k] !== null && outputPaths[k] !== undefined && (k !== 'integrationSourceModule' || definition.detection),
+    );
+    for (const k of nestOnly) outputPaths[k] = null;
+    console.log(
+      `[codegen] '${entityName}': wiring pattern-stack — skipped ${skipped.length} Nest-only files (${skipped.join(', ')}); ` +
+        'the per-context composition replaces the Nest module.',
+    );
+  }
+
+  // PW-3: what `<entity>.wiring.ts` constructs — the use cases in the surface's order, each with its file (relative to
+  // the module folder) and its key in the returned object (a fixed kind's camelCased name; a declarative query's
+  // service method). The constructor arguments are the templates' own: the repository takes `db` (and a child its
+  // base's repository); the service takes its repository and `repositoryDeps`; a use case its service (a search the
+  // list use case).
+  const useCaseFiles = {
+    find_by_id: outputPaths.findByIdUseCase,
+    list: outputPaths.listUseCase,
+    create: outputPaths.createUseCase,
+    update: outputPaths.updateUseCase,
+    delete: outputPaths.deleteUseCase,
+    search: outputPaths.searchUseCase,
+    query: outputPaths.declarativeQueries,
+  };
+  const fromModuleDir = (file) => `./${file.slice(moduleDir.length + 1).replace(/\.ts$/, '')}`;
+  // The composition (`emitComposition`) passes the service its composed repositories from the class graph's service
+  // edges; `<entity>.wiring.ts` declares them from `repositoryDeps`. One set, or the generated code fails to compile:
+  // held here, naming both, under pattern-stack (where the composition reads them).
+  if (patternStackWiring) {
+    const graphRepos = composedRepositoryOwners(classGraph, entityName).sort();
+    const localRepos = repositoryDeps.map((d) => d.entity).sort();
+    if (graphRepos.join(',') !== localRepos.join(',')) {
+      throw new Error(
+        `[codegen] '${entityName}': the class graph composes [${graphRepos.join(', ')}] but the service takes ` +
+          `[${localRepos.join(', ')}] — the two derivations disagree (PW-3a).`,
+      );
+    }
+  }
+  const patternStackWiringParts = patternStackWiring
+    ? {
+        repositoryFactory: repositoryFactoryName(entityName),
+        servicesFactory: servicesFactoryName(entityName),
+        useCases: apiSurface.useCases.map((u) => {
+          const file = useCaseFiles[u.kind];
+          if (!file) throw new Error(`[codegen] '${entityName}': no file for the ${u.kind} use case under wiring: pattern-stack.`);
+          return {
+            className: u.className,
+            kind: u.kind,
+            key: u.kind === 'query' ? u.calls.method : camelCase(u.kind),
+            importPath: fromModuleDir(file),
+          };
+        }),
+      }
+    : null;
 
   // TGT-2b: a SQLite target emits its storage layer only — the `sqliteTable` module and `<entity>.sql` from the same
   // facts. The Nest layers (repository, service, controller, module, DTOs, use cases) are `node-postgres`-typed through
-  // runtime/base-classes; a SQLite project's stores come from `wiring: plain` (G7). Every other path is null, so hygen
+  // runtime/base-classes; a SQLite project's stores come from `wiring: pattern-stack` (G7). Every other path is null, so hygen
   // writes nothing else, and the skip is printed (never silent).
   const isSqlite = targetPairRow(baseLocals.target).layers === 'storage';
   if (isSqlite) {
@@ -2552,7 +2635,7 @@ export function buildBackendLocals(definition, baseLocals) {
     outputPaths.sqliteDdl = `${moduleDir}/${emittedStem(entityName)}.sql`;
     console.log(
       `[codegen] '${entityName}': target sqlite writes the storage layer (sqliteTable module, .sql); ` +
-        `skipped ${skipped.length} Nest-layer files — they come with wiring: plain (G7).`,
+        `skipped ${skipped.length} Nest-layer files — they come with wiring: pattern-stack (G7).`,
     );
   }
 
@@ -3087,6 +3170,8 @@ export function buildBackendLocals(definition, baseLocals) {
     // #632: every other entity's repository the service composes, once each
     repositoryDeps: repositoryDeps,
     wiring,
+    patternStackWiring,
+    patternStackWiringParts,
     // JUNC-0 (#678): the junction fan-out this entity's service + module carry
     junctionFanOut: junctionFanOut,
     // The EAV definition repository is imported + injected by its own block

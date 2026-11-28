@@ -5,7 +5,7 @@
  * imports included: the protocols, tokens, the refresh strategy and retry, the
  * errors, the OAuth-state schema and the backends. Not here: the controller, the
  * guard, `@Public`, the requester-context middleware (typed against
- * `INestApplication`; its Hono twin is H-2) and the module. A plain app imports
+ * `INestApplication`; its Hono twin is H-2) and the module. A pattern-stack app imports
  * through this file (`subsystemCoreImport(mode, 'auth')`); `./index` re-exports
  * it beside the Nest half. `src/__tests__/runtime/nest-free.test.ts` holds it
  * Nest-free.

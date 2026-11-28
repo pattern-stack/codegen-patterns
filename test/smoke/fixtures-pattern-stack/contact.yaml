@@ -1,0 +1,19 @@
+# Pattern-stack wiring smoke (PW-3): belongs_to account, in the same context.
+entity:
+  name: contact
+  plural: contacts
+  context: crm
+
+fields:
+  email:
+    type: string
+    required: true
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id
+
+behaviors:
+  - timestamps

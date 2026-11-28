@@ -1,0 +1,12 @@
+# Pattern-stack wiring smoke (PW-3a): a child of `party` — its repository takes PartyRepository.
+entity:
+  name: person
+  plural: people
+  context: crm
+
+inherits: party
+
+fields:
+  first_name:
+    type: string
+    required: true

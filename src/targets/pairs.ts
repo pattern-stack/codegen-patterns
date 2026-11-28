@@ -29,12 +29,12 @@ export const TARGET_PAIRS = [
 		database: 'sqlite',
 		ormDescription: 'Drizzle ORM: sqlite-core tables, plus SQLite DDL (.sql) from the same facts',
 		databaseDescription:
-			'SQLite: sqlite-core column builders, ISO TEXT instants, TEXT + CHECK enums; storage layer only until wiring: plain',
+			'SQLite: sqlite-core column builders, ISO TEXT instants, TEXT + CHECK enums; storage layer only until wiring: pattern-stack',
 		/** SQLite has no identifier length limit. */
 		identifierMaxBytes: null,
 		/**
 		 * The storage layer only: `sqliteTable` modules, `<entity>.sql`, the schema barrel. The Nest layers are
-		 * `node-postgres`-typed through runtime/base-classes; a SQLite project's stores come from `wiring: plain` (G7).
+		 * `node-postgres`-typed through runtime/base-classes; a SQLite project's stores come from `wiring: pattern-stack` (G7).
 		 */
 		layers: 'storage',
 	},

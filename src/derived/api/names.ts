@@ -83,6 +83,24 @@ export function repositoryClassName(entityName: string): string {
 	return `${pascalCase(entityName)}Repository`;
 }
 
+/**
+ * The name a service gives a composed entity's repository (#632): its constructor parameter, and under pattern-stack wiring
+ * its key in `<Entity>ServiceDeps` (PW-3). One rule for the template and the composition emitter.
+ */
+export function repositoryPropertyName(entityName: string): string {
+	return `${camelCase(entityName)}Repo`;
+}
+
+/** The `<entity>.wiring.ts` factory that builds an entity's repository (PW-3); the template and the composition both print it. */
+export function repositoryFactoryName(entityName: string): string {
+	return `create${repositoryClassName(entityName)}`;
+}
+
+/** The `<entity>.wiring.ts` factory that builds an entity's service and use cases (PW-3). */
+export function servicesFactoryName(entityName: string): string {
+	return `create${pascalCase(entityName)}Services`;
+}
+
 export function serviceClassName(entityName: string): string {
 	return `${pascalCase(entityName)}Service`;
 }

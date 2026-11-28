@@ -109,7 +109,7 @@ A merge into a `bun init` tsconfig also sets `verbatimModuleSyntax: false`, whic
 TGT-2b. A SQLite target emits the **storage layer**: per entity, a Drizzle `sqliteTable` module
 (`<module>/<entity>.entity.ts`) and its SQLite DDL (`<module>/<entity>.sql`), plus the schema barrel
 (`<generated>/schema.ts`). It has no NestJS layer (repository, service, controller, module, DTOs, use cases) and no
-Nest post-steps: `entity new` says what it skipped. Those come with `wiring: plain`.
+Nest post-steps: `entity new` says what it skipped. Those come with `wiring: pattern-stack`.
 
 ```yaml
 # codegen.config.yaml
@@ -630,7 +630,7 @@ blocks are:
 | Block | What it configures |
 |---|---|
 | `runtime` | `package` (default) \| `vendored` — where generated code imports the runtime from (ADR-037) |
-| `target` | `{ database, orm }` — the data layer the generated tables, columns and repositories are written for. Supported pairs: `{ database: postgres, orm: drizzle }` (the default), `{ database: sqlite, orm: drizzle }` (TGT-2b: the storage layer — `sqliteTable` modules and `<entity>.sql`; the Nest layers come with `wiring: plain`). An unsupported pair is an error naming the supported ones; when written, both keys are required. `http`, `wiring` and `runtime` join when they have a second value, so any other key under `target:` is an error. The driver follows from the database (and, later, the runtime) and has no key (ADR-047) |
+| `target` | `{ database, orm }` — the data layer the generated tables, columns and repositories are written for. Supported pairs: `{ database: postgres, orm: drizzle }` (the default), `{ database: sqlite, orm: drizzle }` (TGT-2b: the storage layer — `sqliteTable` modules and `<entity>.sql`; the Nest layers come with `wiring: pattern-stack`). An unsupported pair is an error naming the supported ones; when written, both keys are required. `http`, `wiring` and `runtime` join when they have a second value, so any other key under `target:` is an error. The driver follows from the database (and, later, the runtime) and has no key (ADR-047) |
 | `paths` | `backend_src`, `frontend_src`, `entities`, `events_dir`, `jobs_dir`, `providers`, `modules_dir`, `orchestration_src`, `generated` |
 | `generate` | `frontend`, `semantic` |
 | `tables` | `prefix` — prepended to the SQL table name of every entity and junction that does not set `table:` (the literal name, used verbatim) or its own `table_prefix:` (`''` opts out); default `''`. Only SQL-facing names follow it — `pgTable('…')`, index / constraint names, Electric shapes, the semantic model's `tableName`, `foreign_key:` targets. The Drizzle export, `db.query` key, module folder and classes stay on `plural` (`src/config/table-naming.ts`) |

@@ -1,0 +1,19 @@
+# Pattern-stack wiring smoke (PW-3a): a joined-table base (RFC-0006). `person` is a kind with a child table; `company` is a
+# base-only kind, so the base keeps its create. Exercises the child repository's base-repository argument in the
+# composition (a base before its child).
+entity:
+  name: party
+  plural: parties
+  context: crm
+
+discriminator: kind
+behaviors: [timestamps]
+
+fields:
+  kind:
+    type: enum
+    choices: [person, company]
+    required: true
+  display_name:
+    type: string
+    required: true

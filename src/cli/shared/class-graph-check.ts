@@ -1,6 +1,6 @@
 /**
  * The generation-time class-cycle check (PW-1): the whole set's class graph has no cycle, or the run stops before
- * hygen with the cycle named. Plain wiring constructs classes in dependency order, so a cycle is a real defect
+ * hygen with the cycle named. Pattern-stack wiring constructs classes in dependency order, so a cycle is a real defect
  * even for a Nest project, whose `forwardRef` would hide it (the plan's decision: no class cycles).
  */
 import { loadProjectApiContext } from '../../derived/api/project.js';
