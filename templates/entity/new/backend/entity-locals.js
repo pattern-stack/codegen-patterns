@@ -2566,7 +2566,6 @@ export function buildBackendLocals(definition, baseLocals) {
     if (Array.isArray(definition.emits) && definition.emits.length > 0) refuse('`emits:` (the typed event bus)', 'S-1 (events on pattern-stack wiring)');
     if (definition.eav === true || definition.eav_value_table === true) refuse('EAV (`eav:` / `eav_value_table:`)', 'a later pattern-stack wiring step');
     if (definition.entity?.surface || definition.surface) refuse('an integration `surface:`', 'S-3 (integrations on pattern-stack wiring)');
-    if (junctionFanOut.length > 0) refuse('a junction fan-out (a junction names this entity)', 'PW-3c');
     const nestOnly = ['controller', 'searchController', 'module', 'integrationSourceModule'];
     // `integrationSourceModule` always has a path; its template writes only for a `detection:` entity, so it is named
     // only then.
@@ -2607,6 +2606,19 @@ export function buildBackendLocals(definition, baseLocals) {
           `[${localRepos.join(', ')}] — the two derivations disagree (PW-3a).`,
       );
     }
+    // PW-3c: the junction services it takes (the fan-out), likewise.
+    const serviceNode = classGraph.nodes.find((n) => n.role === 'service');
+    const graphJunctions = classGraph.edges
+      .filter((e) => e.from === serviceNode?.id && e.reason === 'junction_fan_out')
+      .map((e) => e.toOwner)
+      .sort();
+    const localJunctions = junctionFanOut.map((f) => f.junction.name).sort();
+    if (graphJunctions.join(',') !== localJunctions.join(',')) {
+      throw new Error(
+        `[codegen] '${entityName}': the class graph fans out to [${graphJunctions.join(', ')}] but the service takes ` +
+          `[${localJunctions.join(', ')}] — the two derivations disagree (PW-3c).`,
+      );
+    }
   }
   const patternStackWiringParts = patternStackWiring
     ? {
@@ -2622,6 +2634,12 @@ export function buildBackendLocals(definition, baseLocals) {
             importPath: fromModuleDir(file),
           };
         }),
+        // PW-3c: each fanned-out junction's service, a constructor argument after the composed repositories.
+        junctionServices: junctionFanOut.map((f) => ({
+          property: f.junction.serviceProperty,
+          serviceClass: f.junction.serviceClass,
+          importPath: f.junctionServiceImport,
+        })),
         repositoryPort: repositoryPortName(entityName),
         registerSchemas: registerSchemasName(entityName),
       }

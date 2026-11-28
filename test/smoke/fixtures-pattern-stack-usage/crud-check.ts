@@ -3,9 +3,11 @@
  * `@pattern-stack/wiring`, then CRUD through the use cases. Copied into the smoke project's `src/`: the compile
  * half type-checks it (every key it reads is the composition's real API); `--postgres <url>` runs it.
  */
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { relations } from './generated/relations';
+import { accountTags } from './modules/account-tags/account-tag.entity';
 import { compose, defineSystem } from './generated/wiring';
 import { MODULES } from './generated/composition';
 import { registerOpenApiSchemas } from './generated/openapi';
@@ -47,10 +49,11 @@ export async function openApiCheck(): Promise<void> {
 
 export async function crudCheck(url: string): Promise<void> {
   const pool = new Pool({ connectionString: url });
+  const db = drizzle({ client: pool, relations });
   const database = defineSystem({
     name: 'database',
     uses: [],
-    create: () => ({ db: drizzle({ client: pool, relations }) }),
+    create: () => ({ db }),
     stop: () => pool.end(),
   });
   const app = compose({ systems: [database], modules: [...MODULES] });
@@ -75,6 +78,17 @@ export async function crudCheck(url: string): Promise<void> {
     assert(personBack.firstName === 'Ada', 'a child is created through its base and read back');
 
     assert((await accountNames(crm.repositories)).includes('Acme'), 'a context service reads through the bundle');
+
+    // A junction inside crm (PW-3c): attached from one parent, listed from the other, read from `crm.junctions`.
+    const tag = await crm.tag.useCases.create.execute({ label: 'priority' });
+    const link = await crm.account.service.attachTag(account.id, tag.id, { note: 'from the smoke' });
+    assert(link.accountId === account.id && link.tagId === tag.id, 'a parent attaches through the junction service');
+    const tagged = await crm.tag.service.accountsList(tag.id);
+    assert(tagged.some((t) => t.entity.id === account.id && t.link.note === 'from the smoke'), 'the other parent lists it');
+    assert((await crm.junctions.accountTag.findByAccountId(account.id)).length === 1, 'the junction service reads the link');
+    // `detach` is broken for every junction (it deletes by an `id` the table lacks; reported separately).
+    await db.delete(accountTags).where(eq(accountTags.accountId, account.id));
+    await crm.tag.useCases.delete.execute(tag.id);
 
     const page = await crm.account.useCases.list.execute();
     assert(page.items.some((a) => a.id === account.id), 'list pages it');

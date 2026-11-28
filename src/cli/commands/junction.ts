@@ -12,7 +12,10 @@
  *   4. Dir:    junctions/ (not relationships/)
  */
 
-import { patternStackWiringRefusal, storageOnlyRefusal } from '../shared/storage-only.js';
+import { patternStackRelationshipYamlsRefusal, storageOnlyRefusal } from '../shared/storage-only.js';
+import { planPatternStackComposition, printPatternStackComposition, writePatternStackComposition } from '../shared/pattern-stack-composition.js';
+import { isPatternStackWiring } from '../../targets/apps.js';
+import { configOrDefaults } from '../../config/project-config.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Command, Option } from 'clipanion';
@@ -173,7 +176,8 @@ export class JunctionNewCommand extends Command {
 			skipDetection: true,
 		});
 
-		const refusal = storageOnlyRefusal(ctx, 'junction new') ?? patternStackWiringRefusal(ctx, 'junction new');
+		const refusal = storageOnlyRefusal(ctx, 'junction new') ?? patternStackRelationshipYamlsRefusal(ctx, 'junction new');
+		const patternStackWiring = isPatternStackWiring(configOrDefaults(ctx.config).target);
 		if (refusal) {
 			printError(refusal);
 			return 1;
@@ -269,6 +273,18 @@ export class JunctionNewCommand extends Command {
 		}
 		const parentNamesToRender = parents.validated.map((p) => p.name);
 
+		// PW-3c: under pattern-stack wiring, plan the composition before writing anything, so its refusal (a junction across two
+		// modules, a cycle) stops the run here — and the dry run predicts it.
+		let plannedComposition: string[] = [];
+		if (patternStackWiring) {
+			try {
+				plannedComposition = planPatternStackComposition(ctx).map((f) => f.path);
+			} catch (err: unknown) {
+				printError(err instanceof Error ? err.message : String(err));
+				return 1;
+			}
+		}
+
 		if (this.dryRun) {
 			if (isJsonMode()) {
 				printJson({
@@ -276,6 +292,7 @@ export class JunctionNewCommand extends Command {
 					dryRun: true,
 					junctions: validated.map((v) => ({ name: v.name, file: v.file })),
 					parents: parentNamesToRender,
+					...(patternStackWiring ? { composition: plannedComposition } : {}),
 					totals: { planned: validated.length },
 				});
 			} else {
@@ -284,6 +301,7 @@ export class JunctionNewCommand extends Command {
 					console.log(`  ${theme.muted(icons.arrow)} ${v.name}  ${theme.muted(v.file)}`);
 				}
 				printInfo(`and ${parentNamesToRender.length} parent entities re-rendered: ${parentNamesToRender.join(', ')}`);
+				for (const f of plannedComposition) printInfo(`[dry run] composition: ${path.relative(ctx.cwd, f)}`);
 			}
 			return 0;
 		}
@@ -329,6 +347,9 @@ export class JunctionNewCommand extends Command {
 				relationshipsDir,
 				junctionsDir,
 				generatedDir,
+				// PW-3c: pattern-stack wiring has no Nest modules barrel; the junction tables still join the schema barrel.
+				modulesBarrel: !patternStackWiring,
+				junctions: true,
 			});
 		} catch (err: unknown) {
 			return reportRegenerationFailure('junction new', err);
@@ -361,6 +382,17 @@ export class JunctionNewCommand extends Command {
 			printError(`relations manifest generation failed — ${msg}`);
 		}
 
+		// PW-3c: under pattern-stack wiring the composition holds each junction in its ends' module, so it is rewritten too.
+		let patternStackResult: ReturnType<typeof writePatternStackComposition> | null = null;
+		// A failed relations manifest skips it and falls through to the summary, as the Nest path does.
+		if (patternStackWiring && !relationsFailed) {
+			try {
+				patternStackResult = writePatternStackComposition(ctx);
+			} catch (err: unknown) {
+				return reportRegenerationFailure('junction new', err);
+			}
+		}
+
 		if (isJsonMode()) {
 			printJson({
 				command: 'junction new',
@@ -371,8 +403,11 @@ export class JunctionNewCommand extends Command {
 				succeeded,
 				failed,
 				parents: { succeeded: parentResult.succeeded, failed: parentResult.failed },
+				...(patternStackResult
+					? { composition: patternStackResult.files.map((f) => f.path), removed: patternStackResult.removed, behind: patternStackResult.behind }
+					: {}),
 				barrels: {
-					modules: barrelResult.modulesBarrel,
+					modules: patternStackWiring ? null : barrelResult.modulesBarrel,
 					schema: barrelResult.schemaBarrel,
 					entityCount: barrelResult.entityCount,
 				},
@@ -394,9 +429,16 @@ export class JunctionNewCommand extends Command {
 					`${parentResult.succeeded.length + parentResult.failed.length} parent entities · ${parentResult.failed.length} failed`,
 				);
 			}
-			printInfo(
-				`barrels regenerated (${barrelResult.entityCount} modules) → ${path.relative(ctx.cwd, barrelResult.modulesBarrel)}, ${path.relative(ctx.cwd, barrelResult.schemaBarrel)}`,
-			);
+			// The modules barrel is written under nest only, whether or not the composition ran (a failed relations
+			// manifest skips it).
+			if (patternStackWiring) {
+				printInfo(`schema barrel regenerated → ${path.relative(ctx.cwd, barrelResult.schemaBarrel)}`);
+				if (patternStackResult) printPatternStackComposition(ctx, patternStackResult);
+			} else {
+				printInfo(
+					`barrels regenerated (${barrelResult.entityCount} modules) → ${path.relative(ctx.cwd, barrelResult.modulesBarrel)}, ${path.relative(ctx.cwd, barrelResult.schemaBarrel)}`,
+				);
+			}
 		}
 
 		return failed.length === 0 && parentResult.failed.length === 0 && !relationsFailed

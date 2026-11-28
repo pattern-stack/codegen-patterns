@@ -16,11 +16,13 @@ afterAll(() => {
 	for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
 });
 
-function plan(files: Record<string, string>) {
+function plan(files: Record<string, string>, junctions: Record<string, string> = {}) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'module-cycles-'));
 	dirs.push(root);
 	fs.mkdirSync(path.join(root, 'entities'));
+	fs.mkdirSync(path.join(root, 'junctions'));
 	for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(root, 'entities', name), text);
+	for (const [name, text] of Object.entries(junctions)) fs.writeFileSync(path.join(root, 'junctions', name), text);
 	const relations = loadProjectApiContext(root, null, {
 		entitiesDir: path.join(root, 'entities'),
 		junctionsDir: path.join(root, 'junctions'),
@@ -76,5 +78,53 @@ describe('module cycles', () => {
 		const files = plan({ 'user.yaml': user(false), 'contact.yaml': contact })();
 		const crm = files.find((f) => f.path.endsWith('/modules/crm/module.ts'))!.content;
 		expect(crm).toContain("dependsOn: ['entities']");
+	});
+
+	it('names no junction when the cycle is the entities\' own (PW-3c): removing the junction would not fix it', () => {
+		// crm ↔ billing through entity edges alone (account has_many invoice, invoice belongs_to account); the one-sided
+		// junction sits in billing and adds only billing → crm.
+		const account = [
+			'entity:',
+			'  name: account',
+			'  plural: accounts',
+			'  context: crm',
+			'fields:',
+			'  name:',
+			'    type: string',
+			'relationships:',
+			'  invoices:',
+			'    type: has_many',
+			'    target: invoice',
+			'    foreign_key: account_id',
+			'',
+		].join('\n');
+		const invoice = [
+			'entity:',
+			'  name: invoice',
+			'  plural: invoices',
+			'  context: billing',
+			'fields:',
+			'  account_id:',
+			'    type: uuid',
+			'    foreign_key: accounts.id',
+			'relationships:',
+			'  account:',
+			'    type: belongs_to',
+			'    target: account',
+			'    foreign_key: account_id',
+			'',
+		].join('\n');
+		const run = plan(
+			{ 'account.yaml': account, 'invoice.yaml': invoice },
+			{ 'invoice_account.yaml': 'pattern: Junction\nbetween: [invoice, account]\nexpose_on_parent:\n  left: true\n  right: false\n' },
+		);
+		expect(run).toThrow('modules must depend on each other one way');
+		let message = '';
+		try {
+			run();
+		} catch (e) {
+			message = (e as Error).message;
+		}
+		expect(message).not.toContain('a junction across two modules');
 	});
 });

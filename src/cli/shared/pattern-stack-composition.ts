@@ -1,0 +1,83 @@
+/**
+ * The pattern-stack wiring composition as a CLI post-step (PW-3a, PW-3c): `entity new` and `junction new` both write it, from
+ * one place that builds its input.
+ */
+
+import path from 'node:path';
+
+import { CODEGEN_BANNER } from '../../utils/generated-file.js';
+import type { Context } from './context.js';
+import { projectLayout } from './project-layout.js';
+import { junctionsDirFor, relationshipsDirFor } from '../../config/junctions-dir.js';
+import { loadProjectApiContext } from '../../derived/api/project.js';
+import type { RelationsConfigInput } from '../../emitters/relations/load-context.js';
+import {
+	emitComposition,
+	wiringFilesBehind,
+	type CompositionFile,
+	type CompositionInput,
+} from '../../emitters/composition/emit-composition.js';
+import { removeOtherWiringFiles } from '../../emitters/composition/stale-files.js';
+import { openApiImport, resolveRuntimeMode, runtimeImport } from './runtime-import.js';
+import { printInfo, printWarning } from '../ui/output.js';
+
+/**
+ * The composition's input for this project: the one place that builds it. Every directory comes from `ctx`
+ * (`projectLayout`, the junctions and relationships folders), and the relations load once per call.
+ */
+function compositionInput(ctx: Context): CompositionInput {
+	const mode = resolveRuntimeMode(ctx.config);
+	const layout = projectLayout(ctx.cwd, ctx.config);
+	return {
+		relations: loadProjectApiContext(ctx.cwd, ctx.config as RelationsConfigInput | null | undefined, {
+			entitiesDir: layout.entities,
+			junctionsDir: junctionsDirFor(ctx.cwd),
+			relationshipsDir: relationshipsDirFor(ctx.cwd),
+		}).relations,
+		modulesDir: layout.modules,
+		generatedDir: layout.generated,
+		drizzleTypeImport: runtimeImport(mode, 'types/drizzle'),
+		openApiImport: openApiImport(mode),
+		banner: CODEGEN_BANNER,
+	};
+}
+
+/** The pattern-stack composition for this project, planned (a dry run). Throws its refusals (a cycle, a name). */
+export function planPatternStackComposition(ctx: Context): CompositionFile[] {
+	return emitComposition({ ...compositionInput(ctx), dryRun: true });
+}
+
+export interface PatternStackCompositionResult {
+	files: CompositionFile[];
+	/** The other wiring's generated files, and any context module no longer composed, removed. */
+	removed: string[];
+	/** The entities and junctions whose `.wiring.ts` is missing or older than the composition (`wiringFilesBehind`). */
+	behind: string[];
+}
+
+/** Write the composition, remove what it replaces, and name the `.wiring.ts` files it can't compile against. */
+export function writePatternStackComposition(ctx: Context): PatternStackCompositionResult {
+	const input = compositionInput(ctx);
+	const files = emitComposition(input);
+	const removed = removeOtherWiringFiles({
+		wiring: 'pattern-stack',
+		modulesDir: input.modulesDir,
+		generatedDir: input.generatedDir,
+		keep: new Set(files.map((f) => f.path)),
+	});
+	const behind = wiringFilesBehind(input);
+	return { files, removed, behind };
+}
+
+export function printPatternStackComposition(ctx: Context, result: PatternStackCompositionResult): void {
+	for (const f of result.files) printInfo(`composition: ${path.relative(ctx.cwd, f.path)}`);
+	for (const f of result.removed) {
+		printInfo(`removed (wiring: nest output, or a context no longer composed): ${path.relative(ctx.cwd, f)}`);
+	}
+	if (result.behind.length > 0) {
+		printWarning(
+			`the composition imports from every entity's and junction's .wiring.ts, and these are missing or were written ` +
+				`by an older codegen: ${result.behind.join(', ')}. Run \`entity new --all\` and \`junction new --all\`.`,
+		);
+	}
+}

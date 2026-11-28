@@ -3,9 +3,13 @@ to: "<%= outputPaths.repository %>"
 force: true
 ---
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
+<% if (!patternStackWiring) { -%>
 import { Injectable, Inject } from '@nestjs/common';
+<% } -%>
 import { and, eq } from 'drizzle-orm';
+<% if (!patternStackWiring) { -%>
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
+<% } -%>
 import type { DrizzleClient, DrizzleTx } from '<%= drizzleTypeImport %>';
 import { JunctionIntegrationRepository } from '<%= junctionIntegrationRepositoryImport %>';
 import type { JunctionIntegrationConfig } from '<%= junctionIntegrationRepositoryImport %>';
@@ -42,7 +46,9 @@ export interface <%= classNames.entity %>IntegrationProjection {
 <%_ }); _%>
 }
 
+<% if (!patternStackWiring) { -%>
 @Injectable()
+<% } -%>
 export class <%= classNames.repository %> extends JunctionIntegrationRepository<
   <%= classNames.entity %>,
   typeof <%= tableVarName %>,
@@ -71,7 +77,7 @@ export class <%= classNames.repository %> extends JunctionIntegrationRepository<
     roleColumn: <%- junctionIntegrationConfig.roleColumn ? `'${junctionIntegrationConfig.roleColumn}'` : 'null' %>,
   };
 
-  constructor(@Inject(DRIZZLE) db: DrizzleClient<Relations>) {
+  constructor(<% if (!patternStackWiring) { %>@Inject(DRIZZLE) <% } %>db: DrizzleClient<Relations>) {
     super(db);
   }
 
