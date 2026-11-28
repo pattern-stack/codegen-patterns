@@ -407,9 +407,10 @@ publish-ci *flags:
 
     # Pass 1 — registry check. Emit "dir|name|ver" for every publishable
     # package whose version isn't on npm yet; skip messages go to stderr so
-    # they reach the user without polluting the list. Root first — its dist/
-    # is what the surface packages' .d.ts builds resolve
-    # @pattern-stack/codegen/subsystems against, so publish order matters.
+    # they reach the user without polluting the list. The packages and their
+    # order are scripts/publish-order.ts's (the tarball smoke reads it too):
+    # each after the packages it builds against, so @pattern-stack/jobs
+    # before the root, the root before the surface packages.
     consider() {
         local dir="$1" name="$2" ver="$3" on_npm
         on_npm=$(npm view "${name}@${ver}" version 2>/dev/null || true)
@@ -421,22 +422,11 @@ publish-ci *flags:
     }
 
     list_unpublished() {
-        consider "." "@pattern-stack/codegen" "$(jq -r .version package.json)"
-        # Each opted-in workspace package (publishConfig.access: public), at its
-        # own version. Private / unmarked (graph-components, generated api/db) skip.
-        local pkgjson dir name ver priv access
-        for pkgjson in packages/*/package.json; do
-            dir=$(dirname "${pkgjson}")
-            name=$(jq -r '.name' "${pkgjson}")
-            ver=$(jq -r '.version' "${pkgjson}")
-            priv=$(jq -r '.private // false' "${pkgjson}")
-            access=$(jq -r '.publishConfig.access // ""' "${pkgjson}")
-            if [ "${priv}" = "true" ] || [ "${access}" != "public" ]; then
-                echo "↷ skip ${name} (not opted in: private=${priv} access=${access:-none})" >&2
-                continue
-            fi
+        local order dir name ver
+        order=$(bun scripts/publish-order.ts)
+        while IFS='|' read -r dir name ver; do
             consider "${dir}" "${name}" "${ver}"
-        done
+        done <<< "${order}"
     }
 
     to_publish=$(list_unpublished)
@@ -450,7 +440,7 @@ publish-ci *flags:
     # here, before anything uploads.
     bun test/post-publish/run-tarball-smoke.ts
 
-    # Pass 2 — publish, in list order (root before surface packages).
+    # Pass 2 — publish, in build order (scripts/publish-order.ts).
     while IFS='|' read -r dir name ver; do
         echo "Publishing ${name}@${ver} from ${dir}"
         ( cd "${dir}" && npm publish {{flags}} )

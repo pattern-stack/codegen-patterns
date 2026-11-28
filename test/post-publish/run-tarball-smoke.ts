@@ -35,12 +35,13 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
-  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+
+import { publishOrder } from '../../scripts/publish-order';
 
 const ROOT = resolve(import.meta.dir, '../..');
 if (!existsSync(join(ROOT, 'justfile')) || !existsSync(join(ROOT, 'templates'))) {
@@ -78,17 +79,13 @@ function check(label: string, ok: boolean, detail?: string): void {
 
 // ─── 1. Discover publishable packages ────────────────────────────────────────
 
-const rootManifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8'));
-const rootPkg: Pkg = { dir: ROOT, name: rootManifest.name, version: rootManifest.version };
+// In build order (`scripts/publish-order.ts`, the one list `just publish-ci` reads too): each package after the ones it
+// builds against, so the root's build finds `@pattern-stack/jobs`' dist and a surface package's finds the root's.
+const ordered: Pkg[] = publishOrder(ROOT);
+const rootPkg: Pkg = ordered.find((p) => p.dir === ROOT)!;
+const surfacePkgs: Pkg[] = ordered.filter((p) => p.dir !== ROOT);
 
-const surfacePkgs: Pkg[] = readdirSync(join(ROOT, 'packages'))
-  .map((entry) => join(ROOT, 'packages', entry))
-  .filter((dir) => existsSync(join(dir, 'package.json')))
-  .map((dir) => ({ dir, manifest: JSON.parse(readFileSync(join(dir, 'package.json'), 'utf-8')) }))
-  .filter(({ manifest }) => manifest.private !== true && manifest.publishConfig?.access === 'public')
-  .map(({ dir, manifest }) => ({ dir, name: manifest.name, version: manifest.version }));
-
-console.log(`Tarball smoke: ${rootPkg.name}@${rootPkg.version} + ${surfacePkgs.length} surface packages\n`);
+console.log(`Tarball smoke, in build order: ${ordered.map((p) => `${p.name}@${p.version}`).join(', ')}\n`);
 
 // ─── 2. Build + pack everything ──────────────────────────────────────────────
 
@@ -144,11 +141,11 @@ function packedFilename(packJson: string): string {
   );
 }
 
-// Root builds first — the surface packages' .d.ts builds resolve
-// @pattern-stack/codegen/subsystems against its dist/ (ADR-036 §8).
+// In dependency order (above): the jobs package before the root, the root before the surface packages.
 console.log('Building + packing...');
 const tarballs: string[] = [];
-for (const pkg of [rootPkg, ...surfacePkgs]) {
+const tarballOf = new Map<string, string>();
+for (const pkg of ordered) {
   run('bun run build', pkg.dir);
   const packJson = execSync(`npm pack --json --pack-destination ${stageDir}`, {
     cwd: pkg.dir,
@@ -157,6 +154,7 @@ for (const pkg of [rootPkg, ...surfacePkgs]) {
   });
   const filename = packedFilename(packJson);
   tarballs.push(join(stageDir, filename));
+  tarballOf.set(pkg.name, join(stageDir, filename));
   console.log(`  packed ${pkg.name}@${pkg.version}`);
 }
 
@@ -245,7 +243,16 @@ console.log('\nConsumer-workflow smoke from tarball (test/smoke/run-smoke.ts, SM
   const res = spawnSync('bun', [join(ROOT, 'test/smoke/run-smoke.ts')], {
     cwd: ROOT,
     stdio: 'inherit',
-    env: { ...process.env, SMOKE_TARBALL: tarballs[0] },
+    // The root's tarball by name, and the tarballs of what it builds against (before it in the order: the order visits
+    // the root first, so only its own dependencies precede it), installed beside it as a consumer would.
+    env: {
+      ...process.env,
+      SMOKE_TARBALL: tarballOf.get(rootPkg.name)!,
+      SMOKE_PEER_TARBALLS: ordered
+        .slice(0, ordered.indexOf(rootPkg))
+        .map((p) => tarballOf.get(p.name)!)
+        .join('\n'),
+    },
   });
   check('consumer workflow from tarball (init → entity new → subsystems → tsc → openapi)', res.status === 0);
 }
