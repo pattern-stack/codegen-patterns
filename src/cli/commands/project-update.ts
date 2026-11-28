@@ -35,10 +35,13 @@ import { Command, Option } from 'clipanion';
 import { loadContext, type Context } from '../shared/context.js';
 import { checkGitSafety } from '../shared/git-safety.js';
 import {
-	VENDORED_RUNTIME_FILES,
+	vendoredRuntimeFiles,
+	otherWiringVendoredFiles,
 	loadRuntimeFile,
 	runtimeRoot,
 } from '../shared/init-scaffold.js';
+import { configOrDefaults } from '../../config/project-config.js';
+import { targetWiring } from '../../targets/apps.js';
 import { copyRuntime } from '../shared/runtime-copier.js';
 import { projectLayout } from '../shared/project-layout.js';
 import {
@@ -59,7 +62,7 @@ import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
 // `auth-integrations` is vendored from examples/ into a modules/ dir.
 const NON_RUNTIME_SUBSYSTEMS = new Set(['openapi-config', 'auth-integrations']);
 
-type ChangeAction = 'created' | 'updated' | 'unchanged';
+type ChangeAction = 'created' | 'updated' | 'unchanged' | 'removed';
 
 interface FileChange {
 	path: string;
@@ -71,13 +74,15 @@ interface FileChange {
 // ---------------------------------------------------------------------------
 
 /**
- * Classify (and optionally write) every file in VENDORED_RUNTIME_FILES against
+ * Classify (and optionally write) every file of the vendored closure (`vendoredRuntimeFiles`) against
  * the consumer tree. Returns the per-file change list (relative paths).
  */
-function syncVendoredRuntime(ctx: Context, write: boolean): FileChange[] {
+export function syncVendoredRuntime(ctx: Context, write: boolean): FileChange[] {
 	const changes: FileChange[] = [];
 	const { shared } = projectLayout(ctx.cwd, ctx.config);
-	for (const v of VENDORED_RUNTIME_FILES) {
+	// Under `wiring: pattern-stack`, the closure without the files that import `@nestjs/*` (PW-4).
+	const wiring = targetWiring(configOrDefaults(ctx.config).target);
+	for (const v of vendoredRuntimeFiles(wiring)) {
 		const dest = path.join(shared, v.target);
 		const content = loadRuntimeFile(v.runtime);
 		const existing = fs.existsSync(dest) ? fs.readFileSync(dest, 'utf-8') : null;
@@ -92,6 +97,14 @@ function syncVendoredRuntime(ctx: Context, write: boolean): FileChange[] {
 			fs.writeFileSync(dest, content, 'utf-8');
 		}
 		changes.push({ path: rel(ctx.cwd, dest), action });
+	}
+	// A file only another wiring vendors (a Nest file left from an earlier init imports `@nestjs/*`, which a
+	// pattern-stack project no longer has) is removed (PW-4).
+	for (const v of otherWiringVendoredFiles(wiring)) {
+		const dest = path.join(shared, v.target);
+		if (!fs.existsSync(dest)) continue;
+		if (write) fs.rmSync(dest);
+		changes.push({ path: rel(ctx.cwd, dest), action: 'removed' });
 	}
 	return changes;
 }
@@ -199,7 +212,7 @@ export class ProjectUpdateCommand extends Command {
 		if (!this.dryRun && !this.force) {
 			const vendoredDry = syncVendoredRuntime(ctx, false);
 			const vendoredDirtyCandidates = vendoredDry
-				.filter((c) => c.action === 'updated')
+				.filter((c) => c.action === 'updated' || c.action === 'removed')
 				.map((c) => path.join(ctx.cwd, c.path));
 			const skillDirtyCandidates = this.skipSkills
 				? []
@@ -253,6 +266,7 @@ export class ProjectUpdateCommand extends Command {
 			created: changes.filter((c) => c.action === 'created').length,
 			updated: changes.filter((c) => c.action === 'updated').length,
 			unchanged: changes.filter((c) => c.action === 'unchanged').length,
+			removed: changes.filter((c) => c.action === 'removed').length,
 		});
 
 		if (isJsonMode()) {
@@ -328,15 +342,17 @@ function renderSection(label: string, changes: FileChange[]): void {
 	const created = changes.filter((c) => c.action === 'created');
 	const updated = changes.filter((c) => c.action === 'updated');
 	const unchanged = changes.filter((c) => c.action === 'unchanged');
+	const removed = changes.filter((c) => c.action === 'removed');
 
-	if (created.length === 0 && updated.length === 0 && unchanged.length === 0) return;
+	if (created.length === 0 && updated.length === 0 && unchanged.length === 0 && removed.length === 0) return;
 
 	const head =
-		created.length + updated.length === 0
+		created.length + updated.length + removed.length === 0
 			? theme.muted(`${label} — up to date (${unchanged.length})`)
-			: `${theme.system(label)} — ${created.length} new, ${updated.length} updated`;
+			: `${theme.system(label)} — ${created.length} new, ${updated.length} updated` +
+				(removed.length > 0 ? `, ${removed.length} removed (Nest-only, wiring: pattern-stack)` : '');
 	console.log(`  ${head}`);
-	for (const c of [...created, ...updated]) {
+	for (const c of [...created, ...updated, ...removed]) {
 		console.log(`    ${theme.success(icons.check)} ${theme.muted(c.action.padEnd(8))} ${c.path}`);
 	}
 }

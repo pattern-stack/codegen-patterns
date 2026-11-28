@@ -66,6 +66,11 @@ export function targetApp(target: { wiring?: string; http?: string }): TargetApp
 	return row;
 }
 
+/** The resolved wiring of a parsed `target:` (its row's), the default row's when absent. */
+export function targetWiring(target: { wiring?: string; http?: string }): TargetWiring {
+	return targetApp(target).wiring;
+}
+
 /** Is this `target:` pattern-stack wiring? */
 export function isPatternStackWiring(target: { wiring?: string }): boolean {
 	return (target.wiring ?? DEFAULT_TARGET_APP.wiring) === 'pattern-stack';

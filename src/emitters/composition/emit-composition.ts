@@ -50,7 +50,10 @@ import { relativeImport } from '../../utils/import-path.js';
 export const ROOT_MODULE = 'entities';
 
 /** Names a context's module can't take: the root module's, and the systems' (`database`). */
-const RESERVED_MODULE_NAMES = new Set([ROOT_MODULE, 'database']);
+/** The `database` system's name: the one system every generated module uses (`{ db }`), and the app's `database.ts` defines. */
+export const DATABASE_SYSTEM = 'database';
+
+const RESERVED_MODULE_NAMES = new Set([ROOT_MODULE, DATABASE_SYSTEM]);
 
 /** The files the composition writes under `paths.generated`; stale-files removes the same list on a switch to nest. */
 export const COMPOSITION_GENERATED_FILES = { registry: 'wiring.ts', composition: 'composition.ts', openApi: 'openapi.ts' } as const;
@@ -290,7 +293,7 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 			),
 		];
 		const depsType = [
-			'database: { db: DrizzleClient<Relations> }',
+			`${DATABASE_SYSTEM}: { db: DrizzleClient<Relations> }`,
 			...otherModules.map((m) => `${m}: ${pascalCase(m)}Module`),
 		].join('; ');
 		const content = `${input.banner}
@@ -307,7 +310,7 @@ ${plan.entities.map((e) => `  ${camelCase(e)}: ${repositoryPortName(e)};`).join(
 }
 
 export function compose${pascalCase(plan.name)}(deps: { ${depsType} }) {
-  const { db } = deps.database;
+  const { db } = deps.${DATABASE_SYSTEM};
 ${[...repositoryLines, ...junctionLines, ...serviceLines].join('\n')}
   return {
     repositories: { ${plan.entities.map((e) => `${camelCase(e)}: ${repoVar(e)}`).join(', ')} } satisfies ${bundleType},
@@ -321,7 +324,7 @@ export const ${plan.name}Module = defineModule({
   name: '${plan.name}',
   kind: 'stateful',
   dependsOn: [${otherModules.map((m) => `'${m}'`).join(', ')}],
-  uses: ['database'],
+  uses: ['${DATABASE_SYSTEM}'],
   create: (deps) => compose${pascalCase(plan.name)}(deps),
 });
 `;
@@ -346,7 +349,7 @@ ${names.map((n) => `  ${n}: ${pascalCase(n)}Module;`).join('\n')}
 }
 
 export interface SystemApis {
-  database: { db: DrizzleClient<Relations> };
+  ${DATABASE_SYSTEM}: { db: DrizzleClient<Relations> };
 }
 
 export const { defineModule, defineSystem, compose } = createWiring<ModuleApis, SystemApis>();

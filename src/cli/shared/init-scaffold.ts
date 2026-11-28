@@ -24,6 +24,10 @@ import {
 import { buildApiIncludes, emptyRelationsManifest, RELATIONS_MANIFEST_FILE } from '../../emitters/relations/index.js';
 import { DEFAULT_CODEGEN_CONFIG } from '../../config/project-config.js';
 import { DEFAULT_TARGET_PAIR } from '../../targets/pairs.js';
+import { DEFAULT_TARGET_APP, TARGET_WIRINGS, targetApp, targetWiring, type TargetWiring } from '../../targets/apps.js';
+import { configOrDefaults } from '../../config/project-config.js';
+import { emptyPatternStackComposition } from './pattern-stack-composition.js';
+import { DATABASE_SYSTEM } from '../../emitters/composition/emit-composition.js';
 import {
 	importSpecifier,
 	projectLayout,
@@ -62,6 +66,8 @@ export interface InitPlan {
 		orm: string;
 		frontend: boolean;
 		runtimePath: string;
+		/** `target.wiring` the plan was built for (PW-4). */
+		wiring: TargetWiring;
 	};
 }
 
@@ -82,6 +88,11 @@ export interface InitOptions {
 	 * via `@shared/*`. Written into the emitted `codegen.config.yaml`.
 	 */
 	runtimeMode?: 'package' | 'vendored';
+	/**
+	 * `target.wiring` (PW-4). `pattern-stack` ⇒ no Nest scaffold: a `database` system, `compose.ts` and a `main.ts`
+	 * that starts and stops the composition. Absent ⇒ the existing config's, else `nest`.
+	 */
+	wiring?: TargetWiring;
 }
 
 // ---------------------------------------------------------------------------
@@ -155,6 +166,11 @@ export interface VendoredRuntimeFile {
 	 * (`ProjectLayout.shared`, the `@shared/*` alias target).
 	 */
 	target: string;
+	/**
+	 * The wirings the file is vendored under; absent, every wiring. A file that imports `@nestjs/*` is `['nest']`
+	 * (PW-4).
+	 */
+	wirings?: readonly TargetWiring[];
 }
 
 export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
@@ -203,7 +219,7 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	// The runtime's logger port (PW-0) — imported by lifecycle-events.ts, the event scheduler and the jobs
 	// listener; and its Nest binding, which the vendored events / jobs modules call when they load.
 	{ runtime: 'logger.ts', target: 'logger.ts' },
-	{ runtime: 'nest-logger.ts', target: 'nest-logger.ts' },
+	{ runtime: 'nest-logger.ts', target: 'nest-logger.ts', wirings: ['nest'] },
 	// The plain errors (PW-0) — the error-body owner db-constraint-errors.ts imports, and what a pattern-stack
 	// wiring project's use cases throw (PW-3).
 	{ runtime: 'errors.ts', target: 'errors.ts' },
@@ -228,7 +244,7 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	{ runtime: 'subsystems/token-key.ts', target: 'subsystems/token-key.ts' },
 	// Pipes — ZodValidationPipe is wired on every generated controller
 	// @Body() to give runtime Zod validation at the controller boundary.
-	{ runtime: 'pipes/zod-validation.pipe.ts', target: 'pipes/zod-validation.pipe.ts' },
+	{ runtime: 'pipes/zod-validation.pipe.ts', target: 'pipes/zod-validation.pipe.ts', wirings: ['nest'] },
 	// Pagination-by-default (Page<T> envelope, ListQuerySchema, resolveListQuery,
 	// buildPage, opaque cursor codec) — imported by EVERY generated list
 	// controller/dto/use-case, and by the search controller/use-case, which page
@@ -251,7 +267,7 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	{ runtime: 'shared/openapi/examples.ts', target: 'openapi/examples.ts' },
 	// The 4xx for a foreign-key / unique violation (the modules barrel lists the module first).
 	{ runtime: 'db-constraint-errors.ts', target: 'db-constraint-errors.ts' },
-	{ runtime: 'nest-db-constraint-filter.ts', target: 'nest-db-constraint-filter.ts' },
+	{ runtime: 'nest-db-constraint-filter.ts', target: 'nest-db-constraint-filter.ts', wirings: ['nest'] },
 	// OPENAPI-3: shared error response schema referenced by every generated
 	// controller's 4xx `@ApiResponse` `$ref`. Auto-registered in the registry
 	// constructor so consumer projects expose `ErrorResponseDto` on
@@ -262,6 +278,20 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	},
 	{ runtime: 'shared/openapi/index.ts', target: 'openapi/index.ts' },
 ];
+
+/**
+ * The vendored closure for a wiring: every file under `nest`, and the ones that don't import `@nestjs/*` under
+ * `pattern-stack` (PW-4). `project init` writes it and `project update` re-syncs it.
+ */
+export function vendoredRuntimeFiles(wiring: TargetWiring): VendoredRuntimeFile[] {
+	return VENDORED_RUNTIME_FILES.filter((v) => (v.wirings ?? TARGET_WIRINGS).includes(wiring));
+}
+
+/** The vendored files another wiring has and this one doesn't: `project update` removes them (PW-4). */
+export function otherWiringVendoredFiles(wiring: TargetWiring): VendoredRuntimeFile[] {
+	const own = new Set(vendoredRuntimeFiles(wiring));
+	return VENDORED_RUNTIME_FILES.filter((v) => !own.has(v));
+}
 
 function databaseModuleContent(mode: RuntimeMode, relationsImport: string): string {
 	// In vendored mode DRIZZLE comes from the vendored shim (`../constants/tokens`);
@@ -545,6 +575,112 @@ bootstrap().catch((err) => {
 `;
 }
 
+// ---------------------------------------------------------------------------
+// wiring: pattern-stack (PW-4) — the app's own files, in place of the Nest scaffold
+// ---------------------------------------------------------------------------
+
+/**
+ * `<backend_src>/database.ts`: the one system the generated modules use (`{ db }`), and the pool it closes on stop.
+ * Written once; the project owns it (a SQLite or test database is a different `create`).
+ */
+export function patternStackDatabaseContent(layout: ProjectLayout): string {
+	const from = layout.databaseSystem;
+	return `import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+import { relations } from '${importSpecifier(from, path.join(layout.generated, RELATIONS_MANIFEST_FILE))}';
+import { defineSystem } from '${importSpecifier(from, path.join(layout.generated, 'wiring'))}';
+
+/**
+ * The \`database\` system: the Drizzle client every generated repository takes. \`relations\` is the generated manifest
+ * (what makes \`db.query.<table>.findMany({ with: … })\` typed). The pool connects on first use and ends on stop.
+ */
+export function databaseSystem(connectionString = process.env.DATABASE_URL ?? 'postgresql://localhost:5432/app_dev') {
+  const pool = new Pool({ connectionString });
+  return defineSystem({
+    name: '${DATABASE_SYSTEM}',
+    uses: [],
+    create: () => ({ db: drizzle({ client: pool, relations }) }),
+    stop: () => pool.end(),
+  });
+}
+`;
+}
+
+/**
+ * `<backend_src>/compose.ts`: the app's systems and every generated module (\`MODULES\`, rewritten by each
+ * \`entity new\`), composed. Written once; add your own systems and modules here.
+ */
+export function patternStackComposeContent(layout: ProjectLayout): string {
+	const from = layout.composeTs;
+	return `import { compose } from '${importSpecifier(from, path.join(layout.generated, 'wiring'))}';
+import { MODULES } from '${importSpecifier(from, path.join(layout.generated, 'composition'))}';
+import { databaseSystem } from '${importSpecifier(from, layout.databaseSystem)}';
+
+/**
+ * The app: its systems, then every generated module (one per entity \`context:\`), in the order they depend on each
+ * other. Nothing runs until \`start()\`; \`stop()\` stops what started, in reverse.
+ */
+export function composeApp(options: { databaseUrl?: string } = {}) {
+  return compose({
+    systems: [databaseSystem(options.databaseUrl)],
+    modules: [...MODULES],
+  });
+}
+
+export type App = ReturnType<typeof composeApp>;
+`;
+}
+
+/**
+ * `<backend_src>/main.ts`: compose, start, do the app's work, stop. No HTTP (\`http: none\`): a CLI, hook, worker or
+ * MCP app replaces \`run\`. SIGINT / SIGTERM stop the composition before the process exits.
+ */
+export function patternStackMainContent(layout: ProjectLayout): string {
+	return `import { composeApp, type App } from '${importSpecifier(layout.mainTs, layout.composeTs)}';
+
+/** The app's work. Replace it: read a module with \`app.module('<context>')\` and call its use cases. */
+async function run(app: App): Promise<void> {
+  // eslint-disable-next-line no-console
+  console.log(\`composed: \${app.order.join(', ')}\`);
+}
+
+async function main(): Promise<void> {
+  const app = composeApp();
+  let stopping = false;
+  const stop = (signal: string) => {
+    stopping = true;
+    // eslint-disable-next-line no-console
+    console.log(\`\${signal}: stopping\`);
+    app.stop().then(
+      () => process.exit(0),
+      (err) => {
+        // eslint-disable-next-line no-console
+        console.error(err);
+        process.exit(1);
+      },
+    );
+  };
+  process.once('SIGINT', () => stop('SIGINT'));
+  process.once('SIGTERM', () => stop('SIGTERM'));
+
+  await app.start();
+  // A signal during start stops what started; don't run on a stopped app.
+  if (stopping) return;
+  try {
+    await run(app);
+  } finally {
+    await app.stop();
+  }
+}
+
+main().catch((err) => {
+  // eslint-disable-next-line no-console
+  console.error('Failed:', err);
+  process.exit(1);
+});
+`;
+}
+
 function rootSchemaContent(layout: ProjectLayout): string {
 	const barrel = path.join(layout.generated, 'schema');
 	return `/**
@@ -614,7 +750,7 @@ entity YAML shape, every config key, and what each command emits.
 `;
 }
 
-function tsconfigTemplate(layout: ProjectLayout): string {
+function tsconfigTemplate(layout: ProjectLayout, decorators: boolean): string {
 	const aliases = tsconfigAliases(layout);
 	const alias = (name: string) => `"${name}": ["${aliases[name]![0]}"]`;
 	const includes = tsconfigIncludes(layout).map((g) => `    "${g}",`).join('\n');
@@ -623,9 +759,7 @@ function tsconfigTemplate(layout: ProjectLayout): string {
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
-    "strict": true,
+${decorators ? '    "experimentalDecorators": true,\n    "emitDecoratorMetadata": true,\n' : ''}    "strict": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "paths": {
@@ -717,6 +851,8 @@ const REQUIRED_COMPILER_OPTIONS: Record<string, unknown> = {
 export function mergeTsconfig(
 	raw: string,
 	layout: ProjectLayout,
+	/** Nest's decorator flags; `wiring: pattern-stack` emits no decorator, so it adds none (PW-4). */
+	decorators = true,
 ): TsconfigMergeResult & { parseError?: string } {
 	let parsed: Record<string, unknown>;
 	try {
@@ -742,7 +878,7 @@ export function mergeTsconfig(
 	}
 
 	// Also ensure decorator flags are enabled — NestJS generated code uses them.
-	for (const [opt, value] of Object.entries(REQUIRED_COMPILER_OPTIONS)) {
+	for (const [opt, value] of Object.entries(decorators ? REQUIRED_COMPILER_OPTIONS : {})) {
 		if (compilerOptions[opt] === undefined) {
 			compilerOptions[opt] = value;
 			added.push(opt);
@@ -889,10 +1025,29 @@ function relOf(cwd: string, abs: string): string {
  * (`consumer-setup-install.test.ts` holds the doc to this constant).
  * drizzle-orm / drizzle-kit are exact: prerelease pins are exact (charter §8).
  */
+const PIN = { drizzleOrm: 'drizzle-orm@1.0.0-rc.4', pg: 'pg@8', zod: 'zod@4' } as const;
+/** The dev tools, the same under every wiring. */
+const DEV_INSTALL_LINE = 'bun add -D drizzle-kit@1.0.0-rc.4 typescript@5 @types/pg@8';
+
 export const CONSUMER_INSTALL_LINES = [
-	'bun add @nestjs/common@10 @nestjs/core@10 @nestjs/platform-express@10 @nestjs/swagger@7 drizzle-orm@1.0.0-rc.4 pg@8 reflect-metadata@0.2 rxjs@7 zod@4',
-	'bun add -D drizzle-kit@1.0.0-rc.4 typescript@5 @types/pg@8',
+	`bun add @nestjs/common@10 @nestjs/core@10 @nestjs/platform-express@10 @nestjs/swagger@7 ${PIN.drizzleOrm} ${PIN.pg} reflect-metadata@0.2 rxjs@7 ${PIN.zod}`,
+	DEV_INSTALL_LINE,
 ] as const;
+
+/**
+ * The install lines under `wiring: pattern-stack` (PW-4): no Nest, no reflect-metadata; `@pattern-stack/wiring`
+ * composes the modules.
+ */
+export const PATTERN_STACK_INSTALL_LINES = [
+	`bun add @pattern-stack/wiring ${PIN.drizzleOrm} ${PIN.pg} ${PIN.zod}`,
+	DEV_INSTALL_LINE,
+] as const;
+
+/** The install lines `project init` prints, by wiring. */
+export const INSTALL_LINES: Record<TargetWiring, readonly string[]> = {
+	nest: CONSUMER_INSTALL_LINES,
+	'pattern-stack': PATTERN_STACK_INSTALL_LINES,
+};
 
 /**
  * The first line of the `codegen.config.yaml` init writes: points yaml-language-server
@@ -927,7 +1082,7 @@ function fileEntry(
 ): PlanEntry {
 	const exists = fs.existsSync(absPath);
 	let action: PlanAction;
-	let reason: string | undefined = opts.skipReason;
+	let reason: string | undefined;
 	if (!exists) {
 		action = 'create';
 	} else if (opts.force) {
@@ -951,6 +1106,32 @@ function dirEntry(cwd: string, absPath: string): PlanEntry {
 	};
 }
 
+/** A plan init won't build: the message says why and what to do instead. */
+export class InitRefusal extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'InitRefusal';
+	}
+}
+
+/**
+ * Why init refuses this wiring here, or null (PW-4): `--wiring` names a wiring other than the existing config's. The
+ * config isn't rewritten without `--force`, so init would write one wiring's app over a config that generates the
+ * other's. (Pattern-stack over a SQLite target needs no check here: the config schema refuses it until G7.)
+ */
+export function initWiringRefusal(ctx: Context, cwd: string, options: InitOptions): string | null {
+	const configExists = fs.existsSync(path.join(cwd, 'codegen.config.yaml'));
+	const target = configOrDefaults(ctx.config).target;
+	const configWiring = targetWiring(target);
+	if (options.wiring && configExists && !options.force && options.wiring !== configWiring) {
+		return (
+			`--wiring ${options.wiring}, but codegen.config.yaml says target.wiring ${configWiring}. Set ` +
+			`target.wiring in codegen.config.yaml and re-run init without --wiring, or pass --force to rewrite the config.`
+		);
+	}
+	return null;
+}
+
 /**
  * Build the complete init plan without touching disk.
  *
@@ -967,6 +1148,12 @@ export async function buildInitPlan(
 	// npm package; nothing is vendored. `vendored` keeps the legacy `@shared/**`
 	// model and vendors the runtime closure below.
 	const runtimeMode = options.runtimeMode === 'vendored' ? 'vendored' : 'package';
+	// `target.wiring` (PW-4): the flag, else the existing config's, else `nest`.
+	const wiring: TargetWiring = options.wiring ?? targetWiring(configOrDefaults(ctx.config).target);
+	const app = targetApp({ wiring });
+	const patternStack = wiring === 'pattern-stack';
+	const refusal = initWiringRefusal(ctx, cwd, options);
+	if (refusal) throw new InitRefusal(refusal);
 
 	// Detection — drive config defaults.
 	let framework = 'nestjs';
@@ -1004,7 +1191,12 @@ export async function buildInitPlan(
 			runtime: runtimeMode,
 			// The generation target (ADR-047): written out so the key — and the editor
 			// completion the `$schema` line below gives it — is visible from day one.
-			target: { database: DEFAULT_TARGET_PAIR.database, orm: DEFAULT_TARGET_PAIR.orm },
+			target: {
+				database: DEFAULT_TARGET_PAIR.database,
+				orm: DEFAULT_TARGET_PAIR.orm,
+				// The wiring's row of TARGET_APPS, written out unless it is the default (`{ wiring: pattern-stack, http: none }`).
+				...(app === DEFAULT_TARGET_APP ? {} : { wiring: app.wiring, http: app.http }),
+			},
 			paths: {
 				backend_src: DEFAULT_CODEGEN_CONFIG.paths.backend_src,
 				entities: DEFAULT_CODEGEN_CONFIG.paths.entities,
@@ -1035,7 +1227,7 @@ export async function buildInitPlan(
 		const tsconfigPath = path.join(cwd, 'tsconfig.json');
 		if (fs.existsSync(tsconfigPath)) {
 			const raw = fs.readFileSync(tsconfigPath, 'utf-8');
-			const merged = mergeTsconfig(raw, layout);
+			const merged = mergeTsconfig(raw, layout, !patternStack);
 			if (merged.parseError) {
 				entries.push({
 					path: tsconfigPath,
@@ -1064,7 +1256,7 @@ export async function buildInitPlan(
 				path: tsconfigPath,
 				relPath: relOf(cwd, tsconfigPath),
 				action: 'create',
-				content: tsconfigTemplate(layout),
+				content: tsconfigTemplate(layout, !patternStack),
 				reason: 'new tsconfig.json',
 			});
 		} else {
@@ -1077,17 +1269,20 @@ export async function buildInitPlan(
 		}
 	}
 
-	// 3. <backend_src>/shared/database/database.module.ts
+	// 3. <backend_src>/shared/database/database.module.ts (Nest), or <backend_src>/database.ts, the `database` system
+	// (pattern-stack, PW-4).
 	entries.push(
-		fileEntry(
-			cwd,
-			layout.databaseModule,
-			databaseModuleContent(
-				runtimeMode,
-				importSpecifier(layout.databaseModule, path.join(layout.generated, RELATIONS_MANIFEST_FILE)),
-			),
-			{ force }
-		)
+		patternStack
+			? fileEntry(cwd, layout.databaseSystem, patternStackDatabaseContent(layout), { skipReason: 'exists — yours to edit' })
+			: fileEntry(
+					cwd,
+					layout.databaseModule,
+					databaseModuleContent(
+						runtimeMode,
+						importSpecifier(layout.databaseModule, path.join(layout.generated, RELATIONS_MANIFEST_FILE)),
+					),
+					{ force },
+				),
 	);
 
 	// 4-6. Vendor runtime files into <backend_src>/shared/ — ONLY in `vendored` mode
@@ -1097,22 +1292,24 @@ export async function buildInitPlan(
 	// `@pattern-stack/codegen` and the generated code imports from the package, so
 	// there is nothing to vendor. See VENDORED_RUNTIME_FILES comment.
 	if (runtimeMode === 'vendored') {
-		for (const v of VENDORED_RUNTIME_FILES) {
+		for (const v of vendoredRuntimeFiles(wiring)) {
 			entries.push(
 				fileEntry(cwd, path.join(layout.shared, v.target), loadRuntimeFile(v.runtime), { force })
 			);
 		}
 	}
 
-	// 7. <generated>/{modules,schema}.ts — empty barrels
-	entries.push(
-		fileEntry(
-			cwd,
-			path.join(layout.generated, 'modules.ts'),
-			emptyModulesBarrel(),
-			{ force }
-		)
-	);
+	// 7. <generated>/{modules,schema}.ts — empty barrels. No Nest modules barrel under pattern-stack: its composition
+	// (`wiring.ts`, `composition.ts`, `openapi.ts`), over no entity yet, so `compose.ts` compiles before the first
+	// `entity new` rewrites it (PW-4).
+	if (patternStack) {
+		for (const f of emptyPatternStackComposition({ modulesDir: layout.modules, generatedDir: layout.generated }, runtimeMode)) {
+			// Never forced: over a project with entities it would empty `MODULES` until the next `entity new`.
+			entries.push(fileEntry(cwd, f.path, f.content, { skipReason: 'exists — `entity new` keeps it current' }));
+		}
+	} else {
+		entries.push(fileEntry(cwd, path.join(layout.generated, 'modules.ts'), emptyModulesBarrel(), { force }));
+	}
 	entries.push(
 		fileEntry(
 			cwd,
@@ -1159,8 +1356,11 @@ export async function buildInitPlan(
 		});
 	}
 
-	// 8. <backend_src>/app.module.ts — only if missing (never clobber user auth'd module)
-	{
+	// 8. <backend_src>/app.module.ts — only if missing (never clobber user auth'd module). Under pattern-stack,
+	// `compose.ts` in its place (PW-4), likewise never clobbered.
+	if (patternStack) {
+		entries.push(fileEntry(cwd, layout.composeTs, patternStackComposeContent(layout), { skipReason: 'exists — yours to edit' }));
+	} else {
 		const appModulePath = layout.appModule;
 		if (!fs.existsSync(appModulePath)) {
 			entries.push({
@@ -1183,8 +1383,10 @@ export async function buildInitPlan(
 	// 8b. <backend_src>/main.ts — NestFactory bootstrap + conditional Swagger setup
 	// (OPENAPI-4). Never clobber an existing main.ts — consumers who own
 	// their own bootstrap (custom logging, Helmet, cors, etc.) copy the
-	// Swagger block manually from CONSUMER-SETUP §OpenAPI.
-	{
+	// Swagger block manually from CONSUMER-SETUP §OpenAPI. Under pattern-stack: compose, start, run, stop (PW-4).
+	if (patternStack) {
+		entries.push(fileEntry(cwd, layout.mainTs, patternStackMainContent(layout), { skipReason: 'exists — yours to edit' }));
+	} else {
 		const mainPath = layout.mainTs;
 		if (!fs.existsSync(mainPath)) {
 			entries.push({
@@ -1310,6 +1512,7 @@ export async function buildInitPlan(
 			orm,
 			frontend,
 			runtimePath,
+			wiring,
 		},
 	};
 }

@@ -6,14 +6,19 @@
 import { describe, expect, it } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { CONSUMER_INSTALL_LINES } from '../../cli/shared/init-scaffold.js';
+import { CONSUMER_INSTALL_LINES, PATTERN_STACK_INSTALL_LINES } from '../../cli/shared/init-scaffold.js';
 
 const REPO = path.resolve(import.meta.dir, '../../..');
 const doc = fs.readFileSync(path.join(REPO, 'docs/CONSUMER-SETUP.md'), 'utf-8');
 
 describe('docs/CONSUMER-SETUP.md carries the install lines project init prints', () => {
-	it.each(CONSUMER_INSTALL_LINES.map((l) => [l]))('%s', (line) => {
+	it.each([...CONSUMER_INSTALL_LINES, ...PATTERN_STACK_INSTALL_LINES].map((l) => [l]))('%s', (line) => {
 		expect(doc.split('\n')).toContain(line);
+	});
+
+	it('the pattern-stack lines install no Nest (PW-4); the shared pins are one declaration', () => {
+		expect(PATTERN_STACK_INSTALL_LINES.join(' ')).not.toMatch(/@nestjs|reflect-metadata/);
+		expect(PATTERN_STACK_INSTALL_LINES[0]).toContain('@pattern-stack/wiring');
 	});
 
 	it('installs the platform adapter the generated main.ts boots on', () => {

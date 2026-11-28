@@ -104,6 +104,35 @@ Generated code imports its own trees through `@modules/*` and `@generated/*` (an
 
 A merge into a `bun init` tsconfig also sets `verbatimModuleSyntax: false`, which decorator metadata needs.
 
+## A project without NestJS (`--wiring pattern-stack`)
+
+```bash
+bun init -y
+bun add @pattern-stack/codegen
+bunx codegen project init --yes --with-tsconfig --wiring pattern-stack
+bun add @pattern-stack/wiring drizzle-orm@1.0.0-rc.4 pg@8 zod@4
+bun add -D drizzle-kit@1.0.0-rc.4 typescript@5 @types/pg@8
+# write entities/<name>.yaml, then:
+bunx codegen entity new --all
+bunx tsc --noEmit
+DATABASE_URL=postgres://… bunx drizzle-kit push
+DATABASE_URL=postgres://… bun src/main.ts
+```
+
+`--wiring pattern-stack` writes `target: { wiring: pattern-stack, http: none }`, and no Nest scaffold: no
+`DatabaseModule`, `app.module.ts`, Nest `main.ts` or modules barrel, no vendored file that imports `@nestjs/*`, and no
+decorator flags in `tsconfig.json`. In their place:
+
+| File | What it is | Owner |
+|---|---|---|
+| `src/database.ts` | `databaseSystem(url)`: the `database` system (`{ db }`), a Drizzle client over a `pg` pool that ends on stop | you |
+| `src/compose.ts` | `composeApp()`: the systems and every generated module (`MODULES`), composed with `@pattern-stack/wiring` | you |
+| `src/main.ts` | compose, `start()`, `run(app)`, `stop()`; SIGINT / SIGTERM stop the app first. Replace `run` with the app's work | you |
+| `src/generated/{wiring,composition,openapi}.ts` | the composition, empty until the first entity; `entity new` rewrites it | codegen |
+
+Read a module with `app.module('<context>')` (one module per entity `context:`) and call its use cases. There is no HTTP
+layer yet.
+
 ## A SQLite project (`target: { database: sqlite, orm: drizzle }`)
 
 TGT-2b. A SQLite target emits the **storage layer**: per entity, a Drizzle `sqliteTable` module
@@ -630,7 +659,7 @@ blocks are:
 | Block | What it configures |
 |---|---|
 | `runtime` | `package` (default) \| `vendored` — where generated code imports the runtime from (ADR-037) |
-| `target` | `{ database, orm }` — the data layer the generated tables, columns and repositories are written for. Supported pairs: `{ database: postgres, orm: drizzle }` (the default), `{ database: sqlite, orm: drizzle }` (TGT-2b: the storage layer — `sqliteTable` modules and `<entity>.sql`; the Nest layers come with `wiring: pattern-stack`). An unsupported pair is an error naming the supported ones; when written, both keys are required. `http`, `wiring` and `runtime` join when they have a second value, so any other key under `target:` is an error. The driver follows from the database (and, later, the runtime) and has no key (ADR-047) |
+| `target` | `{ database, orm }` — the data layer the generated tables, columns and repositories are written for. Supported pairs: `{ database: postgres, orm: drizzle }` (the default), `{ database: sqlite, orm: drizzle }` (TGT-2b: the storage layer — `sqliteTable` modules and `<entity>.sql`; the Nest layers come with `wiring: pattern-stack`). An unsupported pair is an error naming the supported ones; when written, both keys are required. `wiring` and `http` take the supported apps: `{ wiring: nest, http: nest }` (the default) and `{ wiring: pattern-stack, http: none }` (no NestJS: see A project without NestJS). `runtime` joins when it has a second value, so any other key under `target:` is an error. The driver follows from the database (and, later, the runtime) and has no key (ADR-047) |
 | `paths` | `backend_src`, `frontend_src`, `entities`, `events_dir`, `jobs_dir`, `providers`, `modules_dir`, `orchestration_src`, `generated` |
 | `generate` | `frontend`, `semantic` |
 | `tables` | `prefix` — prepended to the SQL table name of every entity and junction that does not set `table:` (the literal name, used verbatim) or its own `table_prefix:` (`''` opts out); default `''`. Only SQL-facing names follow it — `pgTable('…')`, index / constraint names, Electric shapes, the semantic model's `tableName`, `foreign_key:` targets. The Drizzle export, `db.query` key, module folder and classes stay on `plural` (`src/config/table-naming.ts`) |

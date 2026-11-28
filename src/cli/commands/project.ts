@@ -51,7 +51,14 @@ import { definitionSetRejections } from '../shared/entity-render.js';
 import { printRejections, rejectionEntry, type RejectionEntry, type RunRejection } from '../shared/run-rejections.js';
 
 import { loadContext, type Context } from '../shared/context.js';
-import { buildInitPlan, CONSUMER_INSTALL_LINES, writePlan, type InitPlan } from '../shared/init-scaffold.js';
+import {
+	buildInitPlan,
+	INSTALL_LINES,
+	InitRefusal,
+	writePlan,
+	type InitPlan,
+} from '../shared/init-scaffold.js';
+import { TARGET_WIRINGS, type TargetWiring } from '../../targets/apps.js';
 import { SUBSYSTEMS } from '../shared/subsystem-detect.js';
 import { ProjectUpgradeOpenapiCommand } from './project-upgrade-openapi.js';
 import { ProjectUpgradeAuthCommand } from './project-upgrade-auth.js';
@@ -148,6 +155,7 @@ export class ProjectInitCommand extends Command {
 		examples: [
 			['Initialize with defaults (package runtime)', 'codegen project init --yes'],
 			['Vendored runtime (legacy @shared/** model)', 'codegen project init --yes --runtime vendored'],
+			['No NestJS: modules composed with @pattern-stack/wiring', 'codegen project init --yes --wiring pattern-stack'],
 			['Preview without writing', 'codegen project init --dry-run'],
 			['Create tsconfig if missing', 'codegen project init --yes --with-tsconfig'],
 			['Overwrite existing shims', 'codegen project init --force'],
@@ -161,6 +169,8 @@ export class ProjectInitCommand extends Command {
 	// Runtime mode (ADR-037). `package` (default) ⇒ depend on the npm package,
 	// vendor nothing; `vendored` ⇒ vendor src/shared/** and import via @shared/*.
 	runtime = Option.String('--runtime', 'package');
+	// `target.wiring` (PW-4): `nest` or `pattern-stack`. Absent ⇒ the existing config's, else `nest`.
+	wiring = Option.String('--wiring', { required: false });
 	// Vendor consumer skills into .claude/skills by default; opt out with --no-skills.
 	skills = Option.Boolean('--skills', true);
 	json = Option.Boolean('--json', false);
@@ -181,13 +191,26 @@ export class ProjectInitCommand extends Command {
 			);
 		}
 
-		const plan = await buildInitPlan(ctx, {
-			cwd: ctx.cwd,
-			force: this.force,
-			withTsconfig: this.withTsconfig,
-			skipScan: false,
-			runtimeMode,
-		});
+		if (this.wiring !== undefined && !(TARGET_WIRINGS as readonly string[]).includes(this.wiring)) {
+			printError(`--wiring '${this.wiring}' is not recognized (expected ${TARGET_WIRINGS.map((w) => `'${w}'`).join(' or ')}).`);
+			return 1;
+		}
+
+		let plan: InitPlan;
+		try {
+			plan = await buildInitPlan(ctx, {
+				cwd: ctx.cwd,
+				force: this.force,
+				withTsconfig: this.withTsconfig,
+				skipScan: false,
+				runtimeMode,
+				wiring: this.wiring as TargetWiring | undefined,
+			});
+		} catch (err) {
+			if (!(err instanceof InitRefusal)) throw err;
+			printError(err.message);
+			return 1;
+		}
 
 		if (this.force && !isJsonMode()) {
 			printWarning('--force: existing scaffold files will be overwritten.');
@@ -240,6 +263,7 @@ export class ProjectInitCommand extends Command {
 		console.log(`  ${theme.muted('framework:')}    ${plan.summary.framework}`);
 		console.log(`  ${theme.muted('orm:')}          ${plan.summary.orm}`);
 		console.log(`  ${theme.muted('frontend:')}     ${plan.summary.frontend}`);
+		console.log(`  ${theme.muted('wiring:')}       ${plan.summary.wiring}`);
 		console.log('');
 
 		for (const e of result.created) {
@@ -283,7 +307,9 @@ export class ProjectInitCommand extends Command {
 		console.log('');
 		printInfo('Next steps:');
 		console.log('  1. Install the peer and dev dependencies (npm / pnpm: same packages):');
-		for (const line of CONSUMER_INSTALL_LINES) console.log(`       ${theme.system(line)}`);
+		for (const line of INSTALL_LINES[plan.summary.wiring]) {
+			console.log(`       ${theme.system(line)}`);
+		}
 		console.log(
 			`  2. ${theme.system('codegen entity new entities/<file>.yaml')} to generate your first entity`
 		);
