@@ -1,7 +1,7 @@
 # PW-3a: `target: { wiring: pattern-stack, http: none }` — decorator-free classes, one composition per context
 
 **Status:** implemented · **Follows:** PW-0, PW-1, PW-2 · **Next:**
-PW-3b (repository interfaces, `<Context>Repositories` bundles, `openapi.ts`, junctions), PW-4 (`project init` for pattern-stack)
+PW-3b (`<Context>Repositories` bundles, `openapi.ts`), PW-3c (junctions), PW-4 (`project init` for pattern-stack)
 
 ## Problem
 
@@ -49,8 +49,8 @@ CLI, hook and MCP apps.
   - `emits:` (the typed bus is decorated; S-1);
   - EAV;
   - an integration `surface:` (S-3);
-  - an entity a junction fans out to (PW-3b);
-  - `junction new` and `relationship new` (`patternStackWiringRefusal`, `src/cli/shared/storage-only.ts`: junctions PW-3b,
+  - an entity a junction fans out to (PW-3c);
+  - `junction new` and `relationship new` (`patternStackWiringRefusal`, `src/cli/shared/storage-only.ts`: junctions PW-3c,
     relationships #679);
   - `entity new` in a project that has junction or relationship YAMLs, rather than generating with their tables
     silently missing from the schema barrel.

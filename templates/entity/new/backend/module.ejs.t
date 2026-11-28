@@ -13,8 +13,6 @@ const _eav = !!_useCase('find_by_id_with_fields');
 // A base whose every kind has a child table has no create (RFC-0006 §4.1) but keeps update / delete: two use cases, two reads.
 const _create = !!_useCase('create');
 const _writes = !!_useCase('update');
-// The create DTO is registered unless the derivation removed the base's create (a `writes: false` entity still registers it).
-const _createDto = !apiSurface.createDisabledBy;
 const _searchUseCase = _useCase('search');
 const _searchRoute = !!_searchUseCase && apiSurface.http.routes.some((r) => r.useCase === _searchUseCase.className);
 _%>
@@ -40,11 +38,9 @@ import { <%= classNames.service %> } from './<%= entityFileStem %>.service';
 import { <%= classNames.controller %> } from './<%= entityFileStem %>.controller';
 <% } -%>
 // OPENAPI-2: Zod schemas registered with OpenApiRegistry at module init.
-<% if (_createDto) { -%>
-import { <%= classNames.createSchema %> } from './dto/create-<%= entityFileStem %>.dto';
-<% } -%>
-import { <%= classNames.updateSchema %> } from './dto/update-<%= entityFileStem %>.dto';
-import { <%= classNames.outputSchema %> } from './dto/<%= entityFileStem %>-output.dto';
+<% openApiSchemas.forEach((s) => { -%>
+import { <%= s.schemaName %> } from '<%= s.importFile %>';
+<% }) -%>
 import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= entityFileStem %>-by-id.use-case';
 import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityPluralFileStem %>.use-case';
 <% if (_eav) { -%>
@@ -106,14 +102,14 @@ export class <%= classNames.module %> {
   // module (in `NestFactory.create`), so they are in the registry before
   // main.ts builds /docs-json. A lifecycle hook (`onModuleInit`) runs too late.
   constructor(@Inject(OPENAPI_REGISTRY) openApi: OpenApiRegistry) {
-<% if (_createDto) { -%>
-    openApi.registerSchema('<%= classNames.createDto %>', <%= classNames.createSchema %>);
-<% } -%>
-    openApi.registerSchema('<%= classNames.updateDto %>', <%= classNames.updateSchema %>);
+<% openApiSchemas.forEach((s) => { -%>
+<% if (s.kind === 'output') { -%>
     // The response schema is named <Entity>OutputDto (matches
     // classNames.outputDto); the OPENAPI-2 spec sketch uses "ResponseDto"
     // but the generated code publishes OutputDto everywhere, so we
     // keep consistency. OPENAPI-3 decorators reference the same name.
-    openApi.registerSchema('<%= classNames.outputDto %>', <%= classNames.outputSchema %>);
+<% } -%>
+    openApi.registerSchema('<%= s.dtoName %>', <%= s.schemaName %>);
+<% }) -%>
   }
 }

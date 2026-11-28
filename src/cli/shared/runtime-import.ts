@@ -18,9 +18,9 @@
  *
  * NOT routed through here: consumer-app files the package never owns and that
  * `project init` always scaffolds locally regardless of mode —
- * `@shared/database/database.module`, `@shared/openapi`,
- * `@shared/connections/*`. Those have no package specifier
- * and stay `@shared/*` in both modes.
+ * `@shared/database/database.module`, `@shared/connections/*`. Those have no
+ * package specifier and stay `@shared/*` in both modes. (`@shared/openapi` is
+ * routed: `openApiImport`.)
  */
 
 export type RuntimeMode = 'package' | 'vendored';
@@ -71,6 +71,15 @@ export function subsystemsImport(mode: RuntimeMode, subsystem?: string): string 
  */
 export function subsystemCoreImport(mode: RuntimeMode, subsystem: NestFreeSubsystem): string {
   return runtimeImport(mode, `subsystems/${subsystem}/core`);
+}
+
+/**
+ * Import specifier for the OpenAPI registry (`runtime/shared/openapi`). Vendored mode drops the leading `shared/`
+ * (`@shared/openapi`); package mode keeps the runtime relpath. The twin of `runtimeImportLocals(mode).openApiImport`
+ * in `src/config/runtime-mode.mjs`, which the templates print; a test holds the two equal.
+ */
+export function openApiImport(mode: RuntimeMode): string {
+  return mode === 'vendored' ? '@shared/openapi' : `${PACKAGE}/runtime/shared/openapi`;
 }
 
 /** The subsystems with a Nest-free entry (`runtime/subsystems/<name>/core.ts`). */

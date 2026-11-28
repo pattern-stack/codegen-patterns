@@ -8,8 +8,8 @@
  * - Going **pattern-stack**: the Nest-only files — `*.controller.ts` and `*.module.ts` under `modules_dir` (not a context's
  *   `module.ts`) and `<generated>/modules.ts` — plus any context `module.ts` the current composition no longer writes
  *   (a context renamed or emptied).
- * - Going **nest**: the pattern-stack files — every context `module.ts`, every `*.wiring.ts`, `<generated>/wiring.ts` and
- *   `<generated>/composition.ts`.
+ * - Going **nest**: the pattern-stack files — every context `module.ts`, every `*.wiring.ts`, `<generated>/wiring.ts`,
+ *   `<generated>/composition.ts` and `<generated>/openapi.ts`.
  */
 
 import fs from 'node:fs';
@@ -17,6 +17,7 @@ import path from 'node:path';
 
 import type { TargetWiring } from '../../targets/apps.js';
 import { isCodegenBanner } from '../../utils/generated-file.js';
+import { COMPOSITION_GENERATED_FILES } from './emit-composition.js';
 
 function isGenerated(file: string): boolean {
 	return isCodegenBanner(fs.readFileSync(file, 'utf8').split('\n', 1)[0] ?? '');
@@ -53,8 +54,7 @@ export function removeOtherWiringFiles(input: {
 				]
 			: [
 					...underModules.filter((f) => path.basename(f) === 'module.ts' || f.endsWith('.wiring.ts')),
-					path.join(generatedDir, 'wiring.ts'),
-					path.join(generatedDir, 'composition.ts'),
+					...Object.values(COMPOSITION_GENERATED_FILES).map((f) => path.join(generatedDir, f)),
 				];
 	const stale = candidates.filter((f) => fs.existsSync(f) && isGenerated(f));
 	if (!input.dryRun) for (const f of stale) fs.rmSync(f);

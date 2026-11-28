@@ -56,7 +56,9 @@ import {
   finderName,
   fkFinderName,
   moduleClassName,
+  registerSchemasName,
   repositoryFactoryName,
+  repositoryPortName,
   repositoryPropertyName,
   servicesFactoryName,
   pascalCase,
@@ -2564,7 +2566,7 @@ export function buildBackendLocals(definition, baseLocals) {
     if (Array.isArray(definition.emits) && definition.emits.length > 0) refuse('`emits:` (the typed event bus)', 'S-1 (events on pattern-stack wiring)');
     if (definition.eav === true || definition.eav_value_table === true) refuse('EAV (`eav:` / `eav_value_table:`)', 'a later pattern-stack wiring step');
     if (definition.entity?.surface || definition.surface) refuse('an integration `surface:`', 'S-3 (integrations on pattern-stack wiring)');
-    if (junctionFanOut.length > 0) refuse('a junction fan-out (a junction names this entity)', 'PW-3b');
+    if (junctionFanOut.length > 0) refuse('a junction fan-out (a junction names this entity)', 'PW-3c');
     const nestOnly = ['controller', 'searchController', 'module', 'integrationSourceModule'];
     // `integrationSourceModule` always has a path; its template writes only for a `detection:` entity, so it is named
     // only then.
@@ -2620,6 +2622,8 @@ export function buildBackendLocals(definition, baseLocals) {
             importPath: fromModuleDir(file),
           };
         }),
+        repositoryPort: repositoryPortName(entityName),
+        registerSchemas: registerSchemasName(entityName),
       }
     : null;
 
@@ -2675,6 +2679,16 @@ export function buildBackendLocals(definition, baseLocals) {
     listQueryDto: `List${entityNamePluralPascal}QueryDto`,
     listQuerySchema: `List${entityNamePluralPascal}QuerySchema`,
   };
+  // PW-3b: the DTO schemas the entity registers with the OpenAPI registry, in registration order, one row each. The
+  // Nest module's constructor and `<entity>.wiring.ts`'s register function both print this list; the create DTO is
+  // left out when the derivation removed the base's create (`createDisabledBy`).
+  const openApiSchemas = [
+    ...(apiSurface.createDisabledBy
+      ? []
+      : [{ kind: 'create', dtoName: classNames.createDto, schemaName: classNames.createSchema, importFile: `./dto/${dtoFileStem(entityName, 'create')}.dto` }]),
+    { kind: 'update', dtoName: classNames.updateDto, schemaName: classNames.updateSchema, importFile: `./dto/${dtoFileStem(entityName, 'update')}.dto` },
+    { kind: 'output', dtoName: classNames.outputDto, schemaName: classNames.outputSchema, importFile: `./dto/${dtoFileStem(entityName, 'output')}.dto` },
+  ];
   // The module imports each provider and controller by its `classNames` / `searchQuery` name and registers it by the
   // graph's id: one set of names, or the module fails to compile. Held here until #894 moves the class names.
   const knownClassNames = new Set([
@@ -3075,6 +3089,7 @@ export function buildBackendLocals(definition, baseLocals) {
 
     // Class names
     classNames,
+    openApiSchemas,
 
     // Field data
     processedFields: nonFkFields,
