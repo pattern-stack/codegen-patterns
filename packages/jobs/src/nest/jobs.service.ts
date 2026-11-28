@@ -77,7 +77,9 @@ import type {
   OperatorItem,
   StoredJobEvent,
 } from '../postgres.ts';
-import { type AskedBudget, budgetFor } from './budget.ts';
+import type { AskedBudget } from '../host/budget.ts';
+import { budgetFor } from './budget.ts';
+import { startSystemRun, type SystemStartParts, submitRun } from '../host/system-start.ts';
 import type {
   JobOperatorActor,
   JobSystemActor,
@@ -805,22 +807,12 @@ export class JobsService {
     options: { inStore?: JobStore } = {},
   ): Promise<{ run: Run; created: boolean }> {
     requireSystem(actor);
-    const job = this.registeredJob(request.jobKey);
-    const started = await startRun(
-      this.startDeps(options.inStore),
-      {
-        ...request,
-        tenantId: actor.tenantId,
-        requestedBy: requesterOf(actor),
-        budget: budgetFor(job, request.budget, {
-          now: this.clock.now(),
-          ceiling: false,
-        }),
-      },
+    this.registeredJob(request.jobKey);
+    return startSystemRun(
+      this.systemParts(),
+      { ...request, tenantId: actor.tenantId, requestedBy: requesterOf(actor) },
+      { ...options, budget: (job, asked, now) => budgetFor(job, asked, { now, ceiling: false }) },
     );
-    // A dedupe incumbent is submitted again too: deduplicated, so harmless.
-    if (!options.inStore) await this.submit(started.run.id);
-    return started;
   }
 
   /**
@@ -1021,19 +1013,26 @@ export class JobsService {
     return { registry: this.registry, store, around: this.around, clock: this.clock, events: this.events };
   }
 
+  /** The host's parts for the system start and its submit rule (`@pattern-stack/jobs/host`). */
+  private systemParts(): SystemStartParts {
+    return {
+      registry: this.registry,
+      store: this.store,
+      executor: this.executor,
+      clock: this.clock,
+      events: this.events,
+      around: this.around,
+      worker: this.worker,
+      warn: (m) => this.logger.warn(m),
+    };
+  }
+
   /**
-   * Submits a run; a failed submit is logged, never thrown: the every-minute sweep resubmits open runs. A process
-   * that is no worker never submits (`JOBS_WORKER`): the worker's sweep takes the run.
+   * Submits a run (`submitRun`, the one rule): a process that is no worker never submits (`JOBS_WORKER`), and a failed
+   * submit is logged, never thrown: the every-minute sweep resubmits open runs.
    */
   private async submit(runId: string): Promise<void> {
-    if (this.worker === false) return;
-    try {
-      await this.executor.submit(runId);
-    } catch (err) {
-      this.logger.warn(
-        `job run ${runId} was not submitted (${err instanceof Error ? err.name : typeof err}); the sweep resubmits it`,
-      );
-    }
+    await submitRun(this.systemParts(), runId);
   }
 
   /** The one cancel: the store's transition is the compare-and-set; a canceled run is answered as it is. */

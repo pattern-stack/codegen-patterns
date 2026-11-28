@@ -37,7 +37,9 @@ describe('subsystem install auth under pattern-stack', () => {
 		expect(patternStackSubsystemRefusal('auth', 'drizzle')).toBeNull();
 		expect(patternStackSubsystemRefusal('auth', 'memory')).toMatch(/memory backend .* outlive the process/);
 		expect(patternStackSubsystemRefusal('auth-integrations', 'drizzle')).toBeNull();
-		expect(patternStackSubsystemRefusal('jobs', 'drizzle')).toMatch(/Supported: .*auth, auth-integrations/);
+		// A subsystem still unsupported names the supported ones, auth among them (jobs is supported since J-1).
+		expect(patternStackSubsystemRefusal('cache', 'drizzle')).toMatch(/Supported: .*auth, auth-integrations/);
+		expect(patternStackSubsystemRefusal('jobs', 'drizzle')).toBeNull();
 	});
 
 	it("vendors no Nest file: the module, the barrel, the controller, the guard, @Public, the requester middleware", () => {

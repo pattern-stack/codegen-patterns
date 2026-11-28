@@ -15,6 +15,8 @@ import { envExampleContent, isGeneratedEnvExample } from '../../emitters/setting
 import { generating } from '../../utils/generated-file.js';
 import { projectSource, settingValueProblem, type SettingsSource } from '../../../runtime/settings.js';
 import { printWarning } from '../ui/output.js';
+import { configOrDefaults } from '../../config/project-config.js';
+import { targetApp } from '../../targets/apps.js';
 
 /** The installed subsystems that declare settings: `isSubsystemInstalled`'s one rule, as the composition reads it. */
 function installedWithSettings(ctx: Context): string[] {
@@ -38,6 +40,7 @@ export function projectSettings(ctx: Context): ProjectSetting[] {
 		providers: providers.loaded,
 		installedSubsystems: installedWithSettings(ctx),
 		cwd: ctx.cwd,
+		wiring: targetApp(configOrDefaults(ctx.config).target).wiring,
 	});
 }
 

@@ -22,6 +22,11 @@
       "types": "./dist/postgres.d.ts",
       "default": "./dist/postgres.js"
     },
+    "./host": {
+      "bun": "./src/host.ts",
+      "types": "./dist/host.d.ts",
+      "default": "./dist/host.js"
+    },
     "./schema": {
       "bun": "./src/postgres/schema.ts",
       "types": "./dist/postgres/schema.d.ts",

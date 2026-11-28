@@ -21,6 +21,7 @@ import {
 	parseDotEnv,
 	projectSource,
 	SettingsError,
+	settingValueProblem,
 	type SettingsSource,
 } from '../../../../runtime/settings';
 
@@ -228,5 +229,22 @@ describe('edges', () => {
 		fs.rmSync(path.join(cwd, '.env.example'));
 		expect(writeEnvExample(ctx, projectSettings(ctx))).toBe(path.join(cwd, '.env.example'));
 		expect(writeEnvExample(ctx, [])).toBe(path.join(cwd, '.env.example')); // codegen's own: rewritten
+	});
+});
+
+describe('jobs (J-1): the worker flag', () => {
+	it('is listed under pattern-stack only (a Nest app passes its worker flag in main.ts / worker.ts)', () => {
+		const ps = deriveProjectSettings({ providers: [], installedSubsystems: ['jobs'], wiring: 'pattern-stack' });
+		const worker = ps.find((s) => s.group === 'jobs' && s.key === 'worker');
+		expect(worker).toMatchObject({ env: 'JOBS_WORKER', default: 'true', format: 'boolean', secret: false });
+		expect(worker?.owner).toEqual({ kind: 'subsystem', name: 'jobs' });
+		expect(deriveProjectSettings({ providers: [], installedSubsystems: ['jobs'] }).some((s) => s.group === 'jobs')).toBe(false);
+		expect(deriveProjectSettings({ providers: [], installedSubsystems: [], wiring: 'pattern-stack' }).some((s) => s.group === 'jobs')).toBe(false);
+	});
+
+	it('a boolean setting is true or false; anything else is invalid, as at startup', () => {
+		expect(settingValueProblem({ format: 'boolean' }, 'true')).toBeNull();
+		expect(settingValueProblem({ format: 'boolean' }, 'false')).toBeNull();
+		expect(settingValueProblem({ format: 'boolean' }, 'yes')).toBe('expected true or false');
 	});
 });

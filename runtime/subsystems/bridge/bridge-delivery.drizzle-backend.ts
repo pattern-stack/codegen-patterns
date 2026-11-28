@@ -22,10 +22,8 @@
  * `mark{Delivered,Skipped,Failed}`) are straightforward
  * `SELECT … LIMIT 1` / `UPDATE … WHERE id = ?` queries.
  */
-import { Inject, Injectable, Optional } from '@nestjs/common';
 import { eq, and, gte, isNull, sql } from 'drizzle-orm';
 
-import { DRIZZLE } from '../../constants/tokens';
 import type { DrizzleClient } from '../../types/drizzle';
 import type { DrizzleTransaction } from '../events/event-bus.protocol';
 
@@ -37,20 +35,18 @@ import type {
   StatusHistogram,
 } from './bridge.protocol';
 import { assertTenantId } from './assert-tenant-id';
-import { BRIDGE_MULTI_TENANT } from './bridge.tokens';
 
-@Injectable()
-export class DrizzleBridgeDeliveryRepo implements IJobBridge {
+/**
+ * The Drizzle delivery repo, framework-free (J-1): a pattern-stack app's `events` system builds it for the drain;
+ * Nest's `DrizzleBridgeDeliveryRepo` (`bridge-delivery.drizzle-repo.ts`) is this under its tokens.
+ */
+export class DrizzleBridgeDeliveries implements IJobBridge {
   constructor(
-    @Inject(DRIZZLE) private readonly db: DrizzleClient,
+    private readonly db: DrizzleClient,
     /**
-     * Site (c) of the three ADR-023 §Multi-tenancy enforcement sites.
-     * `@Optional()` so unit tests / non-bridge mounts that don't provide
-     * the token still construct the repo cleanly; defaults to `false`,
-     * which makes `assertTenantId` a no-op.
+     * Site (c) of the three ADR-023 §Multi-tenancy enforcement sites. Defaults to `false`, which makes
+     * `assertTenantId` a no-op.
      */
-    @Optional()
-    @Inject(BRIDGE_MULTI_TENANT)
     private readonly multiTenant: boolean = false,
   ) {}
 

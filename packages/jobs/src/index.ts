@@ -102,6 +102,7 @@ export {
   type JobEntry,
   type JobFactory,
   jobFactory,
+  type DepSite,
   type ResolveDep,
   tokenOf,
 } from './define/job-factory.ts';

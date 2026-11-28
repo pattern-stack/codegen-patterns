@@ -8,8 +8,8 @@
  * no-op), so a host without OpenTelemetry still loads this entry.
  */
 
-export { type AskedBudget, budgetFor } from './nest/budget.ts';
-export { activeSpanSink, fanOut, nestLogSink } from './nest/event-sinks.ts';
+export { budgetFor } from './nest/budget.ts';
+export { fanOut } from './nest/event-sinks.ts';
 export {
   type JobActor,
   type JobAdminActor,
@@ -58,10 +58,6 @@ export {
   assertRefSourcesRegistered,
   JobEngineLifecycle,
 } from './nest/lifecycle.ts';
-export {
-  assertLimitersConfigured,
-  limitersUnconfigured,
-} from './nest/limiters.ts';
 export {
   jobOpenApiSchemasOf,
   type PublicJob,

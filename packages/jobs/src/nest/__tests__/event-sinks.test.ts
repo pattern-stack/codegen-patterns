@@ -8,7 +8,8 @@ import {
 } from '@opentelemetry/sdk-trace-base';
 import type { JobEvent } from '../../index.ts';
 import { recordingSink } from '../../testing.ts';
-import { activeSpanSink, fanOut } from '../event-sinks.ts';
+import { activeSpanSink } from '../../host/sinks.ts';
+import { fanOut } from '../event-sinks.ts';
 
 const base = {
   runId: 'run-1',

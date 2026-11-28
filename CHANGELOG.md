@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added: jobs and the bridge under `wiring: pattern-stack`, the runtime (J-1, part 1)
+
+`docs/specs/J-1.md`. The jobs and bridge runtime run with no framework: `JobRunStarter` (Nest's `JobStarter` is it
+under tokens), `createJobsEngine` (the registry with each job factory's dependencies provided per factory, the Postgres
+store, the sinks, the limiters, the in-process executor; `start` checks every factory's values before it starts the
+loop), and `BridgeOutboxDrainer` (Nest's `BridgeOutboxDrainHook` is it with its check at bootstrap), behind Nest-free
+entries (`runtime/subsystems/{jobs,bridge}/core.ts`, held by the Nest-free gate). `@pattern-stack/jobs/host` is the
+package's framework-free host parts (the budget rule, the sinks, the limiter check), which its Nest layer wraps.
+`subsystem install jobs` and `bridge` are allowed under pattern-stack: no Nest file, no `worker.ts`, no `main.ts` hook;
+the bridge needs events on drizzle and jobs. `JOBS_WORKER` (`jobs.worker`, default `true`) joins SET-1's settings under
+pattern-stack (`format: 'boolean'` is new). The composition that starts the engine is part 2.
+
 ### Added: settings, declared once and checked before the build (SET-1)
 
 - A provider YAML declares the values its classes need at startup in a `settings:` block (`client_id: { secret: true

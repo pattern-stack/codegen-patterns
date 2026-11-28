@@ -25,6 +25,7 @@ import {
   MemoryBridgeDeliveryRepo,
   MissingTenantIdError,
 } from '../../../../runtime/subsystems/bridge';
+import { BridgeOutboxDrainer } from '../../../../runtime/subsystems/bridge/core';
 import type { DomainEvent } from '../../../../runtime/subsystems/events/event-bus.protocol';
 import type { JobStarter } from '../../../../runtime/subsystems/jobs/job-starter';
 
@@ -446,5 +447,52 @@ describe('BridgeOutboxDrainHook — audit-tier guard', () => {
       auditBlocked: 0,
     });
     expect(warnSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ─── The framework-free drainer (J-1) ────────────────────────────────────────
+
+describe('BridgeOutboxDrainer — the same drain with no Nest host (a pattern-stack events system builds it)', () => {
+  it('the Nest hook is the drainer', () => {
+    expect(new BridgeOutboxDrainHook(fakeStarter().starter, ledger, {})).toBeInstanceOf(BridgeOutboxDrainer);
+  });
+
+  it('starts each trigger in the event transaction and marks it delivered', async () => {
+    const { starter, starts } = fakeStarter();
+    const drainer = new BridgeOutboxDrainer(starter, ledger, REGISTRY_TWO_TRIGGERS);
+    const { tx, updates } = makeTx([['del-1'], ['del-2']]);
+    expect(await drainer.processEvent(event(), tx as never)).toEqual({ delivered: 2, dedupSkips: 0, triggerCount: 2, auditBlocked: 0 });
+    expect(starts.map((s) => [s.jobKey, s.options.trigger, s.tx === tx])).toEqual([
+      ['send_welcome_email', 'event', true],
+      ['integration_contact_to_hubspot', 'event', true],
+    ]);
+    expect(updates.map((u) => u.set.status)).toEqual(['delivered', 'delivered']);
+  });
+
+  it('its boot check names a trigger whose job is not registered', () => {
+    const { starter } = fakeStarter({ registered: ['send_welcome_email'] });
+    expect(() => new BridgeOutboxDrainer(starter, ledger, REGISTRY_TWO_TRIGGERS).assertTriggersRegistered()).toThrow(
+      /'integration_contact_to_hubspot#0' → 'integration_contact_to_hubspot'/,
+    );
+  });
+
+  it("with no Nest host, the budget rule's refusal (JobBudgetError) fails that trigger alone; a deadlock is thrown (review #969)", async () => {
+    const { JobBudgetError } = await import('@pattern-stack/jobs/host');
+    const refusing = {
+      has: () => true,
+      async start(jobKey: string) {
+        if (jobKey === 'send_welcome_email') throw new JobBudgetError('budget_required', 'name budget.maxItems');
+        return { run: { id: 'run-ok' }, created: true };
+      },
+    } as unknown as JobStarter;
+    const { tx, updates } = makeTx([['del-1'], ['del-2']]);
+    const result = await new BridgeOutboxDrainer(refusing, ledger, REGISTRY_TWO_TRIGGERS).processEvent(event(), tx as never);
+    expect(result.delivered).toBe(1);
+    expect(updates[0]!.set).toMatchObject({ status: 'failed' });
+    const deadlock = new Error('deadlock detected');
+    const { starter } = fakeStarter({ fail: deadlock });
+    await expect(
+      new BridgeOutboxDrainer(starter, ledger, REGISTRY_TWO_TRIGGERS).processEvent(event(), makeTx([['a'], ['b']]).tx as never),
+    ).rejects.toBe(deadlock);
   });
 });

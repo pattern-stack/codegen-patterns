@@ -368,7 +368,8 @@ describe('subsystem — install (real)', () => {
 		const installDir = path.join(root, 'src/shared/subsystems/events');
 		const core = path.join(installDir, 'core.ts');
 		// A dependency outside events' folder that VENDORED_RUNTIME_FILES does not list.
-		const outsideDep = path.join(root, 'src/shared/subsystems/jobs/pg-notify.ts');
+		// (pg-notify.ts lived under jobs/ before #969 moved it into events/; the bridge's protocol is one now.)
+		const outsideDep = path.join(root, 'src/shared/subsystems/bridge/bridge.protocol.ts');
 		fs.rmSync(core);
 		fs.rmSync(outsideDep);
 

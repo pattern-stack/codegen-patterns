@@ -85,7 +85,7 @@ export function openApiImport(mode: RuntimeMode): string {
 }
 
 /** The subsystems with a Nest-free entry (`runtime/subsystems/<name>/core.ts`). */
-export const NEST_FREE_SUBSYSTEMS = ['events', 'auth', 'integration'] as const;
+export const NEST_FREE_SUBSYSTEMS = ['events', 'auth', 'integration', 'jobs', 'bridge'] as const;
 export type NestFreeSubsystem = (typeof NEST_FREE_SUBSYSTEMS)[number];
 
 /**

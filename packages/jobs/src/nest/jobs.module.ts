@@ -9,8 +9,6 @@ import {
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { assertResolvable, buildJobs, type JobEntry } from '../define/job-factory.ts';
-import { InProcessExecutor, type InProcessOptions } from '../adapters/in-process-executor.ts';
-import { localLimiters } from '../adapters/local-limiter.ts';
 import type { RunScope } from '../ports/run-scope.ts';
 import { BullmqExecutor, type JobEngineQueue } from '../bullmq.ts';
 import {
@@ -21,7 +19,6 @@ import {
 } from '../index.ts';
 import type { EventSink, LimiterConfig, Limiters } from '../ports.ts';
 import {
-  eventLogSink,
   type JobDatabase,
   type JobTables,
   PostgresJobStore,
@@ -32,11 +29,12 @@ import {
   redisLimiters,
   redisSweepCursors,
 } from '../redis.ts';
-import { activeSpanSink, fanOut, nestLogSink } from './event-sinks.ts';
+import { fanOut } from './event-sinks.ts';
 import { JobInputRefRegistry } from './job-input-refs.ts';
 import { JobsService } from './jobs.service.ts';
 import { JobEngineLifecycle } from './lifecycle.ts';
-import { assertLimitersConfigured } from './limiters.ts';
+import { assertLimitersConfigured } from '../host/limiters.ts';
+import { engineSinks, inProcessExecutor, type InProcessKnobs, inProcessLimiters } from '../host/in-process.ts';
 import { publicJobCatalogOf } from './public-job-catalog.ts';
 import {
   JOBS_CLOCK,
@@ -74,7 +72,7 @@ export type JobsModuleOptions =
       /** Start the executor's loop at bootstrap. Default true. */
       worker?: boolean;
       /** The in-process executor's options (poll, sweep, lease, drain window). */
-      inProcess?: Omit<InProcessOptions, 'store' | 'registry' | 'limiters' | 'sinks' | 'around' | 'clock'>;
+      inProcess?: InProcessKnobs;
     };
 
 /** The app's job list built: each `jobFactory` entry with its dependencies resolved from the host's container. */
@@ -138,12 +136,10 @@ const SHARED: Provider[] = [
       useFactory: (
         store: PostgresJobStore,
         host: readonly EventSink[] | undefined,
-      ): EventSink[] => [
-        activeSpanSink(),
-        nestLogSink(new Logger('JobEngine')),
-        eventLogSink(store),
-        ...(host ?? []),
-      ],
+      ): EventSink[] => {
+        const logger = new Logger('JobEngine');
+        return engineSinks(store, (line) => logger.log(line), host ?? []);
+      },
       inject: [JOBS_STORE, { token: JOBS_EVENT_SINKS, optional: true }],
     },
     // The sinks as one, for JobsService: a sink's throw never stops the others or the caller.
@@ -215,10 +211,7 @@ const inProcessProviders = (
     useFactory: (
       config: Readonly<Record<string, LimiterConfig>>,
       registry: Registry,
-    ): Limiters => {
-      assertLimitersConfigured(registry, config);
-      return localLimiters(config);
-    },
+    ): Limiters => inProcessLimiters(registry, config),
     inject: [JOBS_LIMITER_CONFIG, JOBS_REGISTRY],
   },
   {
@@ -229,15 +222,7 @@ const inProcessProviders = (
       sinks: EventSink[],
       limiters: Limiters,
       around: RunScope | undefined,
-    ) =>
-      new InProcessExecutor({
-        ...options.inProcess,
-        store,
-        registry,
-        sinks,
-        limiters,
-        ...(around ? { around } : {}),
-      }),
+    ) => inProcessExecutor({ store, registry, sinks, limiters, around, knobs: options.inProcess }),
     inject: [
       JOBS_STORE,
       JOBS_REGISTRY,

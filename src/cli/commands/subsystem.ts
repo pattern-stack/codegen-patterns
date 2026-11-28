@@ -703,9 +703,7 @@ export class SubsystemInstallCommand extends Command {
 		}
 		if (jobsScaffold) {
 			if (jobsScaffold.ok) {
-				printSuccess(
-					`jobs scaffold applied (worker.ts, main.ts hook, config block, schema)`,
-				);
+				printSuccess(jobsScaffoldSummary(ctx.cwd, jobsScaffold.planned));
 				if (jobsScaffold.staleWorker) printWarning(jobsScaffold.staleWorker);
 			} else {
 				printWarning(
@@ -993,12 +991,8 @@ export class SubsystemInstallCommand extends Command {
 		}
 		if (jobsScaffold) {
 			if (jobsScaffold.ok) {
-				// Emitted the consumer-owned files even though no runtime was vendored.
-				const layout = projectLayout(ctx.cwd, ctx.config);
-				const rel = (abs: string) => path.relative(ctx.cwd, abs);
-				printSuccess(
-					`jobs scaffold applied (emitted ${rel(layout.workerTs)} + ${rel(layout.mainTs)} hook; schema ships in the package).`,
-				);
+				// The consumer-owned files it emitted even though no runtime was vendored (none under pattern-stack).
+				printSuccess(jobsScaffoldSummary(ctx.cwd, jobsScaffold.planned));
 				if (jobsScaffold.staleWorker) printWarning(jobsScaffold.staleWorker);
 			} else {
 				printWarning(
@@ -1403,7 +1397,18 @@ function alreadyInstalledStaleWorker(subsystem: string, ctx: Context): string | 
 	return subsystem === 'jobs' ? jobsStaleWorker(ctx.cwd, jobsLocals(ctx.cwd, ctx.config)) : undefined;
 }
 
-function runJobsScaffold(
+/**
+ * The jobs scaffold's success line, from the files it planned and wrote, never a fixed list: under pattern-stack the
+ * `jobs` system starts the executor, so there is no worker.ts or main.ts hook to name (review #984).
+ */
+export function jobsScaffoldSummary(cwd: string, planned: readonly string[]): string {
+	const files = planned.map((abs) => path.relative(cwd, abs));
+	return files.length > 0
+		? `jobs scaffold applied (${files.join(', ')})`
+		: 'jobs scaffold: nothing to write (the jobs system starts the executor; the config block was already in place)';
+}
+
+export function runJobsScaffold(
 	cwd: string,
 	config: Context['config'],
 	opts: {
@@ -1423,19 +1428,26 @@ function runJobsScaffold(
 	},
 ): JobsScaffoldOutcome {
 	const locals = jobsLocals(cwd, config);
+	// J-1: under pattern-stack the composition starts the executor (the `jobs` system), so there is no worker.ts and no
+	// main.ts hook, and the job tables reach the schema barrel through the Nest-free entry: only the config block.
+	const patternStack = isPatternStackWiring(configOrDefaults(config).target);
 
 	// Files the jobs templates will target (used by --dry-run output and
 	// JSON reporting). Ordering matches the template set. #517: the schema
 	// template is skipped in package mode (the package ships the schema), so
 	// drop it from the planned list there to keep dry-run output honest.
-	const planned: string[] = [
-		...(!locals.workerExists ? [locals.workerPath] : []),
-		locals.mainTsPath,
-		...(opts.skipConfigBlock ? [] : [locals.configPath]),
-		...(locals.skipSchema ? [] : [locals.schemaPath]),
-	];
+	const planned: string[] = patternStack
+		? opts.skipConfigBlock
+			? []
+			: [locals.configPath]
+		: [
+				...(!locals.workerExists ? [locals.workerPath] : []),
+				locals.mainTsPath,
+				...(opts.skipConfigBlock ? [] : [locals.configPath]),
+				...(locals.skipSchema ? [] : [locals.schemaPath]),
+			];
 
-	const staleWorker = jobsStaleWorker(cwd, locals);
+	const staleWorker = patternStack ? undefined : jobsStaleWorker(cwd, locals);
 
 	// #121 (F13): inspect the user's codegen.config.yaml BEFORE we invoke the
 	// main scaffold so a parse-error aborts early. The main scaffold
@@ -1456,14 +1468,16 @@ function runJobsScaffold(
 		return { ok: true, planned, configBlockOutcome, staleWorker };
 	}
 
-	const result = invokeHygen({
-		generator: 'subsystem',
-		action: 'jobs',
-		cwd,
-		args: localsToHygenArgs(locals),
-		// Suppress Hygen stdout in JSON mode so it doesn't corrupt the JSON output.
-		inherit: !opts.json,
-	});
+	const result = patternStack
+		? { ok: true as const, stderr: undefined }
+		: invokeHygen({
+				generator: 'subsystem',
+				action: 'jobs',
+				cwd,
+				args: localsToHygenArgs(locals),
+				// Suppress Hygen stdout in JSON mode so it doesn't corrupt the JSON output.
+				inherit: !opts.json,
+			});
 
 	if (!result.ok) {
 		return {

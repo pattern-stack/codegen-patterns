@@ -45,7 +45,10 @@ const ENTRIES = [
   'subsystems/integration/integration-run-recorder.drizzle-backend.ts',
 ];
 
-const FORBIDDEN = (spec: string) => spec.startsWith('@nestjs/') || spec === 'reflect-metadata';
+// `@pattern-stack/jobs/nest` is the jobs package's Nest layer (J-1: the jobs core reaches its framework-free parts
+// through `@pattern-stack/jobs/host`).
+const FORBIDDEN = (spec: string) =>
+  spec.startsWith('@nestjs/') || spec === 'reflect-metadata' || spec.startsWith('@pattern-stack/jobs/nest');
 
 function importsOf(file: string): string[] {
   const info = ts.preProcessFile(fs.readFileSync(file, 'utf8'), true, true);

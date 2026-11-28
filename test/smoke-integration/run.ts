@@ -434,6 +434,10 @@ async function patternStackLeg(): Promise<number> {
 		paths['@app/*'] = ['./src/*'];
 		paths['@pattern-stack/codegen/runtime/*'] = [`${RUNTIME_ROOT}/*`];
 		for (const surface of SURFACE_PACKAGES) paths[`@pattern-stack/codegen-${surface}`] = [surfaceSrcEntry(surface)];
+		// One drizzle-orm identity, as in the Nest leg: the runtime (reached in the repo) resolves the workspace's
+		// drizzle-orm, a different peer variant (the jobs package's @opentelemetry/api, JOBS-3) from the project's.
+		paths['drizzle-orm'] = [path.join(tmpDir, 'node_modules/drizzle-orm')];
+		paths['drizzle-orm/*'] = [path.join(tmpDir, 'node_modules/drizzle-orm/*')];
 		fs.writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2));
 
 		const cfgPath = path.join(tmpDir, 'codegen.config.yaml');
