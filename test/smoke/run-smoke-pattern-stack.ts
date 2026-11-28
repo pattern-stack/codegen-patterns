@@ -113,6 +113,17 @@ async function main(): Promise<number> {
 		}
 		log('tsconfig: no decorators; the fresh project compiles before any entity');
 
+		// 3b. Events (S-1): the drizzle backend, vendored Nest-free (no events.module.ts, no Nest barrel).
+		run(`${CLI} subsystem install events --yes`, tmpDir);
+		// The empty generated set, Nest-free, so a composition written before the first `entity new` resolves its import.
+		for (const f of ['src/shared/subsystems/events/core.ts', 'src/shared/subsystems/events/event-bus.drizzle-backend.ts', 'src/shared/subsystems/events/generated/bus.ts']) {
+			if (!fs.existsSync(path.join(tmpDir, f))) fail(`subsystem install events should vendor ${f}`);
+		}
+		for (const f of ['src/shared/subsystems/events/events.module.ts', 'src/shared/subsystems/events/index.ts', 'src/generated/subsystems.ts']) {
+			if (fs.existsSync(path.join(tmpDir, f))) fail(`subsystem install events should not write ${f} under pattern-stack wiring`);
+		}
+		log('events installed: the Nest-free closure, no Nest module or barrel');
+
 		// 4. Fixtures, then generate.
 		const entitiesDir = path.join(tmpDir, 'entities');
 		fs.mkdirSync(entitiesDir, { recursive: true });
@@ -144,10 +155,11 @@ async function main(): Promise<number> {
 		const expectOne = (suffix: string) => {
 			if (!generated.some((f) => f.endsWith(suffix))) fail(`expected a generated file ending ${suffix}`);
 		};
-		for (const s of ['/crm/module.ts', '/billing/module.ts', 'modules/module.ts', '/wiring.ts', '/composition.ts', 'generated/openapi.ts']) expectOne(s);
+		for (const s of ['/crm/module.ts', '/billing/module.ts', 'modules/module.ts', '/wiring.ts', '/composition.ts', 'generated/openapi.ts', 'generated/events-system.ts', 'events/generated/bus.ts']) expectOne(s);
 		for (const s of ['/account.wiring.ts', '/contact.wiring.ts', '/invoice.wiring.ts', '/note.wiring.ts', '/person.wiring.ts']) expectOne(s);
 		const billing = fs.readFileSync(path.join(tmpDir, generated.find((f) => f.endsWith('/billing/module.ts'))!), 'utf8');
 		if (!/dependsOn: \['crm'\]/.test(billing)) fail("billing's module should dependsOn ['crm'] (invoice belongs_to account)");
+		if (!/uses: \['database', 'events'\]/.test(billing)) fail("billing's module should use the events system (invoice emits invoice_created)");
 		for (const s of ['.controller.ts', '.module.ts']) {
 			const nest = generated.filter((f) => f.endsWith(s) && !f.endsWith('/module.ts'));
 			if (nest.length > 0) fail(`wiring: pattern-stack emitted Nest-only files: ${nest.join(', ')}`);
@@ -167,7 +179,7 @@ async function main(): Promise<number> {
 		// 5c'. main.ts composes, starts, runs and stops (no database needed: the pool connects on first use).
 		const main = spawnSync('bun', ['src/main.ts'], { cwd: tmpDir, encoding: 'utf8' });
 		if (main.status !== 0) fail(`bun src/main.ts exited ${main.status}:\n${main.stdout}${main.stderr}`);
-		if (!/composed: database, .*crm.*billing/.test(main.stdout)) fail(`main.ts should print the composed order: ${main.stdout}`);
+		if (!/composed: database, events, .*crm.*billing/.test(main.stdout)) fail(`main.ts should print the composed order: ${main.stdout}`);
 		log(`main.ts: ${main.stdout.trim()}`);
 
 		// 5d. The OpenAPI document needs no database: every schema registers, every $ref resolves, every prefill parses.

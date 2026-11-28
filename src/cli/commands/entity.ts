@@ -81,7 +81,13 @@ import { generating } from '../../utils/generated-file.js';
 import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
-import { planPatternStackComposition, printPatternStackComposition, writePatternStackComposition } from '../shared/pattern-stack-composition.js';
+import {
+	eventsInstalled,
+	planPatternStackComposition,
+	printPatternStackComposition,
+	writePatternStackComposition,
+} from '../shared/pattern-stack-composition.js';
+import { eventsGeneratedDir } from '../shared/pattern-stack-subsystems.js';
 import { patternStackRelationshipYamlsRefusal } from '../shared/storage-only.js';
 
 // ---------------------------------------------------------------------------
@@ -347,10 +353,7 @@ export class EntityNewCommand extends Command {
 		// import the events runtime via the package subpath); also the dir the
 		// bridge registry validates trigger events against (so package-mode trigger
 		// validation now works).
-		const eventCodegenOutputDir =
-			runtimeMode === 'package'
-				? path.resolve(generatedDir, 'events')
-				: path.resolve(subsystemsRoot, 'events/generated');
+		const eventCodegenOutputDir = eventsGeneratedDir(ctx, generatedDir);
 		// Bridge registry output is mode-aware (ADR-037). Vendored mode writes
 		// `registry.ts` into the vendored `bridge/generated/` tree (next to the
 		// runtime it types against). Package mode lands `bridge-registry.ts` beside
@@ -383,6 +386,29 @@ export class EntityNewCommand extends Command {
 		// Helper — reload registry + return orchestration patterns. A throw
 		// fails the orchestration step (JOBS-1, #660); a per-file loader error
 		// already stopped the run in the pre-flight (JOBS-2).
+		// The event codegen (EVT-3, S-1): one set of options for the Nest run, the pattern-stack run and both dry runs.
+		const runEventCodegen = (opts: { wiring?: 'pattern-stack'; dryRun?: boolean } = {}) =>
+			generateEventCodegen({
+				entitiesDir,
+				nonEntityDirs,
+				eventsDir,
+				outputDir: eventCodegenOutputDir,
+				mode: runtimeMode,
+				extraSugarEvents: jobScheduledEvents,
+				...opts,
+			});
+		// Written: an error-severity issue means nothing was written (the modules the app imports would stay stale), so
+		// it fails the command, naming the output folder (JOBS-1).
+		const writeEventCodegen = (wiring?: 'pattern-stack') =>
+			generating(eventCodegenOutputDir, async () => {
+				const result = await runEventCodegen({ wiring });
+				const errors = result.issues.filter((i) => i.severity === 'error');
+				if (errors.length > 0) {
+					throw new Error(errors.map((i) => `${i.message}${i.path ? ` (${i.path})` : ''}`).join('; '));
+				}
+				return result;
+			});
+
 		const loadOrchestrationPatterns = async () => {
 			_resetRegistryForTests({ includeLibrary: false });
 			await loadAppPatterns(orchestrationGlobs, ctx.cwd);
@@ -426,8 +452,17 @@ export class EntityNewCommand extends Command {
 				ctx, entitiesDir, nonEntityDirs, relationshipsDir, generatedDir, dryRun: true, modulesBarrel: false, junctions: true,
 			});
 			let compositionFiles: string[];
+			// S-1: with events installed, the real run also writes the event set and the subsystem schema barrel.
+			let eventFiles: string[] = [];
 			try {
 				compositionFiles = planPatternStackComposition(ctx).map((f) => f.path);
+				if (eventsInstalled(ctx)) {
+					const plannedEvents = await runEventCodegen({ wiring: 'pattern-stack', dryRun: true });
+					eventFiles = [
+						...plannedEvents.files.map((f) => f.outputPath),
+						path.resolve(generatedDir, 'subsystems-schema.ts'),
+					];
+				}
 			} catch (err: unknown) {
 				printError(err instanceof Error ? err.message : String(err));
 				return 1;
@@ -439,9 +474,11 @@ export class EntityNewCommand extends Command {
 					wiring: 'pattern-stack',
 					barrels: { modules: null, schema: barrelPlan.schemaBarrel, entityCount: barrelPlan.entityCount },
 					composition: compositionFiles,
+					events: eventFiles,
 				});
 			} else {
 				for (const f of compositionFiles) printInfo(`[dry run] composition: ${path.relative(ctx.cwd, f)}`);
+				for (const f of eventFiles) printInfo(`[dry run] events: ${path.relative(ctx.cwd, f)}`);
 			}
 			return invalid.length === 0 ? 0 : 1;
 		}
@@ -498,15 +535,7 @@ export class EntityNewCommand extends Command {
 				relationsError = err instanceof Error ? err.message : String(err);
 			}
 
-			const eventCodegenPlan = await generateEventCodegen({
-				entitiesDir,
-				nonEntityDirs,
-				eventsDir,
-				outputDir: eventCodegenOutputDir,
-				mode: runtimeMode,
-				extraSugarEvents: jobScheduledEvents,
-				dryRun: true,
-			});
+			const eventCodegenPlan = await runEventCodegen({ dryRun: true });
 
 			const bridgeRegistryPlan = await generateBridgeRegistry({
 				handlersDir: bridgeHandlersDir,
@@ -722,6 +751,18 @@ export class EntityNewCommand extends Command {
 		// frontend, integrations) come with S-1..S-3 and H-1; they are skipped by name, never silently.
 		if (patternStackWiring) {
 			if (relationsFailed) return 1;
+			// S-1: with the events subsystem installed, its generated files (the typed bus without Nest, the registry the
+			// scheduler reads) and the `domain_events` table in the subsystem schema barrel; the composition then writes
+			// the `events` system.
+			const withEvents = eventsInstalled(ctx);
+			if (withEvents) {
+				try {
+					await regenerateSubsystemSchemaBarrel({ ctx, generatedDir });
+					await writeEventCodegen('pattern-stack');
+				} catch (err: unknown) {
+					return reportRegenerationFailure('entity new', err);
+				}
+			}
 			let patternStackResult: ReturnType<typeof writePatternStackComposition>;
 			try {
 				patternStackResult = writePatternStackComposition(ctx);
@@ -733,10 +774,11 @@ export class EntityNewCommand extends Command {
 			if (!isJsonMode()) {
 				console.log('');
 				printPatternStackComposition(ctx, patternStackResult);
+				if (withEvents) printInfo(`events: ${path.relative(ctx.cwd, eventCodegenOutputDir)} (the typed bus, the registry), the events system`);
 				printInfo(
-					'wiring: pattern-stack — skipped the post-steps that write Nest code or need a Nest app: subsystems, the ' +
-						'ScopeEntityType union, events, bridge, jobs, orchestration, the semantic model, frontend, integrations ' +
-						'(S-1..S-3, H-1).',
+					'wiring: pattern-stack — skipped the post-steps that write Nest code or need a Nest app: the subsystem ' +
+						'barrel, the ScopeEntityType union, bridge, jobs, orchestration, the semantic model, frontend, ' +
+						'integrations (S-2, S-3, H-1).',
 				);
 				if (failed.length === 0) printSuccess(`${total} entities · ${succeeded.length} succeeded`);
 				else printWarning(`${total} entities · ${succeeded.length} succeeded · ${failed.length} failed`);
@@ -785,23 +827,7 @@ export class EntityNewCommand extends Command {
 		// imports would stay stale — so it fails the command too.
 		let eventCodegenResult: Awaited<ReturnType<typeof generateEventCodegen>>;
 		try {
-			eventCodegenResult = await generating(eventCodegenOutputDir, async () => {
-				const result = await generateEventCodegen({
-					entitiesDir,
-					nonEntityDirs,
-					eventsDir,
-					outputDir: eventCodegenOutputDir,
-					mode: runtimeMode,
-					extraSugarEvents: jobScheduledEvents,
-				});
-				const errors = result.issues.filter((i) => i.severity === 'error');
-				if (errors.length > 0) {
-					throw new Error(
-						errors.map((i) => `${i.message}${i.path ? ` (${i.path})` : ''}`).join('; '),
-					);
-				}
-				return result;
-			});
+			eventCodegenResult = await writeEventCodegen();
 		} catch (err: unknown) {
 			return reportRegenerationFailure('entity new', err);
 		}

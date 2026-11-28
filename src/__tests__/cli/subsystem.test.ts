@@ -21,6 +21,8 @@ import {
 import { copyRuntime } from '../../cli/shared/runtime-copier.js';
 import { ProjectUpdateCommand } from '../../cli/commands/project-update.js';
 import { loadContext } from '../../cli/shared/context.js';
+import { patternStackEventsInput } from '../../cli/shared/pattern-stack-composition.js';
+import { parse as parseYaml } from 'yaml';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
 const RUNTIME_ROOT = path.join(REPO_ROOT, 'runtime');
@@ -330,6 +332,26 @@ describe('subsystem — install (real)', () => {
 		// switching to the drizzle backend later must not require a
 		// follow-up scaffold step.
 		expect(fs.existsSync(path.join(installDir, 'domain-events.schema.ts'))).toBe(true);
+		// The config block says what was installed: the module (and a pattern-stack system) build from it.
+		const config = parseYaml(fs.readFileSync(path.join(root, 'codegen.config.yaml'), 'utf8')) as { events?: { backend?: string } };
+		expect(config.events?.backend).toBe('memory');
+	});
+
+	test('a pattern-stack memory install writes backend: memory, so the events system builds the memory bus (S-1)', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		fs.appendFileSync(path.join(root, 'codegen.config.yaml'), 'target:\n  database: postgres\n  orm: drizzle\n  wiring: pattern-stack\n  http: none\n');
+		const cli = buildCli();
+		const { result } = await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--backend', 'memory', '--force', '--json', '--cwd', root]),
+		);
+		expect(result).toBe(0);
+		const installDir = path.join(root, 'src/shared/subsystems/events');
+		expect(fs.existsSync(path.join(installDir, 'event-bus.drizzle-backend.ts'))).toBe(false);
+		const ctx = await loadContext({ cwd: root, skipDetection: true });
+		const input = patternStackEventsInput(ctx, path.join(root, 'src/generated'));
+		expect(input?.backend).toBe('memory');
+		expect(input?.backendImport).toBe('@shared/subsystems/events/event-bus.memory-backend');
 	});
 
 	test('project update writes a file the runtime added to an installed subsystem, but no new outside dependency', async () => {

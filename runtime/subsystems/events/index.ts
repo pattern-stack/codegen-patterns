@@ -8,7 +8,6 @@
 export * from './core';
 export { TypedEventBus } from './generated/bus';
 export { EventsModule, EventSchedulerLifecycle } from './events.module';
-export type { EventsModuleOptions } from './events.module';
 export { MemoryEventBus } from './event-bus.memory-backend';
 export { DrizzleEventBus } from './event-bus.drizzle-backend';
 // #6 — backend-specific implementation classes are NOT re-exported here.

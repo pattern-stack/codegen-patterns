@@ -1579,9 +1579,13 @@ export function buildBackendLocals(definition, baseLocals) {
   // (`context:`, `paths.modules_dir`) and `paths.generated`, so it cannot live
   // in the mode-keyed `runtimeImportLocals` table. Vendored: the vendored
   // barrel exports both, and the templates keep their single combined line.
+  // Under pattern-stack wiring (S-1) the vendored barrel re-exports the Nest module, so the use cases import the
+  // generated bus itself (Nest-free there), type-only: the `events` system constructs it.
   const typedEventBusImport =
     runtimeMode === 'vendored'
-      ? subsystemsImport('vendored', 'events')
+      ? isPatternStackWiring(baseLocals.target)
+        ? `${subsystemsImport('vendored', 'events')}/generated/bus`
+        : subsystemsImport('vendored', 'events')
       : relativeFrom(useCasesDir, `${generatedDirRel}/events/bus`);
   // FAMILY_MAP is gone (PATTERN-5); `patternConfigClasses` is the structural
   // equivalent — repository + service class names + import paths + inherited
@@ -2569,11 +2573,7 @@ export function buildBackendLocals(definition, baseLocals) {
     const refuse = (what, step) => {
       throw new Error(`[codegen] '${entityName}': ${what} is not supported under target.wiring: pattern-stack yet — it comes with ${step}.`);
     };
-    if (Array.isArray(definition.emits) && definition.emits.length > 0) refuse('`emits:` (the typed event bus)', 'S-1 (events on pattern-stack wiring)');
     if (definition.entity?.surface || definition.surface) refuse('an integration `surface:`', 'S-3 (integrations on pattern-stack wiring)');
-    // EAV on a family child: the EAV repository constructor drops the base's repository, and the with-fields reads
-    // type the child row, not its flat shape — broken under Nest too, so not ported.
-    if (definition.eav === true && definition.inherits) refuse('EAV (`eav: true`) on an entity that `inherits:`', 'a fix to the EAV child templates (Nest has the same gap)');
     const nestOnly = ['controller', 'searchController', 'module', 'integrationSourceModule'];
     // `integrationSourceModule` always has a path; its template writes only for a `detection:` entity, so it is named
     // only then.
@@ -2688,6 +2688,17 @@ export function buildBackendLocals(definition, baseLocals) {
                 importPath: `${eavDefinitionImportDir}/${eavDefinitionEntityStem}.repository`,
               }
             : null,
+        // S-1: the use cases that publish an `emits:` event (the class graph's `typed_event_bus` system) take `db`
+        // (their one transaction) and the `events` system's typed bus, after their own arguments.
+        events: (() => {
+          const kinds = classGraph.nodes
+            .filter((n) => n.role === 'use_case' && n.systems.includes('typed_event_bus'))
+            .map((n) => n.useCaseKind);
+          if (kinds.length === 0) return null;
+          const busImport =
+            runtimeMode === 'vendored' ? typedEventBusImport : relativeFromModule(`${generatedDirRel}/events/bus`);
+          return { kinds, busImport };
+        })(),
         repositoryPort: repositoryPortName(entityName),
         registerSchemas: registerSchemasName(entityName),
         // The services-deps fields: FieldValueService's (EAV), and each system a use case takes.

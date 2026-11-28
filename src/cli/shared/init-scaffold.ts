@@ -26,6 +26,7 @@ import { DEFAULT_CODEGEN_CONFIG } from '../../config/project-config.js';
 import { DEFAULT_TARGET_PAIR } from '../../targets/pairs.js';
 import { DEFAULT_TARGET_APP, TARGET_WIRINGS, targetApp, targetWiring, type TargetWiring } from '../../targets/apps.js';
 import { configOrDefaults } from '../../config/project-config.js';
+import { buildSubsystemSchemaBarrel } from './subsystem-schema-generator.js';
 import { emptyPatternStackComposition } from './pattern-stack-composition.js';
 import { DATABASE_SYSTEM } from '../../emitters/composition/emit-composition.js';
 import {
@@ -613,16 +614,17 @@ export function databaseSystem(connectionString = process.env.DATABASE_URL ?? 'p
 export function patternStackComposeContent(layout: ProjectLayout): string {
 	const from = layout.composeTs;
 	return `import { compose } from '${importSpecifier(from, path.join(layout.generated, 'wiring'))}';
-import { MODULES } from '${importSpecifier(from, path.join(layout.generated, 'composition'))}';
+import { MODULES, SYSTEMS } from '${importSpecifier(from, path.join(layout.generated, 'composition'))}';
 import { databaseSystem } from '${importSpecifier(from, layout.databaseSystem)}';
 
 /**
- * The app: its systems, then every generated module (one per entity \`context:\`), in the order they depend on each
- * other. Nothing runs until \`start()\`; \`stop()\` stops what started, in reverse.
+ * The app: its systems (the database, then the ones codegen generates, such as \`events\` once installed), then every
+ * generated module (one per entity \`context:\`), in the order they depend on each other. Nothing runs until
+ * \`start()\`; \`stop()\` stops what started, in reverse.
  */
 export function composeApp(options: { databaseUrl?: string } = {}) {
   return compose({
-    systems: [databaseSystem(options.databaseUrl)],
+    systems: [databaseSystem(options.databaseUrl), ...SYSTEMS],
     modules: [...MODULES],
   });
 }
@@ -1058,15 +1060,16 @@ export const CONFIG_SCHEMA_MODELINE =
 	'# yaml-language-server: $schema=./node_modules/@pattern-stack/codegen/src/schema/codegen-config.schema.json';
 
 /** `drizzle.config.ts` for a new project: drizzle-kit 1.0, Postgres, `DATABASE_URL`. */
-export function drizzleConfigContent(schemaRelPath: string): string {
-	const schema = schemaRelPath.startsWith('.') ? schemaRelPath : `./${schemaRelPath}`;
+export function drizzleConfigContent(schemaRelPath: string | string[]): string {
+	const dot = (p: string) => (p.startsWith('.') ? p : `./${p}`);
+	const schema = Array.isArray(schemaRelPath) ? schemaRelPath.map(dot) : dot(schemaRelPath);
 	return `import { defineConfig } from 'drizzle-kit';
 
 // drizzle-kit's entry point. \`bunx drizzle-kit push\` applies the generated schema to
 // DATABASE_URL (a dev-loop convenience); \`bunx drizzle-kit generate\` writes reviewable
 // migrations to ./drizzle. Codegen writes this file once; it is yours to edit.
 export default defineConfig({
-  schema: '${schema}',
+  schema: ${Array.isArray(schema) ? `[${schema.map((p) => `'${p}'`).join(', ')}]` : `'${schema}'`},
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: { url: process.env.DATABASE_URL! },
@@ -1217,7 +1220,13 @@ export async function buildInitPlan(
 		fileEntry(
 			cwd,
 			path.join(cwd, 'drizzle.config.ts'),
-			drizzleConfigContent(relOf(cwd, path.join(layout.generated, 'schema.ts'))),
+			// Under pattern-stack (S-1) drizzle-kit also reads the subsystem schema barrel (`domain_events` once events
+			// is installed), which init writes empty below.
+			drizzleConfigContent(
+				patternStack
+					? [relOf(cwd, path.join(layout.generated, 'schema.ts')), relOf(cwd, path.join(layout.generated, 'subsystems-schema.ts'))]
+					: relOf(cwd, path.join(layout.generated, 'schema.ts')),
+			),
 			{ force },
 		),
 	);
@@ -1303,6 +1312,14 @@ export async function buildInitPlan(
 	// (`wiring.ts`, `composition.ts`, `openapi.ts`), over no entity yet, so `compose.ts` compiles before the first
 	// `entity new` rewrites it (PW-4).
 	if (patternStack) {
+		entries.push(
+			fileEntry(
+				cwd,
+				path.join(layout.generated, 'subsystems-schema.ts'),
+				buildSubsystemSchemaBarrel([], '', runtimeMode, 'pattern-stack').content,
+				{ skipReason: 'exists — `entity new` and `subsystem install` keep it current' },
+			),
+		);
 		for (const f of emptyPatternStackComposition({ modulesDir: layout.modules, generatedDir: layout.generated }, runtimeMode)) {
 			// Never forced: over a project with entities it would empty `MODULES` until the next `entity new`.
 			entries.push(fileEntry(cwd, f.path, f.content, { skipReason: 'exists — `entity new` keeps it current' }));

@@ -18,3 +18,15 @@ relationships:
 
 behaviors:
   - timestamps
+
+# S-1: an invoice's create publishes invoice_created through the events system, in the create's transaction. billing's
+# module then uses the `events` system, and the smoke's Postgres half drains the event to a subscriber.
+emits:
+  - invoice_created
+
+events:
+  - name: invoice_created
+    queue: domain-events
+    body:
+      invoice_id: uuid
+      amount_cents: number

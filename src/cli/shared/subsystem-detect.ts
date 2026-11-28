@@ -18,6 +18,10 @@
  * surface (`subsystem list`).
  */
 
+import { configOrDefaults } from '../../config/project-config.js';
+import { targetWiring, type TargetWiring } from '../../targets/apps.js';
+import { rowFor } from '../../utils/keyed-row.js';
+import { patternStackSubsystem } from './pattern-stack-subsystems.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Context } from './context.js';
@@ -182,6 +186,15 @@ export function subsystemModuleFile(name: SubsystemName): string | null {
 	return SUBSYSTEM_MODULE_FILE[name] ?? null;
 }
 
+/**
+ * The file that marks a vendored install, by `target.wiring`: the Nest module, or under pattern-stack the Nest-free
+ * entry its row names (the Nest module isn't vendored there).
+ */
+const INSTALL_MARKER: Readonly<Record<TargetWiring, (name: SubsystemName) => string | null>> = {
+	nest: subsystemModuleFile,
+	'pattern-stack': (name) => patternStackSubsystem(name)?.entryFile ?? subsystemModuleFile(name),
+};
+
 function inferBackend(dir: string, name: SubsystemName): SubsystemBackend {
 	// OBS-7: observability is a combiner subsystem (ADR-025) — no
 	// drizzle/memory split, no backend files beyond the service itself.
@@ -215,9 +228,9 @@ function inferBackend(dir: string, name: SubsystemName): SubsystemBackend {
  * `openapi-config` (config-only) and `auth-integrations` (vendored elsewhere)
  * are detected separately and always reported `installed` when found.
  */
-async function detectSubsystemStatesImpl(
+function detectSubsystemStatesImpl(
 	ctx: Context,
-): Promise<InstalledSubsystem[]> {
+): InstalledSubsystem[] {
 	// The one subsystems root, `<backend_src>/shared/subsystems` — where
 	// `subsystem install` writes.
 	const roots = [projectLayout(ctx.cwd, ctx.config).subsystems];
@@ -240,7 +253,9 @@ async function detectSubsystemStatesImpl(
 			const dir = path.join(root, name);
 			if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) continue;
 			const files = fs.readdirSync(dir);
-			const moduleFile = subsystemModuleFile(name);
+			// The file that marks an install, by wiring: under pattern-stack a subsystem's row names its Nest-free entry
+			// (the Nest module isn't vendored).
+			const moduleFile = rowFor('target.wiring', INSTALL_MARKER, targetWiring(configOrDefaults(ctx.config).target))(name);
 			const hasModule = moduleFile ? files.includes(moduleFile) : false;
 			// "Present" gate. #287: auth's protocols live under
 			// `<dir>/protocols/`, not at the subsystem root — its module file
@@ -339,8 +354,7 @@ export async function detectSubsystemStates(
 export async function detectInstalledSubsystems(
 	ctx: Context,
 ): Promise<InstalledSubsystem[]> {
-	const states = await detectSubsystemStatesImpl(ctx);
-	return states.filter((s) => s.status === 'installed');
+	return detectSubsystemStatesImpl(ctx).filter((s) => s.status === 'installed');
 }
 
 // ---------------------------------------------------------------------------
@@ -432,11 +446,22 @@ export function configuredInstalledSubsystems(
 export async function resolveInstalledSubsystems(
 	ctx: Context,
 ): Promise<InstalledSubsystem[]> {
-	const mode = resolveRuntimeMode(ctx.config);
-	if (mode === 'package') {
-		return configuredInstalledSubsystems(
-			ctx.config as Record<string, unknown> | null | undefined,
-		);
+	return resolveInstalledSubsystemsSync(ctx);
+}
+
+/**
+ * `resolveInstalledSubsystems`, synchronously, for the generation steps that ask whether one subsystem is installed
+ * (the pattern-stack composition's systems). One rule for both: the config's list in package mode, the vendored scan
+ * otherwise.
+ */
+export function resolveInstalledSubsystemsSync(ctx: Context): InstalledSubsystem[] {
+	if (resolveRuntimeMode(ctx.config) === 'package') {
+		return configuredInstalledSubsystems(ctx.config as Record<string, unknown> | null | undefined);
 	}
-	return detectInstalledSubsystems(ctx);
+	return detectSubsystemStatesImpl(ctx).filter((s) => s.status === 'installed');
+}
+
+/** Is `name` installed (`resolveInstalledSubsystemsSync`)? */
+export function isSubsystemInstalled(ctx: Context, name: SubsystemName): boolean {
+	return resolveInstalledSubsystemsSync(ctx).some((s) => s.name === name);
 }

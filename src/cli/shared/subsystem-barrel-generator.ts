@@ -20,6 +20,8 @@
  * when ready to include them.
  */
 
+import { configOrDefaults } from '../../config/project-config.js';
+import { isPatternStackWiring } from '../../targets/apps.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -494,6 +496,19 @@ export async function regenerateSubsystemBarrel(
 	const generatedDir = opts.generatedDir ?? projectLayout(ctx.cwd, ctx.config).generated;
 
 	const mode = resolveRuntimeMode(ctx.config);
+
+	// S-1: under pattern-stack wiring there is no Nest subsystem barrel: the `events` system is the composition's
+	// (`<generated>/events-system.ts`, written by `entity new`). Only `app-config.ts` is refreshed.
+	if (isPatternStackWiring(configOrDefaults(ctx.config).target)) {
+		if (!dryRun) writeAppConfig(generatedDir, ctx.config);
+		return {
+			subsystemBarrel: path.resolve(generatedDir, 'subsystems.ts'),
+			emitted: [],
+			skipped: [],
+			content: '',
+			written: false,
+		};
+	}
 
 	// Subsystems root → barrel can import via a relative path that works
 	// wherever the generated barrel ends up. `projectLayout(...).subsystems` is

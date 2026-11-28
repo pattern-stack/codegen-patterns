@@ -705,7 +705,12 @@ describe('project init, wiring: pattern-stack (PW-4)', () => {
 		expect(content('src/main.ts')).toContain("from './compose'");
 		expect(content('src/main.ts')).toMatch(/await app\.start\(\)[\s\S]*await app\.stop\(\)/);
 		expect(content('src/main.ts')).toMatch(/process\.once\('SIGTERM'/);
-		expect(content('src/compose.ts')).toContain("import { MODULES } from './generated/composition'");
+		expect(content('src/compose.ts')).toContain("import { MODULES, SYSTEMS } from './generated/composition'");
+		expect(content('src/compose.ts')).toContain('systems: [databaseSystem(options.databaseUrl), ...SYSTEMS],');
+		// S-1: drizzle-kit reads the subsystem schema barrel too (`domain_events` once events is installed).
+		expect(content('drizzle.config.ts')).toContain("schema: ['./src/generated/schema.ts', './src/generated/subsystems-schema.ts'],");
+		expect(content('src/generated/subsystems-schema.ts')).toContain('export {};');
+		expect(content('src/generated/composition.ts')).toContain('export const SYSTEMS = [] as const;');
 		expect(content('src/database.ts')).toContain("name: 'database'");
 		expect(content('src/generated/composition.ts')).toContain('export const MODULES = [] as const;');
 	});

@@ -46,7 +46,7 @@ CLI, hook and MCP apps.
   controller, the Nest module, the integration-source module, and the `<generated>/modules.ts` Nest barrel. The
   barrel exports the repository and service instead of the module and controller.
 - **Refused by name, each with the step that lifts it:**
-  - `emits:` (the typed bus is decorated; S-1);
+  - `emits:` (the typed bus was decorated; lifted by S-1, `docs/specs/S-1.md`);
   - EAV (lifted by PW-EAV, `docs/specs/PW-EAV.md`);
   - an integration `surface:` (S-3);
   - `relationship new` (`patternStackWiringRefusal`, `src/cli/shared/storage-only.ts`: #679; junctions came with PW-3c);

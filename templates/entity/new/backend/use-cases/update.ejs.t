@@ -11,7 +11,9 @@ import { DRIZZLE } from '<%= drizzleTokenImport %>';
 <% } -%>
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
 <% if (hasEmits && updateEventType) { -%>
-<% if (typedEventBusImport === eventsTokenImport) { -%>
+<% if (patternStackWiring) { -%>
+import type { TypedEventBus } from '<%= typedEventBusImport %>';
+<% } else if (typedEventBusImport === eventsTokenImport) { -%>
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
 <% } else { -%>
 import { TYPED_EVENT_BUS } from '<%= eventsTokenImport %>';
@@ -50,7 +52,7 @@ export class <%= classNames.updateUseCase %> {
     private readonly fields: FieldValueService,
     <%= patternStackWiring ? '' : '@Inject(DRIZZLE) ' %>private readonly db: DrizzleClient,
 <% if (hasEmits && updateEventType) { -%>
-    @Inject(TYPED_EVENT_BUS) private readonly typedEvents: TypedEventBus,
+    <%= patternStackWiring ? '' : '@Inject(TYPED_EVENT_BUS) ' %>private readonly typedEvents: TypedEventBus,
 <% } -%>
   ) {}
 
@@ -97,10 +99,14 @@ export class <%= classNames.updateUseCase %> {
 }
 <% } else { -%>
 <% if (hasEmits && updateEventType) { -%>
+<% if (!patternStackWiring) { -%>
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
+<% } -%>
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
-<% if (typedEventBusImport === eventsTokenImport) { -%>
+<% if (patternStackWiring) { -%>
+import type { TypedEventBus } from '<%= typedEventBusImport %>';
+<% } else if (typedEventBusImport === eventsTokenImport) { -%>
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
 <% } else { -%>
 import { TYPED_EVENT_BUS } from '<%= eventsTokenImport %>';
@@ -125,8 +131,8 @@ import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 export class <%= classNames.updateUseCase %> {
   constructor(
     private readonly service: <%= classNames.service %>,
-    @Inject(DRIZZLE) private readonly db: DrizzleClient,
-    @Inject(TYPED_EVENT_BUS) private readonly typedEvents: TypedEventBus,
+    <%= patternStackWiring ? '' : '@Inject(DRIZZLE) ' %>private readonly db: DrizzleClient,
+    <%= patternStackWiring ? '' : '@Inject(TYPED_EVENT_BUS) ' %>private readonly typedEvents: TypedEventBus,
   ) {}
 
   async execute(

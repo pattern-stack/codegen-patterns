@@ -58,4 +58,6 @@ export type {
   EventSchedulerOptions,
 } from './event-scheduler';
 export { domainEvents } from './domain-events.schema';
+// The options the backends and the pattern-stack `events` system take (S-1).
+export type { EventsModuleOptions } from './events-options';
 export type { DomainEventRecord } from './domain-events.schema';

@@ -22,7 +22,17 @@ function relationsOf(entitiesDir: string, junctionsDir = JUNCTIONS) {
 	}).relations;
 }
 
-function plan(entitiesDir = FIXTURES, junctionsDir = JUNCTIONS) {
+/** The smoke's events install (S-1): drizzle, vendored. */
+const EVENTS = {
+	backend: 'drizzle' as const,
+	multiTenant: false,
+	listenNotify: false,
+	backendImport: '@shared/subsystems/events/event-bus.drizzle-backend',
+	coreImport: '@shared/subsystems/events/core',
+	generatedEventsDir: `${ROOT}/shared/subsystems/events/generated`,
+};
+
+function plan(entitiesDir = FIXTURES, junctionsDir = JUNCTIONS, events: typeof EVENTS | null = EVENTS) {
 	const files = planComposition({
 		relations: relationsOf(entitiesDir, junctionsDir),
 		modulesDir: `${ROOT}/modules`,
@@ -30,6 +40,7 @@ function plan(entitiesDir = FIXTURES, junctionsDir = JUNCTIONS) {
 		drizzleTypeImport: '@shared/types/drizzle',
 		openApiImport: '@shared/openapi',
 		banner: '// @generated',
+		events,
 		dryRun: true,
 	});
 	return (suffix: string) => {
@@ -170,6 +181,7 @@ describe("a junction's module (PW-3c)", () => {
 			drizzleTypeImport: '@shared/types/drizzle',
 			openApiImport: '@shared/openapi',
 			banner: '// @generated',
+			events: EVENTS,
 			dryRun: true,
 		});
 	};
@@ -218,5 +230,41 @@ describe('EAV in the composition', () => {
 			'tag',
 		]);
 		expect(root).toContain('createLeadRepository(db, fieldValue.service)');
+	});
+});
+
+describe('the events system in the composition (S-1)', () => {
+	it('writes events-system.ts, lists it in SYSTEMS and SystemApis, and the publishing module uses it', () => {
+		const get = plan();
+		const system = get('/generated/events-system.ts');
+		expect(system).toContain("import { DrizzleEventBus } from '@shared/subsystems/events/event-bus.drizzle-backend';");
+		expect(system).toContain("import { TypedEventBus, eventRegistry } from '../shared/subsystems/events/generated';");
+		expect(system).toContain("uses: ['database'],");
+		expect(system).toContain('const bus = new DrizzleEventBus(database.db, options);');
+		expect(system).toMatch(/start: async \(\{ bus, scheduler \}\) => \{\n {4}await bus\.start\(\);\n {4}try \{\n {6}await scheduler\?\.start\(\);/);
+		// A scheduler that fails to start stops the drain loop the start began (compose won't stop a failed part).
+		expect(system).toMatch(/catch \(err\) \{\n[^\n]*\n {6}await bus\.stop\(\);\n {6}throw err;/);
+		expect(get('/generated/composition.ts')).toContain('export const SYSTEMS = [eventsSystem] as const;');
+		expect(get('/generated/wiring.ts')).toContain('  events: EventsApi;');
+		const billing = get('/modules/billing/module.ts');
+		expect(billing).toContain("uses: ['database', 'events'],");
+		expect(billing).toContain('events: EventsApi');
+		expect(billing).toContain('typedEvents: deps.events.typed');
+		// A module with no publishing use case doesn't use it.
+		expect(get('/modules/crm/module.ts')).toContain("uses: ['database'],");
+	});
+
+	it('refuses a publishing entity when the events subsystem is not installed, naming the install', () => {
+		expect(() => plan(FIXTURES, JUNCTIONS, null)).toThrow(/invoice publish events .* run `codegen subsystem install events`/);
+	});
+
+	it('the memory backend uses no database', () => {
+		const system = plan(FIXTURES, JUNCTIONS, {
+			...EVENTS,
+			backend: 'memory' as unknown as 'drizzle',
+			backendImport: '@shared/subsystems/events/event-bus.memory-backend',
+		})('/generated/events-system.ts');
+		expect(system).toContain('uses: [],');
+		expect(system).toContain('const bus = new MemoryEventBus(options);');
 	});
 });

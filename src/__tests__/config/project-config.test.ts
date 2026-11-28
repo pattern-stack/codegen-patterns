@@ -213,7 +213,13 @@ describe('the configs the generator writes pass the strict parse, and the editor
 			);
 		expect(blocks.length).toBe(7);
 		for (const file of blocks) {
-			const body = fs.readFileSync(file, 'utf-8').split(/^---$/m).slice(2).join('---');
+			// The one local a block prints: the installed backend (events, S-1).
+			const body = fs
+				.readFileSync(file, 'utf-8')
+				.split(/^---$/m)
+				.slice(2)
+				.join('---')
+				.replace('<%= backend %>', 'drizzle');
 			expect(body).not.toContain('<%');
 			expect(() => parseCodegenConfig(yaml.parse(body), file)).not.toThrow();
 			expect(jsonSchemaErrors(yaml.parse(body))).toEqual([]);

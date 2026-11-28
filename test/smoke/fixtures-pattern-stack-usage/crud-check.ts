@@ -57,8 +57,19 @@ export async function crudCheck(url: string): Promise<void> {
     const found = await crm.account.useCases.findById.execute(account.id);
     assert(found.name === 'Acme', 'findById reads it back');
 
+    // Events (S-1): invoice's create publishes invoice_created in its transaction; the events system's drain delivers it.
+    const delivered: Array<{ invoiceId: string; amountCents: number }> = [];
+    app.system('events').typed.subscribe('invoice_created', async (event) => {
+      delivered.push(event.payload);
+    });
+
     const contact = await crm.contact.useCases.create.execute({ email: 'a@acme.test', accountId: account.id });
     const invoice = await billing.invoice.useCases.create.execute({ amountCents: 1200, accountId: account.id });
+    for (let i = 0; i < 100 && delivered.length === 0; i++) await new Promise((r) => setTimeout(r, 50));
+    assert(
+      delivered.some((p) => p.invoiceId === invoice.id && p.amountCents === 1200),
+      `the events system drains invoice_created to its subscriber: ${JSON.stringify(delivered)}`,
+    );
     assert(contact.accountId === account.id && invoice.accountId === account.id, 'the composed repositories write');
 
     // A joined-table child: its repository writes the base row and its own in one transaction (RFC-0006).

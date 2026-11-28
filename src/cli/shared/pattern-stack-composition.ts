@@ -15,12 +15,37 @@ import type { RelationsConfigInput } from '../../emitters/relations/load-context
 import {
 	emitComposition,
 	wiringFilesBehind,
+	type CompositionEventsInput,
 	type CompositionFile,
 	type CompositionInput,
 } from '../../emitters/composition/emit-composition.js';
+import { configOrDefaults } from '../../config/project-config.js';
+import { isSubsystemInstalled } from './subsystem-detect.js';
+import { eventsGeneratedDir } from './pattern-stack-subsystems.js';
 import { removeOtherWiringFiles } from '../../emitters/composition/stale-files.js';
-import { openApiImport, resolveRuntimeMode, runtimeImport, type RuntimeMode } from './runtime-import.js';
+import { openApiImport, resolveRuntimeMode, runtimeImport, subsystemCoreImport, type RuntimeMode } from './runtime-import.js';
 import { printInfo, printWarning } from '../ui/output.js';
+
+/** Is the events subsystem installed (S-1)? `isSubsystemInstalled`'s one rule (under pattern-stack, its `core.ts`). */
+export function eventsInstalled(ctx: Context): boolean {
+	return isSubsystemInstalled(ctx, 'events');
+}
+
+/** The `events` system's input (S-1), or null when the subsystem isn't installed. */
+export function patternStackEventsInput(ctx: Context, generatedDir: string): CompositionEventsInput | null {
+	if (!eventsInstalled(ctx)) return null;
+	const mode = resolveRuntimeMode(ctx.config);
+	const events = configOrDefaults(ctx.config).events ?? {};
+	const backend = events.backend ?? 'drizzle';
+	return {
+		backend,
+		multiTenant: events.multi_tenant ?? false,
+		listenNotify: events.extensions?.drizzle?.listen_notify ?? false,
+		backendImport: runtimeImport(mode, `subsystems/events/event-bus.${backend}-backend`),
+		coreImport: subsystemCoreImport(mode, 'events'),
+		generatedEventsDir: eventsGeneratedDir(ctx, generatedDir),
+	};
+}
 
 /**
  * The composition's input for this project: the one place that builds it. Every directory comes from `ctx`
@@ -38,6 +63,7 @@ function compositionInput(ctx: Context): CompositionInput {
 		modulesDir: layout.modules,
 		generatedDir: layout.generated,
 		...emitterOptions(mode),
+		events: patternStackEventsInput(ctx, layout.generated),
 	};
 }
 

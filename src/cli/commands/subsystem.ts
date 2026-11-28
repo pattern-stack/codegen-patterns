@@ -55,6 +55,16 @@ import {
 } from '../shared/subsystem-barrel-generator.js';
 import { regenerateSubsystemSchemaBarrel } from '../shared/subsystem-schema-generator.js';
 import {
+	patternStackFileFilter,
+	patternStackSubsystem,
+	patternStackSubsystemRefusal,
+} from '../shared/pattern-stack-subsystems.js';
+import { rowFor } from '../../utils/keyed-row.js';
+import { generating } from '../../utils/generated-file.js';
+import type { RuntimeMode } from '../shared/runtime-import.js';
+import { configOrDefaults } from '../../config/project-config.js';
+import { isPatternStackWiring, targetWiring, type TargetWiring } from '../../targets/apps.js';
+import {
 	SUBSYSTEMS,
 	configuredSubsystemNames,
 	detectInstalledSubsystems,
@@ -282,6 +292,14 @@ export function backendFileFilter(
 	};
 }
 
+/** The vendored copy's filter, by `target.wiring`: the backend's, or under pattern-stack the row's too. */
+const INSTALL_FILE_FILTER: Readonly<
+	Record<TargetWiring, (name: SubsystemName, base: (file: string) => boolean) => (file: string) => boolean>
+> = {
+	nest: (_name, base) => base,
+	'pattern-stack': patternStackFileFilter,
+};
+
 export class SubsystemInstallCommand extends Command {
 	static paths = [['subsystem', 'install']];
 	static usage = Command.Usage({
@@ -342,6 +360,17 @@ export class SubsystemInstallCommand extends Command {
 				)}`
 			);
 			return 2;
+		}
+
+		// S-1: under `target.wiring: pattern-stack` only events has a Nest-free system yet; every other subsystem is
+		// refused by name, with the step that brings it. Its Redis backend is Nest-only.
+		const patternStack = isPatternStackWiring(configOrDefaults(ctx.config).target);
+		if (patternStack) {
+			const refusal = patternStackSubsystemRefusal(desc.name, backend, ctx);
+			if (refusal) {
+				printError(refusal);
+				return 2;
+			}
 		}
 
 		// OPENAPI-4: `openapi-config` is a config-only pseudo-subsystem.
@@ -423,7 +452,10 @@ export class SubsystemInstallCommand extends Command {
 		const result = await copyRuntime({
 			sourceDir: source,
 			targetDir: subsystemTarget,
-			filter: backendFileFilter(backend, desc.name),
+			filter: rowFor('target.wiring', INSTALL_FILE_FILTER, targetWiring(configOrDefaults(ctx.config).target))(
+				desc.name,
+				backendFileFilter(backend, desc.name),
+			),
 			resolveDeps: true,
 			runtimeRoot: runtimeRoot(),
 			depsTargetRoot: path.resolve(targetRoot, '..'),
@@ -454,6 +486,7 @@ export class SubsystemInstallCommand extends Command {
 						dryRun: this.dryRun,
 						json: isJsonMode(),
 						forceConfig: this.forceConfig,
+						backend,
 					})
 				: null;
 
@@ -561,6 +594,13 @@ export class SubsystemInstallCommand extends Command {
 			try {
 				const generatedDir = projectLayout(refreshed.cwd, refreshed.config).generated;
 				await regenerateSubsystemBarrel({ ctx: refreshed, generatedDir });
+				// S-1: pattern-stack's drizzle-kit entry reads the subsystem schema barrel (`domain_events`), and the
+				// generated set the events system imports exists before the first `entity new` (any command that writes
+				// the composition may run first), empty, never clobbering one already generated.
+				if (patternStack) {
+					await regenerateSubsystemSchemaBarrel({ ctx: refreshed, generatedDir });
+					patternStackSubsystem(desc.name)?.afterInstall?.(refreshed, generatedDir);
+				}
 			} catch (err: unknown) {
 				return reportRegenerationFailure('subsystem install', err);
 			}
@@ -722,7 +762,10 @@ export class SubsystemInstallCommand extends Command {
 		}
 		printSuccess(`${desc.name} subsystem installed with ${backend} backend.`);
 
-		if (desc.name === 'auth') {
+		if (patternStack) {
+			const next = patternStackSubsystem(desc.name)?.nextStep;
+			if (next) printInfo(next);
+		} else if (desc.name === 'auth') {
 			// #287: auth's forRoot shape is richer than `{ backend }` —
 			// it takes encryptionKey, oauthStateStore, enableController,
 			// redirectUriBase. The TODO appended to app.module.ts has the
@@ -872,6 +915,7 @@ export class SubsystemInstallCommand extends Command {
 				subsystem: configSubsystem.detector,
 				outcome: configBlockOutcome,
 				json: isJsonMode(),
+				backend,
 			});
 			if (!configResult.ok) {
 				printError(
@@ -892,6 +936,9 @@ export class SubsystemInstallCommand extends Command {
 			barrelEmitted = barrel.emitted;
 			const schema = await regenerateSubsystemSchemaBarrel({ ctx: refreshed, generatedDir });
 			schemaEmitted = schema.emitted;
+			if (isPatternStackWiring(configOrDefaults(refreshed.config).target)) {
+				patternStackSubsystem(desc.name)?.afterInstall?.(refreshed, generatedDir);
+			}
 		} catch (err: unknown) {
 			return reportRegenerationFailure('subsystem install', err);
 		}
@@ -950,6 +997,13 @@ export class SubsystemInstallCommand extends Command {
 					`jobs scaffold (Hygen) failed — config + barrels were written; re-run after fixing: ${jobsScaffold.error ?? 'unknown error'}`,
 				);
 			}
+		}
+		if (isPatternStackWiring(configOrDefaults(refreshed.config).target)) {
+			// No Nest subsystem barrel under pattern-stack (S-1): only the schema barrel was written.
+			printInfo(`Regenerated <generated>/subsystems-schema.ts (${schemaEmitted.join(', ') || 'none'}).`);
+			const next = patternStackSubsystem(desc.name)?.nextStep;
+			if (next) printInfo(next);
+			return 0;
 		}
 		printInfo(
 			`Regenerated <generated>/subsystems.ts (${barrelEmitted.join(', ') || 'none'}) + subsystems-schema.ts (${schemaEmitted.join(', ') || 'none'}).`,
@@ -1194,6 +1248,11 @@ interface ConfigBlockActionInput {
 	subsystem: DetectorSubsystemName;
 	outcome: ConfigBlockOutcome;
 	json: boolean;
+	/**
+	 * The installed backend, for the blocks that print it (events): the pattern-stack system and the Nest module both
+	 * read `backend:` from the block, so a memory install must not write `drizzle`.
+	 */
+	backend?: SubsystemBackend;
 }
 
 interface ConfigBlockActionResult {
@@ -1262,7 +1321,7 @@ function invokeConfigBlockHygen(
 		generator: 'subsystem',
 		action: input.actionFolder,
 		cwd: input.cwd,
-		args: ['--configPath', input.configPath],
+		args: ['--configPath', input.configPath, ...(input.backend ? ['--backend', input.backend] : [])],
 		inherit: !input.json,
 	});
 	if (!result.ok) {
@@ -1428,7 +1487,7 @@ interface EventsScaffoldOutcome {
 function runEventsScaffold(
 	cwd: string,
 	config: Context['config'],
-	opts: { dryRun: boolean; json: boolean; forceConfig: boolean },
+	opts: { dryRun: boolean; json: boolean; forceConfig: boolean; backend: SubsystemBackend },
 ): EventsScaffoldOutcome {
 	const locals = resolveEventsScaffoldLocals({
 		cwd,
@@ -1486,6 +1545,7 @@ function runEventsScaffold(
 		subsystem: 'events',
 		outcome: configBlockOutcome,
 		json: opts.json,
+		backend: opts.backend,
 	});
 
 	if (!configResult.ok) {

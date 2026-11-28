@@ -87,9 +87,8 @@ function junctionWiringImports(junction: string): string[] {
 /** What a module passes for each system a use case takes, in the module's own scope. */
 const SYSTEM_DEPS_VALUE: Record<SystemDependency, () => string> = {
 	db: () => 'db',
-	typed_event_bus: () => {
-		throw new Error('[codegen] wiring: pattern-stack: a use case that publishes its event comes with S-1 (events)');
-	},
+	// S-1: the `events` system's typed bus (the module `uses` it whenever one of its use cases publishes).
+	typed_event_bus: () => 'deps.events.typed',
 };
 
 /** `key: value`, or the shorthand when they are the same name. */
@@ -107,8 +106,30 @@ export interface CompositionInput {
 	openApiImport: string;
 	/** The banner every emitted file starts with (`CODEGEN_BANNER`). */
 	banner: string;
+	/**
+	 * The `events` system (S-1), when the events subsystem is installed: written to `<generated>/events-system.ts`,
+	 * listed in `SYSTEMS` and `SystemApis`. Null ⇒ no events system, and a module whose use cases publish an event is
+	 * refused, naming the install.
+	 */
+	events?: CompositionEventsInput | null;
 	dryRun?: boolean;
 }
+
+/** The `events` system's settings and imports (S-1): from `codegen.config.yaml`'s `events:` block and the runtime mode. */
+export interface CompositionEventsInput {
+	backend: 'drizzle' | 'memory';
+	multiTenant: boolean;
+	listenNotify: boolean;
+	/** The selected backend's module (`runtimeImport(mode, 'subsystems/events/event-bus.<backend>-backend')`). */
+	backendImport: string;
+	/** The Nest-free events entry (`subsystemCoreImport(mode, 'events')`). */
+	coreImport: string;
+	/** Absolute: the generated event files' directory (`TypedEventBus`, `eventRegistry`). */
+	generatedEventsDir: string;
+}
+
+/** The module that holds the `events` system, beside `wiring.ts`. */
+export const EVENTS_SYSTEM_FILE = 'events-system.ts';
 
 export interface CompositionFile {
 	path: string;
@@ -233,6 +254,7 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 	const junctionWiringFileOf = (j: JunctionPlan) => junctionWiringFile(j.name, modulesDir);
 
 	const registryFile = path.join(generatedDir, COMPOSITION_GENERATED_FILES.registry);
+	const eventsSystemFile = path.join(generatedDir, EVENTS_SYSTEM_FILE);
 	const relationsFile = path.join(generatedDir, 'relations.ts');
 	const files: CompositionFile[] = [];
 
@@ -248,6 +270,16 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 			dependsOn.add(other);
 			return `deps.${other}.repositories.${camelCase(entity)}`;
 		};
+		// S-1: a module whose use cases publish an event uses the `events` system.
+		const publishes = (entity: string) =>
+			graph.nodes.some((n) => n.owner === entity && n.role === 'use_case' && n.systems.includes('typed_event_bus'));
+		const usesEvents = plan.entities.some(publishes);
+		if (usesEvents && !input.events) {
+			throw new Error(
+				`[codegen] wiring: pattern-stack: ${plan.entities.filter(publishes).join(', ')} publish events (\`emits:\`), and ` +
+					`the events subsystem isn't installed: run \`codegen subsystem install events\`.`,
+			);
+		}
 		// EAV: a class that takes another entity's service (FieldValueService), built before it.
 		const serviceRef = (entity: string): string => {
 			if (own.has(entity)) return `${camelCase(entity)}.service`;
@@ -299,6 +331,7 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 			// EAV: the service takes FieldValueService; and each system a use case takes (`db`, for a write's one
 			// transaction) is a field, named by the same table the template declares them from.
 			const eav = takesFieldValues(service.id);
+			// S-1: its publishing use cases take `db` and the typed bus.
 			const fields = [
 				`repository: ${repoVar(entity)}`,
 				...(eav ? [`${FIELD_VALUES_DEPS_FIELD}: ${serviceRef(EAV_FIELD_VALUE_ENTITY)}`] : []),
@@ -320,6 +353,7 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 			`import type { DrizzleClient } from '${input.drizzleTypeImport}';`,
 			`import type { Relations } from '${relativeImport(plan.file, relationsFile)}';`,
 			`import { defineModule } from '${relativeImport(plan.file, registryFile)}';`,
+			...(usesEvents ? [`import type { EventsApi } from '${relativeImport(plan.file, eventsSystemFile)}';`] : []),
 			...otherModules.map(
 				(m) => `import type { ${pascalCase(m)}Module } from '${relativeImport(plan.file, plans.get(m)!.file)}';`,
 			),
@@ -334,6 +368,7 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 		];
 		const depsType = [
 			`${DATABASE_SYSTEM}: { db: DrizzleClient<Relations> }`,
+			...(usesEvents ? ['events: EventsApi'] : []),
 			...otherModules.map((m) => `${m}: ${pascalCase(m)}Module`),
 		].join('; ');
 		const content = `${input.banner}
@@ -365,7 +400,7 @@ export const ${plan.name}Module = defineModule({
   name: '${plan.name}',
   kind: 'stateful',
   dependsOn: [${otherModules.map((m) => `'${m}'`).join(', ')}],
-  uses: ['${DATABASE_SYSTEM}'],
+  uses: [${[DATABASE_SYSTEM, ...(usesEvents ? ['events'] : [])].map((n) => `'${n}'`).join(', ')}],
   create: (deps) => compose${pascalCase(plan.name)}(deps),
 });
 `;
@@ -383,7 +418,7 @@ export const ${plan.name}Module = defineModule({
 import { createWiring } from '@pattern-stack/wiring';
 import type { DrizzleClient } from '${input.drizzleTypeImport}';
 import type { Relations } from './relations';
-${names.map((n) => `import type { ${pascalCase(n)}Module } from '${relativeImport(registryFile, plans.get(n)!.file)}';`).join('\n')}
+${input.events ? `import type { EventsApi } from './${EVENTS_SYSTEM_FILE.replace(/\.ts$/, '')}';\n` : ''}${names.map((n) => `import type { ${pascalCase(n)}Module } from '${relativeImport(registryFile, plans.get(n)!.file)}';`).join('\n')}
 
 export interface ModuleApis {
 ${names.map((n) => `  ${n}: ${pascalCase(n)}Module;`).join('\n')}
@@ -391,7 +426,7 @@ ${names.map((n) => `  ${n}: ${pascalCase(n)}Module;`).join('\n')}
 
 export interface SystemApis {
   ${DATABASE_SYSTEM}: { db: DrizzleClient<Relations> };
-}
+${input.events ? '  events: EventsApi;\n' : ''}}
 
 export const { defineModule, defineSystem, compose } = createWiring<ModuleApis, SystemApis>();
 `,
@@ -400,8 +435,13 @@ export const { defineModule, defineSystem, compose } = createWiring<ModuleApis, 
 	files.push({
 		path: compositionFile,
 		content: `${input.banner}
-/** Every generated module's manifest (PW-3), for the app's \`compose.ts\`: \`compose({ systems, modules: MODULES })\`. */
-${names.map((n) => `import { ${n}Module } from '${relativeImport(compositionFile, plans.get(n)!.file)}';`).join('\n')}
+/**
+ * Every generated module's manifest (PW-3), and the systems codegen generates (S-1: \`events\`, when installed), for
+ * the app's \`compose.ts\`: \`compose({ systems: [databaseSystem(), ...SYSTEMS], modules: MODULES })\`.
+ */
+${input.events ? `import { eventsSystem } from './${EVENTS_SYSTEM_FILE.replace(/\.ts$/, '')}';\n` : ''}${names.map((n) => `import { ${n}Module } from '${relativeImport(compositionFile, plans.get(n)!.file)}';`).join('\n')}
+
+export const SYSTEMS = [${input.events ? 'eventsSystem' : ''}] as const;
 
 export const MODULES = [${names.map((n) => `${n}Module`).join(', ')}] as const;
 `,
@@ -423,7 +463,70 @@ ${entities.map((e) => `  ${registerSchemasName(e)}(openApi);`).join('\n')}
 }
 `,
 	});
+	if (input.events) files.push({ path: eventsSystemFile, content: eventsSystemContent(input.events, eventsSystemFile, input.banner) });
 	return files;
+}
+
+/** \`<generated>/events-system.ts\` (S-1): the event bus as a \`@pattern-stack/wiring\` system. */
+function eventsSystemContent(events: CompositionEventsInput, file: string, banner: string): string {
+	const busClass = events.backend === 'drizzle' ? 'DrizzleEventBus' : 'MemoryEventBus';
+	const drizzle = events.backend === 'drizzle';
+	return `${banner}
+/**
+ * The \`events\` system (S-1): the event bus the generated use cases publish through, as a \`@pattern-stack/wiring\`
+ * system. \`create\` builds the bus, its typed facade and the scheduler (for the events that declare \`schedule:\`);
+ * \`start\` runs the drain loop and the scheduler only after every system and module was created, so every subscriber
+ * is attached before the first event is delivered. \`stop\` stops both.
+ */
+import { ${busClass} } from '${events.backendImport}';
+import { EventScheduler, scheduledEventsFromRegistry, type EventsModuleOptions } from '${events.coreImport}';
+import { TypedEventBus, eventRegistry } from '${relativeImport(file, events.generatedEventsDir)}';
+import { defineSystem } from './wiring';
+
+/** From codegen.config.yaml's \`events:\` block. */
+const options: EventsModuleOptions = {
+  backend: '${events.backend}',
+  multiTenant: ${events.multiTenant},
+  listenNotify: ${events.listenNotify},
+};
+
+export interface EventsApi {
+  /** The bus: \`subscribe(type, handler)\` here. */
+  bus: ${busClass};
+  /** The typed facade the generated use cases publish through. */
+  typed: TypedEventBus;
+  /** Materializes the scheduled events; null when none declares \`schedule:\`. */
+  scheduler: EventScheduler | null;
+}
+
+export const eventsSystem = defineSystem({
+  name: 'events',
+  uses: [${drizzle ? `'${DATABASE_SYSTEM}'` : ''}],
+  create: (${drizzle ? '{ database }' : ''}): EventsApi => {
+    const bus = new ${busClass}(${drizzle ? 'database.db, ' : ''}options);
+    const schedules = scheduledEventsFromRegistry(eventRegistry);
+    return {
+      bus,
+      typed: new TypedEventBus(bus, options.multiTenant ?? false),
+      scheduler: schedules.length > 0 ? new EventScheduler(bus, schedules) : null,
+    };
+  },
+  start: async ({ bus, scheduler }) => {
+    await bus.start();
+    try {
+      await scheduler?.start();
+    } catch (err) {
+      // A part that fails to start is not stopped by compose: stop the drain loop this start began.
+      await bus.stop();
+      throw err;
+    }
+  },
+  stop: async ({ bus, scheduler }) => {
+    scheduler?.stop();
+    await bus.stop();
+  },
+});
+`;
 }
 
 /**
