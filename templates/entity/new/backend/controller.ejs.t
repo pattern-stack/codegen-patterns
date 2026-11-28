@@ -37,6 +37,9 @@ const _includeRoutes = apiSurface.http.includeRoutes;
 const _allow = (r) => (r.includeRoute ? `${apiSurface.http.includesConst}.${r.includeRoute}` : 'undefined');
 // H-1a: each operation's summary is its command's (`apiSurface.commands`), the one MCP and the CLI describe it by.
 const _summary = (kind) => apiSurface.commands.find((c) => c.kind === kind).summary;
+// H-1b2: each handler's Swagger decorators, printed from its OpenAPI operation (`openApiOperations`), the one the
+// Hono app's document is printed from too.
+const _docs = (kind) => openApiDocs.nestDecorators(openApiOperations.find((o) => o.command.kind === kind).items);
 _%>
 <% if (_list) { -%>
 import { BadRequestException, Controller, Get<% if (_create) { %>, Post<% } %><% if (_writes) { %>, Patch, Delete, Body<% } %>, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
@@ -128,42 +131,7 @@ export class <%= _list.controller %> {
     }
   }
 
-  @ApiOperation({ summary: '<%= _summary('list') %>', operationId: '<%= _list.operationId %>' })
-  @ApiQuery({ name: 'page', required: false, type: 'integer', example: <%= paramExamples.page %>, description: '1-based page number (default 1).' })
-  @ApiQuery({ name: 'pageSize', required: false, type: 'integer', example: <%= paramExamples.pageSize %>, description: 'Page size (default 50, max 200).' })
-  @ApiQuery({ name: 'cursor', required: false, type: 'string', description: 'Opaque keyset cursor (accepted; v1 paginates by offset).' })
-  @ApiQuery({ name: 'sort_by', required: false, type: 'string', description: "Sort column (default 'created_at')." })
-  @ApiQuery({ name: 'sort_order', required: false, enum: ['asc', 'desc'], description: "Sort direction (default 'desc')." })
-  @ApiQuery({
-    name: 'include',
-    required: false,
-    type: 'string',
-<%_ if (paramExamples.include.list !== null) { _%>
-    example: '<%= paramExamples.include.list %>',
-<%_ } _%>
-    description:
-<%_ if (_includeRoutes.includes('list')) { _%>
-      'Comma-separated include paths, written as relation keys (camelCase), allowlisted by api.includes.list in the entity YAML. Anything else is a 400.',
-<%_ } else { _%>
-      'No include is exposed on this route (no api.includes.list in the entity YAML), so any value is a 400.',
-<%_ } _%>
-  })
-  @ApiResponse({
-    status: 200,
-    schema: {
-      type: 'object',
-      properties: {
-        items: { type: 'array', items: { $ref: '#/components/schemas/<%= classNames.outputDto %>' } },
-        page: { type: 'integer' },
-        pageCount: { type: 'integer' },
-        total: { type: 'integer' },
-        pageSize: { type: 'integer' },
-        nextCursor: { type: 'string', nullable: true },
-      },
-      required: ['items', 'page', 'pageCount', 'total', 'pageSize', 'nextCursor'],
-    },
-  })
-  @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+<%- _docs('list') %>
   <%- _decorator(_list) %>
   async <%= _list.handler %>(
     @Query(new ZodValidationPipe(<%= classNames.listQuerySchema %>)) query: <%= classNames.listQueryDto %>,
@@ -182,36 +150,13 @@ export class <%= _list.controller %> {
 <% } -%>
   }
 <% if (_listWithFields) { %>
-  @ApiOperation({
-    summary: '<%= _summary('list_with_fields') %>',
-    operationId: '<%= _listWithFields.operationId %>',
-  })
-  @ApiResponse({ status: 200 })
-  @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+<%- _docs('list_with_fields') %>
   <%- _decorator(_listWithFields) %>
   async <%= _listWithFields.handler %>(): Promise<Array<<%= classNames.entity %> & { fields: globalThis.Record<string, unknown> }>> {
     return this.listWithFieldsUseCase.execute();
   }
 <% } %>
-  @ApiOperation({ summary: '<%= _summary('find_by_id') %>', operationId: '<%= _findById.operationId %>' })
-  @ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/<%= classNames.outputDto %>' } })
-  @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiParam({ name: 'id', type: 'string', format: 'uuid', example: '<%= paramExamples.id %>', description: <%- paramExamples.idDescriptionLiteral %> })
-  @ApiQuery({
-    name: 'include',
-    required: false,
-    type: 'string',
-<%_ if (paramExamples.include.find_by_id !== null) { _%>
-    example: '<%= paramExamples.include.find_by_id %>',
-<%_ } _%>
-    description:
-<%_ if (_includeRoutes.includes('find_by_id')) { _%>
-      'Comma-separated include paths, written as relation keys (camelCase), allowlisted by api.includes.find_by_id in the entity YAML. Anything else is a 400.',
-<%_ } else { _%>
-      'No include is exposed on this route (no `api.includes.find_by_id` in the entity YAML), so any value is a 400.',
-<%_ } _%>
-  })
+<%- _docs('find_by_id') %>
   <%- _decorator(_findById) %>
   async <%= _findById.handler %>(
     @Param('id', ParseUUIDPipe) id: string,
@@ -229,14 +174,7 @@ export class <%= _list.controller %> {
 <% } -%>
   }
 <% if (_findByIdWithFields) { %>
-  @ApiOperation({
-    summary: '<%= _summary('find_by_id_with_fields') %>',
-    operationId: '<%= _findByIdWithFields.operationId %>',
-  })
-  @ApiResponse({ status: 200 })
-  @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiParam({ name: 'id', type: 'string', format: 'uuid', example: '<%= paramExamples.id %>', description: <%- paramExamples.idDescriptionLiteral %> })
+<%- _docs('find_by_id_with_fields') %>
   <%- _decorator(_findByIdWithFields) %>
   async <%= _findByIdWithFields.handler %>(
     @Param('id', ParseUUIDPipe) id: string,
@@ -249,13 +187,7 @@ export class <%= _list.controller %> {
 <%_ const _W = isInheritanceChild ? `${classNames.entity}Flat` : classNames.entity; _%>
 <% if (_writes) { %>
 <%_ if (_create) { _%>
-  @ApiOperation({ summary: '<%= _summary('create') %>', operationId: '<%= _create.operationId %>' })
-  @ApiBody({ schema: { $ref: '#/components/schemas/<%= classNames.createDto %>' } })
-  @ApiResponse({ status: 201, schema: { $ref: '#/components/schemas/<%= classNames.outputDto %>' } })
-  @ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiResponse({ status: 409, description: 'A unique value is already taken (code unique_violation).', schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiResponse({ status: 422, description: 'A foreign key names no existing row (code foreign_key_violation).', schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+<%- _docs('create') %>
   <%- _decorator(_create) %>
   async <%= _create.handler %>(
     @Body(new ZodValidationPipe(<%= classNames.createSchema %>)) dto: <%= classNames.createDto %>,
@@ -263,15 +195,7 @@ export class <%= _list.controller %> {
     return this.createUseCase.execute(dto);
   }
 <% } %>
-  @ApiOperation({ summary: '<%= _summary('update') %>', operationId: '<%= _update.operationId %>' })
-  @ApiBody({ schema: { $ref: '#/components/schemas/<%= classNames.updateDto %>' } })
-  @ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/<%= classNames.outputDto %>' } })
-  @ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiResponse({ status: 409, description: 'A unique value is already taken (code unique_violation).', schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiResponse({ status: 422, description: 'A foreign key names no existing row (code foreign_key_violation).', schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiParam({ name: 'id', type: 'string', format: 'uuid', example: '<%= paramExamples.id %>', description: <%- paramExamples.idDescriptionLiteral %> })
+<%- _docs('update') %>
   <%- _decorator(_update) %>
   async <%= _update.handler %>(
     @Param('id', ParseUUIDPipe) id: string,
@@ -282,12 +206,7 @@ export class <%= _list.controller %> {
     return entity;
   }
 
-  @ApiOperation({ summary: '<%= _summary('delete') %>', operationId: '<%= _delete.operationId %>' })
-  @ApiResponse({ status: 204 })
-  @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiResponse({ status: 409, description: 'Another row still references this one (code still_referenced).', schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
-  @ApiParam({ name: 'id', type: 'string', format: 'uuid', example: '<%= paramExamples.id %>', description: <%- paramExamples.idDescriptionLiteral %> })
+<%- _docs('delete') %>
   <%- _decorator(_delete) %>
   async <%= _delete.handler %>(
     @Param('id', ParseUUIDPipe) id: string,

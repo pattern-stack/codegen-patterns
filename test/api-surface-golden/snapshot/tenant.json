@@ -525,6 +525,7 @@
 		],
 		"includeRoutes": [],
 		"includesConst": "TENANTS_API_INCLUDES",
-		"routesFunction": "tenantRoutes"
+		"routesFunction": "tenantRoutes",
+		"registerPathsFunction": "registerTenantPaths"
 	}
 }

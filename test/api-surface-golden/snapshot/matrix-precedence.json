@@ -947,7 +947,8 @@
 				],
 				"includeRoutes": [],
 				"includesConst": "TICKETS_API_INCLUDES",
-				"routesFunction": "ticketRoutes"
+				"routesFunction": "ticketRoutes",
+				"registerPathsFunction": "registerTicketPaths"
 			}
 		}
 	}

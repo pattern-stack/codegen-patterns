@@ -29,13 +29,15 @@ describe('the Hono app file', () => {
 	it('mounts each entity on its module and serves the document', () => {
 		const text = HTTP_RENDERERS.hono.appFile({
 			banner: '// banner',
-			entities: [{ module: 'crm', key: 'contact', routesFunction: 'contactRoutes', routesImport: '../modules/crm/contacts/contact.routes' }],
+			entities: [{ module: 'crm', key: 'contact', routesFunction: 'contactRoutes', registerPathsFunction: 'registerContactPaths', routesImport: '../modules/crm/contacts/contact.routes' }],
 			runtimeImport: '@shared/http/hono',
 			openApiImport: '@shared/openapi',
 		});
-		expect(text).toContain("import { contactRoutes } from '../modules/crm/contacts/contact.routes';");
+		expect(text).toContain("import { registerContactPaths, contactRoutes } from '../modules/crm/contacts/contact.routes';");
 		expect(text).toContain("http.route('/', contactRoutes(app.module('crm').contact.useCases));");
-		expect(text).toContain("`/${docs.path ?? 'docs'}-json`");
+		expect(text).toContain("http.get(`${docs.path}-json`");
+		expect(text).toContain("if (docs.auth === 'bearer') openApi.registerSecurityScheme('bearer'");
 		expect(text).toContain('useNestFallbacks(http);');
+		expect(text).toContain('    registerContactPaths(openApi);');
 	});
 });

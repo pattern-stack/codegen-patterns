@@ -587,6 +587,7 @@
 		],
 		"includeRoutes": [],
 		"includesConst": "CATALOG_ENTRIES_API_INCLUDES",
-		"routesFunction": "catalogEntryRoutes"
+		"routesFunction": "catalogEntryRoutes",
+		"registerPathsFunction": "registerCatalogEntryPaths"
 	}
 }

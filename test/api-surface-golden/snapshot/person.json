@@ -525,6 +525,7 @@
 		],
 		"includeRoutes": [],
 		"includesConst": "PERSONS_API_INCLUDES",
-		"routesFunction": "personRoutes"
+		"routesFunction": "personRoutes",
+		"registerPathsFunction": "registerPersonPaths"
 	}
 }

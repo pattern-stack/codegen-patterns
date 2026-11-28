@@ -529,7 +529,8 @@
 				],
 				"includeRoutes": [],
 				"includesConst": "SHELVES_API_INCLUDES",
-				"routesFunction": "shelfRoutes"
+				"routesFunction": "shelfRoutes",
+				"registerPathsFunction": "registerShelfPaths"
 			}
 		},
 		"tote": {
@@ -1383,7 +1384,8 @@
 				],
 				"includeRoutes": [],
 				"includesConst": "TOTES_API_INCLUDES",
-				"routesFunction": "toteRoutes"
+				"routesFunction": "toteRoutes",
+				"registerPathsFunction": "registerTotePaths"
 			}
 		},
 		"bin": {
@@ -2277,7 +2279,8 @@
 				],
 				"includeRoutes": [],
 				"includesConst": "BINS_API_INCLUDES",
-				"routesFunction": "binRoutes"
+				"routesFunction": "binRoutes",
+				"registerPathsFunction": "registerBinPaths"
 			}
 		}
 	}

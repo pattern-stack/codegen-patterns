@@ -1010,7 +1010,8 @@
      ],
      "includeRoutes": [],
      "includesConst": "COMMUNICATIONS_API_INCLUDES",
-     "routesFunction": "communicationRoutes"
+     "routesFunction": "communicationRoutes",
+     "registerPathsFunction": "registerCommunicationPaths"
     }
    },
    "communication_note": {
@@ -1665,7 +1666,8 @@
      ],
      "includeRoutes": [],
      "includesConst": "COMMUNICATION_NOTES_API_INCLUDES",
-     "routesFunction": "communicationNoteRoutes"
+     "routesFunction": "communicationNoteRoutes",
+     "registerPathsFunction": "registerCommunicationNotePaths"
     }
    },
    "communication_part": {
@@ -2595,7 +2597,8 @@
      ],
      "includeRoutes": [],
      "includesConst": "COMMUNICATION_PARTS_API_INCLUDES",
-     "routesFunction": "communicationPartRoutes"
+     "routesFunction": "communicationPartRoutes",
+     "registerPathsFunction": "registerCommunicationPartPaths"
     },
     "createDisabledBy": {
      "doc": {
@@ -3319,7 +3322,8 @@
      ],
      "includeRoutes": [],
      "includesConst": "COMMUNICATION_PARTICIPANTS_API_INCLUDES",
-     "routesFunction": "communicationParticipantRoutes"
+     "routesFunction": "communicationParticipantRoutes",
+     "registerPathsFunction": "registerCommunicationParticipantPaths"
     }
    },
    "communication_participant_role": {
@@ -3856,7 +3860,8 @@
      ],
      "includeRoutes": [],
      "includesConst": "COMMUNICATION_PARTICIPANT_ROLES_API_INCLUDES",
-     "routesFunction": "communicationParticipantRoleRoutes"
+     "routesFunction": "communicationParticipantRoleRoutes",
+     "registerPathsFunction": "registerCommunicationParticipantRolePaths"
     }
    },
    "email": {
@@ -4860,7 +4865,8 @@
      ],
      "includeRoutes": [],
      "includesConst": "EMAILS_API_INCLUDES",
-     "routesFunction": "emailRoutes"
+     "routesFunction": "emailRoutes",
+     "registerPathsFunction": "registerEmailPaths"
     }
    },
    "email_communication_part": {
@@ -5864,7 +5870,8 @@
      ],
      "includeRoutes": [],
      "includesConst": "EMAIL_COMMUNICATION_PARTS_API_INCLUDES",
-     "routesFunction": "emailCommunicationPartRoutes"
+     "routesFunction": "emailCommunicationPartRoutes",
+     "registerPathsFunction": "registerEmailCommunicationPartPaths"
     }
    },
    "email_thread": {
@@ -6401,7 +6408,8 @@
      ],
      "includeRoutes": [],
      "includesConst": "EMAIL_THREADS_API_INCLUDES",
-     "routesFunction": "emailThreadRoutes"
+     "routesFunction": "emailThreadRoutes",
+     "registerPathsFunction": "registerEmailThreadPaths"
     }
    },
    "meeting": {
@@ -7440,6 +7448,7 @@
        "path": "/meetings/search",
        "controller": "MeetingSearchController",
        "handler": "search",
+       "operationId": "MeetingSearchController_search",
        "useCase": "SearchMeetingsUseCase",
        "origin": {
         "from": "yaml",
@@ -7461,6 +7470,7 @@
      ],
      "includesConst": "MEETINGS_API_INCLUDES",
      "routesFunction": "meetingRoutes",
+     "registerPathsFunction": "registerMeetingPaths",
      "includes": [
       {
        "route": "list",
@@ -8068,7 +8078,8 @@
      ],
      "includeRoutes": [],
      "includesConst": "MEETING_TRANSCRIPTS_API_INCLUDES",
-     "routesFunction": "meetingTranscriptRoutes"
+     "routesFunction": "meetingTranscriptRoutes",
+     "registerPathsFunction": "registerMeetingTranscriptPaths"
     }
    },
    "message_communication_part": {
@@ -9013,7 +9024,8 @@
      ],
      "includeRoutes": [],
      "includesConst": "MESSAGE_COMMUNICATION_PARTS_API_INCLUDES",
-     "routesFunction": "messageCommunicationPartRoutes"
+     "routesFunction": "messageCommunicationPartRoutes",
+     "registerPathsFunction": "registerMessageCommunicationPartPaths"
     }
    },
    "party": {
@@ -9550,7 +9562,8 @@
      ],
      "includeRoutes": [],
      "includesConst": "PARTIES_API_INCLUDES",
-     "routesFunction": "partyRoutes"
+     "routesFunction": "partyRoutes",
+     "registerPathsFunction": "registerPartyPaths"
     }
    },
    "transcript_communication_part": {
@@ -10613,7 +10626,8 @@
      ],
      "includeRoutes": [],
      "includesConst": "TRANSCRIPT_COMMUNICATION_PARTS_API_INCLUDES",
-     "routesFunction": "transcriptCommunicationPartRoutes"
+     "routesFunction": "transcriptCommunicationPartRoutes",
+     "registerPathsFunction": "registerTranscriptCommunicationPartPaths"
     }
    }
   },

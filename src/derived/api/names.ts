@@ -218,6 +218,16 @@ export function notFoundMessage(entityName: string): { before: string; after: st
 	return { before: `${entityClassName(entityName)} `, after: ' not found' };
 }
 
+/** The operationId Nest's document gives a handler that names none: `<Controller>_<handler>` (@nestjs/swagger's rule). */
+export function nestDefaultOperationId(controller: string, handler: string): string {
+	return `${controller}_${handler}`;
+}
+
+/** The function in `<entity>.routes.ts` that registers an entity's operations in the OpenAPI document (H-1b2). */
+export function registerPathsName(entityName: string): string {
+	return `register${pascalCase(entityName)}Paths`;
+}
+
 /** The function in `<entity>.routes.ts` that builds an entity's Hono routes (H-1b): `deal_state` → `dealStateRoutes`. */
 export function routesFunctionName(entityName: string): string {
 	return `${camelCase(entityName)}Routes`;

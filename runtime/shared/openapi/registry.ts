@@ -50,6 +50,8 @@ export interface OpenAPIObject {
   paths: Record<string, Record<string, PathSpec>>;
   components: {
     schemas: Record<string, unknown>;
+    /** Present when a scheme is registered (`registerSecurityScheme`): what an operation's `security` names. */
+    securitySchemes?: Record<string, unknown>;
   };
 }
 
@@ -75,6 +77,7 @@ function componentSchema(schema: z.ZodType): unknown {
 export class OpenApiRegistry {
   private zodSchemas = new Map<string, z.ZodType>();
   private pathEntries = new Map<string, Map<HttpMethod, PathSpec>>();
+  private securitySchemes = new Map<string, unknown>();
 
   constructor() {
     // Auto-register the shared error response schema so controllers that
@@ -96,6 +99,11 @@ export class OpenApiRegistry {
    */
   schemaNamed(name: string): z.ZodType | undefined {
     return this.zodSchemas.get(name);
+  }
+
+  /** A security scheme an operation's `security` names (`bearer`, as Nest's `DocumentBuilder.addBearerAuth()` adds it). */
+  registerSecurityScheme(name: string, scheme: unknown): void {
+    this.securitySchemes.set(name, scheme);
   }
 
   registerPath(path: string, method: HttpMethod, spec: PathSpec): void {
@@ -132,7 +140,10 @@ export class OpenApiRegistry {
       openapi: '3.0.3',
       info,
       paths,
-      components: { schemas },
+      components: {
+        schemas,
+        ...(this.securitySchemes.size > 0 ? { securitySchemes: Object.fromEntries(this.securitySchemes) } : {}),
+      },
     };
   }
 
@@ -144,6 +155,7 @@ export class OpenApiRegistry {
   reset(): void {
     this.zodSchemas.clear();
     this.pathEntries.clear();
+    this.securitySchemes.clear();
     this.zodSchemas.set(ERROR_RESPONSE_SCHEMA_NAME, errorResponseSchema);
   }
 }

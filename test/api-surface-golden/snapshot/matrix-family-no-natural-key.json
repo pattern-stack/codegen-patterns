@@ -853,7 +853,8 @@
 				],
 				"includeRoutes": [],
 				"includesConst": "PARCELS_API_INCLUDES",
-				"routesFunction": "parcelRoutes"
+				"routesFunction": "parcelRoutes",
+				"registerPathsFunction": "registerParcelPaths"
 			}
 		},
 		"crate": {
@@ -1747,7 +1748,8 @@
 				],
 				"includeRoutes": [],
 				"includesConst": "CRATES_API_INCLUDES",
-				"routesFunction": "crateRoutes"
+				"routesFunction": "crateRoutes",
+				"registerPathsFunction": "registerCratePaths"
 			}
 		}
 	}

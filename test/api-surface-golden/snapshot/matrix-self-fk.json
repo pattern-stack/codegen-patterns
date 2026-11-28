@@ -620,7 +620,8 @@
 				],
 				"includeRoutes": [],
 				"includesConst": "CATEGORIES_API_INCLUDES",
-				"routesFunction": "categoryRoutes"
+				"routesFunction": "categoryRoutes",
+				"registerPathsFunction": "registerCategoryPaths"
 			}
 		}
 	}

@@ -582,6 +582,7 @@
 						"path": "/tasks/search",
 						"controller": "TaskSearchController",
 						"handler": "search",
+						"operationId": "TaskSearchController_search",
 						"useCase": "SearchTasksUseCase",
 						"origin": {
 							"from": "yaml",
@@ -600,7 +601,8 @@
 				],
 				"includeRoutes": [],
 				"includesConst": "TASKS_API_INCLUDES",
-				"routesFunction": "taskRoutes"
+				"routesFunction": "taskRoutes",
+				"registerPathsFunction": "registerTaskPaths"
 			},
 			"writesDisabledBy": {
 				"doc": {

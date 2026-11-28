@@ -696,7 +696,8 @@
 				],
 				"includeRoutes": [],
 				"includesConst": "FIELD_VALUES_API_INCLUDES",
-				"routesFunction": "fieldValueRoutes"
+				"routesFunction": "fieldValueRoutes",
+				"registerPathsFunction": "registerFieldValuePaths"
 			}
 		}
 	}

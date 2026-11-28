@@ -37,6 +37,7 @@ import {
 	repositoryClassName,
 	routePath,
 	searchControllerClassName,
+	nestDefaultOperationId,
 	serviceClassName,
 	useCaseClassName,
 	useCaseKey,
@@ -44,6 +45,7 @@ import {
 	commandsConstName,
 	notFoundMessage,
 	routesFunctionName,
+	registerPathsName,
 	type JunctionSide,
 	publishedWriteEvent,
 } from './names.js';
@@ -1044,6 +1046,8 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 				path: routePath(plural, 'search'),
 				controller: searchControllerClassName(entityName),
 				handler: 'search',
+				// The Nest controller names no operationId, so Nest's document uses `<Controller>_<handler>` (H-1b2).
+				operationId: nestDefaultOperationId(searchControllerClassName(entityName), 'search'),
 				useCase: useCaseClassName('search', entityName, plural),
 				origin: fromYaml(['queries', searchQuery.index]),
 			});
@@ -1058,7 +1062,9 @@ export function deriveEntityApiSurface(input: EntityApiInput): EntityApiSurface 
 		routes,
 		includeRoutes,
 		includesConst: includesConstName(plural),
-		...(routesOn(definition) ? { routesFunction: routesFunctionName(entityName) } : {}),
+		...(routesOn(definition)
+			? { routesFunction: routesFunctionName(entityName), registerPathsFunction: registerPathsName(entityName) }
+			: {}),
 	};
 	if (disabledBy) http.disabledBy = disabledBy;
 

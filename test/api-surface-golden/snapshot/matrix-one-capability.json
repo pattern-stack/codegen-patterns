@@ -744,7 +744,8 @@
 				],
 				"includeRoutes": [],
 				"includesConst": "MEETINGS_API_INCLUDES",
-				"routesFunction": "meetingRoutes"
+				"routesFunction": "meetingRoutes",
+				"registerPathsFunction": "registerMeetingPaths"
 			}
 		}
 	}

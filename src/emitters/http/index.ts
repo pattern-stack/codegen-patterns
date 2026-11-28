@@ -11,6 +11,8 @@ export interface HttpAppEntity {
 	module: string;
 	key: string;
 	routesFunction: string;
+	/** The function beside it that registers its OpenAPI operations (H-1b2). */
+	registerPathsFunction: string;
 	/** The import specifier of its routes file, from `http.ts`. */
 	routesImport: string;
 }
@@ -39,37 +41,48 @@ export interface HttpRenderers {
 const hono: HttpRenderers = {
 	appFile: (input) => `${input.banner}
 /**
- * The app's HTTP layer (H-1b): every entity's routes, as views of its commands, and \`/docs-json\`. Unknown routes and
+ * The app's HTTP layer (H-1b): every entity's routes, as views of its commands, and \`/docs-json\` with every
+ * entity's schemas and operations (H-1b2, the ones the Nest target documents). Unknown routes and
  * crashes answer as the Nest target does. Runs on Bun and Node.
  */
 import { Hono } from 'hono';
 import { OpenApiRegistry } from '${input.openApiImport}';
 import { useNestBodyLimit, useNestFallbacks } from '${input.runtimeImport}';
 import type { App } from './commands';
+import { openapiConfig } from './app-config';
 import { registerOpenApiSchemas } from './openapi';
-${input.entities.map((e) => `import { ${e.routesFunction} } from '${e.routesImport}';`).join('\n')}
+${input.entities.map((e) => `import { ${e.registerPathsFunction}, ${e.routesFunction} } from '${e.routesImport}';`).join('\n')}
 
 export interface CreateAppOptions {
-  /** The OpenAPI document's info, and where it is served: \`/<path>-json\` (default \`docs\`, as the Nest target). */
-  openApi?: { title?: string; version?: string; description?: string; path?: string };
+  /** Overrides of \`openapi:\` (codegen.config.yaml, emitted as \`openapiConfig\`): the document is served when enabled. */
+  openApi?: { enabled?: boolean; path?: string; title?: string; version?: string; description?: string; auth?: 'bearer' | 'none' };
 }
 
 export function createApp(app: App, options: CreateAppOptions = {}): Hono {
   // Express's router (under Nest) ignores a trailing slash; Hono's must be told (case still matters: a known difference).
   const http = new Hono({ strict: false });
   useNestBodyLimit(http);
-  const openApi = new OpenApiRegistry();
-  registerOpenApiSchemas(openApi);
-  const docs = options.openApi ?? {};
-  http.get(\`/\${docs.path ?? 'docs'}-json\`, async (c) =>
-    c.json(
-      await openApi.build({
-        title: docs.title ?? 'API',
-        version: docs.version ?? '0.0.0',
-        ...(docs.description ? { description: docs.description } : {}),
-      }),
-    ),
-  );
+  // The document, as the Nest target's main.ts serves it: at \`<path>-json\` when \`openapi.enabled\`, with the bearer
+  // scheme \`DocumentBuilder.addBearerAuth()\` adds when \`openapi.auth\` is bearer.
+  const docs: { enabled: boolean; path: string; title: string; version: string; description?: string; auth: string } = {
+    ...openapiConfig,
+    ...options.openApi,
+  };
+  if (docs.enabled) {
+    const openApi = new OpenApiRegistry();
+    registerOpenApiSchemas(openApi);
+${input.entities.map((e) => `    ${e.registerPathsFunction}(openApi);`).join('\n')}
+    if (docs.auth === 'bearer') openApi.registerSecurityScheme('bearer', { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' });
+    http.get(\`\${docs.path}-json\`, async (c) =>
+      c.json(
+        await openApi.build({
+          title: docs.title,
+          version: docs.version,
+          ...(docs.description ? { description: docs.description } : {}),
+        }),
+      ),
+    );
+  }
 ${input.entities.map((e) => `  http.route('/', ${e.routesFunction}(app.module('${e.module}').${e.key}.useCases));`).join('\n')}
   useNestFallbacks(http);
   return http;
