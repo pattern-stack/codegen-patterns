@@ -17,7 +17,7 @@
  * `wiring: 'pattern-stack'`; their Nest text is unchanged.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { SCAFFOLD_SENTINEL, writeGeneratedFile, writeGeneratedFileIfChanged } from '../../utils/generated-file';
@@ -55,7 +55,8 @@ import { changeEmitterClass, generateChangeEmitter } from './change-emitter-emis
 import { providerPascalCase } from './provider-module-generator';
 import { generateSinkBase, generateSinkSubclass } from './sink-emission-generator';
 import { subsystemCoreImport, type RuntimeMode } from './runtime-import';
-import { providerSettings, providerSettingsGroup, type ProjectSetting } from '../../derived/settings/index.js';
+import { PROVIDER_BASE_URL_KEY, providerSettings, providerSettingsGroup, type ProjectSetting } from '../../derived/settings/index.js';
+import { SETTINGS_FILE } from '../../emitters/settings/emit-settings.js';
 
 /** A system the composition lists in `SYSTEMS` and `SystemApis`: the composition's own type. */
 export type PatternStackIntegrationSystem = CompositionIntegrationsInput['systems'][number];
@@ -265,11 +266,11 @@ export function generateProviderFactory(
 	const client = clientless ? null : parseImportRef(def.client.class);
 	const group = providerSettingsGroup(def.slug);
 	const keys = settings.map((x) => x.key);
-	const authKeys = keys.filter((k) => k !== 'baseUrl');
+	const authKeys = keys.filter((k) => k !== PROVIDER_BASE_URL_KEY);
 	const arg = (list: string[]) => `{ ${list.map((k) => `${k}: settings.${k}`).join(', ')} }`;
 	const examples = [
 		...(authKeys.length > 0 ? [`//   new ${strategy.exportName}(${arg(authKeys)})`] : []),
-		...(client && keys.includes('baseUrl') ? [`//   new ${client.exportName}(${arg(['baseUrl'])})`] : []),
+		...(client && keys.includes(PROVIDER_BASE_URL_KEY) ? [`//   new ${client.exportName}(${arg([PROVIDER_BASE_URL_KEY])})`] : []),
 	];
 	return `${SCAFFOLD_SENTINEL}
 // Scaffolded once by @pattern-stack/codegen, then author-owned. Re-running
@@ -402,14 +403,12 @@ export interface EmitPatternStackIntegrationsResult {
 	/** Emit-once scaffolds written this run, and those left (author-owned). */
 	scaffoldsWritten: string[];
 	scaffoldsSkipped: string[];
-	/** Existing provider factories that take no settings (written before SET-1): the provider system passes them one. */
-	factoriesBehind: string[];
 }
 
 /** Write the pattern-stack integration files. The `integrations` module is the composition's. */
 export function emitPatternStackIntegrations(opts: EmitPatternStackIntegrationsOptions): EmitPatternStackIntegrationsResult {
 	const plan = planPatternStackIntegrations(opts);
-	const result: EmitPatternStackIntegrationsResult = { plan, written: [], scaffoldsWritten: [], scaffoldsSkipped: [], factoriesBehind: [] };
+	const result: EmitPatternStackIntegrationsResult = { plan, written: [], scaffoldsWritten: [], scaffoldsSkipped: [] };
 	const generated = (file: string, content: string) => {
 		if (!opts.dryRun) writeGeneratedFileIfChanged(file, content);
 		result.written.push(file);
@@ -426,11 +425,7 @@ export function emitPatternStackIntegrations(opts: EmitPatternStackIntegrationsO
 
 	for (const p of plan.providers) {
 		const own = providerSettings({ definition: p.def, filePath: '' });
-		scaffold(p.factoryFile, () => generateProviderFactory(p.def, own, p.factoryFile, join(dirname(opts.wiringFile), 'settings.ts')));
-		const n = providerSystemNames(p.slug);
-		if (existsSync(p.factoryFile) && new RegExp(`export function ${n.factory}\\(\\s*\\)`).test(readFileSync(p.factoryFile, 'utf8'))) {
-			result.factoriesBehind.push(p.factoryFile);
-		}
+		scaffold(p.factoryFile, () => generateProviderFactory(p.def, own, p.factoryFile, join(dirname(opts.wiringFile), SETTINGS_FILE)));
 		generated(p.systemFile, generateProviderSystem(p.def, p.systemFile, opts.wiringFile));
 	}
 

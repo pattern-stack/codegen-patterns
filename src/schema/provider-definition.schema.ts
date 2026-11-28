@@ -131,7 +131,11 @@ export const ProviderSettingSchema = z
       .regex(/^[A-Z][A-Z0-9_]*$/, "settings.<name>.env must be an UPPER_SNAKE_CASE environment variable name")
       .optional(),
     secret: z.boolean().optional(),
-    default: z.string().optional(),
+    // One line: it is printed into settings.ts (a string literal) and .env.example (after `# ENV=`).
+    default: z
+      .string()
+      .refine((d) => !/[\r\n\u2028\u2029]/.test(d), "settings.<name>.default must be one line")
+      .optional(),
     description: z.string().optional(),
   })
   .strict()

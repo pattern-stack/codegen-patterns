@@ -59,7 +59,10 @@ export const ROOT_MODULE = 'entities';
 /** The `database` system's name: the one system every generated module uses (`{ db }`), and the app's `database.ts` defines. */
 export const DATABASE_SYSTEM = 'database';
 
-const RESERVED_MODULE_NAMES = new Set([ROOT_MODULE, DATABASE_SYSTEM, 'settings']);
+/** The names of the systems codegen generates (and the app's `database`): a module may not take one. */
+export const GENERATED_SYSTEM_NAMES = [DATABASE_SYSTEM, 'settings', 'events', 'integration'] as const;
+
+const RESERVED_MODULE_NAMES = new Set<string>([ROOT_MODULE, ...GENERATED_SYSTEM_NAMES]);
 
 /** The files the composition writes under `paths.generated`; stale-files removes the same list on a switch to nest. */
 export const COMPOSITION_GENERATED_FILES = { registry: 'wiring.ts', composition: 'composition.ts', openApi: 'openapi.ts' } as const;
@@ -593,7 +596,7 @@ function integrationsModuleFile(
 				`are composed in; rename the context`,
 		);
 	}
-	const taken = new Set([...plans.keys(), 'settings', DATABASE_SYSTEM, 'events', 'integration']);
+	const taken = new Set<string>([...plans.keys(), ...GENERATED_SYSTEM_NAMES]);
 	for (const s of ig.systems) {
 		if (taken.has(s.name)) {
 			throw new Error(

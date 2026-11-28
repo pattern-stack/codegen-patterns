@@ -92,7 +92,6 @@ import {
 import { eventsGeneratedDir } from '../shared/pattern-stack-subsystems.js';
 import { integrationsRoot } from '../../config/integration-layout.js';
 import { envExamplePath } from '../shared/project-settings.js';
-import { loadRuntimeFile } from '../shared/init-scaffold.js';
 import { patternStackRelationshipYamlsRefusal } from '../shared/storage-only.js';
 
 // ---------------------------------------------------------------------------
@@ -783,18 +782,6 @@ export class EntityNewCommand extends Command {
 					return reportRegenerationFailure('entity new', err);
 				}
 			}
-			// SET-1: `<generated>/settings.ts` imports the settings loader; a vendored project initialized before it
-			// has none, so it is vendored here (as `project init` would).
-			if (runtimeMode === 'vendored') {
-				const loader = path.join(layout.shared, 'settings.ts');
-				if (!fs.existsSync(loader)) {
-					generating(loader, () => {
-						fs.mkdirSync(path.dirname(loader), { recursive: true });
-						fs.writeFileSync(loader, loadRuntimeFile('settings.ts'));
-					});
-					if (!isJsonMode()) printInfo(`vendored the settings loader: ${path.relative(ctx.cwd, loader)}`);
-				}
-			}
 			// S-3: the providers' and surfaces' systems, the adapters, the sinks; the composition then writes the
 			// `integrations` module and lists the systems.
 			let integrationsResult: ReturnType<typeof writePatternStackIntegrations> = null;
@@ -825,12 +812,6 @@ export class EntityNewCommand extends Command {
 							`${integrationsResult.scaffoldsWritten.length} scaffold(s) → ${path.relative(ctx.cwd, plan.root)}`,
 					);
 					for (const f of integrationsResult.scaffoldsSkipped) printInfo(`skipped scaffold ${path.relative(ctx.cwd, f)} (author-owned)`);
-					for (const f of integrationsResult.factoriesBehind) {
-						printWarning(
-							`integrations: ${path.relative(ctx.cwd, f)} takes no settings, and its provider system now passes them ` +
-								`(SET-1): add the \`settings\` parameter, or delete the file to have it written`,
-						);
-					}
 					for (const s of plan.skippedSurfaces) printWarning(`integrations: ${s.reason} (provider ${s.provider})`);
 					for (const s of plan.skippedAssemblies) printWarning(`integrations: ${s.reason}`);
 				}

@@ -32,6 +32,21 @@ export interface ProjectSetting {
 	source: string;
 }
 
+/** The key a provider's client base URL (`client.base_url`) is read under: the setting the client, not the auth, takes. */
+export const PROVIDER_BASE_URL_KEY = 'baseUrl';
+
+/** How each kind of owner is named in messages, settings.ts and .env.example. */
+const OWNER_LABEL: Readonly<Record<ProjectSetting['owner']['kind'], (name: string) => string>> = {
+	project: () => 'the project',
+	subsystem: (name) => `subsystem ${name}`,
+	provider: (name) => `provider ${name}`,
+};
+
+/** A setting's owner, as every surface names it. */
+export function settingOwnerLabel(owner: ProjectSetting['owner']): string {
+	return OWNER_LABEL[owner.kind](owner.name);
+}
+
 /** The project's database URL: the env var every generated database file reads, and the dev default. */
 export const DATABASE_URL_ENV = 'DATABASE_URL';
 export const DEFAULT_DATABASE_URL = 'postgresql://localhost:5432/app_dev';
@@ -105,7 +120,7 @@ export function providerSettings(provider: LoadedProvider, cwd?: string): Projec
 	{
 		declared.set('base_url', {
 			group,
-			key: 'baseUrl',
+			key: PROVIDER_BASE_URL_KEY,
 			env: `${constantCase(def.slug)}_BASE_URL`,
 			secret: false,
 			default: def.client.base_url,

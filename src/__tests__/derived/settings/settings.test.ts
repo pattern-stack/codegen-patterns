@@ -71,6 +71,7 @@ describe('the derivation', () => {
 	it('the YAML refuses a secret with a default, and an env name that is not UPPER_SNAKE', () => {
 		expect(() => provider({ settings: { k: { secret: true, default: 'x' } } })).toThrow(/a secret setting has no default/);
 		expect(() => provider({ settings: { k: { env: 'lower' } } })).toThrow(/UPPER_SNAKE_CASE/);
+		expect(() => provider({ settings: { k: { default: 'a\nb' } } })).toThrow(/must be one line/);
 	});
 });
 
@@ -102,6 +103,20 @@ describe('the loader', () => {
 		expect(problems).toEqual([['ACME_API_KEY', 'missing'], ['ACME_BASE_URL', 'invalid'], ['ACME_REGION', 'missing']]);
 		expect((err as Error).message).toMatch(/^3 settings could not be loaded/);
 		expect((err as Error).message).toContain("(got 'not a url')");
+	});
+
+	it('rejects a secret with a malformed value without printing it', () => {
+		const spec = { acme: { webhook: { env: 'ACME_WEBHOOK', secret: true, format: 'url' as const } } };
+		let err: unknown;
+		try {
+			loadSettings(spec, from({ ACME_WEBHOOK: 'hunter2-not-a-url' }));
+		} catch (e) {
+			err = e;
+		}
+		expect(err).toBeInstanceOf(SettingsError);
+		expect((err as SettingsError).problems.map((p) => [p.env, p.problem])).toEqual([['ACME_WEBHOOK', 'invalid']]);
+		expect((err as Error).message).not.toContain('hunter2');
+		expect((err as Error).message).not.toContain('got');
 	});
 
 	it('sources: .env parsing, layering (first wins), and a config file keyed by group.key is just a source', () => {

@@ -5,6 +5,7 @@
  * with no build. `--check` exits 1 naming each required value that is unset.
  */
 
+import { settingOwnerLabel } from '../../derived/settings/index.js';
 import path from 'node:path';
 import { Command, Option } from 'clipanion';
 
@@ -14,7 +15,7 @@ import { printError, printInfo, printSuccess } from '../ui/output.js';
 import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
 
 function ownerLabel(row: SettingRow): string {
-	return row.owner.kind === 'project' ? 'project' : `${row.owner.kind} ${row.owner.name}`;
+	return settingOwnerLabel(row.owner);
 }
 
 function statusLabel(row: SettingRow): string {
@@ -62,7 +63,10 @@ export class ProjectSettingsCommand extends Command {
 		try {
 			rows = settingRows(projectSettings(ctx), checkSource(ctx));
 		} catch (err: unknown) {
-			printError(err instanceof Error ? err.message : String(err));
+			const message = err instanceof Error ? err.message : String(err);
+			// JSON mode prints nothing for printError: a caller parsing stdout gets the reason as JSON.
+			if (isJsonMode()) printJson({ command: 'project settings', ok: false, error: message });
+			else printError(message);
 			return 1;
 		}
 		// Missing or invalid: compose would refuse either.

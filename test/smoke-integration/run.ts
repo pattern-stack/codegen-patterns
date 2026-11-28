@@ -491,10 +491,11 @@ async function patternStackLeg(): Promise<number> {
 		const SET = { ...cleanEnv, SALESFORCE_CLIENT_ID: 'smoke-id', SALESFORCE_CLIENT_SECRET: 'smoke-secret' };
 		const check = spawnSync('bun', [CLI_PATH, 'project', 'settings', '--check'], { cwd: tmpDir, encoding: 'utf8', env: cleanEnv });
 		const checkOut = check.stdout + check.stderr;
-		if (check.status !== 1 || !/SALESFORCE_CLIENT_ID/.test(checkOut) || !/SALESFORCE_CLIENT_SECRET/.test(checkOut)) {
-			throw new Error(`project settings --check should fail naming both Salesforce secrets; exit ${check.status}:\n${checkOut}`);
+		// The report line, not the whole output: the table above it lists every setting, whatever its status.
+		const report = checkOut.split('\n').find((l) => l.includes('unset or invalid:')) ?? '';
+		if (check.status !== 1 || !/SALESFORCE_CLIENT_ID/.test(report) || !/SALESFORCE_CLIENT_SECRET/.test(report)) {
+			throw new Error(`project settings --check should fail naming both Salesforce secrets in its report; exit ${check.status}:\n${checkOut}`);
 		}
-		if (/smoke-/.test(checkOut)) throw new Error('project settings printed a secret');
 		const checkSet = spawnSync('bun', [CLI_PATH, 'project', 'settings', '--check'], { cwd: tmpDir, encoding: 'utf8', env: SET });
 		if (checkSet.status !== 0) throw new Error(`project settings --check should pass once set:\n${checkSet.stdout}${checkSet.stderr}`);
 		if (/smoke-id|smoke-secret/.test(checkSet.stdout + checkSet.stderr)) throw new Error('project settings printed a secret');

@@ -157,10 +157,13 @@ factory is the one file meant to absorb that. So the factory receives the typed 
 typo is a compile error), and its comment shows the call with the provider's actual keys. The author writes the
 arguments once.
 
-A factory S-3 wrote before this step takes no argument; the provider system now passes one, so it no longer compiles.
-`entity new` names each such factory in a warning: add the parameter, or delete it to have this one written. A
-vendored project initialized before this step has no `@shared/settings`; `entity new` vendors it, as `project init`
-would.
+No upgrade path for output an earlier codegen wrote (no backwards compatibility until there are users): a factory
+written before this step takes no argument and fails `tsc` against the system that passes one, and the settings loader
+reaches a vendored project through `VENDORED_RUNTIME_FILES` (`project init`, `project update`), like every runtime file.
+
+Each setting's owner is named by `settingOwnerLabel`; the client's base URL is `PROVIDER_BASE_URL_KEY`; `.env.example`
+is codegen's when `isGeneratedEnvExample`; a provider setting's `default` is one line (the schema refuses a line
+break, which would break settings.ts and `.env.example`). `project settings --json` prints its error as JSON.
 
 ### The seam for sops
 
