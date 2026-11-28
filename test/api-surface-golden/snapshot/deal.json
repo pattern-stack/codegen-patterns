@@ -1166,6 +1166,7 @@
 				"path": "/deals/search",
 				"controller": "DealSearchController",
 				"handler": "search",
+				"operationId": "DealSearchController_search",
 				"useCase": "SearchDealsUseCase",
 				"origin": {
 					"from": "yaml",
@@ -1184,6 +1185,7 @@
 		],
 		"includeRoutes": [],
 		"includesConst": "DEALS_API_INCLUDES",
-		"routesFunction": "dealRoutes"
+		"routesFunction": "dealRoutes",
+		"registerPathsFunction": "registerDealPaths"
 	}
 }

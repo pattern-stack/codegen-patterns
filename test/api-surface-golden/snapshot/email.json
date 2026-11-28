@@ -1012,6 +1012,7 @@
 		],
 		"includeRoutes": [],
 		"includesConst": "EMAILS_API_INCLUDES",
-		"routesFunction": "emailRoutes"
+		"routesFunction": "emailRoutes",
+		"registerPathsFunction": "registerEmailPaths"
 	}
 }

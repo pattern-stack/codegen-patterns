@@ -862,6 +862,7 @@
           ],
           "includesConst": "ACCOUNTS_API_INCLUDES",
           "routesFunction": "accountRoutes",
+          "registerPathsFunction": "registerAccountPaths",
           "includes": [
             {
               "route": "find_by_id",
@@ -1708,7 +1709,8 @@
           ],
           "includeRoutes": [],
           "includesConst": "CONTACTS_API_INCLUDES",
-          "routesFunction": "contactRoutes"
+          "routesFunction": "contactRoutes",
+          "registerPathsFunction": "registerContactPaths"
         }
       },
       "opportunity": {

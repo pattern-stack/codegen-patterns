@@ -744,7 +744,8 @@
 				],
 				"includeRoutes": [],
 				"includesConst": "TEAMS_API_INCLUDES",
-				"routesFunction": "teamRoutes"
+				"routesFunction": "teamRoutes",
+				"registerPathsFunction": "registerTeamPaths"
 			}
 		}
 	}

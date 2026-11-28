@@ -11,7 +11,7 @@
  *    - no file imports `@nestjs/*` or `reflect-metadata`;
  *    - each entity has `.routes.ts` and `.commands.ts`, and `<generated>/http.ts` mounts them;
  *    - `tsc` over the project, scoped by location only (`_consumer-errors.ts`), like every smoke;
- *    - `bun src/main.ts` serves `/docs-json` on the `http.port` setting and stops on SIGTERM (no database needed).
+ *    - `bun src/main.ts` serves on the `http.port` setting (an unknown route answers Nest's 404) and stops on SIGTERM (no database).
  * 5. `--postgres <url>` (the integration job): push the schema into a fresh database and run the request script
  *    (`fixtures-hono-usage/http-check.ts`): each status and body as the Nest target sends it.
  */
@@ -74,7 +74,7 @@ function typecheck(tmpDir: string, what: string): void {
 	}
 }
 
-/** `bun src/main.ts` on a free port: it serves `/docs-json`, then stops cleanly on SIGTERM. */
+/** `bun src/main.ts` on a free port: it answers, then stops cleanly on SIGTERM. */
 async function serveAndStop(tmpDir: string): Promise<void> {
 	const port = 20000 + (process.pid % 20000);
 	const child = spawn('bun', ['src/main.ts'], { cwd: tmpDir, env: { ...process.env, PORT: String(port) } });
@@ -85,16 +85,17 @@ async function serveAndStop(tmpDir: string): Promise<void> {
 	try {
 		for (let i = 0; i < 100 && !out.includes('listening on'); i++) await new Promise((r) => setTimeout(r, 100));
 		if (!out.includes(`listening on http://localhost:${port}`)) fail(`main.ts should listen on PORT ${port}: ${out}`);
-		const res = await fetch(`http://localhost:${port}/docs-json`);
-		if (res.status !== 200) fail(`GET /docs-json on the served app is ${res.status}`);
-		const doc = (await res.json()) as { components?: { schemas?: object } };
-		if (!doc.components?.schemas || !('AccountOutputDto' in doc.components.schemas)) fail('the served document should carry the DTOs');
+		// No database here, so an unknown route (Nest's 404 body) shows the server answers; the document is off by default.
+		const res = await fetch(`http://localhost:${port}/nope`);
+		if (res.status !== 404) fail(`GET /nope on the served app is ${res.status}`);
+		const body = (await res.json()) as { message?: string };
+		if (body.message !== 'Cannot GET /nope') fail(`the served 404 should be Nest's: ${JSON.stringify(body)}`);
 	} finally {
 		child.kill('SIGTERM');
 	}
 	const code = await exited;
 	if (code !== 0) fail(`main.ts should stop cleanly on SIGTERM (exit ${code}): ${out}`);
-	log(`main.ts served /docs-json on ${port} and stopped on SIGTERM`);
+	log(`main.ts served on ${port} (Nest's 404 for an unknown route) and stopped on SIGTERM`);
 }
 
 async function main(): Promise<number> {

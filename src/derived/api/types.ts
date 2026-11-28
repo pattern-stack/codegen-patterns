@@ -273,6 +273,8 @@ export interface EntityApiSurface {
 		 * entity has routes (`routesOn`: HTTP on and commands on).
 		 */
 		routesFunction?: string;
+		/** Under `http: hono`, the function beside it that registers its OpenAPI operations (H-1b2); present with it. */
+		registerPathsFunction?: string;
 	};
 }
 

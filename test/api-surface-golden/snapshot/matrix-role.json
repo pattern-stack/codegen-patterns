@@ -862,7 +862,8 @@
 				],
 				"includeRoutes": [],
 				"includesConst": "CALLS_API_INCLUDES",
-				"routesFunction": "callRoutes"
+				"routesFunction": "callRoutes",
+				"registerPathsFunction": "registerCallPaths"
 			}
 		}
 	}

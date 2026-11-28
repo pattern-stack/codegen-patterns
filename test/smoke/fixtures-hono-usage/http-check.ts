@@ -16,7 +16,8 @@ export async function httpCheck(url: string): Promise<void> {
   const app = composeApp({ databaseUrl: url });
   await app.start();
   try {
-    const http = createApp(app);
+    // The document is served only when `openapi.enabled` (as on the Nest target); this check turns it on.
+    const http = createApp(app, { openApi: { enabled: true } });
     const call = async (method: string, path: string, body?: unknown, raw?: string) => {
       const res = await http.request(path, {
         method,
@@ -32,6 +33,31 @@ export async function httpCheck(url: string): Promise<void> {
     const docs = await call('GET', '/docs-json');
     assert(docs.status === 200, `GET /docs-json is 200: ${docs.status}`);
     assert('CreateAccountDto' in ((docs.body!.components as { schemas: object }).schemas), 'the document registers the DTOs');
+    // H-1b2: the operations the Nest target documents, at the same paths, methods and operationIds.
+    const paths = docs.body!.paths as Record<string, Record<string, { operationId?: string; parameters?: Array<{ name: string }> }>>;
+    const ops = Object.entries(paths).flatMap(([p, methods]) => Object.entries(methods).map(([m, op]) => `${m.toUpperCase()} ${p} ${op.operationId}`));
+    for (const expected of [
+      'GET /accounts listAccounts',
+      'POST /accounts createAccount',
+      'GET /accounts/{id} findAccountById',
+      'PATCH /accounts/{id} updateAccount',
+      'DELETE /accounts/{id} deleteAccount',
+      'GET /accounts/search AccountSearchController_search',
+      'GET /contacts listContacts',
+    ]) {
+      assert(ops.includes(expected), `the document has ${expected}: ${ops.join('; ')}`);
+    }
+    // The bearer scheme every entity operation names is defined (Nest's addBearerAuth()); search names none.
+    const components = docs.body!.components as { securitySchemes?: Record<string, unknown> };
+    same(components.securitySchemes, { bearer: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } }, 'the bearer scheme');
+    const ops2 = paths as unknown as Record<string, Record<string, { security?: unknown; responses?: Record<string, unknown> }>>;
+    assert(ops2['/accounts']!.get!.security !== undefined, 'an entity operation names the bearer scheme');
+    assert(ops2['/accounts/search']!.get!.security === undefined, "search names no security (Nest's search controller has none)");
+    assert(Object.keys(ops2['/accounts/search']!.get!.responses ?? {}).includes('200'), 'search documents its 200');
+    assert(
+      paths['/accounts']!.get!.parameters!.map((p) => p.name).join(',') === 'page,pageSize,cursor,sort_by,sort_order,include',
+      'the list operation documents its query parameters',
+    );
 
     const created = await call('POST', '/accounts', { name: 'Initech', status: 'active' });
     assert(created.status === 201, `POST /accounts is 201: ${created.status} ${JSON.stringify(created.body)}`);

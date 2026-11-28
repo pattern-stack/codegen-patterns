@@ -6,6 +6,7 @@
  */
 
 import { rowFor } from '../../../../src/utils/keyed-row.js';
+import { nestDecorators, openApiOperations, openApiPath, openApiPathSpec } from '../../../_shared/openapi-operations.mjs';
 
 /** The files each `target.wiring` writes beside an entity's module, beyond the shared ones (PW-3, H-1a). */
 const WIRING_ENTITY_FILES = {
@@ -2922,6 +2923,8 @@ export function buildBackendLocals(definition, baseLocals) {
   const paramExamples = {
     id: EXAMPLE_GUID,
     idDescriptionLiteral: exampleLiteral(idParamDescription(entityName, routePath(entityNamePlural))),
+    // H-1b2: the same description as a value, for the Hono app's OpenAPI document.
+    idDescription: idParamDescription(entityName, routePath(entityNamePlural)),
     page: 1,
     pageSize: 50,
     include: { list: firstIncludePath('list'), find_by_id: firstIncludePath('find_by_id') },
@@ -3214,6 +3217,16 @@ export function buildBackendLocals(definition, baseLocals) {
     createDtoFields: createDtoFieldsWithZod,
     dtoExamples,
     paramExamples,
+    // H-1b2: every routed command's OpenAPI operation (`templates/_shared/openapi-operations.mjs`): the Nest
+    // controller's decorators and the Hono app's `registerPath` calls both print from it.
+    openApiOperations: openApiOperations({
+      apiSurface,
+      paramExamples,
+      outputDto: classNames.outputDto,
+      createDto: classNames.createDto,
+      updateDto: classNames.updateDto,
+    }),
+    openApiDocs: { nestDecorators, openApiPathSpec, openApiPath },
     // ZOD-1a: the create fields whose chain applies a default; the update DTO restates them without it.
     updateDefaultOverrides: createDtoFieldsWithZod.filter((f) => f.createAppliesDefault),
     outputDtoFields: outputDtoFields,

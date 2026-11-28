@@ -827,7 +827,8 @@
 				],
 				"includeRoutes": [],
 				"includesConst": "LEADS_API_INCLUDES",
-				"routesFunction": "leadRoutes"
+				"routesFunction": "leadRoutes",
+				"registerPathsFunction": "registerLeadPaths"
 			}
 		}
 	}

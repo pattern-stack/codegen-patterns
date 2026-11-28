@@ -547,7 +547,8 @@
 				],
 				"includeRoutes": [],
 				"includesConst": "NOTICES_API_INCLUDES",
-				"routesFunction": "noticeRoutes"
+				"routesFunction": "noticeRoutes",
+				"registerPathsFunction": "registerNoticePaths"
 			}
 		}
 	}

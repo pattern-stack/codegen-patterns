@@ -557,6 +557,7 @@
 		],
 		"includeRoutes": [],
 		"includesConst": "DEAL_STATES_API_INCLUDES",
-		"routesFunction": "dealStateRoutes"
+		"routesFunction": "dealStateRoutes",
+		"registerPathsFunction": "registerDealStatePaths"
 	}
 }

@@ -648,6 +648,7 @@
 		],
 		"includeRoutes": [],
 		"includesConst": "ORGANIZATIONS_API_INCLUDES",
-		"routesFunction": "organizationRoutes"
+		"routesFunction": "organizationRoutes",
+		"registerPathsFunction": "registerOrganizationPaths"
 	}
 }

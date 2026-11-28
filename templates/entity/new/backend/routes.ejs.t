@@ -30,6 +30,7 @@ _%>
 import { Hono } from 'hono';
 import { answer<% if (_routed.some(({ c }) => c.http.binding.path.includes('id'))) { %>, badId<% } %><% if (_routed.some(({ c }) => c.http.binding.body)) { %>, bindInput, jsonBody<% } %><% if (_routed.some(({ c }) => c.http.binding.query === 'all')) { %>, queryOf<% } %> } from '<%= httpRuntimeImport %>';
 import { invokeCommand } from '<%= commandsImport %>';
+import type { OpenApiRegistry } from '<%= openApiImport %>';
 import { <%= apiSurface.commandsConst %> } from './<%= entityFileStem %>.commands';
 import type { <%= classNames.entity %>Services } from './<%= entityFileStem %>.wiring';
 
@@ -57,5 +58,15 @@ export function <%= apiSurface.http.routesFunction %>(useCases: <%= classNames.e
   });
 <% }) -%>
   return app;
+}
+
+/**
+ * <%= classNames.entity %>'s operations in the OpenAPI document (H-1b2): the paths, parameters, bodies and responses
+ * the Nest target's controller decorators document, from the same source (`openApiOperations`).
+ */
+export function <%= apiSurface.http.registerPathsFunction %>(openApi: OpenApiRegistry): void {
+<% openApiOperations.forEach((o) => { -%>
+  openApi.registerPath('<%= openApiDocs.openApiPath(o.route.path) %>', '<%= o.route.verb.toLowerCase() %>', <%- JSON.stringify(openApiDocs.openApiPathSpec(o), null, 2).replace(/\n/g, '\n  ') %>);
+<% }) -%>
 }
 <%_ } _%>

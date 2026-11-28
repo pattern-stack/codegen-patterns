@@ -1047,6 +1047,7 @@
 				"path": "/meetings/search",
 				"controller": "MeetingSearchController",
 				"handler": "search",
+				"operationId": "MeetingSearchController_search",
 				"useCase": "SearchMeetingsUseCase",
 				"origin": {
 					"from": "yaml",
@@ -1067,6 +1068,7 @@
 			"list"
 		],
 		"includesConst": "MEETINGS_API_INCLUDES",
-		"routesFunction": "meetingRoutes"
+		"routesFunction": "meetingRoutes",
+		"registerPathsFunction": "registerMeetingPaths"
 	}
 }

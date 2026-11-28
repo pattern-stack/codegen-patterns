@@ -1204,6 +1204,7 @@
 		],
 		"includeRoutes": [],
 		"includesConst": "CONTACTS_API_INCLUDES",
-		"routesFunction": "contactRoutes"
+		"routesFunction": "contactRoutes",
+		"registerPathsFunction": "registerContactPaths"
 	}
 }

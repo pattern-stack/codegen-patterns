@@ -1006,6 +1006,7 @@
 		],
 		"includeRoutes": [],
 		"includesConst": "COMMUNICATIONS_API_INCLUDES",
-		"routesFunction": "communicationRoutes"
+		"routesFunction": "communicationRoutes",
+		"registerPathsFunction": "registerCommunicationPaths"
 	}
 }

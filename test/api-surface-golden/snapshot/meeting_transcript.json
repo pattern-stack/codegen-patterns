@@ -584,6 +584,7 @@
 		],
 		"includeRoutes": [],
 		"includesConst": "MEETING_TRANSCRIPTS_API_INCLUDES",
-		"routesFunction": "meetingTranscriptRoutes"
+		"routesFunction": "meetingTranscriptRoutes",
+		"registerPathsFunction": "registerMeetingTranscriptPaths"
 	}
 }

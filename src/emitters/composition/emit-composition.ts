@@ -35,6 +35,7 @@ import type { ProjectApiContext } from '../../derived/api/project.js';
 import {
 	commandsConstName,
 	routesFunctionName,
+	registerPathsName,
 	pascalCase,
 	registerSchemasName,
 	repositoriesBundleName,
@@ -718,6 +719,7 @@ export function commandNamed(name: string): AppCommand | undefined {
 					module,
 					key: camelCase(e),
 					routesFunction: routesFunctionName(e),
+					registerPathsFunction: registerPathsName(e),
 					routesImport: relativeImport(httpFile, entityRoutesFile(entityModuleNaming(blockOf.get(e)!, modulesDir).moduleDir, e, layer.routesFileSuffix)),
 				};
 			});

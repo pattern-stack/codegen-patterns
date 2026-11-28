@@ -616,6 +616,7 @@
 		],
 		"includeRoutes": [],
 		"includesConst": "USERS_API_INCLUDES",
-		"routesFunction": "userRoutes"
+		"routesFunction": "userRoutes",
+		"registerPathsFunction": "registerUserPaths"
 	}
 }
