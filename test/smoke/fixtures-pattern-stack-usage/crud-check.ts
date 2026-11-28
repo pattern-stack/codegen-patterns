@@ -79,6 +79,18 @@ export async function crudCheck(url: string): Promise<void> {
     await db.delete(accountTags).where(eq(accountTags.accountId, account.id));
     await crm.tag.useCases.delete.execute(tag.id);
 
+    // EAV: a lead's custom fields go to custom_fields' field_values in the same transaction as the row, and read back
+    // merged (the composition built FieldValueService in customFields before crm's lead repository and service).
+    const customFields = app.module('customFields');
+    await customFields.fieldDefinition.useCases.create.execute({ entityType: 'lead', key: 'budget' });
+    const userId = '00000000-0000-4000-8000-000000000001';
+    const lead = await crm.lead.useCases.create.execute({ name: 'Ada', userId, fields: { budget: 5000 } });
+    const leadBack = await crm.lead.useCases.findByIdWithFields.execute(lead.id);
+    assert(leadBack?.fields.budget === 5000, `a lead's custom field reads back: ${JSON.stringify(leadBack?.fields)}`);
+    await crm.lead.useCases.update.execute(lead.id, { fields: { budget: 6000 } });
+    const leads = await crm.lead.useCases.listWithFields.execute();
+    assert(leads.some((l) => l.id === lead.id && l.fields.budget === 6000), 'an update rewrites the value, and the list merges it');
+
     const page = await crm.account.useCases.list.execute();
     assert(page.items.some((a) => a.id === account.id), 'list pages it');
     const byStatus = await crm.account.useCases.findByStatus.execute('active');

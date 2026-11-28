@@ -1,0 +1,22 @@
+# Pattern-stack wiring smoke: EAV (`eav: true`). A lead's custom `fields` bag lives in the custom_fields context's
+# field_values table: LeadRepository and LeadService take FieldValueService (another module's service, so the
+# composition builds it before them), and create / update write both halves in one transaction.
+entity:
+  name: lead
+  plural: leads
+  context: crm
+  pattern: Integrated
+
+eav: true
+
+fields:
+  name:
+    type: string
+    required: true
+  # The EAV writes stamp each value with the row's owner (`field_values.user_id`).
+  user_id:
+    type: uuid
+    required: true
+
+behaviors:
+  - timestamps

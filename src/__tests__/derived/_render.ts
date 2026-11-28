@@ -82,14 +82,19 @@ function promptLocals(set: DefinitionSet): Record<string, unknown> {
 }
 
 /** `buildBackendLocals` for one entity of `set`, exactly as the render goldens build it (TGT-2a's DDL reads these). */
-export function backendLocalsFor(set: DefinitionSet, name: string): Record<string, unknown> {
+export function backendLocalsFor(
+	set: DefinitionSet,
+	name: string,
+	/** Prompt locals to replace, e.g. `target` for a pattern-stack wiring render. */
+	overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
 	const raw = set.entities.find((d) => d.entity.name === name);
 	if (!raw) throw new Error(`render: '${name}' is not in the set`);
 	const definition = structuredClone(raw) as typeof raw;
 	if (definition.roles) {
 		definition.relationships = { ...(definition.relationships ?? {}), ...deriveRoleRelationships(definition.roles) };
 	}
-	return buildBackendLocals(definition, promptLocals(set)) as Record<string, unknown>;
+	return buildBackendLocals(definition, { ...promptLocals(set), ...overrides }) as Record<string, unknown>;
 }
 
 /** Render `entities` of `set` through the surface templates; path → text. */

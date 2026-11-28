@@ -5,8 +5,10 @@ force: true
 ---
 <%- generatedBanner %>
 <% if (eavEnabled) { -%>
+<% if (!patternStackWiring) { -%>
 import { Injectable, Inject } from '@nestjs/common';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
+<% } -%>
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
 <% if (hasEmits && createEventType) { -%>
 <% if (typedEventBusImport === eventsTokenImport) { -%>
@@ -48,7 +50,7 @@ export class <%= classNames.createUseCase %> {
   constructor(
     private readonly service: <%= classNames.service %>,
     private readonly fields: FieldValueService,
-    @Inject(DRIZZLE) private readonly db: DrizzleClient,
+    <%= patternStackWiring ? '' : '@Inject(DRIZZLE) ' %>private readonly db: DrizzleClient,
 <% if (hasEmits && createEventType) { -%>
     @Inject(TYPED_EVENT_BUS) private readonly typedEvents: TypedEventBus,
 <% } -%>

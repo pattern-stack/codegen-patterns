@@ -1,0 +1,16 @@
+# Pattern-stack wiring smoke: the EAV definitions, one row per custom field key.
+entity:
+  name: field_definition
+  plural: field_definitions
+  context: custom_fields
+
+fields:
+  entity_type:
+    type: string
+    required: true
+  key:
+    type: string
+    required: true
+
+behaviors:
+  - timestamps

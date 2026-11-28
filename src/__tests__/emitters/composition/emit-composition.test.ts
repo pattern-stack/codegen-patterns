@@ -68,7 +68,10 @@ describe('the composition (PW-3b)', () => {
 		expect(calls).toEqual([
 			'  registerAccountSchemas(openApi);',
 			'  registerContactSchemas(openApi);',
+			'  registerFieldDefinitionSchemas(openApi);',
+			'  registerFieldValueSchemas(openApi);',
 			'  registerInvoiceSchemas(openApi);',
+			'  registerLeadSchemas(openApi);',
 			'  registerNoteSchemas(openApi);',
 			'  registerPartySchemas(openApi);',
 			'  registerPersonSchemas(openApi);',
@@ -103,7 +106,10 @@ describe('the composition refuses and warns (PW-3b)', () => {
 			'account',
 			'account_tag',
 			'contact',
+			'field_definition',
+			'field_value',
 			'invoice',
+			'lead',
 			'note',
 			'party',
 			'person',
@@ -176,5 +182,41 @@ describe("a junction's module (PW-3c)", () => {
 		expect(billing).toContain('const accountInvoiceService = createAccountInvoiceService({ repository: accountInvoiceRepository, left: deps.crm.repositories.account, right: invoiceRepository });');
 		expect(billing).toContain("dependsOn: ['crm']");
 		expect(files.find((f) => f.path.endsWith('/crm/module.ts'))!.content).not.toContain('accountInvoice');
+	});
+});
+
+describe('EAV in the composition', () => {
+	it("builds FieldValueService (another module's) before the EAV entity's repository and service, which take it", () => {
+		const get = plan();
+		const crm = get('/modules/crm/module.ts');
+		expect(crm).toContain("dependsOn: ['customFields'],");
+		expect(crm).toContain('  const leadRepository = createLeadRepository(db, deps.customFields.fieldValue.service);');
+		expect(crm).toContain(
+			'  const lead = createLeadServices({ repository: leadRepository, fieldValues: deps.customFields.fieldValue.service, db });',
+		);
+		// The value table's service takes its definition entity's repository.
+		expect(get('/modules/custom-fields/module.ts')).toContain(
+			'  const fieldValue = createFieldValueServices({ repository: fieldValueRepository, fieldDefinitionRepo: fieldDefinitionRepository });',
+		);
+	});
+
+	it('in one module, moves only the EAV repository: after FieldValueService, every other line keeps its phase', () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eav-one-module-'));
+		for (const f of ['lead.yaml', 'field_value.yaml', 'field_definition.yaml', 'tag.yaml']) {
+			fs.writeFileSync(path.join(dir, f), fs.readFileSync(path.join(FIXTURES, f), 'utf8').replace(/^ {2}context: .*\n/m, ''));
+		}
+		const root = plan(dir, '/nonexistent/junctions')('/modules/module.ts');
+		const built = root.split('\n').filter((l) => /^ {2}const \w+ = create/.test(l)).map((l) => l.match(/const (\w+)/)![1]);
+		expect(built).toEqual([
+			'fieldDefinitionRepository',
+			'fieldValueRepository',
+			'tagRepository',
+			'fieldDefinition',
+			'fieldValue',
+			'leadRepository',
+			'lead',
+			'tag',
+		]);
+		expect(root).toContain('createLeadRepository(db, fieldValue.service)');
 	});
 });
