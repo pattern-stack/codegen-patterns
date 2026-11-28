@@ -87,6 +87,7 @@ import {
 	printPatternStackComposition,
 	writePatternStackComposition,
 } from '../shared/pattern-stack-composition.js';
+import { eventsGeneratedDir } from '../shared/pattern-stack-subsystems.js';
 import { patternStackRelationshipYamlsRefusal } from '../shared/storage-only.js';
 
 // ---------------------------------------------------------------------------
@@ -352,10 +353,7 @@ export class EntityNewCommand extends Command {
 		// import the events runtime via the package subpath); also the dir the
 		// bridge registry validates trigger events against (so package-mode trigger
 		// validation now works).
-		const eventCodegenOutputDir =
-			runtimeMode === 'package'
-				? path.resolve(generatedDir, 'events')
-				: path.resolve(subsystemsRoot, 'events/generated');
+		const eventCodegenOutputDir = eventsGeneratedDir(ctx, generatedDir);
 		// Bridge registry output is mode-aware (ADR-037). Vendored mode writes
 		// `registry.ts` into the vendored `bridge/generated/` tree (next to the
 		// runtime it types against). Package mode lands `bridge-registry.ts` beside
@@ -388,6 +386,29 @@ export class EntityNewCommand extends Command {
 		// Helper — reload registry + return orchestration patterns. A throw
 		// fails the orchestration step (JOBS-1, #660); a per-file loader error
 		// already stopped the run in the pre-flight (JOBS-2).
+		// The event codegen (EVT-3, S-1): one set of options for the Nest run, the pattern-stack run and both dry runs.
+		const runEventCodegen = (opts: { wiring?: 'pattern-stack'; dryRun?: boolean } = {}) =>
+			generateEventCodegen({
+				entitiesDir,
+				nonEntityDirs,
+				eventsDir,
+				outputDir: eventCodegenOutputDir,
+				mode: runtimeMode,
+				extraSugarEvents: jobScheduledEvents,
+				...opts,
+			});
+		// Written: an error-severity issue means nothing was written (the modules the app imports would stay stale), so
+		// it fails the command, naming the output folder (JOBS-1).
+		const writeEventCodegen = (wiring?: 'pattern-stack') =>
+			generating(eventCodegenOutputDir, async () => {
+				const result = await runEventCodegen({ wiring });
+				const errors = result.issues.filter((i) => i.severity === 'error');
+				if (errors.length > 0) {
+					throw new Error(errors.map((i) => `${i.message}${i.path ? ` (${i.path})` : ''}`).join('; '));
+				}
+				return result;
+			});
+
 		const loadOrchestrationPatterns = async () => {
 			_resetRegistryForTests({ includeLibrary: false });
 			await loadAppPatterns(orchestrationGlobs, ctx.cwd);
@@ -436,16 +457,7 @@ export class EntityNewCommand extends Command {
 			try {
 				compositionFiles = planPatternStackComposition(ctx).map((f) => f.path);
 				if (eventsInstalled(ctx)) {
-					const plannedEvents = await generateEventCodegen({
-						entitiesDir,
-						nonEntityDirs,
-						eventsDir,
-						outputDir: eventCodegenOutputDir,
-						mode: runtimeMode,
-						wiring: 'pattern-stack',
-						extraSugarEvents: jobScheduledEvents,
-						dryRun: true,
-					});
+					const plannedEvents = await runEventCodegen({ wiring: 'pattern-stack', dryRun: true });
 					eventFiles = [
 						...plannedEvents.files.map((f) => f.outputPath),
 						path.resolve(generatedDir, 'subsystems-schema.ts'),
@@ -523,15 +535,7 @@ export class EntityNewCommand extends Command {
 				relationsError = err instanceof Error ? err.message : String(err);
 			}
 
-			const eventCodegenPlan = await generateEventCodegen({
-				entitiesDir,
-				nonEntityDirs,
-				eventsDir,
-				outputDir: eventCodegenOutputDir,
-				mode: runtimeMode,
-				extraSugarEvents: jobScheduledEvents,
-				dryRun: true,
-			});
+			const eventCodegenPlan = await runEventCodegen({ dryRun: true });
 
 			const bridgeRegistryPlan = await generateBridgeRegistry({
 				handlersDir: bridgeHandlersDir,
@@ -754,22 +758,7 @@ export class EntityNewCommand extends Command {
 			if (withEvents) {
 				try {
 					await regenerateSubsystemSchemaBarrel({ ctx, generatedDir });
-					await generating(eventCodegenOutputDir, async () => {
-						const result = await generateEventCodegen({
-							entitiesDir,
-							nonEntityDirs,
-							eventsDir,
-							outputDir: eventCodegenOutputDir,
-							mode: runtimeMode,
-							wiring: 'pattern-stack',
-							extraSugarEvents: jobScheduledEvents,
-						});
-						const errors = result.issues.filter((i) => i.severity === 'error');
-						if (errors.length > 0) {
-							throw new Error(errors.map((i) => `${i.message}${i.path ? ` (${i.path})` : ''}`).join('; '));
-						}
-						return result;
-					});
+					await writeEventCodegen('pattern-stack');
 				} catch (err: unknown) {
 					return reportRegenerationFailure('entity new', err);
 				}
@@ -838,23 +827,7 @@ export class EntityNewCommand extends Command {
 		// imports would stay stale — so it fails the command too.
 		let eventCodegenResult: Awaited<ReturnType<typeof generateEventCodegen>>;
 		try {
-			eventCodegenResult = await generating(eventCodegenOutputDir, async () => {
-				const result = await generateEventCodegen({
-					entitiesDir,
-					nonEntityDirs,
-					eventsDir,
-					outputDir: eventCodegenOutputDir,
-					mode: runtimeMode,
-					extraSugarEvents: jobScheduledEvents,
-				});
-				const errors = result.issues.filter((i) => i.severity === 'error');
-				if (errors.length > 0) {
-					throw new Error(
-						errors.map((i) => `${i.message}${i.path ? ` (${i.path})` : ''}`).join('; '),
-					);
-				}
-				return result;
-			});
+			eventCodegenResult = await writeEventCodegen();
 		} catch (err: unknown) {
 			return reportRegenerationFailure('entity new', err);
 		}

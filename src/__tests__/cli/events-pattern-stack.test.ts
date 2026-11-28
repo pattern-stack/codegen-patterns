@@ -7,7 +7,11 @@ import { describe, expect, it } from 'bun:test';
 
 import { buildBusContent, buildTypesContent } from '../../cli/shared/event-codegen-generator';
 import { buildSubsystemSchemaBarrel } from '../../cli/shared/subsystem-schema-generator';
-import { patternStackFileFilter, patternStackSubsystemRefusal } from '../../cli/commands/subsystem';
+import {
+	PATTERN_STACK_SUBSYSTEMS,
+	patternStackFileFilter,
+	patternStackSubsystemRefusal,
+} from '../../cli/shared/pattern-stack-subsystems';
 import type { EventDefinition } from '../../schema/event-definition.schema';
 
 const NEST = /@nestjs\/|@Inject|@Injectable/;
@@ -62,17 +66,24 @@ describe('subsystem install under pattern-stack wiring', () => {
 		expect(patternStackSubsystemRefusal('events', 'drizzle')).toBeNull();
 		expect(patternStackSubsystemRefusal('events', 'memory')).toBeNull();
 		expect(patternStackSubsystemRefusal('events', 'redis')).toMatch(/redis backend/);
-		expect(patternStackSubsystemRefusal('jobs', 'drizzle')).toMatch(/comes with J-1/);
+		expect(patternStackSubsystemRefusal('jobs', 'drizzle')).toMatch(/comes with J-1\. Supported: events, openapi-config\./);
 		expect(patternStackSubsystemRefusal('auth', 'drizzle')).toMatch(/comes with S-2/);
 		// Config-only: the `openapi:` block, which pattern-stack's openapi.ts reads too.
 		expect(patternStackSubsystemRefusal('openapi-config', 'drizzle')).toBeNull();
 	});
 
 	it("vendors no Nest file: the module, the barrel that re-exports it, the bundled generated set", () => {
-		const filter = patternStackFileFilter(() => true);
+		const filter = patternStackFileFilter('events', () => true);
 		for (const f of ['events.module.ts', 'index.ts', 'generated/bus.ts', 'bus.ts']) expect(filter(f)).toBe(false);
 		for (const f of ['core.ts', 'event-bus.drizzle-backend.ts', 'event-registry.ts', 'events-options.ts']) {
 			expect(filter(f)).toBe(true);
 		}
+	});
+
+	it('has one row per subsystem; each it installs names the entry file detection keys on', () => {
+		const events = PATTERN_STACK_SUBSYSTEMS.events;
+		expect('entryFile' in events && events.entryFile).toBe('core.ts');
+		// The entry file is vendored: the row's skips never drop it.
+		expect(patternStackFileFilter('events', () => true)('core.ts')).toBe(true);
 	});
 });

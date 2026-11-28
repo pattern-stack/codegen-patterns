@@ -98,7 +98,6 @@ async function loadRedisEventBus(): Promise<new (url: string) => object> {
   return mod.RedisEventBus;
 }
 
-export type { EventsModuleOptions } from './events-options';
 
 /**
  * Lifecycle holder for the `EventScheduler` (ADR-039). Registered as a provider

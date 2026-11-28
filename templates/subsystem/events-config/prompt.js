@@ -15,6 +15,8 @@ export default {
   prompt: async ({ args }) => {
     return {
       configPath: args.configPath ?? "codegen.config.yaml",
+      // The installed backend (S-1): the block's `backend:` is what the module / system builds.
+      backend: args.backend ?? "drizzle",
     };
   },
 };

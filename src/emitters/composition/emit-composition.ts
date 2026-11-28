@@ -332,7 +332,6 @@ export function planComposition(input: CompositionInput): CompositionFile[] {
 			// transaction) is a field, named by the same table the template declares them from.
 			const eav = takesFieldValues(service.id);
 			// S-1: its publishing use cases take `db` and the typed bus.
-			const events = publishes(entity);
 			const fields = [
 				`repository: ${repoVar(entity)}`,
 				...(eav ? [`${FIELD_VALUES_DEPS_FIELD}: ${serviceRef(EAV_FIELD_VALUE_ENTITY)}`] : []),

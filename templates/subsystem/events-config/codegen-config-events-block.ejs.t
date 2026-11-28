@@ -10,7 +10,7 @@ events:
   # 'drizzle' is the production backend (transactional outbox). 'memory'
   # is the synchronous test backend. Future backends (e.g. 'redis',
   # 'nats') implement the same core IEventBus contract.
-  backend: drizzle
+  backend: <%= backend %>
 
   # ── Multi-tenancy (EVT-6 / ADR-024) ──
   # When true the generated schema gains a `tenant_id` column and

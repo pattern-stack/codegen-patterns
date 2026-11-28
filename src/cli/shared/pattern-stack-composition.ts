@@ -3,7 +3,6 @@
  * one place that builds its input.
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
 
 import { CODEGEN_BANNER } from '../../utils/generated-file.js';
@@ -21,26 +20,15 @@ import {
 	type CompositionInput,
 } from '../../emitters/composition/emit-composition.js';
 import { configOrDefaults } from '../../config/project-config.js';
-import { configuredSubsystemNames } from './subsystem-detect.js';
+import { isSubsystemInstalled } from './subsystem-detect.js';
+import { eventsGeneratedDir } from './pattern-stack-subsystems.js';
 import { removeOtherWiringFiles } from '../../emitters/composition/stale-files.js';
 import { openApiImport, resolveRuntimeMode, runtimeImport, subsystemCoreImport, type RuntimeMode } from './runtime-import.js';
 import { printInfo, printWarning } from '../ui/output.js';
 
-/**
- * Is the events subsystem installed (S-1)? Package mode: listed under `subsystems.install`. Vendored: its Nest-free
- * entry is in the vendored tree.
- */
+/** Is the events subsystem installed (S-1)? `isSubsystemInstalled`'s one rule (under pattern-stack, its `core.ts`). */
 export function eventsInstalled(ctx: Context): boolean {
-	return resolveRuntimeMode(ctx.config) === 'package'
-		? configuredSubsystemNames(ctx.config as Record<string, unknown> | null).includes('events')
-		: fs.existsSync(path.join(projectLayout(ctx.cwd, ctx.config).subsystems, 'events', 'core.ts'));
-}
-
-/** Where the event codegen writes (`types`, `registry`, `bus`): beside the vendored runtime, or under `<generated>/events`. */
-export function eventsGeneratedDir(ctx: Context, generatedDir: string): string {
-	return resolveRuntimeMode(ctx.config) === 'package'
-		? path.resolve(generatedDir, 'events')
-		: path.resolve(projectLayout(ctx.cwd, ctx.config).subsystems, 'events/generated');
+	return isSubsystemInstalled(ctx, 'events');
 }
 
 /** The `events` system's input (S-1), or null when the subsystem isn't installed. */

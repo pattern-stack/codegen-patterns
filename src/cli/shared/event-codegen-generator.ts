@@ -34,7 +34,7 @@ import type {
 	EventFieldType,
 	EventPayloadField,
 } from '../../schema/event-definition.schema.js';
-import type { RuntimeMode } from './runtime-import.js';
+import { runtimeImport, subsystemCoreImport, type RuntimeMode } from './runtime-import.js';
 import { generating } from '../../utils/generated-file.js';
 
 // ---------------------------------------------------------------------------
@@ -53,8 +53,6 @@ import { generating } from '../../utils/generated-file.js';
  * three resolve through the published events index barrel (which re-exports
  * every one of those symbols).
  */
-const PACKAGE_EVENTS_RUNTIME_IMPORT =
-	'@pattern-stack/codegen/runtime/subsystems/events/index';
 
 /**
  * Under `target.wiring: pattern-stack` (S-1) the package-mode imports and the registry augmentation go through the
@@ -62,10 +60,13 @@ const PACKAGE_EVENTS_RUNTIME_IMPORT =
  * `@nestjs/*`. (The PW-0 known gap: `DomainEventRegistry` is declared in `event-registry.ts` and re-exported by both
  * entries, so augmenting `core` merges into the same interface.)
  */
-const PACKAGE_EVENTS_CORE_IMPORT = '@pattern-stack/codegen/runtime/subsystems/events/core';
+const PACKAGE_EVENTS_IMPORT: Record<TargetWiring, string> = {
+	nest: runtimeImport('package', 'subsystems/events/index'),
+	'pattern-stack': subsystemCoreImport('package', 'events'),
+};
 
 function packageEventsImport(wiring: TargetWiring): string {
-	return wiring === 'pattern-stack' ? PACKAGE_EVENTS_CORE_IMPORT : PACKAGE_EVENTS_RUNTIME_IMPORT;
+	return PACKAGE_EVENTS_IMPORT[wiring];
 }
 
 /**
@@ -867,6 +868,12 @@ function patternStackBusBody(body: string): string {
 	return out;
 }
 
+/** The typed bus's body, by wiring: Nest's as written, or without its decorators and tokens (S-1). */
+const BUS_BODY_FOR: Record<TargetWiring, () => string> = {
+	nest: () => BUS_BODY,
+	'pattern-stack': () => patternStackBusBody(BUS_BODY),
+};
+
 export function buildBusContent(
 	_events: EventDefinition[],
 	mode: RuntimeMode = 'vendored',
@@ -877,7 +884,7 @@ export function buildBusContent(
 	// three runtime imports are mode-dependent (ADR-037) — in package mode they
 	// resolve through the published events index barrel. Vendored mode returns
 	// BUS_BODY untouched (byte-stable).
-	let body = wiring === 'pattern-stack' ? patternStackBusBody(BUS_BODY) : BUS_BODY;
+	let body = BUS_BODY_FOR[wiring]();
 	if (mode === 'package') {
 		const from = packageEventsImport(wiring);
 		body = body
