@@ -36,6 +36,8 @@ import {
 	type EmitPatternStackIntegrationsResult,
 	type PatternStackIntegrationsInput,
 } from './pattern-stack-integrations.js';
+import { projectSettings, writeEnvExample } from './project-settings.js';
+import { deriveProjectSettings } from '../../derived/settings/index.js';
 
 /** Is the events subsystem installed (S-1)? `isSubsystemInstalled`'s one rule (under pattern-stack, its `core.ts`). */
 export function eventsInstalled(ctx: Context): boolean {
@@ -148,6 +150,7 @@ function compositionInput(ctx: Context): CompositionInput {
 			const source = integrationsSource(ctx, layout.entities);
 			return source ? planPatternStackIntegrations(source) : null;
 		})(),
+		settings: { settings: projectSettings(ctx), runtimeImport: runtimeImport(mode, 'settings') },
 	};
 }
 
@@ -175,6 +178,11 @@ export function emptyPatternStackComposition(
 		modulesDir: dirs.modulesDir,
 		generatedDir: dirs.generatedDir,
 		...emitterOptions(mode),
+		// SET-1: the project's own settings (the database URL); the first `entity new` adds the providers' and subsystems'.
+		settings: {
+			settings: deriveProjectSettings({ providers: [], installedSubsystems: [] }),
+			runtimeImport: runtimeImport(mode, 'settings'),
+		},
 		dryRun: true,
 	});
 }
@@ -200,6 +208,8 @@ export function writePatternStackComposition(ctx: Context): PatternStackComposit
 		keep: new Set([...files.map((f) => f.path), ...(input.integrations?.systems ?? []).map((s) => s.file)]),
 	});
 	const behind = wiringFilesBehind(input);
+	// SET-1: `.env.example` from the same settings as `<generated>/settings.ts`.
+	writeEnvExample(ctx, projectSettings(ctx));
 	return { files, removed, behind };
 }
 

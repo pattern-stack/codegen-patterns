@@ -17,6 +17,7 @@ import { generateChangeEmitter } from '../../cli/shared/change-emitter-emission-
 import { findYamlFiles } from '../../utils/find-yaml-files';
 import { loadEntitiesFromYaml, loadProvidersFromYaml } from '../../utils/yaml-loader';
 import type { ActiveProviderDefinition } from '../../schema/provider-definition.schema';
+import { providerSettings } from '../../derived/settings';
 
 const FIXTURE = path.resolve(import.meta.dir, '../../../test/fixtures/integration-patterns/definitions');
 const providers = loadProvidersFromYaml(findYamlFiles(path.join(FIXTURE, 'providers'))).successes.map((p) => ({
@@ -100,26 +101,39 @@ describe('the plan', () => {
 });
 
 describe('the provider', () => {
-	it("the factory (author-owned) builds the strategy and client from the YAML's refs", () => {
-		const factory = generateProviderFactory(def('salesforce'));
+	const FACTORY = `${ROOT}/integrations/providers/salesforce/salesforce.provider.factory.ts`;
+	const SETTINGS_FILE = `${ROOT}/generated/settings.ts`;
+	const sfWith = (settings: Record<string, { secret?: boolean }>) => {
+		const d = { ...def('salesforce'), settings } as ActiveProviderDefinition;
+		return { d, own: providerSettings({ definition: d, filePath: '' }) };
+	};
+
+	it("the factory (author-owned) takes the provider's typed settings and shows the calls with its keys", () => {
+		const { d, own } = sfWith({ client_id: { secret: true }, client_secret: { secret: true } });
+		const factory = generateProviderFactory(d, own, FACTORY, SETTINGS_FILE);
 		expect(factory).toStartWith('// <CODEGEN-SCAFFOLD-V1>');
-		expect(factory).toContain(
-			"import { SalesforceOAuthStrategy } from '@app/integrations/providers/salesforce/salesforce-oauth.strategy';",
-		);
-		expect(factory).toContain('export interface SalesforceProvider {\n  auth: SalesforceOAuthStrategy;\n  client: SalesforceClient;\n}');
+		expect(factory).toContain("import type { Settings } from '../../../generated/settings';");
+		expect(factory).toContain("export function createSalesforceProvider(settings: Settings['salesforce']): SalesforceProvider {");
+		expect(factory).toContain('new SalesforceOAuthStrategy({ clientId: settings.clientId, clientSecret: settings.clientSecret })');
+		expect(factory).toContain('new SalesforceClient({ baseUrl: settings.baseUrl })');
+		// Not prefilled: the constructors are the author's, so a no-argument class still compiles.
 		expect(factory).toContain('auth: new SalesforceOAuthStrategy(),\n    client: new SalesforceClient(),');
+		expect(factory).toContain('export interface SalesforceProvider {\n  auth: SalesforceOAuthStrategy;\n  client: SalesforceClient;\n}');
 	});
 
 	it('a per-connection provider (every surface a read primitive) has no client', () => {
-		const factory = generateProviderFactory(def('google'));
+		const g = def('google');
+		const factory = generateProviderFactory(g, providerSettings({ definition: g, filePath: '' }), FACTORY, SETTINGS_FILE);
 		expect(factory).toContain('export interface GoogleProvider {\n  auth: GoogleOAuthStrategy;\n}');
 		expect(factory).not.toContain('GoogleClient');
 	});
 
-	it('the system calls the factory', () => {
+	it('the system gives the factory its settings', () => {
 		const system = generateProviderSystem(def('salesforce'), `${ROOT}/integrations/providers/salesforce/salesforce.provider.ts`, `${ROOT}/generated/wiring.ts`);
 		expect(system).toContain("import { defineSystem } from '../../../generated/wiring';");
-		expect(system).toContain("name: 'salesforceProvider',\n  uses: [],\n  create: (): SalesforceProvider => createSalesforceProvider(),");
+		expect(system).toContain(
+			"name: 'salesforceProvider',\n  uses: ['settings'],\n  create: ({ settings }): SalesforceProvider => createSalesforceProvider(settings.salesforce),",
+		);
 		expect(system).not.toMatch(NEST);
 	});
 });

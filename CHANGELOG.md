@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added: settings, declared once and checked before the build (SET-1)
+
+- A provider YAML declares the values its classes need at startup in a `settings:` block (`client_id: { secret: true
+  }`; the env var defaults to `<SLUG>_<NAME>`). `client.base_url` is always one (`<SLUG>_BASE_URL`, defaulting to the
+  YAML's). Subsystems declare theirs in one table (the database URL; auth's encryption key and redirect base).
+- `codegen project settings` lists every setting from the YAML alone (env var, typed key, owner, secret, and whether
+  it is set in the environment or `.env`), under either wiring. `--check` exits 1 naming each required one that is
+  unset; `--json` for Studio. A secret's value is never printed.
+- Under `wiring: pattern-stack`, `entity new` (and `project init`) writes `<generated>/settings.ts`: the declaration,
+  the typed `Settings`, `loadSettings` (one Zod schema; fails once listing every missing or malformed value) and the
+  `settings` system, first in `SYSTEMS`. It also writes `.env.example` from the same list. `project init`'s
+  `database.ts` reads `settings.database.url`.
+- The provider factory takes its typed settings (`createSalesforceProvider(settings: Settings['salesforce'])`), and its
+  comment shows the constructor calls with the provider's keys. A factory written before this step takes no argument
+  and no longer compiles: delete it to have this one written.
+- The runtime's `runtime/settings.ts` (Nest-free): the sources (`processEnvSource`, `dotEnvFileSource`, `layered`) are
+  the seam for sops, encrypted committed secrets and committed config files.
+- Nest output is unchanged; the auth install's `.env.config` names come from the settings table, byte for byte.
+- docs/specs/SET-1.md.
+
 ### Added: integrations under `wiring: pattern-stack` (S-3, part 2)
 
 - An entity's `surface:` is no longer refused under pattern-stack wiring. With providers in `definitions/providers/`,

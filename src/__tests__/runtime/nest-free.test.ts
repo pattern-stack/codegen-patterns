@@ -34,6 +34,8 @@ const ENTRIES = [
   'http/pagination.ts',
   'http/includes.ts',
   'shared/openapi/index.ts',
+  // SET-1: the settings loader every pattern-stack app's `settings` system calls.
+  'settings.ts',
   ...NEST_FREE_SUBSYSTEMS.map((name) => `subsystems/${name}/core.ts`),
   // S-1: the event bus backends the pattern-stack `events` system constructs (imported by path, the selected one only).
   'subsystems/events/event-bus.drizzle-backend.ts',

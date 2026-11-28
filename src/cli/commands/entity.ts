@@ -91,6 +91,7 @@ import {
 } from '../shared/pattern-stack-composition.js';
 import { eventsGeneratedDir } from '../shared/pattern-stack-subsystems.js';
 import { integrationsRoot } from '../../config/integration-layout.js';
+import { envExamplePath } from '../shared/project-settings.js';
 import { patternStackRelationshipYamlsRefusal } from '../shared/storage-only.js';
 
 // ---------------------------------------------------------------------------
@@ -461,6 +462,8 @@ export class EntityNewCommand extends Command {
 			let integrationFiles: string[] = [];
 			try {
 				compositionFiles = planPatternStackComposition(ctx).map((f) => f.path);
+				// SET-1: and `.env.example`, from the same settings as `<generated>/settings.ts`.
+				compositionFiles.push(envExamplePath(ctx));
 				const plannedIntegrations = writePatternStackIntegrations(ctx, { entitiesDir, generatedDir, dryRun: true });
 				integrationFiles = plannedIntegrations ? [...plannedIntegrations.written, ...plannedIntegrations.scaffoldsWritten] : [];
 				if (eventsInstalled(ctx)) {

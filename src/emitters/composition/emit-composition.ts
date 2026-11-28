@@ -49,6 +49,8 @@ import { camelCase, emittedDir } from '../../config/file-naming.js';
 import { entityModuleNaming } from '../../config/module-tree.js';
 import { generating } from '../../utils/generated-file.js';
 import { relativeImport } from '../../utils/import-path.js';
+import type { ProjectSetting } from '../../derived/settings/index.js';
+import { SETTINGS_FILE, settingsContent } from '../settings/emit-settings.js';
 
 /** The module name of the entities that declare no `context:`. */
 export const ROOT_MODULE = 'entities';
@@ -57,7 +59,10 @@ export const ROOT_MODULE = 'entities';
 /** The `database` system's name: the one system every generated module uses (`{ db }`), and the app's `database.ts` defines. */
 export const DATABASE_SYSTEM = 'database';
 
-const RESERVED_MODULE_NAMES = new Set([ROOT_MODULE, DATABASE_SYSTEM]);
+/** The names of the systems codegen generates (and the app's `database`): a module may not take one. */
+export const GENERATED_SYSTEM_NAMES = [DATABASE_SYSTEM, 'settings', 'events', 'integration'] as const;
+
+const RESERVED_MODULE_NAMES = new Set<string>([ROOT_MODULE, ...GENERATED_SYSTEM_NAMES]);
 
 /** The files the composition writes under `paths.generated`; stale-files removes the same list on a switch to nest. */
 export const COMPOSITION_GENERATED_FILES = { registry: 'wiring.ts', composition: 'composition.ts', openApi: 'openapi.ts' } as const;
@@ -123,6 +128,12 @@ export interface CompositionInput {
 	 * writes as the `integrations` module (it knows which module holds each entity's repository).
 	 */
 	integrations?: CompositionIntegrationsInput | null;
+	/**
+	 * The project's settings (SET-1): written to `<generated>/settings.ts` with the `settings` system, first in
+	 * `SYSTEMS` (so a missing value fails compose before any other part is made), and `settings: Settings` in
+	 * `SystemApis`. Null ⇒ no settings system.
+	 */
+	settings?: { settings: readonly ProjectSetting[]; runtimeImport: string } | null;
 	dryRun?: boolean;
 }
 
@@ -182,7 +193,7 @@ export interface CompositionIntegrationInput {
 export const INTEGRATION_SYSTEM_FILE = 'integration-system.ts';
 
 /** Every generated system's file beside `wiring.ts`; stale-files removes each when its subsystem goes, or on a switch. */
-export const GENERATED_SYSTEM_FILES = [EVENTS_SYSTEM_FILE, INTEGRATION_SYSTEM_FILE] as const;
+export const GENERATED_SYSTEM_FILES = [SETTINGS_FILE, EVENTS_SYSTEM_FILE, INTEGRATION_SYSTEM_FILE] as const;
 
 export interface CompositionFile {
 	path: string;
@@ -494,9 +505,9 @@ export const { defineModule, defineSystem, compose } = createWiring<ModuleApis, 
 		path: compositionFile,
 		content: `${input.banner}
 /**
- * Every generated module's manifest (PW-3), and the systems codegen generates (\`events\` and \`integration\`, each when
- * installed), for
- * the app's \`compose.ts\`: \`compose({ systems: [databaseSystem(), ...SYSTEMS], modules: MODULES })\`.
+ * Every generated module's manifest (PW-3), and the systems codegen generates (\`settings\`, and \`events\`,
+ * \`integration\` and the integrations' when installed), for the app's \`compose.ts\`:
+ * \`compose({ systems: [databaseSystem(), ...SYSTEMS], modules: MODULES })\`.
  */
 ${systems.map((s) => `import { ${s.exportName} } from '${relativeImport(compositionFile, s.file)}';\n`).join('')}${integrationsModule ? `import { integrationsModule } from '${relativeImport(compositionFile, integrationsModule.file)}';\n` : ''}${names.map((n) => `import { ${n}Module } from '${relativeImport(compositionFile, plans.get(n)!.file)}';`).join('\n')}
 
@@ -538,10 +549,15 @@ interface GeneratedSystem {
 	content: string | null;
 }
 
-/** The systems codegen generates for this input, in `SYSTEMS` order: events (S-1), integration (S-3), the integrations' (S-3b). */
+/** The systems codegen generates for this input, in `SYSTEMS` order: settings (SET-1), events (S-1), integration (S-3), the integrations' (S-3b). */
 function generatedSystems(input: CompositionInput, eventsSystemFile: string): GeneratedSystem[] {
 	const integrationFile = path.join(input.generatedDir, INTEGRATION_SYSTEM_FILE);
+	const settingsFile = path.join(input.generatedDir, SETTINGS_FILE);
 	return [
+		// SET-1: the settings, checked before the build; every other system may read them.
+		...(input.settings
+			? [{ key: 'settings', apiType: 'Settings', apiTypeFile: settingsFile, exportName: 'settingsSystem', file: settingsFile, content: settingsContent(input.settings.settings, input.settings.runtimeImport, input.banner) }]
+			: []),
 		...(input.events
 			? [{ key: 'events', apiType: 'EventsApi', apiTypeFile: eventsSystemFile, exportName: 'eventsSystem', file: eventsSystemFile, content: eventsSystemContent(input.events, eventsSystemFile, input.banner) }]
 			: []),
@@ -580,7 +596,7 @@ function integrationsModuleFile(
 				`are composed in; rename the context`,
 		);
 	}
-	const taken = new Set([...plans.keys(), DATABASE_SYSTEM, 'events', 'integration']);
+	const taken = new Set<string>([...plans.keys(), ...GENERATED_SYSTEM_NAMES]);
 	for (const s of ig.systems) {
 		if (taken.has(s.name)) {
 			throw new Error(

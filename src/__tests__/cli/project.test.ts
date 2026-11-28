@@ -18,6 +18,7 @@ import {
 	loadRuntimeFile,
 	VENDORED_RUNTIME_FILES,
 	vendoredRuntimeFiles,
+	otherWiringVendoredFiles,
 	InitRefusal,
 } from '../../cli/shared/init-scaffold.js';
 import { syncVendoredRuntime } from '../../cli/commands/project-update.js';
@@ -57,9 +58,9 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('project NounModule', () => {
-	test('exports name=project with all nine commands', () => {
+	test('exports name=project with all ten commands (SET-1 added settings)', () => {
 		expect(projectNoun.name).toBe('project');
-		expect(projectNoun.commandClasses.length).toBe(9);
+		expect(projectNoun.commandClasses.length).toBe(10);
 		expect(typeof projectNoun.summary).toBe('function');
 		expect(typeof projectNoun.hints).toBe('function');
 	});
@@ -710,8 +711,13 @@ describe('project init, wiring: pattern-stack (PW-4)', () => {
 		// S-1: drizzle-kit reads the subsystem schema barrel too (`domain_events` once events is installed).
 		expect(content('drizzle.config.ts')).toContain("schema: ['./src/generated/schema.ts', './src/generated/subsystems-schema.ts'],");
 		expect(content('src/generated/subsystems-schema.ts')).toContain('export {};');
-		expect(content('src/generated/composition.ts')).toContain('export const SYSTEMS = [] as const;');
+		// SET-1: the settings system first; the database reads its URL from it; .env.example lists it.
+		expect(content('src/generated/composition.ts')).toContain('export const SYSTEMS = [settingsSystem] as const;');
+		expect(content('src/generated/settings.ts')).toContain("url: { env: 'DATABASE_URL', secret: true, default: 'postgresql://localhost:5432/app_dev', format: 'string' },");
 		expect(content('src/database.ts')).toContain("name: 'database'");
+		expect(content('src/database.ts')).toContain("uses: ['settings'],");
+		expect(content('src/database.ts')).toContain('connectionString ?? settings.database.url');
+		expect(content('.env.example')).toContain('# DATABASE_URL=postgresql://localhost:5432/app_dev');
 		expect(content('src/generated/composition.ts')).toContain('export const MODULES = [] as const;');
 	});
 
@@ -824,7 +830,10 @@ describe('vendoredRuntimeFiles', () => {
 	});
 
 	test('pattern-stack drops the Nest files; nest keeps the whole closure', () => {
-		expect(vendoredRuntimeFiles('nest')).toEqual(VENDORED_RUNTIME_FILES);
+		// SET-1: the settings loader is pattern-stack's only.
+		expect(vendoredRuntimeFiles('nest').map((v) => v.runtime)).not.toContain('settings.ts');
+		expect(otherWiringVendoredFiles('nest').map((v) => v.runtime)).toEqual(['settings.ts']);
+		expect(vendoredRuntimeFiles('pattern-stack').map((v) => v.runtime)).toContain('settings.ts');
 		const plain = vendoredRuntimeFiles('pattern-stack').map((v) => v.runtime);
 		expect(plain).not.toContain('nest-logger.ts');
 		expect(plain).toContain('logger.ts');

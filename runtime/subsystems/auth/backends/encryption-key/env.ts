@@ -22,6 +22,9 @@ export interface EnvEncryptionKeyOptions {
   envVar?: string;
 }
 
+/** The env var the key is read from by default: the one name the settings derivation (SET-1) lists. */
+export const TOKEN_ENCRYPTION_KEY_ENV = 'INTEGRATION_TOKEN_ENCRYPTION_KEY';
+
 const ALGO = 'aes-256-gcm';
 const NONCE_BYTES = 12;
 const TAG_BYTES = 16;
@@ -32,7 +35,7 @@ export class EnvEncryptionKey implements IEncryptionKey {
 
   constructor(opts: EnvEncryptionKeyOptions = {}) {
     const env = opts.env ?? process.env;
-    const envVar = opts.envVar ?? 'INTEGRATION_TOKEN_ENCRYPTION_KEY';
+    const envVar = opts.envVar ?? TOKEN_ENCRYPTION_KEY_ENV;
     const raw = env[envVar];
     if (!raw) {
       throw new Error(

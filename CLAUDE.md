@@ -411,6 +411,16 @@ set is wiring manifests: a system per provider (`<slug>Provider`, built by the a
 `integrations` module (`crm.contact.salesforce` is an `IntegrationRunner`). The adapter scaffold, sinks and change
 emitter take a `wiring` parameter instead of having twins; their Nest bytes are the integration-emit golden's.
 
+### Settings (SET-1, `docs/specs/SET-1.md`)
+
+Every value an app reads at startup is a **setting**, declared once and derived once (`src/derived/settings/`,
+`deriveProjectSettings`): a provider YAML's `settings:` block and `client.base_url`, each installed subsystem's
+(`SUBSYSTEM_SETTINGS`), and the project's database URL. `codegen project settings [--check]`, `<generated>/settings.ts`
+(pattern-stack: the `settings` system, first in `SYSTEMS`), `.env.example`, the provider factory and the auth install's
+`.env.config` names all print from it — never re-list an env var name. Loading goes through `runtime/settings.ts`'s
+sources (the environment, `.env`, `layered`): a new place values come from (sops, a committed config file) is a new
+source, not a new kind of setting.
+
 ### Entity Families
 
 Base classes in `runtime/base-classes/`:
