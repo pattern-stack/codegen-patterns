@@ -62,6 +62,8 @@
  * `IntegrationModule` — the substrate tokens are available project-wide.
  */
 import { Module, type DynamicModule, type Provider } from '@nestjs/common';
+import type { DrizzleClient } from '../../types/drizzle';
+import { DRIZZLE } from '../../constants/tokens';
 import {
   INTEGRATION_CURSOR_STORE,
   INTEGRATION_FIELD_DIFFER,
@@ -74,6 +76,7 @@ import { MemoryRunRecorder } from './integration-run-recorder.memory-backend';
 import { PostgresCursorStore } from './integration-cursor-store.drizzle-backend';
 import { DrizzleIntegrationRunRecorder } from './integration-run-recorder.drizzle-backend';
 import { DeepEqualDiffer, type DeepEqualDifferOptions } from './deep-equal.differ';
+import { useNestLogger } from '../../nest-logger';
 
 export interface IntegrationModuleOptions {
   /**
@@ -123,6 +126,8 @@ export interface IntegrationModuleOptions {
 @Module({})
 export class IntegrationModule {
   static forRoot(options: IntegrationModuleOptions): DynamicModule {
+    // The runner logs through the logger port (S-3); a Nest app's lines go through Nest's Logger, as before.
+    useNestLogger();
     const multiTenant = options.multiTenant ?? false;
 
     const sharedProviders: Provider[] = [
@@ -157,11 +162,19 @@ export class IntegrationModule {
             },
           ]
         : [
-            // Drizzle backends — injected with DRIZZLE (provided by the
-            // consumer's DrizzleModule) + the INTEGRATION_MULTI_TENANT flag
-            // we bound above.
-            { provide: INTEGRATION_CURSOR_STORE, useClass: PostgresCursorStore },
-            { provide: INTEGRATION_RUN_RECORDER, useClass: DrizzleIntegrationRunRecorder },
+            // Drizzle backends — plain classes (S-3), built from DRIZZLE
+            // (provided by the consumer's DrizzleModule) and the multi-tenant
+            // flag.
+            {
+              provide: INTEGRATION_CURSOR_STORE,
+              useFactory: (db: DrizzleClient) => new PostgresCursorStore(db, multiTenant),
+              inject: [DRIZZLE],
+            },
+            {
+              provide: INTEGRATION_RUN_RECORDER,
+              useFactory: (db: DrizzleClient) => new DrizzleIntegrationRunRecorder(db, multiTenant),
+              inject: [DRIZZLE],
+            },
           ];
 
     return {

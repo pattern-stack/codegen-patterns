@@ -83,6 +83,7 @@ import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
 import {
 	eventsInstalled,
+	integrationInstalled,
 	planPatternStackComposition,
 	printPatternStackComposition,
 	writePatternStackComposition,
@@ -755,9 +756,16 @@ export class EntityNewCommand extends Command {
 			// scheduler reads) and the `domain_events` table in the subsystem schema barrel; the composition then writes
 			// the `events` system.
 			const withEvents = eventsInstalled(ctx);
-			if (withEvents) {
+			// S-3: the `integration_*` audit tables reach drizzle-kit through the same barrel.
+			if (withEvents || integrationInstalled(ctx)) {
 				try {
 					await regenerateSubsystemSchemaBarrel({ ctx, generatedDir });
+				} catch (err: unknown) {
+					return reportRegenerationFailure('entity new', err);
+				}
+			}
+			if (withEvents) {
+				try {
 					await writeEventCodegen('pattern-stack');
 				} catch (err: unknown) {
 					return reportRegenerationFailure('entity new', err);

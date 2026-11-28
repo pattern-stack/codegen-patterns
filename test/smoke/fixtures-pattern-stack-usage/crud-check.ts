@@ -5,6 +5,14 @@
  */
 import { eq } from 'drizzle-orm';
 import { accountTags } from './modules/account-tags/account-tag.entity';
+import {
+  IntegrationRunner,
+  integrationRuns,
+  integrationSubscriptions,
+  type Change,
+  type IChangeSource,
+  type IIntegrationSink,
+} from './shared/subsystems/integration/core';
 import { composeApp } from './compose';
 import { registerOpenApiSchemas } from './generated/openapi';
 import { NotFoundError } from './shared/errors';
@@ -12,6 +20,7 @@ import { OpenApiRegistry } from './shared/openapi';
 // test/smoke/_openapi-refs.ts, copied in beside this file: the Nest OpenAPI gate's own `$ref` closure check.
 import { danglingRefs } from './openapi-refs';
 import type { CrmRepositories } from './modules/crm/module';
+import type { SystemApis } from './generated/wiring';
 
 const assert = (ok: unknown, what: string): void => {
   if (!ok) throw new Error(`crud-check: ${what}`);
@@ -45,6 +54,7 @@ export async function openApiCheck(): Promise<void> {
 
 export async function crudCheck(url: string): Promise<void> {
   const app = composeApp({ databaseUrl: url });
+  assert(app.order.includes('integration'), `the integration system is composed: ${app.order.join(', ')}`);
   assert(app.order.indexOf('crm') < app.order.indexOf('billing'), `billing is composed after crm: ${app.order.join(', ')}`);
   await app.start();
   const { db } = app.system('database');
@@ -78,6 +88,8 @@ export async function crudCheck(url: string): Promise<void> {
     assert(personBack.firstName === 'Ada', 'a child is created through its base and read back');
 
     assert((await accountNames(crm.repositories)).includes('Acme'), 'a context service reads through the bundle');
+
+    await integrationCheck(app.system('integration'), db);
 
     // A junction inside crm (PW-3c): attached from one parent, listed from the other, read from `crm.junctions`.
     const tag = await crm.tag.useCases.create.execute({ label: 'priority' });
@@ -123,6 +135,57 @@ export async function crudCheck(url: string): Promise<void> {
   } finally {
     await app.stop();
   }
+}
+
+type Row = { externalId: string; name: string };
+
+/**
+ * One integration run (S-3) on the \`integration\` system's substrate: the Postgres cursor store and run recorder, the
+ * default differ. The change source and the sink are stand-ins (the generated ones come with the adapters).
+ */
+async function integrationCheck(
+  integration: SystemApis['integration'],
+  db: SystemApis['database']['db'],
+): Promise<void> {
+  const [subscription] = await db
+    .insert(integrationSubscriptions)
+    .values({ connectionId: 'smoke', adapter: 'smoke', domain: 'account' })
+    .returning({ id: integrationSubscriptions.id });
+  const changes: Change<Row>[] = [
+    { externalId: 'x-1', operation: 'created', record: { externalId: 'x-1', name: 'One' }, cursor: { at: 1 }, source: 'poll' },
+    { externalId: 'x-2', operation: 'created', record: { externalId: 'x-2', name: 'Two' }, cursor: { at: 2 }, source: 'poll' },
+  ];
+  const source: IChangeSource<Row> = {
+    label: 'smoke',
+    async *listChanges() {
+      yield* changes;
+    },
+  };
+  const saved = new Map<string, Row>();
+  const sink: IIntegrationSink<Row> = {
+    findByExternalId: async (_userId, externalId) => saved.get(externalId) ?? null,
+    upsertByExternalId: async (_userId, record) => {
+      saved.set(record.externalId, record);
+      return { id: record.externalId, saved: record };
+    },
+    softDeleteByExternalId: async () => null,
+  };
+  const runner = new IntegrationRunner<Row>({ ...integration, source, sink });
+  const result = await runner.execute({
+    subscription: { id: subscription!.id, domain: 'account' },
+    userId: 'smoke',
+    provider: 'smoke',
+    direction: 'inbound',
+    action: 'poll',
+  });
+  assert(result.status === 'success' && result.recordsProcessed === 2, `the run processes both changes: ${JSON.stringify(result)}`);
+  assert(saved.size === 2, 'the sink receives both records');
+  const [run] = await db.select().from(integrationRuns).where(eq(integrationRuns.id, result.runId));
+  assert(run?.status === 'success' && run.recordsProcessed === 2, `the run recorder logs the run: ${JSON.stringify(run)}`);
+  assert(
+    JSON.stringify(await integration.cursors.get(subscription!.id)) === JSON.stringify({ at: 2 }),
+    'the cursor store keeps the last cursor',
+  );
 }
 
 if (import.meta.main) {

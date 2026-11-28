@@ -4,6 +4,9 @@
  * and `subsystem install` refuses what has no Nest-free system yet. The Nest output is unchanged.
  */
 import { describe, expect, it } from 'bun:test';
+import fs from 'node:fs';
+import path from 'node:path';
+import ts from 'typescript';
 
 import { buildBusContent, buildTypesContent } from '../../cli/shared/event-codegen-generator';
 import { buildSubsystemSchemaBarrel } from '../../cli/shared/subsystem-schema-generator';
@@ -12,6 +15,7 @@ import {
 	patternStackFileFilter,
 	patternStackSubsystemRefusal,
 } from '../../cli/shared/pattern-stack-subsystems';
+import { backendFileFilter } from '../../cli/commands/subsystem';
 import type { EventDefinition } from '../../schema/event-definition.schema';
 
 const NEST = /@nestjs\/|@Inject|@Injectable/;
@@ -66,8 +70,11 @@ describe('subsystem install under pattern-stack wiring', () => {
 		expect(patternStackSubsystemRefusal('events', 'drizzle')).toBeNull();
 		expect(patternStackSubsystemRefusal('events', 'memory')).toBeNull();
 		expect(patternStackSubsystemRefusal('events', 'redis')).toMatch(/redis backend/);
-		expect(patternStackSubsystemRefusal('jobs', 'drizzle')).toMatch(/comes with J-1\. Supported: events, openapi-config\./);
+		expect(patternStackSubsystemRefusal('jobs', 'drizzle')).toMatch(/comes with J-1\. Supported: events, openapi-config, integration\./);
 		expect(patternStackSubsystemRefusal('auth', 'drizzle')).toMatch(/comes with S-2/);
+		// S-3: integration on either backend.
+		expect(patternStackSubsystemRefusal('integration', 'drizzle')).toBeNull();
+		expect(patternStackSubsystemRefusal('integration', 'memory')).toBeNull();
 		// Config-only: the `openapi:` block, which pattern-stack's openapi.ts reads too.
 		expect(patternStackSubsystemRefusal('openapi-config', 'drizzle')).toBeNull();
 	});
@@ -86,4 +93,73 @@ describe('subsystem install under pattern-stack wiring', () => {
 		// The entry file is vendored: the row's skips never drop it.
 		expect(patternStackFileFilter('events', () => true)('core.ts')).toBe(true);
 	});
+
+	it("integration (S-3) vendors no Nest file either: the module, the barrel, Nest's use case", () => {
+		const filter = patternStackFileFilter('integration', () => true);
+		for (const f of ['integration.module.ts', 'index.ts', 'execute-integration.use-case.ts']) expect(filter(f)).toBe(false);
+		for (const f of ['core.ts', 'integration-runner.ts', 'integration-cursor-store.drizzle-backend.ts', 'deep-equal.differ.ts']) {
+			expect(filter(f)).toBe(true);
+		}
+	});
+});
+
+/**
+ * What `subsystem install <name> --backend <b>` vendors under pattern-stack: the runtime folder's files through the
+ * install's filter, plus the schema its Hygen template writes on every backend. Every file the pattern-stack code
+ * imports (core.ts, and on drizzle the backends the system imports by path) must reach its whole relative-import
+ * closure inside that set, or the project does not compile (a memory install once pruned detection-config.schema.ts).
+ */
+describe('a pattern-stack install vendors what its entries import', () => {
+	const RUNTIME = path.resolve(import.meta.dir, '../../../runtime/subsystems');
+	const HYGEN_SCHEMA: Record<string, string> = {
+		events: 'domain-events.schema.ts',
+		integration: 'integration-audit.schema.ts',
+	};
+	const ENTRIES: Record<string, Record<'drizzle' | 'memory', string[]>> = {
+		events: { drizzle: ['core.ts', 'event-bus.drizzle-backend.ts'], memory: ['core.ts', 'event-bus.memory-backend.ts'] },
+		integration: {
+			drizzle: ['core.ts', 'integration-cursor-store.drizzle-backend.ts', 'integration-run-recorder.drizzle-backend.ts'],
+			memory: ['core.ts'],
+		},
+	};
+	for (const name of ['events', 'integration'] as const) {
+		for (const backend of ['drizzle', 'memory'] as const) {
+			it(`${name} on ${backend}`, () => {
+				const dir = path.join(RUNTIME, name);
+				const filter = patternStackFileFilter(name, backendFileFilter(backend, name));
+				const vendored = new Set([...fs.readdirSync(dir).filter((f) => f.endsWith('.ts') && filter(f)), HYGEN_SCHEMA[name]!]);
+				const missing: string[] = [];
+				const seen = new Set<string>();
+				const visit = (file: string) => {
+					if (seen.has(file)) return;
+					seen.add(file);
+					if (!vendored.has(file)) {
+						missing.push(file);
+						return;
+					}
+					for (const { fileName } of ts.preProcessFile(fs.readFileSync(path.join(dir, file), 'utf8'), true, true).importedFiles) {
+						// Only this folder: `../../` reaches the shared runtime, which copyRuntime resolves as dependencies.
+						if (fileName.startsWith('./')) visit(`${fileName.slice(2).replace(/\.js$/, '')}.ts`);
+					}
+				};
+				for (const entry of ENTRIES[name]![backend]) visit(entry);
+				expect(missing).toEqual([]);
+			});
+		}
+	}
+});
+
+/** The config block prints the installed backend, which the system (and the Nest module) builds: a memory install's
+ * block must not say `drizzle`, or the system imports the Drizzle backends the install pruned. */
+describe('the events and integration config blocks print the installed backend', () => {
+	const TEMPLATES = path.resolve(import.meta.dir, '../../../templates/subsystem');
+	for (const name of ['events', 'integration'] as const) {
+		it(name, async () => {
+			const prompt = (await import(path.join(TEMPLATES, `${name}-config/prompt.js`))).default.prompt;
+			expect((await prompt({ args: { backend: 'memory' } })).backend).toBe('memory');
+			expect((await prompt({ args: {} })).backend).toBe('drizzle');
+			const block = fs.readFileSync(path.join(TEMPLATES, `${name}-config/codegen-config-${name}-block.ejs.t`), 'utf8');
+			expect(block).toContain('\n  backend: <%= backend %>\n');
+		});
+	}
 });

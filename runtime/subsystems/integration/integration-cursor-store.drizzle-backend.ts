@@ -26,25 +26,21 @@
  * When the flag is off, `tenantId` is ignored. Cross-tenant isolation is
  * the caller's problem in single-tenant deployments.
  */
-import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, desc, eq, type SQL } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';
-import { DRIZZLE } from '../../constants/tokens';
 import type {
   CursorSnapshot,
   ICursorStore,
 } from './integration-cursor-store.protocol';
 import { integrationSubscriptions } from './integration-audit.schema';
-import { INTEGRATION_MULTI_TENANT } from './integration.tokens';
 import { assertTenantId } from './integration-errors';
 
-@Injectable()
 export class PostgresCursorStore implements ICursorStore {
   private readonly multiTenant: boolean;
 
   constructor(
-    @Inject(DRIZZLE) private readonly db: DrizzleClient,
-    @Optional() @Inject(INTEGRATION_MULTI_TENANT) multiTenant?: boolean,
+    private readonly db: DrizzleClient,
+    multiTenant?: boolean,
   ) {
     this.multiTenant = multiTenant ?? false;
   }

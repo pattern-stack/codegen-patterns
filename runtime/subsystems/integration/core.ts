@@ -5,8 +5,9 @@
  * type imports included: the protocols, the change-source registry, the
  * detection schema, the middleware, the poll / incremental-read / webhook
  * primitives, `buildChangeSource`, the tokens, the errors and the audit schemas.
- * Not here: the memory and Drizzle backends, the differ and the use case (all
- * decorated; S-3 gives them plain twins) and the module. A pattern-stack app imports
+ * Also the plain orchestrator (`IntegrationRunner`, S-3), the default differ and the memory backends. Not here: the
+ * Drizzle backends (a memory install prunes them; the `integration` system imports the selected one by path), Nest's
+ * `ExecuteIntegrationUseCase` and the module. A pattern-stack app imports
  * through this file (`subsystemCoreImport(mode, 'integration')`); `./index`
  * re-exports it beside the Nest half. `src/__tests__/runtime/nest-free.test.ts`
  * holds it Nest-free.
@@ -125,6 +126,22 @@ export {
 // buildChangeSource (#250, ADR-033.1 b) — mode-dispatching factory consumed
 // by codegen-emitted provider modules' `useFactory` wiring
 export { buildChangeSource } from './build-change-source';
+
+// The orchestrator without a framework (S-3), its default differ, and the memory backends
+export {
+  IntegrationRunner,
+  type IntegrationRunnerParts,
+  type IntegrationSubstrate,
+  type ExecuteIntegrationInput,
+  type ExecuteIntegrationResult,
+} from './integration-runner';
+export { DeepEqualDiffer, type DeepEqualDifferOptions } from './deep-equal.differ';
+export { MemoryCursorStore } from './integration-cursor-store.memory-backend';
+export {
+  MemoryRunRecorder,
+  type MemoryRunRecord,
+  type MemoryIntegrationSubscription,
+} from './integration-run-recorder.memory-backend';
 
 // Tokens
 export {

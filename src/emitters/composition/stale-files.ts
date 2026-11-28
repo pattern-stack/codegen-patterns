@@ -17,7 +17,7 @@ import path from 'node:path';
 
 import type { TargetWiring } from '../../targets/apps.js';
 import { isCodegenBanner } from '../../utils/generated-file.js';
-import { COMPOSITION_GENERATED_FILES } from './emit-composition.js';
+import { COMPOSITION_GENERATED_FILES, GENERATED_SYSTEM_FILES } from './emit-composition.js';
 
 function isGenerated(file: string): boolean {
 	return isCodegenBanner(fs.readFileSync(file, 'utf8').split('\n', 1)[0] ?? '');
@@ -51,13 +51,13 @@ export function removeOtherWiringFiles(input: {
 					),
 					...underModules.filter((f) => path.basename(f) === 'module.ts' && !keep.has(f)),
 					path.join(generatedDir, 'modules.ts'),
-					// S-1: the events system, once the events subsystem is no longer installed.
-					...[path.join(generatedDir, 'events-system.ts')].filter((f) => !keep.has(f)),
+					// S-1 / S-3: the events and integration systems, once their subsystem is no longer installed.
+					...GENERATED_SYSTEM_FILES.map((f) => path.join(generatedDir, f)).filter((f) => !keep.has(f)),
 				]
 			: [
 					...underModules.filter((f) => path.basename(f) === 'module.ts' || f.endsWith('.wiring.ts')),
 					...Object.values(COMPOSITION_GENERATED_FILES).map((f) => path.join(generatedDir, f)),
-					path.join(generatedDir, 'events-system.ts'),
+					...GENERATED_SYSTEM_FILES.map((f) => path.join(generatedDir, f)),
 				];
 	const stale = candidates.filter((f) => fs.existsSync(f) && isGenerated(f));
 	if (!input.dryRun) for (const f of stale) fs.rmSync(f);

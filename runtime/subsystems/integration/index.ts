@@ -17,24 +17,8 @@
 // primitives, tokens, errors.
 export * from './core';
 
-// Memory backends (SYNC-3, SYNC-6) — test doubles
-export { MemoryCursorStore } from './integration-cursor-store.memory-backend';
-export {
-  MemoryRunRecorder,
-  type MemoryRunRecord,
-  type MemoryIntegrationSubscription,
-} from './integration-run-recorder.memory-backend';
-
-// Runtime (SYNC-5) — orchestrator + default differ
-export {
-  DeepEqualDiffer,
-  type DeepEqualDifferOptions,
-} from './deep-equal.differ';
-export {
-  ExecuteIntegrationUseCase,
-  type ExecuteIntegrationInput,
-  type ExecuteIntegrationResult,
-} from './execute-integration.use-case';
+// Nest's orchestrator (SYNC-5): IntegrationRunner under DI tokens
+export { ExecuteIntegrationUseCase } from './execute-integration.use-case';
 
 // Drizzle backends (SYNC-4)
 export { PostgresCursorStore } from './integration-cursor-store.drizzle-backend';

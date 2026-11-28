@@ -38,6 +38,9 @@ const ENTRIES = [
   // S-1: the event bus backends the pattern-stack `events` system constructs (imported by path, the selected one only).
   'subsystems/events/event-bus.drizzle-backend.ts',
   'subsystems/events/event-bus.memory-backend.ts',
+  // S-3: the integration backends the pattern-stack `integration` system constructs (the Drizzle pair by path).
+  'subsystems/integration/integration-cursor-store.drizzle-backend.ts',
+  'subsystems/integration/integration-run-recorder.drizzle-backend.ts',
 ];
 
 const FORBIDDEN = (spec: string) => spec.startsWith('@nestjs/') || spec === 'reflect-metadata';

@@ -76,7 +76,17 @@ export const PATTERN_STACK_SUBSYSTEMS: Readonly<Record<SubsystemName, PatternSta
 	'openapi-config': { backends: 'any', skipped: new Set(), entryFile: null, nextStep: null },
 	auth: { comesWith: 'S-2' },
 	'auth-integrations': { comesWith: 'S-2' },
-	integration: { comesWith: 'S-3' },
+	// S-3: Nest's module, its barrel and `ExecuteIntegrationUseCase` are skipped (the system builds `IntegrationRunner`).
+	integration: {
+		backends: ['drizzle', 'memory'],
+		skipped: new Set(['integration.module.ts', 'index.ts', 'execute-integration.use-case.ts']),
+		entryFile: 'core.ts',
+		nextStep:
+			'Next: `codegen entity new --all` writes the `integration` system (`<generated>/integration-system.ts`: the cursor ' +
+			'store, the run recorder and the differ every `IntegrationRunner` takes), listed in `SYSTEMS` ' +
+			"(`<generated>/composition.ts`). compose.ts must compose them (`systems: [databaseSystem(...), ...SYSTEMS]`), and " +
+			"drizzle.config.ts's `schema` must include `<generated>/subsystems-schema.ts` (the `integration_*` tables).",
+	},
 	jobs: { comesWith: 'J-1' },
 	bridge: { comesWith: 'J-1' },
 	cache: { comesWith: null },

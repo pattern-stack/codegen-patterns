@@ -16,6 +16,7 @@ import {
 	emitComposition,
 	wiringFilesBehind,
 	type CompositionEventsInput,
+	type CompositionIntegrationInput,
 	type CompositionFile,
 	type CompositionInput,
 } from '../../emitters/composition/emit-composition.js';
@@ -29,6 +30,25 @@ import { printInfo, printWarning } from '../ui/output.js';
 /** Is the events subsystem installed (S-1)? `isSubsystemInstalled`'s one rule (under pattern-stack, its `core.ts`). */
 export function eventsInstalled(ctx: Context): boolean {
 	return isSubsystemInstalled(ctx, 'events');
+}
+
+/** Is the integration subsystem installed (S-3)? `isSubsystemInstalled`'s one rule. */
+export function integrationInstalled(ctx: Context): boolean {
+	return isSubsystemInstalled(ctx, 'integration');
+}
+
+/** The `integration` system's input (S-3), or null when the subsystem isn't installed. */
+export function patternStackIntegrationInput(ctx: Context): CompositionIntegrationInput | null {
+	if (!integrationInstalled(ctx)) return null;
+	const mode = resolveRuntimeMode(ctx.config);
+	const integration = configOrDefaults(ctx.config).integration ?? {};
+	return {
+		backend: integration.backend ?? 'drizzle',
+		multiTenant: integration.multi_tenant ?? false,
+		...(integration.differ ? { differ: integration.differ } : {}),
+		coreImport: subsystemCoreImport(mode, 'integration'),
+		runtimeImport: (relpath) => runtimeImport(mode, relpath),
+	};
 }
 
 /** The `events` system's input (S-1), or null when the subsystem isn't installed. */
@@ -64,6 +84,7 @@ function compositionInput(ctx: Context): CompositionInput {
 		generatedDir: layout.generated,
 		...emitterOptions(mode),
 		events: patternStackEventsInput(ctx, layout.generated),
+		integration: patternStackIntegrationInput(ctx),
 	};
 }
 

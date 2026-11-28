@@ -24,7 +24,6 @@
  * memory recorder lets tests exercise error paths where the orchestrator
  * short-circuits before ever reaching the recorder.
  */
-import { Injectable } from '@nestjs/common';
 import type {
   CompleteRunInput,
   IIntegrationRunRecorder,
@@ -73,7 +72,6 @@ export interface MemoryRunRecord {
   completedAt: Date | null;
 }
 
-@Injectable()
 export class MemoryRunRecorder implements IIntegrationRunRecorder {
   /**
    * All started runs keyed by id. Public so tests can inspect lifecycle

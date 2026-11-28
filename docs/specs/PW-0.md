@@ -72,7 +72,8 @@ import reaches Nest in three places a pattern-stack app can't avoid:
   (typed against `INestApplication`; its Hono twin is H-2) and the module.
 - `integration/core.ts`: the protocols, the change-source registry, the detection schema, the middleware, the poll /
   incremental-read / webhook primitives, `buildChangeSource`, the tokens, the errors and the audit schemas. Not in it:
-  the memory and Drizzle backends, the differ, the use case (all decorated; S-3) and the module.
+  the memory and Drizzle backends, the differ, the use case (all decorated) and the module. (S-3, 2026-11-27: these
+  are plain now, and the runner, the differ and the memory backends joined `core.ts`.)
 - Each `index.ts` is now `export * from './core'` plus its Nest half, so the public API is unchanged and each export
   has one home. The package's `./subsystems` barrel is unchanged.
 - No `jobs/core.ts`: the jobs subsystem is replaced, not de-Nested (d24, J-0b brings `@pattern-stack/jobs`).

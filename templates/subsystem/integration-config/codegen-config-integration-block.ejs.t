@@ -10,7 +10,7 @@ integration:
   # 'drizzle' is the production backend (Postgres cursor store +
   # integration_runs / integration_run_items audit log). 'memory' is the in-process
   # test backend (MemoryCursorStore + MemoryRunRecorder).
-  backend: drizzle
+  backend: <%= backend %>
 
   # ── Multi-tenancy (SYNC-6 / ADR-008) ──
   # When true:

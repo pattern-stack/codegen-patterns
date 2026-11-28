@@ -1003,6 +1003,11 @@ describe('subsystem — install integration (SYNC-7)', () => {
 		expect(
 			fs.existsSync(path.join(installDir, 'integration-audit.schema.ts')),
 		).toBe(true);
+		// The config block says what was installed: the module (and a pattern-stack system) build from it.
+		const config = parseYaml(fs.readFileSync(path.join(root, 'codegen.config.yaml'), 'utf8')) as {
+			integration?: { backend?: string };
+		};
+		expect(config.integration?.backend).toBe('memory');
 	});
 
 	test('detectInstalledSubsystems finds integration after install', async () => {

@@ -213,7 +213,7 @@ describe('the configs the generator writes pass the strict parse, and the editor
 			);
 		expect(blocks.length).toBe(7);
 		for (const file of blocks) {
-			// The one local a block prints: the installed backend (events, S-1).
+			// The one local a block prints: the installed backend (events, integration; S-3).
 			const body = fs
 				.readFileSync(file, 'utf-8')
 				.split(/^---$/m)
