@@ -15,6 +15,7 @@ export const leads = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
+    userId: uuid('user_id').notNull(),
     // external_id_tracking behavior
     externalId: varchar('external_id'),
     provider: varchar('provider'),

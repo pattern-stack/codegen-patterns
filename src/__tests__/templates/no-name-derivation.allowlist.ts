@@ -29,7 +29,7 @@ export const NO_NAME_DERIVATION_ALLOWLIST: readonly AllowlistEntry[] = [
 	{ file: 'templates/junction/new/prompt.js', pattern: 'inline-camel-case', count: 1, issue: '#679' },
 	{ file: 'templates/junction/new/prompt.js', pattern: 'local-case-helper', count: 2, issue: '#679' },
 	{ file: 'templates/junction/new/repository.ejs.t', pattern: 'string-built-finder', count: 2, issue: '#679' },
-	{ file: 'templates/junction/new/service.ejs.t', pattern: 'string-built-finder', count: 9, issue: '#679' },
+	{ file: 'templates/junction/new/service.ejs.t', pattern: 'string-built-finder', count: 7, issue: '#679' },
 	{ file: 'templates/relationship/new/prompt.js', pattern: 'inline-camel-case', count: 1, issue: '#679' },
 	{ file: 'templates/relationship/new/prompt.js', pattern: 'local-case-helper', count: 2, issue: '#679' },
 

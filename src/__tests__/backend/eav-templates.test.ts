@@ -68,7 +68,63 @@ const baseEntity = {
   behaviors: ['timestamps'],
 };
 
-const eavEntity = { ...baseEntity, eav: true };
+// EAV stamps each value with the row's owner, so an EAV entity has a NOT NULL `user_id`.
+const eavEntity = { ...baseEntity, eav: true, fields: { ...baseEntity.fields, user_id: { type: 'uuid', required: true } } };
+
+describe('backend eav — the user_id each value is stamped with', () => {
+  it('refuses an eav entity with no user_id column, by name', () => {
+    expect(() => buildBackendLocals({ ...baseEntity, eav: true }, withEntities())).toThrow(
+      /'opportunity': `eav: true` stamps each custom-field value .* it has none/,
+    );
+  });
+
+  it('refuses a nullable user_id when create is emitted', () => {
+    const nullable = { ...baseEntity, eav: true, fields: { ...baseEntity.fields, user_id: { type: 'uuid' } } };
+    expect(() => buildBackendLocals(nullable, withEntities())).toThrow(/`user_id` is nullable/);
+  });
+
+  it('refuses a user_id that is NOT NULL but optional on create (a default)', () => {
+    const defaulted = {
+      ...baseEntity,
+      eav: true,
+      fields: { ...baseEntity.fields, user_id: { type: 'uuid', nullable: false, default: '00000000-0000-4000-8000-000000000001' } },
+    };
+    expect(() => buildBackendLocals(defaulted, withEntities())).toThrow(/optional on create \(it has a default\)/);
+  });
+
+  it('accepts a belongs_to whose (NOT NULL) foreign key is user_id', () => {
+    const viaFk = {
+      ...baseEntity,
+      eav: true,
+      relationships: { owner: { type: 'belongs_to', target: 'user', foreign_key: 'user_id', nullable: false } },
+    };
+    expect(() => buildBackendLocals(viaFk, withEntities())).not.toThrow();
+  });
+
+  it('checks only what is emitted: writes: false reads no userId, so needs no user_id', () => {
+    const readOnly = { ...baseEntity, eav: true, generate: { writes: false } };
+    expect(() => buildBackendLocals(readOnly, withEntities())).not.toThrow();
+  });
+
+  it('a value table needs the column, nullable or not', () => {
+    const valueTable = (userId: Record<string, unknown> | null) => ({
+      entity: { name: 'field_value', plural: 'field_values', pattern: 'Metadata' },
+      eav_value_table: true,
+      eav_definition_table: 'field_definition',
+      fields: {
+        entity_type: { type: 'string', required: true },
+        entity_id: { type: 'uuid', required: true },
+        field_definition_id: { type: 'uuid', required: true },
+        ...(userId ? { user_id: userId } : {}),
+        value: { type: 'json', required: true },
+      },
+      relationships: {},
+      behaviors: ['timestamps'],
+    });
+    expect(() => buildBackendLocals(valueTable(null), withEntities())).toThrow(/`eav_value_table: true` stamps .* it has none/);
+    expect(() => buildBackendLocals(valueTable({ type: 'uuid' }), withEntities())).not.toThrow();
+  });
+});
 
 describe('backend eav templates — prompt-extension wiring', () => {
   it('exposes paired read use-case class names', () => {

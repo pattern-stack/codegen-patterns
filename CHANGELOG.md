@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A junction's `detach` and `setPrimary` work** (#973). A generated junction service's `detach(left, right)` and
+  `setPrimary(left, right)` threw `table has no column 'id'` for every junction: they looked the link up, then deleted
+  or updated it by `match.id`, and a junction table has no `id` (its key is the pair). The parents' fan-out methods
+  (`detach<Counterparty>`, `<counterparties>SetPrimary`) call them, so those threw too. The junction repository now
+  has `deleteLink(left, right)` and `updateLink(left, right, patch)`, which address the rows by the pair (every role,
+  when the junction has one), and the service calls them. They also no longer miss a link past the first 100 of the
+  left end's.
+- Both still publish the junction's lifecycle events (`<junction>.deleted`, `<junction>.updated`), with the id
+  `<left>:<right>`, through `BaseService.emitKeyedLifecycle`. A `detach` of a pair that isn't linked publishes
+  nothing.
+- On a junction with a role, both act on every row of the pair: being linked and being primary belong to the pair.
+  Regenerate junctions with `junction new --all`.
+- **An EAV entity whose `user_id` the generated code can't read is refused by name, not a `tsc` error** (#977). EAV
+  stamps each custom-field value with its owner's `user_id`. `entity new` now checks exactly what it emits:
+  - `eav: true` with a create use case needs `user_id` required on create (NOT NULL, no default);
+  - with an update use case, it needs `user_id` NOT NULL;
+  - `eav_value_table: true` needs the column.
+  Each used to generate code that failed to compile, far from the cause. The message names the entity, the flag and
+  the field to declare.
+
 ## [0.35.0] — 2026-11-27
 
 Zod 4, and the generation target. The generated code is Zod 4, and so is codegen (ZOD-0 #945, ZOD-1a #953,

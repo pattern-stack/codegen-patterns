@@ -57,7 +57,8 @@ const baseEntity = {
   behaviors: ['timestamps', 'soft_delete'],
 };
 
-const eavEntity = { ...baseEntity, eav: true };
+// EAV stamps each value with the row's owner, so an EAV entity has a NOT NULL `user_id`.
+const eavEntity = { ...baseEntity, eav: true, fields: { ...baseEntity.fields, user_id: { type: 'uuid', required: true } } };
 
 describe('backend controller 404 semantics on :id routes', () => {
   it('imports NotFoundException from @nestjs/common', () => {

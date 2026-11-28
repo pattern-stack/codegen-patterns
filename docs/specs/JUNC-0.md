@@ -283,3 +283,15 @@ hand-composed `listAssoc` with a `.through()` read without touching where the fa
   `pattern: Junction`, fails the schema or names a missing entity stops `entity new --all`. `junctions/` holds
   junctions only, and a junction lives nowhere else.
 - #681 (mirrored `a × b` / `b × a` junctions collide on `<plural>List`) is open and unchanged.
+
+## Revision 2026-11-27: the junction service's writes address a link by its pair
+
+`detach` and `setPrimary` looked a link up through `findBy<Left>Id` (the first 100) and then deleted or updated it
+by `match.id`. A junction table has no `id` column (its key is the pair), so both threw `table has no column 'id'`
+for every junction, and so did the parents' fan-out methods that call them. The junction repository now has
+`deleteLink(left, right, tx?)` and `updateLink(left, right, patch, tx?)`. They address the rows by the pair (every
+role, when the junction has one) and stamp `update`'s timestamps and tenant guard; the service calls them and
+publishes the lifecycle events itself (`BaseService.emitKeyedLifecycle`, id `<left>:<right>`), since the write
+doesn't go through `BaseService.delete` / `update`. The two methods are fixed names, like the junction's other
+methods, under the #679 exemption from the derived API surface.
+`test/scaffold/tests/junction-service.test.ts` runs `attach`, `setPrimary` and `detach` on Postgres.

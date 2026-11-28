@@ -64,7 +64,7 @@ const fieldValue = def({
 
 const lead = def({
 	entity: { name: 'lead', plural: 'leads', pattern: 'Integrated' },
-	fields: { name: { type: 'string', required: true } },
+	fields: { name: { type: 'string', required: true }, user_id: { type: 'uuid', required: true } },
 	behaviors: ['timestamps'],
 	eav: true,
 });
