@@ -12,9 +12,7 @@ import path from 'node:path';
 import { patternStackFileFilter, patternStackSubsystemRefusal } from '../../cli/shared/pattern-stack-subsystems';
 import { buildSubsystemSchemaBarrel } from '../../cli/shared/subsystem-schema-generator';
 import {
-	countParameters,
 	emitPatternStackIntegrations,
-	factoryParameters,
 	generateProviderFactory,
 	generateProviderSystem,
 } from '../../cli/shared/pattern-stack-integrations';
@@ -230,48 +228,6 @@ describe('the provider factory takes the connection store (S-2)', () => {
 	});
 });
 
-describe('a provider factory that no longer matches its system', () => {
-	it('counts top-level parameters only', () => {
-		expect(countParameters('')).toBe(0);
-		expect(countParameters("settings: Settings['salesforce']")).toBe(1);
-		expect(countParameters('settings: Record<string, X>, connections: ConnectionStore')).toBe(2);
-		expect(countParameters('a: (x: number, y: number) => void')).toBe(1);
-		expect(factoryParameters('export function createP(a: Map<string, (b, c) => d>, e: E): P {', 'createP')).toBe(
-			'a: Map<string, (b, c) => d>, e: E',
-		);
-	});
-
-	it('names every parameter it lacks, and a store it still takes after the starter went', () => {
-		const FIXTURE = path.join(REPO, 'test/fixtures/integration-patterns/definitions');
-		const providers = loadProvidersFromYaml(findYamlFiles(path.join(FIXTURE, 'providers'))).successes.map((p) => ({
-			definition: p.definition,
-			filePath: p.filePath,
-		}));
-		const entities = loadEntitiesFromYaml(findYamlFiles(path.join(FIXTURE, 'entities'))).successes.map((e) => e.definition);
-		const root = fs.mkdtempSync(path.join(os.tmpdir(), 'auth-ps-factory-'));
-		const factory = path.join(root, 'integrations/providers/salesforce/salesforce.provider.factory.ts');
-		const run = (store: string | null) =>
-			emitPatternStackIntegrations({
-				providers,
-				entities: entities as never,
-				outputRoot: path.join(root, 'integrations'),
-				backendSrcAbs: root,
-				modulesAbs: path.join(root, 'modules'),
-				mode: 'package',
-				wiringFile: path.join(root, 'generated/wiring.ts'),
-				tenancyColumn: 'tenant_id',
-				connectionStoreFile: store,
-				dryRun: true,
-			}).factoriesBehind.filter((f) => f.file === factory);
-		fs.mkdirSync(path.dirname(factory), { recursive: true });
-		fs.writeFileSync(factory, 'export function createSalesforceProvider(): SalesforceProvider {}');
-		expect(run('/x/connection-store.ts')).toEqual([{ file: factory, missing: ['settings', 'connections'], extra: 0 }]);
-		expect(run(null)).toEqual([{ file: factory, missing: ['settings'], extra: 0 }]);
-		fs.writeFileSync(factory, "export function createSalesforceProvider(settings: Settings['salesforce'], connections: ConnectionStore): P {}");
-		expect(run(null)).toEqual([{ file: factory, missing: [], extra: 1 }]);
-		expect(run('/x/connection-store.ts')).toEqual([]);
-	});
-});
 
 describe('runtime', () => {
 	it('EnvEncryptionKey takes the key itself, and names the env var when it is bad', async () => {

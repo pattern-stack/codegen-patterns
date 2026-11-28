@@ -412,46 +412,6 @@ export interface EmitPatternStackIntegrationsOptions extends PatternStackIntegra
 	dryRun?: boolean;
 }
 
-/**
- * A provider factory whose parameters don't match what its system passes, `(settings)` or, with `connections` composed,
- * `(settings, connections)`: the parameters it lacks (SET-1's settings, S-2's store), or how many it has too many (the
- * starter was removed after the factory took the store).
- */
-export interface FactoryBehind {
-	file: string;
-	missing: Array<'settings' | 'connections'>;
-	extra: number;
-}
-
-/** The text between a factory's parentheses (balanced, so a typed parameter's own parentheses stay in), or null. */
-export function factoryParameters(source: string, factory: string): string | null {
-	const start = source.search(new RegExp(`export function ${factory}\\(`));
-	if (start === -1) return null;
-	let depth = 0;
-	for (let i = source.indexOf('(', start); i < source.length; i++) {
-		if (source[i] === '(') depth++;
-		else if (source[i] === ')' && --depth === 0) return source.slice(source.indexOf('(', start) + 1, i);
-	}
-	return null;
-}
-
-/** A parameter list's top-level parameters (a comma inside `<…>`, `(…)`, `{…}` or `[…]` doesn't split). */
-export function countParameters(params: string): number {
-	let depth = 0;
-	let count = 0;
-	let any = false;
-	for (const ch of params) {
-		if ('<({['.includes(ch)) depth++;
-		else if ('>)}]'.includes(ch)) depth--;
-		else if (ch === ',' && depth === 0) {
-			if (any) count++;
-			any = false;
-			continue;
-		}
-		if (!/\s/.test(ch)) any = true;
-	}
-	return count + (any ? 1 : 0);
-}
 
 export interface EmitPatternStackIntegrationsResult {
 	plan: PatternStackIntegrationsPlan;

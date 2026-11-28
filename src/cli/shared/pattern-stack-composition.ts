@@ -26,7 +26,7 @@ import {
 } from '../../emitters/composition/emit-composition.js';
 import { configOrDefaults } from '../../config/project-config.js';
 import { isSubsystemInstalled } from './subsystem-detect.js';
-import { eventsGeneratedDir } from './pattern-stack-subsystems.js';
+import { CONNECTION_STORE_FILE, eventsGeneratedDir } from './pattern-stack-subsystems.js';
 import { removeOtherWiringFiles } from '../../emitters/composition/stale-files.js';
 import { openApiImport, resolveRuntimeMode, runtimeImport, subsystemCoreImport, type RuntimeMode } from './runtime-import.js';
 import { printInfo, printWarning } from '../ui/output.js';
@@ -66,7 +66,7 @@ export function patternStackAuthInput(ctx: Context): CompositionAuthInput | null
  * isn't vendored. The starter is always vendored (in package mode too), so its file is the record.
  */
 export function connectionStoreFile(ctx: Context): string | null {
-	const file = path.join(projectLayout(ctx.cwd, ctx.config).modules, 'connections', 'connection-store.ts');
+	const file = path.join(projectLayout(ctx.cwd, ctx.config).modules, 'connections', CONNECTION_STORE_FILE);
 	return fs.existsSync(file) ? file : null;
 }
 

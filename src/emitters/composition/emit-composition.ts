@@ -21,6 +21,7 @@
  * between modules (the root module's included) is refused, naming it.
  */
 
+import { TOKEN_ENCRYPTION_KEY_ENV } from '../../../runtime/subsystems/auth/backends/encryption-key/env.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -678,7 +679,7 @@ function authSystemContent(auth: CompositionAuthInput, banner: string): string {
 	return `${banner}
 /**
  * The \`auth\` system (S-2): what provider connections share, as a \`@pattern-stack/wiring\` system —
- * - \`encryptionKey\`: AES-256-GCM over \`settings.auth.tokenEncryptionKey\` (\`INTEGRATION_TOKEN_ENCRYPTION_KEY\`); the
+ * - \`encryptionKey\`: AES-256-GCM over \`settings.auth.tokenEncryptionKey\` (\`${TOKEN_ENCRYPTION_KEY_ENV}\`); the
  *   connection store encrypts every stored token with it;
  * - \`oauthState\`: the single-use state of a connect → callback dance, in \`auth_oauth_state\`;
  * - \`callbackUrl(provider)\`: where the provider redirects back, \`<settings.auth.redirectUriBase>/auth/<provider>/callback\`.

@@ -60,6 +60,7 @@ import {
 	patternStackSubsystemRefusal,
 } from '../shared/pattern-stack-subsystems.js';
 import { rowFor } from '../../utils/keyed-row.js';
+import { CONNECTIONS_AUTH_MODULE_FILE } from '../shared/subsystem-detect.js';
 import { authInstalled } from '../shared/pattern-stack-composition.js';
 import { generating } from '../../utils/generated-file.js';
 import type { RuntimeMode } from '../shared/runtime-import.js';
@@ -759,7 +760,7 @@ export class SubsystemInstallCommand extends Command {
 		if (authScaffold) {
 			if (authScaffold.ok) {
 				printSuccess(
-					`auth scaffold applied (schema, config block, app.module.ts hint, .env.config key)`,
+					`auth scaffold applied (${authScaffold.parts.join(', ')})`,
 				);
 			} else {
 				printWarning(
@@ -1821,6 +1822,8 @@ function runObservabilityScaffold(
 interface AuthScaffoldOutcome {
 	ok: boolean;
 	planned: string[];
+	/** What the scaffold writes, for its success line: the app.module.ts hint only when there is an app.module.ts. */
+	parts: string[];
 	error?: string;
 	configBlockOutcome?: ConfigBlockOutcome;
 }
@@ -1845,6 +1848,7 @@ function runAuthScaffold(
 		...(locals.appModuleHook ? [locals.appModulePath] : []),
 		locals.envConfigPath,
 	];
+	const parts = ['schema', 'config block', ...(locals.appModuleHook ? ['app.module.ts hint'] : []), '.env.config key'];
 
 	const configBlockOutcome = planConfigBlockAction(
 		locals.configPath,
@@ -1853,11 +1857,11 @@ function runAuthScaffold(
 	);
 
 	if (configBlockOutcome === 'parse-error') {
-		return { ok: false, planned, configBlockOutcome };
+		return { ok: false, planned, parts, configBlockOutcome };
 	}
 
 	if (opts.dryRun) {
-		return { ok: true, planned, configBlockOutcome };
+		return { ok: true, planned, parts, configBlockOutcome };
 	}
 
 	// Hygen's `inject: append:` requires the target to exist. `.env.config`
@@ -1881,6 +1885,7 @@ function runAuthScaffold(
 		return {
 			ok: false,
 			planned,
+			parts,
 			error: result.stderr?.trim() || 'hygen exited non-zero',
 			configBlockOutcome,
 		};
@@ -1899,12 +1904,13 @@ function runAuthScaffold(
 		return {
 			ok: false,
 			planned,
+			parts,
 			error: configResult.error,
 			configBlockOutcome,
 		};
 	}
 
-	return { ok: true, planned, configBlockOutcome };
+	return { ok: true, planned, parts, configBlockOutcome };
 }
 
 // ---------------------------------------------------------------------------
@@ -2012,21 +2018,20 @@ const AUTH_BARE_IMPORT_RE =
 
 function buildAuthImportRewriter(
 	subsystemsRoot: string,
-	patternStack: { mode: RuntimeMode } | null = null,
+	install: AuthIntegrationsInstall = AUTH_INTEGRATIONS_INSTALL.nest,
+	mode: RuntimeMode = 'vendored',
 ): (content: string, destPath: string) => string {
 	// S-2: under pattern-stack the starter imports the Nest-free entry, `auth/core` (the vendored `index.ts` isn't there).
-	const authRoot = path.join(subsystemsRoot, 'auth', ...(patternStack ? ['core'] : []));
+	const authRoot = path.join(subsystemsRoot, 'auth', ...install.authEntry);
+	const packageImport = mode === 'package' ? install.packageImport : null;
 	return (content: string, destPath: string): string => {
 		if (!AUTH_BARE_IMPORT_RE.test(content)) {
 			AUTH_BARE_IMPORT_RE.lastIndex = 0;
 			return content;
 		}
 		AUTH_BARE_IMPORT_RE.lastIndex = 0;
-		if (patternStack?.mode === 'package') {
-			return content.replace(
-				AUTH_BARE_IMPORT_RE,
-				(_match, quote: string) => `${quote}${subsystemCoreImport('package', 'auth')}${quote}`,
-			);
+		if (packageImport !== null) {
+			return content.replace(AUTH_BARE_IMPORT_RE, (_match, quote: string) => `${quote}${packageImport}${quote}`);
 		}
 		let rel = path.relative(path.dirname(destPath), authRoot);
 		if (!rel.startsWith('.')) rel = `./${rel}`;
@@ -2040,8 +2045,27 @@ function buildAuthImportRewriter(
 	};
 }
 
-/** The starter's Nest module: `ConnectionsAuthModule`. A pattern-stack project composes the `connections` system instead. */
-export const CONNECTIONS_AUTH_MODULE_FILE = 'connections-auth.module.ts';
+/** How the auth-integrations starter installs under each wiring (S-2). */
+interface AuthIntegrationsInstall {
+	/** Starter files not vendored: under pattern-stack the Nest module (the composition writes the `connections` system). */
+	skip: ReadonlySet<string>;
+	/** The vendored auth folder the starter's imports point at: the barrel, or the Nest-free `core`. */
+	authEntry: readonly string[];
+	/** The specifier the imports take in package mode, or null to point at the vendored auth folder. */
+	packageImport: string | null;
+	/** Whether the install adds the app.module.ts TODO (a pattern-stack project has no app.module.ts). */
+	appModuleTodo: boolean;
+}
+
+const AUTH_INTEGRATIONS_INSTALL: Readonly<Record<TargetWiring, AuthIntegrationsInstall>> = {
+	nest: { skip: new Set(), authEntry: [], packageImport: null, appModuleTodo: true },
+	'pattern-stack': {
+		skip: new Set([CONNECTIONS_AUTH_MODULE_FILE]),
+		authEntry: ['core'],
+		packageImport: subsystemCoreImport('package', 'auth'),
+		appModuleTodo: false,
+	},
+};
 
 interface AuthIntegrationsScaffoldOutcome {
 	ok: boolean;
@@ -2065,6 +2089,7 @@ function runAuthIntegrationsScaffold(
 			fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : null,
 	});
 
+	const install = rowFor('target.wiring', AUTH_INTEGRATIONS_INSTALL, targetWiring(configOrDefaults(config).target));
 	const examplesRoot = authIntegrationsExamplesRoot();
 	if (!fs.existsSync(examplesRoot)) {
 		return {
@@ -2090,7 +2115,7 @@ function runAuthIntegrationsScaffold(
 	const planned: string[] = [
 		adaptersDest,
 		connectionYamlDest,
-		...(isPatternStackWiring(configOrDefaults(config).target) ? [] : [locals.appModulePath]),
+		...(install.appModuleTodo ? [locals.appModulePath] : []),
 	];
 
 	if (opts.dryRun) {
@@ -2105,13 +2130,12 @@ function runAuthIntegrationsScaffold(
 	// to relative paths that resolve against the consumer's vendored
 	// auth subsystem (see buildAuthImportRewriter).
 	const subsystemsRoot = projectLayout(cwd, config).subsystems;
-	const patternStack = isPatternStackWiring(configOrDefaults(config).target);
 	const adapterCopy = copyTreeIdempotent(
 		adaptersSrc,
 		adaptersDest,
 		opts.force,
-		buildAuthImportRewriter(subsystemsRoot, patternStack ? { mode: resolveRuntimeMode(config) } : null),
-		(name) => patternStack && name === CONNECTIONS_AUTH_MODULE_FILE,
+		buildAuthImportRewriter(subsystemsRoot, install, resolveRuntimeMode(config)),
+		(name) => install.skip.has(name),
 	);
 
 	// Vendor the connection.yaml.
@@ -2137,7 +2161,7 @@ function runAuthIntegrationsScaffold(
 	}
 
 	// S-2: a pattern-stack project has no app.module.ts; the composition writes the `connections` system.
-	if (patternStack) {
+	if (!install.appModuleTodo) {
 		return {
 			ok: true,
 			planned,

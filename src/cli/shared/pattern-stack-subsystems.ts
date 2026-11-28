@@ -57,6 +57,9 @@ function writeEmptyPatternStackEvents(ctx: Context, generatedDir: string): void 
 	}
 }
 
+/** The auth-integrations starter's store (`createConnectionStore`), which marks a pattern-stack install of it. */
+export const CONNECTION_STORE_FILE = 'connection-store.ts';
+
 export const PATTERN_STACK_SUBSYSTEMS: Readonly<Record<SubsystemName, PatternStackSupport>> = {
 	// S-1: the Nest module and the barrel that re-exports it are skipped, and so is the bundled `generated/` set (its bus
 	// is Nest's): the install writes the empty pattern-stack set, `entity new` the real one.
@@ -96,7 +99,7 @@ export const PATTERN_STACK_SUBSYSTEMS: Readonly<Record<SubsystemName, PatternSta
 			'`codegen subsystem install auth-integrations`.',
 	},
 	// S-2: the connections starter. It also needs auth installed, which the install checks itself (it needs the project).
-	'auth-integrations': { backends: 'any', skipped: new Set(), entryFile: 'connection-store.ts', nextStep: null },
+	'auth-integrations': { backends: 'any', skipped: new Set(), entryFile: CONNECTION_STORE_FILE, nextStep: null },
 	// S-3: Nest's module, its barrel and `ExecuteIntegrationUseCase` are skipped (the system builds `IntegrationRunner`).
 	integration: {
 		backends: ['drizzle', 'memory'],

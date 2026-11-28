@@ -66,9 +66,10 @@ import { resolveRuntimeMode, runtimeImport, type RuntimeMode } from './runtime-i
  *   - integration: `integration_subscriptions` / `integration_runs` /
  *                  `integration_run_items` tables + 5 pgEnums.
  *
- * `cache` / `storage` / `auth` etc. are intentionally absent — only the
- * subsystems whose tables drizzle-kit must create are listed. (auth's
- * `auth_oauth_state` lands via its own Hygen schema template, not here.)
+ * `cache` / `storage` etc. are intentionally absent — only the subsystems whose
+ * tables drizzle-kit must create are listed. auth's `auth_oauth_state` is listed
+ * under pattern-stack only (`SCHEMA_ORDER`): under Nest it lands via its own Hygen
+ * schema template (#284).
  */
 export const SCHEMA_SYMBOLS: Partial<Record<SubsystemName, string[]>> = {
 	events: ['domainEvents'],
@@ -92,17 +93,19 @@ export const SCHEMA_SYMBOLS: Partial<Record<SubsystemName, string[]>> = {
 		'integrationRunItemOperationEnum',
 		'integrationRunItemStatusEnum',
 	],
+	auth: ['authOAuthState'],
 };
 
-/** Subsystems that contribute schema, in a deterministic emit order. */
-const SCHEMA_ORDER: SubsystemName[] = ['events', 'jobs', 'bridge', 'integration'];
-
 /**
- * Under pattern-stack wiring auth's `auth_oauth_state` is listed too (S-2): the `auth` system's state store writes it,
- * and nothing else tells drizzle-kit about it. Nest's barrel leaves it out, as before (#284).
+ * The subsystems that contribute schema, in a deterministic emit order, by wiring. Under pattern-stack auth's
+ * `auth_oauth_state` is listed too (S-2): the `auth` system's state store writes it, and nothing else tells drizzle-kit
+ * about it. Nest's barrel leaves it out, as before (#284).
  */
-const AUTH_SCHEMA_SYMBOLS = ['authOAuthState'];
-const PATTERN_STACK_SCHEMA_ORDER: SubsystemName[] = [...SCHEMA_ORDER, 'auth'];
+const NEST_SCHEMA_ORDER: readonly SubsystemName[] = ['events', 'jobs', 'bridge', 'integration'];
+const SCHEMA_ORDER: Readonly<Record<TargetWiring, readonly SubsystemName[]>> = {
+	nest: NEST_SCHEMA_ORDER,
+	'pattern-stack': [...NEST_SCHEMA_ORDER, 'auth'],
+};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -188,9 +191,9 @@ export function buildSubsystemSchemaBarrel(
 	const emitted: SubsystemName[] = [];
 	const lines: string[] = [];
 
-	for (const name of wiring === 'pattern-stack' ? PATTERN_STACK_SCHEMA_ORDER : SCHEMA_ORDER) {
+	for (const name of SCHEMA_ORDER[wiring]) {
 		if (!installedNames.has(name)) continue;
-		const symbols = name === 'auth' ? AUTH_SCHEMA_SYMBOLS : SCHEMA_SYMBOLS[name];
+		const symbols = SCHEMA_SYMBOLS[name];
 		if (!symbols || symbols.length === 0) continue;
 		const importSpec = schemaImportFor(mode, name, subsystemsRel, wiring);
 		lines.push(`export { ${symbols.join(', ')} } from '${importSpec}';`);
