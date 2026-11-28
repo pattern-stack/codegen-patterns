@@ -12,32 +12,21 @@
  * (a request handler's, ADR-042), so a start inside a tenant's request never lands in another partition; else, or for
  * an explicit `null`, `SYSTEM_TENANT` (single-tenant apps, system work).
  *
- * It is a thin adapter over the package's system start (`JobsService.startSystemRun`), which owns the rest: the
+ * The Nest host's starter (J-1's `JobRunStarter` is the framework-free one). It is a thin adapter over the package's
+ * system start (`JobsService.startSystemRun`, itself `@pattern-stack/jobs/host` `startSystemRun`), which owns the rest: the
  * budget (the job's limits unless the caller names one; a job without limits needs `budget.maxItems`), a process that
  * is no worker never submitting (`JOBS_WORKER`, so no job code runs here without a lease heartbeat), and a failed
  * submit logged, not thrown (the sweep resubmits it).
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { type Collision, type Registry, type Run, type RunTrigger, SYSTEM_TENANT } from '@pattern-stack/jobs';
-import { type AskedBudget, JOBS_REGISTRY, JOBS_TABLES, JobsService } from '@pattern-stack/jobs/nest';
+import { type Registry, type Run, SYSTEM_TENANT } from '@pattern-stack/jobs';
+import { JOBS_REGISTRY, JOBS_TABLES, JobsService } from '@pattern-stack/jobs/nest';
 import { type JobDatabase, type JobTables, PostgresJobStore } from '@pattern-stack/jobs/postgres';
 
 import { tryGetRequester } from '../../base-classes/tenant-context';
+import type { JobStartOptions } from './job-run-starter';
 
-export interface JobStartOptions {
-  /** The run's tenant. Omitted: the ambient requester's; `null` (or no requester): `SYSTEM_TENANT`. */
-  tenantId?: string | null;
-  /** At most one open run per tenant, job and key; what a start finding one does is `collision`. */
-  dedupeKey?: string;
-  collision?: Collision;
-  dedupeWindowMs?: number;
-  /** Default `'agent'` (app code); the bridge passes `'event'`, a scheduler `'schedule'`. */
-  trigger?: RunTrigger;
-  /** The acting user, when there is one. */
-  requestedBy?: string | null;
-  budget?: AskedBudget;
-  dryRun?: boolean;
-}
+export type { JobStartOptions };
 
 @Injectable()
 export class JobStarter {

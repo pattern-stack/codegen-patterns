@@ -18,6 +18,11 @@ import { buildEventCodegenContents } from './event-codegen-generator.js';
 import { projectLayout } from './project-layout.js';
 import { resolveRuntimeMode } from './runtime-import.js';
 import type { SubsystemBackend, SubsystemName } from './subsystem-detect.js';
+import * as detectModule from './subsystem-detect.js';
+import { configOrDefaults } from '../../config/project-config.js';
+
+/** The detection, read lazily (it imports this file: the cycle resolves before any call). */
+const detect = () => detectModule;
 
 /** A subsystem pattern-stack installs. */
 export interface PatternStackSubsystem {
@@ -111,12 +116,68 @@ export const PATTERN_STACK_SUBSYSTEMS: Readonly<Record<SubsystemName, PatternSta
 			"(`<generated>/composition.ts`). compose.ts must compose them (`systems: [databaseSystem(...), ...SYSTEMS]`), and " +
 			"drizzle.config.ts's `schema` must include `<generated>/subsystems-schema.ts` (the `integration_*` tables).",
 	},
-	jobs: { comesWith: 'J-1' },
-	bridge: { comesWith: 'J-1' },
+	// J-1: the Nest host (the module and `JobStarter`) is skipped; the `jobs` system builds the engine and a
+	// `JobRunStarter` (`core.ts`). One backend: the jobs store is the package's Postgres tables.
+	jobs: {
+		backends: ['drizzle'],
+		skipped: new Set(['jobs-engine.module.ts', 'job-starter.ts', 'index.ts']),
+		entryFile: 'core.ts',
+		nextStep:
+			'Next: `codegen entity new --all` writes the job registry (`<generated>/jobs.ts`, every `defineJob` / `jobFactory` ' +
+			'export under the jobs directory) and the `jobs` system (`<generated>/jobs-system.ts`), listed in `SYSTEMS`. Its ' +
+			'executor runs in this process when `JOBS_WORKER` is true (the default; `codegen project settings` lists it). ' +
+			"drizzle.config.ts's `schema` must include `<generated>/subsystems-schema.ts` (the job tables).",
+	},
+	// J-1: the Nest half (the module, the tokens, the drain hook, the `EventFlowService` facade and the Nest Drizzle repo)
+	// is skipped; the `events` system builds `BridgeOutboxDrainer` over the framework-free `DrizzleBridgeDeliveries`.
+	bridge: {
+		backends: ['drizzle'],
+		why: "its drain is the Drizzle outbox's",
+		prerequisite: (ctx) => bridgePrerequisite(ctx),
+		skipped: new Set([
+			'bridge.module.ts',
+			'bridge.tokens.ts',
+			'bridge-outbox-drain-hook.ts',
+			'event-flow.service.ts',
+			'bridge-delivery.drizzle-repo.ts',
+			'index.ts',
+		]),
+		entryFile: 'core.ts',
+		nextStep:
+			'Next: declare `jobTriggers(...)` beside a job, then `codegen entity new --all` writes the bridge registry and ' +
+			"passes the drain to the `events` system, which starts each trigger's run in the event's transaction. " +
+			"drizzle.config.ts's `schema` must include `<generated>/subsystems-schema.ts` (the `bridge_delivery` table).",
+	},
 	cache: { comesWith: null },
 	storage: { comesWith: null },
 	observability: { comesWith: null },
 };
+
+/** Whether an events backend's bus drains an outbox, so the bridge can start runs from it (J-1). */
+const EVENTS_DRAIN_OUTBOX: Readonly<Record<SubsystemBackend, boolean>> = {
+	drizzle: true,
+	memory: false,
+	redis: false,
+	bullmq: false,
+	local: false,
+	'config-only': false,
+	combiner: false,
+	unknown: false,
+};
+
+/**
+ * Under pattern-stack, the bridge needs what it combines (J-1): events, on a bus that drains an outbox, and jobs. Why
+ * the install stops, or null. `isSubsystemInstalled` is read when called, not at load: the detection imports this file.
+ */
+export function bridgePrerequisite(ctx: Context): string | null {
+	const missing = (['events', 'jobs'] as const).filter((m) => !detect().isSubsystemInstalled(ctx, m));
+	if (missing.length > 0) {
+		return `the bridge combines events and jobs: install ${missing.map((m) => `\`codegen subsystem install ${m}\``).join(' and ')} first.`;
+	}
+	const events = (configOrDefaults(ctx.config).events?.backend ?? 'drizzle') as SubsystemBackend;
+	if (rowFor('events backend', EVENTS_DRAIN_OUTBOX, events)) return null;
+	return `the bridge needs the events subsystem on a bus that drains its outbox (drizzle); this project's events backend is ${events}.`;
+}
 
 /** The row of a subsystem pattern-stack installs, or null when it isn't supported yet. */
 export function patternStackSubsystem(name: SubsystemName): PatternStackSubsystem | null {

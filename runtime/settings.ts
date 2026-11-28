@@ -17,13 +17,24 @@ import { readFileSync, existsSync } from 'node:fs';
 import { z } from 'zod';
 
 /** One setting: the env var it is read from, whether it is a secret, its default, and what it is for. */
+/** How a setting's value is checked: the one list (codegen's derived settings read the type too). */
+export const SETTING_FORMATS = ['string', 'url', 'boolean'] as const;
+export type SettingFormat = (typeof SETTING_FORMATS)[number];
+
+/** Each format's check, one row each: a new format is a compile error here until it has one. */
+export const SETTING_FORMAT_SCHEMAS: Readonly<Record<SettingFormat, () => z.ZodType<string>>> = {
+  string: () => z.string().min(1),
+  url: () => z.string().url(),
+  boolean: () => z.enum(['true', 'false'], { error: 'expected true or false' }),
+};
+
 export interface SettingSpec {
   readonly env: string;
   readonly secret: boolean;
   /** Used when the source has no value. None ⇒ required. */
   readonly default?: string;
-  /** `url` values are checked as absolute URLs. */
-  readonly format?: 'string' | 'url';
+  /** `url` values are checked as absolute URLs; `boolean` values are `true` or `false` (the value stays a string). */
+  readonly format?: SettingFormat;
   readonly description?: string;
 }
 
@@ -117,8 +128,9 @@ export class SettingsError extends Error {
   }
 }
 
-function schemaFor(spec: Pick<SettingSpec, 'format'>) {
-  return spec.format === 'url' ? z.string().url() : z.string().min(1);
+/** A spec's check: its format's row (`string` when it names none). */
+function schemaFor(spec: Pick<SettingSpec, 'format'>): z.ZodType<string> {
+  return SETTING_FORMAT_SCHEMAS[spec.format ?? 'string']();
 }
 
 /** Why `raw` is not a valid value for `spec`, or null (the one rule {@link loadSettings} and the check apply). */

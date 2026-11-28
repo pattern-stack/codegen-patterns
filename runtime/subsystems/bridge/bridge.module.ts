@@ -25,11 +25,15 @@ import {
   EVENT_FLOW,
 } from './bridge.tokens';
 import { MemoryBridgeDeliveryRepo } from './bridge-delivery.memory-backend';
-import { DrizzleBridgeDeliveryRepo } from './bridge-delivery.drizzle-backend';
+import { DrizzleBridgeDeliveryRepo } from './bridge-delivery.drizzle-repo';
 import { BridgeOutboxDrainHook } from './bridge-outbox-drain-hook';
 import { EventFlowService } from './event-flow.service';
 import { bridgeRegistry } from './generated/registry';
 import type { BridgeRegistry } from './bridge.protocol';
+import { useNestLogger } from '../../nest-logger';
+
+// The runtime's logger port prints through Nest's Logger in a Nest app (PW-0): the drain's lines go through it.
+useNestLogger();
 
 export interface BridgeModuleOptions {
   /**

@@ -34,14 +34,14 @@ const isNode = (spec: string) => spec.startsWith('node:');
 /** The directory (or top-level barrel) each framework may be imported from, and only there. */
 const FRAMEWORK_HOME: Record<string, readonly string[]> = {
   '@nestjs/': ['nest/', 'nest.ts'],
-  '@opentelemetry/': ['nest/', 'nest.ts'],
+  '@opentelemetry/': ['nest/', 'nest.ts', 'host/', 'host.ts'],
   'drizzle-orm': ['postgres/', 'postgres.ts'],
   bullmq: ['bullmq/', 'bullmq.ts'],
 };
 
 /** The core: everything that is not a framework adapter. */
 const CORE = ['model/', 'ports/', 'policy/', 'define/', 'engine/', 'adapters/', 'shapes/', 'testing/'];
-const ADAPTERS = ['postgres/', 'bullmq/', 'redis/', 'nest/'];
+const ADAPTERS = ['postgres/', 'bullmq/', 'redis/', 'nest/', 'host/'];
 
 const files = sourceFiles(SRC);
 const inside = (file: string, homes: readonly string[]) =>
@@ -91,7 +91,20 @@ describe('import fences', () => {
         specifiersOf(f)
           .filter((i) => isRelative(i.spec))
           .map((i) => relative(SRC, resolve(dirname(f), i.spec)))
-          .filter((target) => ADAPTERS.some((a) => target.startsWith(a)) || ['nest.ts', 'postgres.ts', 'bullmq.ts', 'redis.ts'].includes(target))
+          .filter((target) => ADAPTERS.some((a) => target.startsWith(a)) || ['nest.ts', 'postgres.ts', 'bullmq.ts', 'redis.ts', 'host.ts'].includes(target))
+          .map((target) => `${rel(f)} -> ${target}`),
+      );
+    expect(wrong).toEqual([]);
+  });
+
+  test('./host never reaches Nest: no host file imports nest/ or nest.ts (a plain host loads it with no @nestjs)', () => {
+    const wrong = files
+      .filter((f) => inside(f, ['host/', 'host.ts']))
+      .flatMap((f) =>
+        specifiersOf(f)
+          .filter((i) => isRelative(i.spec))
+          .map((i) => relative(SRC, resolve(dirname(f), i.spec)))
+          .filter((target) => target.startsWith('nest/') || target === 'nest.ts')
           .map((target) => `${rel(f)} -> ${target}`),
       );
     expect(wrong).toEqual([]);

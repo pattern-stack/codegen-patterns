@@ -13,7 +13,7 @@
  * d36): work that must not wait names a limiter nothing else fills.
  */
 import { type DynamicModule, Global, Module } from '@nestjs/common';
-import type { InProcessOptions, JobEntry } from '@pattern-stack/jobs';
+import type { JobEntry } from '@pattern-stack/jobs';
 import {
   JOBS_DEFINITIONS,
   JOBS_DRIZZLE,
@@ -29,6 +29,8 @@ import type { LimiterConfig } from '@pattern-stack/jobs/ports';
 import { jobTables } from '@pattern-stack/jobs/postgres';
 
 import { DRIZZLE } from '../../constants/tokens';
+import { useNestLogger } from '../../nest-logger';
+import { IN_PROCESS_DEFAULTS, type InProcessKnobs } from './in-process-defaults';
 import { JobStarter } from './job-starter';
 import { tenantRunScope } from './tenant-run-scope';
 
@@ -43,8 +45,11 @@ export interface JobsEngineOptions {
   /** The pools: each limiter a step names, by name. */
   limiters?: Readonly<Record<string, LimiterConfig>>;
   /** The in-process executor's knobs (poll, open-run sweep, lease, drain window). */
-  inProcess?: Omit<InProcessOptions, 'store' | 'registry' | 'limiters' | 'sinks' | 'around' | 'clock'>;
+  inProcess?: InProcessKnobs;
 }
+
+// The runtime's logger port prints through Nest's Logger in a Nest app (PW-0): `JobStarter`'s lines go through it.
+useNestLogger();
 
 /** Every tenant id is a tenant: the app's own auth decides who may start what before a start reaches the engine. */
 const anyTenant: JobsTenants = { findById: async (id) => ({ id }) };
@@ -59,8 +64,7 @@ export class JobsEngineModule {
         JobsModule.forRoot({
           executor: 'in-process',
           worker: options.worker,
-          // A run created in a caller's transaction (the bridge's) is found by the sweep: every second by default.
-          inProcess: { openSweepEvery: 4, ...options.inProcess },
+          inProcess: { ...IN_PROCESS_DEFAULTS, ...options.inProcess },
         }),
       ],
       providers: [

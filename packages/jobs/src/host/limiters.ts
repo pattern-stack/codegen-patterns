@@ -1,4 +1,4 @@
-import type { Registry } from '../index.ts';
+import type { Registry } from '../define/registry.ts';
 import type { LimiterConfig } from '../ports.ts';
 
 /** Each limiter a registered job names that `config` has no entry for, as `job/step: name`. */

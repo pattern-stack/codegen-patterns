@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 import { createRegistry, defineJob, mapStep, step } from '../../index.ts';
-import { limitersUnconfigured } from '../limiters.ts';
+import { limitersUnconfigured } from '../../host/limiters.ts';
 
 describe('limitersUnconfigured', () => {
   const job = defineJob({

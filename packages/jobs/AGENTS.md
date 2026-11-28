@@ -57,7 +57,7 @@ deprecation:
 
 ## Scope
 
-- **Owns:** `@pattern-stack/jobs`, the shared job module: the domain model (Job, Run, Step, Item), how a job is declared, the retry and stop policies, the ports, the engine, the framework-free adapters, the framework adapters on their own export paths (`./postgres`, `./bullmq`, `./redis`), the Nest layer (`./nest`: one `JobsService`, the actor policy, input refs, the sinks and the module), the store, limiter and replay contracts, and the review rules below.
+- **Owns:** `@pattern-stack/jobs`, the shared job module: the domain model (Job, Run, Step, Item), how a job is declared, the retry and stop policies, the ports, the engine, the framework-free adapters, the framework adapters on their own export paths (`./postgres`, `./bullmq`, `./redis`), a host's framework-free parts (`./host`: the budget rule, the span and fan-out sinks, the limiter boot check, which the Nest layer wraps and a plain host uses as they are), the Nest layer (`./nest`: one `JobsService`, the actor policy, input refs, the sinks and the module), the store, limiter and replay contracts, and the review rules below.
 - **Defers to parent (`../../AGENTS.md`) for:** repo-wide commands, the CODE_CONTEXT contract, the PR delivery workflow and the strict rules.
 - **Defers to [`JOBS_CONTRACT.md`](JOBS_CONTRACT.md) for:** how jobs, runs, steps, items, waits, gates, signals, child runs, limiters and stored values behave, how to add a job, and the review rules no check can hold (side effects, `ctx.signal`, version bumps).
 - **History:** see sibling [`CODE_CONTEXT/`](./CODE_CONTEXT/).

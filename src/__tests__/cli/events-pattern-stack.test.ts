@@ -66,12 +66,14 @@ describe('the subsystem schema barrel under pattern-stack wiring', () => {
 });
 
 describe('subsystem install under pattern-stack wiring', () => {
-	it('installs events on drizzle or memory; refuses redis and every other subsystem, naming its step', () => {
+	it('installs events on drizzle or memory, jobs, and the bridge on drizzle; refuses the rest, naming its step', () => {
 		expect(patternStackSubsystemRefusal('events', 'drizzle')).toBeNull();
 		expect(patternStackSubsystemRefusal('events', 'memory')).toBeNull();
 		expect(patternStackSubsystemRefusal('events', 'redis')).toMatch(/redis backend/);
-		expect(patternStackSubsystemRefusal('jobs', 'drizzle')).toMatch(/comes with J-1\. Supported: events, openapi-config, auth, auth-integrations, integration\./);
-		expect(patternStackSubsystemRefusal('bridge', 'drizzle')).toMatch(/comes with J-1/);
+		// J-1: jobs, and the bridge on drizzle (its drain is the Drizzle outbox's).
+		expect(patternStackSubsystemRefusal('jobs', 'drizzle')).toBeNull();
+		expect(patternStackSubsystemRefusal('bridge', 'drizzle')).toBeNull();
+		expect(patternStackSubsystemRefusal('bridge', 'memory')).toMatch(/memory backend/);
 		// S-2: auth on drizzle (its memory backend is refused in auth-pattern-stack.test.ts).
 		expect(patternStackSubsystemRefusal('auth', 'drizzle')).toBeNull();
 		// S-3: integration on either backend.
@@ -103,6 +105,17 @@ describe('subsystem install under pattern-stack wiring', () => {
 			expect(filter(f)).toBe(true);
 		}
 	});
+
+	it('jobs and bridge (J-1) vendor no Nest file: the modules, the barrels, the Nest starter, hook, facade and tokens', () => {
+		const jobs = patternStackFileFilter('jobs', () => true);
+		for (const f of ['jobs-engine.module.ts', 'job-starter.ts', 'index.ts']) expect(jobs(f)).toBe(false);
+		for (const f of ['core.ts', 'jobs-engine.ts', 'job-run-starter.ts', 'tenant-run-scope.ts']) expect(jobs(f)).toBe(true);
+		const bridge = patternStackFileFilter('bridge', () => true);
+		for (const f of ['bridge.module.ts', 'bridge.tokens.ts', 'bridge-outbox-drain-hook.ts', 'event-flow.service.ts', 'index.ts']) {
+			expect(bridge(f)).toBe(false);
+		}
+		for (const f of ['core.ts', 'bridge-outbox-drainer.ts', 'bridge.protocol.ts', 'bridge-delivery.schema.ts']) expect(bridge(f)).toBe(true);
+	});
 });
 
 /**
@@ -113,23 +126,30 @@ describe('subsystem install under pattern-stack wiring', () => {
  */
 describe('a pattern-stack install vendors what its entries import', () => {
 	const RUNTIME = path.resolve(import.meta.dir, '../../../runtime/subsystems');
-	const HYGEN_SCHEMA: Record<string, string> = {
+	const HYGEN_SCHEMA: Record<string, string | undefined> = {
 		events: 'domain-events.schema.ts',
 		integration: 'integration-audit.schema.ts',
 	};
-	const ENTRIES: Record<string, Record<'drizzle' | 'memory', string[]>> = {
+	const ENTRIES: Record<string, Partial<Record<'drizzle' | 'memory', string[]>>> = {
 		events: { drizzle: ['core.ts', 'event-bus.drizzle-backend.ts'], memory: ['core.ts', 'event-bus.memory-backend.ts'] },
 		integration: {
 			drizzle: ['core.ts', 'integration-cursor-store.drizzle-backend.ts', 'integration-run-recorder.drizzle-backend.ts'],
 			memory: ['core.ts'],
 		},
+		// J-1: jobs is drizzle only, and so is the bridge under pattern-stack.
+		jobs: { drizzle: ['core.ts'] },
+		bridge: { drizzle: ['core.ts'] },
 	};
-	for (const name of ['events', 'integration'] as const) {
+	for (const name of ['events', 'integration', 'jobs', 'bridge'] as const) {
 		for (const backend of ['drizzle', 'memory'] as const) {
+			if (!ENTRIES[name]![backend]) continue;
 			it(`${name} on ${backend}`, () => {
 				const dir = path.join(RUNTIME, name);
 				const filter = patternStackFileFilter(name, backendFileFilter(backend, name));
-				const vendored = new Set([...fs.readdirSync(dir).filter((f) => f.endsWith('.ts') && filter(f)), HYGEN_SCHEMA[name]!]);
+				const vendored = new Set([
+					...fs.readdirSync(dir).filter((f) => f.endsWith('.ts') && filter(f)),
+					...(HYGEN_SCHEMA[name] ? [HYGEN_SCHEMA[name]] : []),
+				]);
 				const missing: string[] = [];
 				const seen = new Set<string>();
 				const visit = (file: string) => {
@@ -144,7 +164,7 @@ describe('a pattern-stack install vendors what its entries import', () => {
 						if (fileName.startsWith('./')) visit(`${fileName.slice(2).replace(/\.js$/, '')}.ts`);
 					}
 				};
-				for (const entry of ENTRIES[name]![backend]) visit(entry);
+				for (const entry of ENTRIES[name]![backend]!) visit(entry);
 				expect(missing).toEqual([]);
 			});
 		}
@@ -164,4 +184,31 @@ describe('the events and integration config blocks print the installed backend',
 			expect(block).toContain('\n  backend: <%= backend %>\n');
 		});
 	}
+});
+
+// Review #984: the bridge's prerequisite, in its row. Package mode, so an install is its `subsystems.install` entry.
+describe('the bridge under pattern-stack needs events (on a bus that drains an outbox) and jobs', () => {
+	const ctxWith = (install: string[], events?: { backend: string }) =>
+		({
+			cwd: '/nonexistent',
+			config: {
+				target: { database: 'postgres', orm: 'drizzle', wiring: 'pattern-stack', http: 'none' },
+				subsystems: { install },
+				...(events ? { events } : {}),
+			},
+		}) as never;
+
+	it('names what is missing', async () => {
+		const { bridgePrerequisite } = await import('../../cli/shared/pattern-stack-subsystems');
+		expect(bridgePrerequisite(ctxWith(['jobs']))).toMatch(/install `codegen subsystem install events` first/);
+		expect(bridgePrerequisite(ctxWith(['events']))).toMatch(/install `codegen subsystem install jobs` first/);
+		expect(bridgePrerequisite(ctxWith([]))).toMatch(/events` and `codegen subsystem install jobs/);
+	});
+
+	it('refuses events on memory (its bus drains no outbox), and passes events on drizzle with jobs', async () => {
+		const { bridgePrerequisite } = await import('../../cli/shared/pattern-stack-subsystems');
+		expect(bridgePrerequisite(ctxWith(['events', 'jobs'], { backend: 'memory' }))).toMatch(/events backend is memory/);
+		expect(bridgePrerequisite(ctxWith(['events', 'jobs'], { backend: 'drizzle' }))).toBeNull();
+		expect(bridgePrerequisite(ctxWith(['events', 'jobs']))).toBeNull();
+	});
 });

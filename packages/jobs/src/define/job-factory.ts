@@ -82,14 +82,24 @@ export type JobEntry = AnyJob | JobFactory;
 // still constructing its providers, in any order. `assertResolvable` reaches every dependency once, so a host can stop
 // its boot on a missing one rather than the first run. A plain-wiring composition calls `create(deps)` itself.
 
-export type ResolveDep = (token: unknown) => unknown;
+/**
+ * Resolves one dependency: by its token (a Nest host, from its container), or by where it is asked (`at`: the factory
+ * and the dependency's name; a plain host, from the values it was given for that factory).
+ */
+export type ResolveDep = (token: unknown, at: DepSite) => unknown;
+
+/** Where a dependency is asked for: its factory, and its name in the factory's `deps`. */
+export interface DepSite {
+  readonly entry: JobFactory;
+  readonly name: string;
+}
 
 /** A stand-in for the dependency `token`: the instance, resolved on first use and cached, every member forwarded. */
-function lazyDep(token: unknown, resolve: ResolveDep): object {
+function lazyDep(token: unknown, at: DepSite, resolve: ResolveDep): object {
   let instance: object | undefined;
   const target = (): object => {
     if (instance === undefined) {
-      const resolved = resolve(token);
+      const resolved = resolve(token, at);
       if (resolved === null || (typeof resolved !== 'object' && typeof resolved !== 'function')) {
         throw new Error(`job dependency ${String(token)} resolved to ${String(resolved)}, not an object`);
       }
@@ -116,7 +126,7 @@ export function buildJobs(entries: readonly JobEntry[], resolve: ResolveDep): An
   return entries.map((entry) => {
     if (!isJobFactory(entry)) return entry;
     const deps = Object.fromEntries(
-      Object.entries(entry.deps).map(([name, dep]) => [name, lazyDep(tokenOf(dep), resolve)]),
+      Object.entries(entry.deps).map(([name, dep]) => [name, lazyDep(tokenOf(dep), { entry, name }, resolve)]),
     );
     return entry.create(deps);
   });
@@ -130,7 +140,7 @@ export function assertResolvable(entries: readonly JobEntry[], jobs: readonly An
       const token = tokenOf(dep);
       let value: unknown;
       try {
-        value = resolve(token);
+        value = resolve(token, { entry: entry as JobFactory, name });
       } catch (err) {
         throw new Error(
           `job '${jobs[i]?.key}': its dependency '${name}' (${describe(token)}) is not a provider of this app — ` +
